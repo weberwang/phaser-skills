@@ -1,0 +1,4 @@
+interface:
+  display_name: "Phaser 4 音频设计"
+  short_description: "设计移动端音频体验并管理资源版权格式性能和接入验证流程"
+  default_prompt: "使用 $phaser4-game-audio 设计并接入移动端游戏音频。"

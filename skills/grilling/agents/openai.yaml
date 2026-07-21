@@ -1,0 +1,4 @@
+interface:
+  display_name: "拷问"
+  short_description: "在执行前逐项拷问并确认产品研发计划中的全部关键决策。"
+  default_prompt: "使用 $grilling 对当前游戏计划逐项压力测试并确认关键决策。"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Phaser 4 测试性能"
+  short_description: "验证移动设备上的功能兼容性能稳定性与发布候选质量证据"
+  default_prompt: "使用 $phaser4-game-qa-performance 验证 Phaser 4 移动端候选版本。"

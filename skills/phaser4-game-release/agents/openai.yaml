@@ -1,0 +1,4 @@
+interface:
+  display_name: "Phaser 4 发布合规"
+  short_description: "准备多渠道构建商店资料合规核验和人工提审放行证据清单"
+  default_prompt: "使用 $phaser4-game-release 准备 Phaser 4 游戏的多渠道提审交付。"

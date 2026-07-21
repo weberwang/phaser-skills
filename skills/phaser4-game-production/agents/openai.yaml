@@ -1,0 +1,4 @@
+interface:
+  display_name: "Phaser 4 制作策划"
+  short_description: "将游戏构想转化为可验收范围和跨角色制作交接规范及变更管控"
+  default_prompt: "使用 $phaser4-game-production 为 Phaser 4 游戏建立可执行制作计划。"

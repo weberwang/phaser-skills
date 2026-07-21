@@ -1,0 +1,4 @@
+interface:
+  display_name: "Phaser 4 美术接入"
+  short_description: "管理视觉资源授权性能优化与面向发布的游戏内接入质量和可追溯记录"
+  default_prompt: "使用 $phaser4-game-asset-integration 接入并审核游戏视觉资源。"

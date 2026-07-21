@@ -1,0 +1,4 @@
+interface:
+  display_name: "Phaser 4 游戏总控"
+  short_description: "统筹移动端二维游戏从立项到多渠道提审的并行协作交付与质量门控"
+  default_prompt: "使用 $phaser4-game-orchestrator 协调 Phaser 4 手机游戏从构想到可提审交付。"
