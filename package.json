@@ -1,0 +1,17 @@
+{
+  "name": "phaser-skills",
+  "version": "1.0.0",
+  "description": "Phaser 4 移动端游戏协作 skills 的项目级安装器",
+  "type": "module",
+  "bin": {
+    "phaser-skills": "./scripts/install-project-skills.mjs"
+  },
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/weberwang/phaser-skills.git"
+  },
+  "license": "MIT"
+}
