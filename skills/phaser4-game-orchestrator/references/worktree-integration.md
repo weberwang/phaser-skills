@@ -1,23 +1,11 @@
-# Worktree 并行收敛规范
+# Worktree 并行收敛
 
-## 分支与交接
+仅在存在可独立验收的并行代码任务时使用本规范。
 
-- 分支命名使用 agent/<角色>-<工作项>，一个分支只承担一个可独立验收项。
-- 建立 worktree 后，在 docs/worktree-plan.md 登记分支、目录、范围、预期检查、提交、状态与证据。
-- 角色完成时先更新 handoff-status.md 和质量证据，再将 worktree-plan.md 状态改为待收敛。没有检查证据、存在待决策项或工作目录不干净时不得登记为待收敛。
+- 分支使用 agent/<角色>-<工作项>；一个分支只做一个工作项。
+- 先在 docs/worktree-plan.md 登记范围、预期检查和 worktree 目录；完成后补充提交、检查证据和状态。
+- 基线与角色 worktree 必须干净，控制面不得有待人工决策或阻断项，才可收敛。
 
-## 自动收敛
+    node .agents/skills/phaser4-game-orchestrator/scripts/reconcile_worktrees.mjs --project-root . --base main --branch agent/玩法-核心循环
 
-总控从 worktree-plan.md 收集同一批待收敛分支，并在基线分支已检出且工作目录干净时运行：
-
-~~~text
-node .agents/skills/phaser4-game-orchestrator/scripts/reconcile_worktrees.mjs --project-root . --base main --branch agent/玩法-核心循环 --branch agent/数值-切片模型
-~~~
-
-脚本按给定顺序合并。每个分支合并成功并通过 Git 空白错误检查后，自动移除对应 worktree 并以 git branch -d 删除本地分支。已经合并的分支仅做清理，不会重复合并。
-
-## 阻断与恢复
-
-冲突、未提交改动、未知分支、缺失 worktree 或 Git 检查失败时，脚本停止并保留所有尚未清理的 worktree 与分支。总控应更新 worktree-plan.md 和 handoff-status.md；涉及范围或取舍变化时，先调用 $grilling。
-
-不要使用 git branch -D、git worktree remove --force 或远端分支删除。恢复后仅重新运行受阻分支的收敛命令。
+脚本顺序合并；成功后执行 Git 空白错误检查、移除对应 worktree，并以 git branch -d 清理本地分支。冲突、未提交改动、检查失败或证据缺失时保留现场，在控制面标记阻断；禁止使用强制删除或删除远端分支。

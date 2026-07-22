@@ -50,13 +50,19 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 
 ## 项目交接物
 
-总控 skill 提供初始化脚本，可为实际游戏项目生成 GDD、TDD、数值、测试、渠道矩阵、资源授权、拷问记录、worktree 收敛计划、人工决策请求和发布清单：
+总控 skill 的初始化脚本默认只生成项目配置、GDD、TDD 和控制面，避免在尚未进入对应阶段时维护无用文档：
 
 ~~~powershell
 python .\.agents\skills\phaser4-game-orchestrator\scripts\initialize_project_docs.py --project-root .
 ~~~
 
-脚本默认拒绝覆盖已有交接物；只有人工明确要求时才使用 --force。
+进入对应阶段后，再按需创建数值、资源、测试、渠道、发布或 worktree 交付物：
+
+~~~powershell
+python .\.agents\skills\phaser4-game-orchestrator\scripts\initialize_project_docs.py --project-root . --include balance,assets,qa
+~~~
+
+脚本默认拒绝覆盖本次选择的已有交接物；只有人工明确要求时才使用 --force。
 
 ## Worktree 自动收敛
 

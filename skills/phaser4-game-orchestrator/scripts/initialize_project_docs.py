@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""初始化 Phaser 4 游戏项目的中文交接文档。"""
+"""按阶段初始化 Phaser 4 游戏项目的中文协作文档。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 
-TEMPLATES = {
+CORE_TEMPLATES = {
     "project-profile.yaml": """# 项目配置是角色协作的机器可读事实来源。
 project:
   名称: 待定
@@ -78,7 +78,37 @@ quality_targets:
 
 待补充。
 """,
-    "balance.md": """# 数值设计
+    "control-plane.md": """# 项目控制面
+
+只记录当前状态和索引；规则、实现细节与完整证据写入对应交付物。质量门汇合后删除已无后续影响的条目。
+
+## 当前质量门
+
+| 阶段 | 状态 | 通过条件或阻断项 | 最近证据 |
+| --- | --- | --- | --- |
+| G0 | 待人工决策 | 待制作策划补充 |  |
+
+## 待人工决策与拷问记录
+
+| 日期 | 阶段 | 触发原因 | 已核实事实 | 问题与推荐项 | 人工结论 | 影响与下一步 |
+| --- | --- | --- | --- | --- | --- | --- |
+
+## 已确认变更
+
+| 日期 | 变更 | 影响范围 | 复核质量门 | 关联证据 |
+| --- | --- | --- | --- | --- |
+
+## 角色交接
+
+| 角色 | 当前输出或范围 | 状态 | 证据或阻断项 | 下游 |
+| --- | --- | --- | --- | --- |
+""",
+}
+
+OPTIONAL_TEMPLATES = {
+    "balance": (
+        "balance.md",
+        """# 数值设计
 
 ## 设计目标与玩家节奏
 
@@ -93,7 +123,10 @@ quality_targets:
 
 待补充。
 """,
-    "asset-license-register.md": """# 资源与授权登记
+    ),
+    "assets": (
+        "asset-license-register.md",
+        """# 资源与授权登记
 
 | 资源 | 类型 | 用途 | 来源 | 授权/生成记录 | 发布可用 | 优化状态 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -102,7 +135,10 @@ quality_targets:
 
 临时资源必须标注替换负责人和截止质量门。
 """,
-    "qa-plan.md": """# 测试与性能计划
+    ),
+    "qa": (
+        "qa-plan.md",
+        """# 测试与性能计划
 
 ## 缺陷分级
 
@@ -118,7 +154,10 @@ quality_targets:
 | 渠道/设备 | 版本 | 测试项 | 帧率 | 启动时间 | 内存/包体 | 结果 | 证据 |
 | --- | --- | --- | --- | --- | --- | --- |
 """,
-    "platform-matrix.md": """# 平台矩阵
+    ),
+    "platform": (
+        "platform-matrix.md",
+        """# 平台矩阵
 
 | 渠道 | 优先级 | 打包方式 | 必要适配 | 商店/平台资料 | 合规状态 | 负责人 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -127,35 +166,10 @@ quality_targets:
 | Google Play | 首批 | Capacitor | 待评估 | 待评估 | 待评估 | 发布合规 |
 | 其他 | 扩展 | 待评估 | 待评估 | 待评估 | 待评估 | 发布合规 |
 """,
-    "G0-人工决策请求.md": """# G0 人工决策请求
-
-## 状态
-
-未批准。仅当具名人工决策人完成结论和日期后，项目才可进入 G1。
-
-| 议题 | 可选项与影响 | 推荐项 | 最迟决策点 | 决策人 | 结论 | 日期 |
-| --- | --- | --- | --- | --- | --- | --- |
-| 核心循环与最小范围 | 待制作策划补充 | 待制作策划补充 | G0 通过前 | 待指定 | 待人工决定 |  |
-| 首发渠道与小游戏平台 | 待技术架构补充 | 待技术架构补充 | G0 通过前 | 待指定 | 待人工决定 |  |
-| 商业能力开关 | 待制作策划补充 | 待制作策划补充 | G0 通过前 | 待指定 | 待人工决定 |  |
-| 资源权属路径 | 待美术与音频补充 | 待美术与音频补充 | G0 通过前 | 待指定 | 待人工决定 |  |
-| 质量指标与责任人 | 待测试性能补充 | 待测试性能补充 | G1 开始前 | 待指定 | 待人工决定 |  |
-""",
-    "grilling-log.md": """# 拷问记录
-
-只有人工明确确认“已达成共同理解”或等效结论后，记录才可作为需求、计划或发布状态的变更依据。
-
-| 日期 | 阶段 | 触发原因 | 已核实事实 | 问题 | 用户回答 | 推荐项 | 共同理解确认 | 影响文档/角色 | 下一步 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-""",
-    "worktree-plan.md": """# Worktree 收敛计划
-
-仅将工作目录干净、已完成必要检查、没有待人工决策且已更新交接状态的分支标为待收敛。总控将依此自动合并并清理本地 worktree 与分支。
-
-| 批次 | 分支 | Worktree 目录 | 范围 | 检查证据 | 提交 | 状态 | 阻断原因 |
-| --- | --- | --- | --- | --- | --- | --- |
-""",
-    "release-checklist.md": """# 发布检查清单
+    ),
+    "release": (
+        "release-checklist.md",
+        """# 发布检查清单
 
 ## 发布候选版本
 
@@ -172,32 +186,42 @@ quality_targets:
 - [ ] 没有密钥或商店凭据进入仓库。
 - [ ] 已知风险、回滚或热修复方案已记录。
 """,
-    "decision-log.md": """# 决策日志
+    ),
+    "worktree": (
+        "worktree-plan.md",
+        """# Worktree 收敛计划
 
-| 编号 | 议题 | 可选项与影响 | 推荐项 | 决策人 | 截止时间 | 结论 | 证据 |
+仅将工作目录干净、已完成必要检查、没有待人工决策且已更新控制面的分支标为待收敛。总控将依此自动合并并清理本地 worktree 与分支。
+
+| 批次 | 分支 | Worktree 目录 | 范围 | 检查证据 | 提交 | 状态 | 阻断原因 |
 | --- | --- | --- | --- | --- | --- | --- |
 """,
-    "handoff-status.md": """# 角色交接状态
-
-| 角色 | 输入 | 输出 | 状态 | 阻塞/待决策 | 证据 | 下游确认 |
-| --- | --- | --- | --- | --- | --- | --- |
-| 制作策划 | 项目意图 | GDD、决策日志 | 未开始 |  |  |  |
-| 技术架构 | GDD、渠道 | TDD、项目骨架 | 未开始 |  |  |  |
-| 玩法开发 | GDD、TDD、数值 | 玩法实现 | 未开始 |  |  |  |
-| 数值设计 | GDD | balance.md | 未开始 |  |  |  |
-| 美术接入 | GDD、TDD | 资源与授权登记 | 未开始 |  |  |  |
-| 音频设计 | GDD、TDD | 音频方案与授权登记 | 未开始 |  |  |  |
-| 测试性能 | 全部交接物 | qa-plan.md、测试证据 | 未开始 |  |  |  |
-| 发布合规 | 候选包、资源登记 | 平台矩阵、发布清单 | 未开始 |  |  |  |
-""",
+    ),
 }
 
 
+def parse_include_list(value: str) -> list[str]:
+    """解析可选交付物名称，拒绝拼写错误以避免创建错误文档。"""
+    names = [name.strip() for name in value.split(",") if name.strip()]
+    unknown = sorted(set(names) - OPTIONAL_TEMPLATES.keys())
+    if unknown:
+        valid = "、".join(OPTIONAL_TEMPLATES)
+        raise argparse.ArgumentTypeError(
+            f"不支持的交付物：{'、'.join(unknown)}。可选值：{valid}。"
+        )
+    return list(dict.fromkeys(names))
+
+
 def parse_args() -> argparse.Namespace:
-    """解析显式项目目录与覆盖授权，避免向未知位置写入文件。"""
-    parser = argparse.ArgumentParser(description="初始化 Phaser 4 游戏协作文档")
+    """解析显式项目目录、可选交付物与覆盖授权。"""
+    parser = argparse.ArgumentParser(description="按阶段初始化 Phaser 4 游戏协作文档")
     parser.add_argument("--project-root", required=True, type=Path, help="目标游戏项目根目录")
-    parser.add_argument("--force", action="store_true", help="明确覆盖本脚本管理的同名文档")
+    parser.add_argument(
+        "--include",
+        type=parse_include_list,
+        help="逗号分隔的可选交付物：balance、assets、qa、platform、release、worktree",
+    )
+    parser.add_argument("--force", action="store_true", help="明确覆盖本次选择的同名文档")
     return parser.parse_args()
 
 
@@ -209,10 +233,19 @@ def validate_project_root(project_root: Path) -> Path:
     return resolved
 
 
-def initialize_documents(project_root: Path, force: bool) -> list[Path]:
-    """仅创建或显式覆盖 docs 下的标准交接物，并返回写入清单。"""
+def select_templates(include: list[str] | None) -> dict[str, str]:
+    """默认选择核心交付物，指定 include 时只创建对应的阶段性交付物。"""
+    if include is None:
+        return CORE_TEMPLATES
+    return {OPTIONAL_TEMPLATES[name][0]: OPTIONAL_TEMPLATES[name][1] for name in include}
+
+
+def initialize_documents(
+    project_root: Path, templates: dict[str, str], force: bool
+) -> list[Path]:
+    """仅创建或显式覆盖本次选择的交付物，避免影响其他阶段文档。"""
     docs_dir = project_root / "docs"
-    targets = [docs_dir / filename for filename in TEMPLATES]
+    targets = [docs_dir / filename for filename in templates]
     existing = [path for path in targets if path.exists()]
     if existing and not force:
         names = "、".join(path.name for path in existing)
@@ -220,16 +253,17 @@ def initialize_documents(project_root: Path, force: bool) -> list[Path]:
 
     docs_dir.mkdir(parents=True, exist_ok=True)
     for path in targets:
-        path.write_text(TEMPLATES[path.name], encoding="utf-8")
+        path.write_text(templates[path.name], encoding="utf-8")
     return targets
 
 
 def main() -> int:
-    """执行初始化并输出可审计的写入结果。"""
+    """执行阶段初始化并输出可审计的写入结果。"""
     args = parse_args()
     try:
         project_root = validate_project_root(args.project_root)
-        written = initialize_documents(project_root, args.force)
+        templates = select_templates(args.include)
+        written = initialize_documents(project_root, templates, args.force)
     except (OSError, ValueError) as error:
         print(f"初始化失败：{error}", file=sys.stderr)
         return 1
