@@ -46,15 +46,27 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 
 总控在独立工作可并行时并行调度，并在 G0 至 G3 质量门汇合。范围、风险、质量指标和发布放行始终由人工决策。
 
+完成的并行 worktree 分支会在检查证据齐备后自动顺序合并到基线分支，并清理本地 worktree 与分支；冲突、未提交改动或质量门阻断时会保留现场，等待处理。
+
 ## 项目交接物
 
-总控 skill 提供初始化脚本，可为实际游戏项目生成 GDD、TDD、数值、测试、渠道矩阵、资源授权、拷问记录、人工决策请求和发布清单：
+总控 skill 提供初始化脚本，可为实际游戏项目生成 GDD、TDD、数值、测试、渠道矩阵、资源授权、拷问记录、worktree 收敛计划、人工决策请求和发布清单：
 
 ~~~powershell
 python .\.agents\skills\phaser4-game-orchestrator\scripts\initialize_project_docs.py --project-root .
 ~~~
 
 脚本默认拒绝覆盖已有交接物；只有人工明确要求时才使用 --force。
+
+## Worktree 自动收敛
+
+总控在各角色 worktree 已完成检查并登记到 docs/worktree-plan.md 后，顺序合并并清理本地 worktree 分支：
+
+~~~powershell
+node .\.agents\skills\phaser4-game-orchestrator\scripts\reconcile_worktrees.mjs --project-root . --base main --branch agent/玩法-核心循环
+~~~
+
+脚本仅处理工作目录干净、可安全合并的本地分支；发生冲突、检查失败或未提交改动时会保留现场，不会强制删除。
 
 ## 更新
 

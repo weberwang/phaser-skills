@@ -13,6 +13,7 @@
 | docs/platform-matrix.md | 发布合规 | 渠道差异、包、商店资料、合规与状态 | 总控、测试 |
 | docs/G0-人工决策请求.md | 总控 | 立项质量门的选项、影响、推荐与批准结论 | 人工决策者 |
 | docs/grilling-log.md | 制作策划与触发角色 | 拷问触发、逐项问答、共同理解与影响范围 | 全部角色 |
+| docs/worktree-plan.md | 总控与并行角色 | 分支、worktree、范围、检查、提交、收敛状态与证据 | 总控、全部角色 |
 | docs/release-checklist.md | 发布合规 | 候选版本逐项提审核验 | 人工决策者 |
 | docs/decision-log.md | 制作策划 | 待决策、选择、证据、决策人、日期 | 全部角色 |
 | docs/handoff-status.md | 每位角色 | 输入、输出、状态、阻塞、证据链接 | 总控 |
