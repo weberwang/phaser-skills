@@ -187,16 +187,6 @@ OPTIONAL_TEMPLATES = {
 - [ ] 已知风险、回滚或热修复方案已记录。
 """,
     ),
-    "worktree": (
-        "worktree-plan.md",
-        """# Worktree 收敛计划
-
-仅将工作目录干净、已完成必要检查、没有与该分支相关的待人工决策且已更新控制面的分支标为待收敛。无关决策不得阻塞合并；总控将依此自动合并并清理本地 worktree 与分支。
-
-| 批次 | 分支 | Worktree 目录 | 范围 | 检查证据 | 提交 | 状态 | 阻断原因 |
-| --- | --- | --- | --- | --- | --- | --- |
-""",
-    ),
 }
 
 
@@ -219,7 +209,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--include",
         type=parse_include_list,
-        help="逗号分隔的可选交付物：balance、assets、qa、platform、release、worktree",
+        help="逗号分隔的可选交付物：balance、assets、qa、platform、release",
     )
     parser.add_argument("--force", action="store_true", help="明确覆盖本次选择的同名文档")
     return parser.parse_args()

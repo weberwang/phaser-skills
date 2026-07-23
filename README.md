@@ -46,13 +46,13 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 
 总控按任务影响选择工作通道：
 
-- 快速通道：局部、低风险、可回退的已批准任务，明确验收后直接实现和验证，不强制维护流程文档或 worktree。
+- 快速通道：局部、低风险、可回退的已批准任务，明确验收后直接实现和验证；除工作区隔离需要外，不维护流程文档或 worktree。
 - 标准通道：新模块、跨模块或影响架构、存档、数值、资源、性能的任务，只调度受影响角色。
 - 发布通道：影响渠道、隐私、商业能力、资源权属或候选包的任务，使用 G0 至 G3 完整质量门。
 
 任务影响扩大时再升级通道。范围、风险接受度、发布指标和发布放行仍由人工决策；可选能力默认关闭，无需逐项确认未启用能力。
 
-只有多个代理确需同时修改代码且隔离收益明确时才创建 worktree。完成的并行分支会在检查证据齐备后自动顺序合并到基线分支，并清理本地 worktree 与分支；冲突、未提交改动或与该分支相关的质量门阻断会保留现场，等待处理。
+Worktree 只用于工作区隔离：存在多个并发写入者时，每个写入者使用独立 worktree；当前工作区已有未提交改动且新任务不依赖这些改动时，在新 worktree 工作以保护用户现场。单个写入者、顺序任务和只读任务不使用 worktree。
 
 ## 项目交接物
 
@@ -62,7 +62,7 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 python .\.agents\skills\phaser4-game-orchestrator\scripts\initialize_project_docs.py --project-root .
 ~~~
 
-进入对应阶段后，再按需创建数值、资源、测试、渠道、发布或 worktree 交付物：
+进入对应阶段后，再按需创建数值、资源、测试、渠道或发布交付物：
 
 ~~~powershell
 python .\.agents\skills\phaser4-game-orchestrator\scripts\initialize_project_docs.py --project-root . --include balance,assets,qa
@@ -70,15 +70,13 @@ python .\.agents\skills\phaser4-game-orchestrator\scripts\initialize_project_doc
 
 脚本默认拒绝覆盖本次选择的已有交接物；只有人工明确要求时才使用 --force。
 
-## Worktree 自动收敛
+## Worktree 工作区隔离
 
-总控在确需并行隔离、各角色 worktree 已完成检查并登记到 docs/worktree-plan.md 后，顺序合并并清理本地 worktree 分支：
+Worktree 不属于质量门、角色交接或阶段交付物，也不维护额外的收敛计划。使用前检查当前分支、提交与工作区状态；不得通过 stash、reset 或覆盖来处理用户已有改动。
 
-~~~powershell
-node .\.agents\skills\phaser4-game-orchestrator\scripts\reconcile_worktrees.mjs --project-root . --base main --branch agent/玩法-核心循环
-~~~
-
-脚本仅处理工作目录干净、可安全合并的本地分支；发生冲突、检查失败或未提交改动时会保留现场，不会强制删除。
+- 多个并发写入者：每个写入者独占一个 worktree 和分支，并明确文件或模块归属。
+- 保护脏工作区：从已提交的基线创建新 worktree；若任务依赖当前未提交改动，则继续在原工作区谨慎处理。
+- 完成任务：按普通 Git 流程检查、提交和集成；不自动合并、删除 worktree 或删除分支。
 
 ## 更新
 
