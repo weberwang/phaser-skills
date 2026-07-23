@@ -34,7 +34,7 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 
 以 $phaser4-game-orchestrator 作为入口。它会协调以下角色：
 
-- $grilling：在决策、需求修改、冲突、新风险和模块首次实现前逐项拷问。
+- $grilling：仅在证据无法消除且确需人工取舍时介入；低风险相关项可合并确认，高影响或冲突项逐项拷问。
 - $phaser4-game-production：制作策划、范围、验收与变更控制。
 - $phaser4-game-architecture：Phaser 4、Vite、Capacitor 与渠道适配边界。
 - $phaser4-gameplay-development：玩法、场景、交互和游戏状态。
@@ -44,9 +44,15 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 - $phaser4-game-qa-performance：功能、设备、性能与发布候选验证。
 - $phaser4-game-release：小游戏、iOS、Google Play 的构建、提审与合规。
 
-总控在独立工作可并行时并行调度，并在 G0 至 G3 质量门汇合。范围、风险、质量指标和发布放行始终由人工决策。
+总控按任务影响选择工作通道：
 
-完成的并行 worktree 分支会在检查证据齐备后自动顺序合并到基线分支，并清理本地 worktree 与分支；冲突、未提交改动或质量门阻断时会保留现场，等待处理。
+- 快速通道：局部、低风险、可回退的已批准任务，明确验收后直接实现和验证，不强制维护流程文档或 worktree。
+- 标准通道：新模块、跨模块或影响架构、存档、数值、资源、性能的任务，只调度受影响角色。
+- 发布通道：影响渠道、隐私、商业能力、资源权属或候选包的任务，使用 G0 至 G3 完整质量门。
+
+任务影响扩大时再升级通道。范围、风险接受度、发布指标和发布放行仍由人工决策；可选能力默认关闭，无需逐项确认未启用能力。
+
+只有多个代理确需同时修改代码且隔离收益明确时才创建 worktree。完成的并行分支会在检查证据齐备后自动顺序合并到基线分支，并清理本地 worktree 与分支；冲突、未提交改动或与该分支相关的质量门阻断会保留现场，等待处理。
 
 ## 项目交接物
 
@@ -66,7 +72,7 @@ python .\.agents\skills\phaser4-game-orchestrator\scripts\initialize_project_doc
 
 ## Worktree 自动收敛
 
-总控在各角色 worktree 已完成检查并登记到 docs/worktree-plan.md 后，顺序合并并清理本地 worktree 分支：
+总控在确需并行隔离、各角色 worktree 已完成检查并登记到 docs/worktree-plan.md 后，顺序合并并清理本地 worktree 分支：
 
 ~~~powershell
 node .\.agents\skills\phaser4-game-orchestrator\scripts\reconcile_worktrees.mjs --project-root . --base main --branch agent/玩法-核心循环

@@ -1,10 +1,10 @@
 # Worktree 并行收敛
 
-仅在存在可独立验收的并行代码任务时使用本规范。
+仅在多个代理确需同时修改代码、任务可独立验收且隔离收益高于维护成本时使用本规范。单个任务、顺序任务和纯文档任务不创建 worktree。
 
 - 分支使用 agent/<角色>-<工作项>；一个分支只做一个工作项。
 - 先在 docs/worktree-plan.md 登记范围、预期检查和 worktree 目录；完成后补充提交、检查证据和状态。
-- 基线与角色 worktree 必须干净，控制面不得有待人工决策或阻断项，才可收敛。
+- 基线与角色 worktree 必须干净，控制面不得有与待合并分支相关的待人工决策或阻断项，才可收敛；无关事项不得阻塞合并。
 
     node .agents/skills/phaser4-game-orchestrator/scripts/reconcile_worktrees.mjs --project-root . --base main --branch agent/玩法-核心循环
 
