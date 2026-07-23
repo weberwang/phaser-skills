@@ -9,7 +9,7 @@
 | 核心 | docs/TDD.md | 技术架构 | 初始化 |
 | 核心 | docs/control-plane.md | 总控；各角色仅追加状态 | 初始化 |
 | 可选 | docs/balance.md | 数值设计 | 数值进入实施 |
-| 可选 | docs/asset-license-register.md | 美术接入、音频 | 资源进入制作或接入 |
+| 可选 | docs/asset-license-register.md | 美术接入、音频 | 资源进入制作、效果图拆分或接入 |
 | 可选 | docs/qa-plan.md | 测试性能 | G1 前 |
 | 可选 | docs/platform-matrix.md | 发布合规 | 渠道进入候选 |
 | 可选 | docs/release-checklist.md | 发布合规 | G3 前 |

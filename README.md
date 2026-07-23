@@ -39,7 +39,7 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 - $phaser4-game-architecture：Phaser 4、Vite、Capacitor 与渠道适配边界。
 - $phaser4-gameplay-development：玩法、场景、交互和游戏状态。
 - $phaser4-game-balance：数值、难度、经济与验证。
-- $phaser4-game-asset-integration：美术资源、生成记录、授权与性能。
+- $phaser4-game-asset-integration：从效果图拆分 Phaser 单图，以及美术资源生成、授权、接入与性能验证。
 - $phaser4-game-audio：音频体验、授权、格式与接入。
 - $phaser4-game-qa-performance：功能、设备、性能与发布候选验证。
 - $phaser4-game-release：小游戏、iOS、Google Play 的构建、提审与合规。
