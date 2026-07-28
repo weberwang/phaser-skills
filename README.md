@@ -39,7 +39,7 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 - $phaser4-game-architecture：Phaser 4、Vite、Capacitor 与渠道适配边界。
 - $phaser4-gameplay-development：玩法、场景、交互和游戏状态。
 - $phaser4-game-balance：数值、难度、经济与验证。
-- $phaser4-game-asset-integration：从效果图拆分 Phaser 单图，以及美术资源生成、授权、接入与性能验证。
+- $phaser4-game-asset-integration：从代码低保真、高保真效果图、框选单图到正式结构化 Phaser 场景的美术生产、授权与验证。
 - $phaser4-game-audio：音频体验、授权、格式与接入。
 - $phaser4-game-qa-performance：功能、设备、性能与发布候选验证。
 - $phaser4-game-release：小游戏、iOS、Google Play 的构建、提审与合规。
@@ -54,7 +54,7 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 
 Worktree 只用于隔离多个并发写入者，每个写入者使用独立 worktree。单个写入者、顺序任务和只读任务不使用 worktree。
 
-游戏实现不是可省略的角色调用，而是贯穿 G1/G2 的闭环：冻结验收增量、建立骨架、列出资源依赖、实现核心规则、执行切图查重与审查、接入正式资源、完成测试和生产构建。切图可与纯规则编码并行，但正式场景只能接入已经登记、审查和 Phaser 验证通过的图片；实现发现资源问题后必须回到美术修复并重新验证。
+游戏实现不是可省略的角色调用，而是贯穿 G1/G2 的闭环。美术流固定为：代码低保真与说明 → 人工确认 → 高保真效果图与确认 → 效果图审阅 → 框出全部正式单图并确认 → 单图生成与验收 → 结构化预制体或场景装配 → 验收后删除低保真实现。纯规则编码可在低保真确认后并行，但不得跳过或倒置任何美术确认门。
 
 ## 项目交接物
 

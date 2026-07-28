@@ -1,4 +1,4 @@
 interface:
   display_name: "Phaser 4 美术接入"
-  short_description: "从效果图拆分并交付可追溯、可验证、可高效接入 Phaser 的视觉资源"
-  default_prompt: "使用 $phaser4-game-asset-integration 拆分、接入并审核 Phaser 游戏视觉资源。"
+  short_description: "以低保真确认驱动效果图、正式单图和 Phaser 结构化场景交付"
+  default_prompt: "使用 $phaser4-game-asset-integration 从代码低保真推进到正式 Phaser 美术场景。"
