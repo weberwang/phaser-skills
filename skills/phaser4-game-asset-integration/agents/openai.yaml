@@ -1,4 +1,4 @@
 interface:
   display_name: "Phaser 4 美术设计与接入"
-  short_description: "建立全局视觉基线，并从截图或代码重构、生成和接入 Phaser 美术"
-  default_prompt: "使用 $phaser4-game-asset-integration 建立视觉基线，并根据截图或代码重构、生成、接入和审核 Phaser 游戏美术。"
+  short_description: "建立视觉基线与满幅背景，并从截图或代码重构接入 Phaser 美术"
+  default_prompt: "使用 $phaser4-game-asset-integration 先生成全场景无黑边背景，再根据截图或代码重构、接入和审核 Phaser 游戏美术。"

@@ -1,4 +1,4 @@
 interface:
   display_name: "Phaser 4 技术架构"
-  short_description: "建立移动端项目可测试可构建并可扩展的技术协作基线与适配边界"
-  default_prompt: "使用 $phaser4-game-architecture 建立 Phaser 4 移动端技术基线。"
+  short_description: "划分并确认模块边界，建立可测试、可构建的移动端技术基线"
+  default_prompt: "使用 $phaser4-game-architecture 划分模块边界并建立 Phaser 4 移动端技术基线。"
