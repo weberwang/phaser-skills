@@ -11,7 +11,7 @@ description: 面向 Phaser 4、TypeScript、Vite 与 Capacitor 的移动端 2D �
 
 1. 新游戏立项，或任务需要进入标准、发布通道且项目尚无 docs/project-profile.yaml 时，运行 scripts/initialize_project_docs.py --project-root .；已有代码库中的低风险实现任务不因缺少协作文档而强制初始化。默认不覆盖，只有人工明确要求时传 --force。
 2. 快速通道优先读取与任务直接相关的代码、配置和测试；标准、发布通道再读取 docs/project-profile.yaml、docs/GDD.md、docs/visual-design.md、docs/control-plane.md，实施任务按需读取 docs/TDD.md。
-3. 只在下列情形读取同级资料：进入游戏实现时读 references/game-implementation.md；新建或改变模块边界时读 references/module-decomposition.md；新建可选交付物时读 references/delivery-artifacts.md；检查质量门时读 references/quality-gates.md；需要人工决策或处理需求变更时读 references/grilling-integration.md；存在多个并发写入者时读 references/worktree-integration.md。
+3. 只在下列情形读取同级资料：进入游戏实现时读 references/game-implementation.md；新建或改变模块边界时读 references/module-decomposition.md；启动本地验证服务时读 references/local-service-validation.md；新建可选交付物时读 references/delivery-artifacts.md；检查质量门时读 references/quality-gates.md；需要人工决策或处理需求变更时读 references/grilling-integration.md；存在多个并发写入者时读 references/worktree-integration.md。
 
 所有项目文档和新增代码注释使用简体中文。技术基线为 Phaser 4、TypeScript、Vite 与 Capacitor；小游戏、iOS、Google Play 是独立目标，未批准的能力开关不得接入。
 
@@ -47,6 +47,10 @@ description: 面向 Phaser 4、TypeScript、Vite 与 Capacitor 的移动端 2D �
 Worktree 只用于隔离多个并发写入者，不参与质量门、角色交接或项目阶段。每个并发写入者独占一个 worktree 和分支，并明确文件或模块归属。
 
 单个写入者、顺序任务和只读任务直接使用当前工作区。任务完成后按普通 Git 流程检查、提交和集成；不自动合并、删除 worktree 或删除分支。
+
+## 本地服务复用
+
+任何角色启动本地验证服务前，必须先核对项目根目录、服务类型、模式、端口、监听进程和健康状态。存在身份一致且健康的服务时直接复用；不得因页面暂未就绪、工具切换或端口变化重复启动。端口冲突不得擅自停止其他任务或用户进程，只有确认没有可复用实例且验证确实需要时才启动一个新服务。
 
 ## 交接与输出
 
