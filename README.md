@@ -39,7 +39,7 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 - $phaser4-game-architecture：Phaser 4、Vite、Capacitor 与渠道适配边界。
 - $phaser4-gameplay-development：玩法、场景、交互和游戏状态。
 - $phaser4-game-balance：数值、难度、经济与验证。
-- $phaser4-game-asset-integration：从效果图拆分 Phaser 单图，以及美术资源生成、授权、接入与性能验证。
+- $phaser4-game-asset-integration：建立全局视觉基线，根据截图或运行代码整理并重构生成美术，拆分 Phaser 单图，以及完成授权、接入与性能验证。
 - $phaser4-game-audio：音频体验、授权、格式与接入。
 - $phaser4-game-qa-performance：功能、设备、性能与发布候选验证。
 - $phaser4-game-release：小游戏、iOS、Google Play 的构建、提审与合规。
@@ -54,11 +54,11 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 
 Worktree 只用于隔离多个并发写入者，每个写入者使用独立 worktree。单个写入者、顺序任务和只读任务不使用 worktree。
 
-游戏实现不是可省略的角色调用，而是贯穿 G1/G2 的闭环：冻结验收增量、建立骨架、列出资源依赖、实现核心规则、执行切图查重与审查、接入正式资源、完成测试和生产构建。切图可与纯规则编码并行，但正式场景只能接入已经登记、审查和 Phaser 验证通过的图片；实现发现资源问题后必须回到美术修复并重新验证。
+游戏实现不是可省略的角色调用，而是贯穿 G1/G2 的闭环：冻结验收增量与全局视觉基线、建立骨架、列出资源依赖、实现核心规则、执行美术重构或切图审查、接入正式资源、完成视觉对比、测试和生产构建。截图输入必须归档来源和权属；代码输入必须先运行目标场景并捕获固定视口截图。代表性样张通过后才可批量生成；每轮生成或重绘后必须等待人工确认，要求修改时生成新版本并再次确认，未确认资源不得拆分或接入正式场景。
 
 ## 项目交接物
 
-总控 skill 的初始化脚本默认只生成项目配置、GDD、TDD 和控制面，避免在尚未进入对应阶段时维护无用文档：
+总控 skill 的初始化脚本默认生成项目配置、GDD、全局视觉设计、TDD 和控制面；全局视觉设计在 G0 冻结方向，在 G1 随垂直切片补齐可执行规则：
 
 ~~~powershell
 python .\.agents\skills\phaser4-game-orchestrator\scripts\initialize_project_docs.py --project-root .

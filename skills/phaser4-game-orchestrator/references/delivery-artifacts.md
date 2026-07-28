@@ -6,6 +6,7 @@
 | --- | --- | --- | --- |
 | 核心 | docs/project-profile.yaml | 制作策划 | 初始化 |
 | 核心 | docs/GDD.md | 制作策划 | 初始化 |
+| 核心 | docs/visual-design.md | 美术接入 | 初始化；G0 冻结方向，G1 补齐切片基线 |
 | 核心 | docs/TDD.md | 技术架构 | 初始化 |
 | 核心 | docs/control-plane.md | 总控；各角色仅追加状态 | 初始化 |
 | 可选 | docs/balance.md | 数值设计 | 数值进入实施 |
