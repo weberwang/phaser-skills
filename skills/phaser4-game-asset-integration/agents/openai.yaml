@@ -1,4 +1,4 @@
 interface:
   display_name: "Phaser 4 美术设计与接入"
-  short_description: "建立视觉基线，并从低保真和满幅背景推进到结构化 Phaser 场景"
-  default_prompt: "使用 $phaser4-game-asset-integration 从视觉基线和代码低保真推进到正式 Phaser 美术场景。"
+  short_description: "按功能契约完成 A1-A5 视觉还原，并审阅 A6 功能装配"
+  default_prompt: "使用 $phaser4-game-asset-integration 建立视觉基线，按参考功能契约完成正式资源与接入契约，并审阅玩法角色的功能和结构化装配。"
