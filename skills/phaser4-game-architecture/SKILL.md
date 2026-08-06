@@ -9,7 +9,7 @@ description: Phaser 4 移动端 2D 游戏的技术架构角色。需要划分或
 
 ## 输入与边界
 
-快速通道仅读取任务直接相关的代码、配置和测试；标准、发布通道读取 docs/project-profile.yaml、docs/GDD.md、docs/TDD.md、docs/control-plane.md，渠道进入候选后才读取平台矩阵。涉及 UI 时完整读取总控 [UI 精准布局契约](../phaser4-game-orchestrator/references/ui-layout-precision.md)。新建或改变模块边界时，读取总控 references/module-decomposition.md，提交候选模块图并等待总控完成强制拷问；其他技术路线、平台适配、依赖或质量指标需要取舍时，提交简短决策包。
+快速通道仅读取任务直接相关的代码、配置和测试；标准、发布通道读取总控 [多级漏斗审核](../phaser4-game-orchestrator/references/review-funnel.md)、docs/project-profile.yaml、docs/GDD.md、docs/TDD.md、docs/control-plane.md，渠道进入候选后才读取平台矩阵。涉及 UI 时完整读取总控 [UI 精准布局契约](../phaser4-game-orchestrator/references/ui-layout-precision.md)。新建或改变模块边界时，读取总控 references/module-decomposition.md，先提交候选模块图及 F1/F2 证据，再等待总控在 F3 后完成强制拷问；其他技术路线、平台适配、依赖或质量指标只有在专业审核无法裁决且属于受保护决策时，才提交 F4 决策包。
 
 - 用 Phaser 4、TypeScript、Vite 实现 Web 核心；新项目优先采用官方当前的 create-phaser-game 流程。
 - 用 Capacitor 承载 iOS 与 Android，将原生插件封装在平台适配层。

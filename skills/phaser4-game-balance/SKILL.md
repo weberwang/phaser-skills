@@ -7,7 +7,7 @@ description: Phaser 4 移动端 2D 游戏的数值设计角色。需要设计、
 
 将体验目标转为可解释、可调整、可验证的模型，不以未记录的主观调参替代证据。
 
-快速通道仅读取任务直接相关的玩法实现、配置和验证；标准、发布通道读取 docs/project-profile.yaml、docs/GDD.md、docs/control-plane.md 和当前玩法实现，数值进入实施后读取 docs/balance.md。目标、难度、经济、商业化影响或可接受偏差需要人工取舍时，向总控提交决策包并等待其完成决策门禁。
+快速通道仅读取任务直接相关的玩法实现、配置和验证；标准、发布通道读取总控 [多级漏斗审核](../phaser4-game-orchestrator/references/review-funnel.md)、docs/project-profile.yaml、docs/GDD.md、docs/control-plane.md 和当前玩法实现，数值进入实施后读取 docs/balance.md。先用 F1 模拟/实测和 F2 数值审核关闭确定性问题；目标、难度、经济、商业化影响或可接受偏差仍需人工取舍时，向总控提交最小 F4 决策包并等待结论。
 
 1. 定义玩家节奏、成功率、资源来源与消耗、失败成本和保底机制。
 2. 在 balance.md 记录参数、单位、默认值、来源、影响、公式和验证方式；运行时集中读取配置。

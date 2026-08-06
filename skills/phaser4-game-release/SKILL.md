@@ -7,7 +7,7 @@ description: Phaser 4 移动端 2D 游戏的发布与合规角色。需要为小
 
 准备可提审交付物不等于已经提交或上架。账号、签名密钥、令牌和个人数据只可放在受控外部密钥系统。
 
-读取 docs/project-profile.yaml、docs/GDD.md、docs/TDD.md、docs/control-plane.md；发布阶段再读取平台矩阵、资源登记、测试计划和发布清单。渠道范围、隐私与数据处理、商店资料、风险豁免或发布放行需要人工取舍时，向总控提交决策包，等待其完成决策门禁。
+读取总控 [多级漏斗审核](../phaser4-game-orchestrator/references/review-funnel.md)、docs/project-profile.yaml、docs/GDD.md、docs/TDD.md、docs/control-plane.md；发布阶段再读取平台矩阵、资源登记、测试计划和发布清单。先在 F1/F2 关闭包体、资料、隐私、授权和渠道规则问题，并向 F3 提交逐渠道风险；渠道范围、数据处理取舍、风险豁免或发布放行才进入 F4 人工决策。
 
 1. 分别核对小游戏、iOS、Google Play 的打包、版本、图标截图、描述、隐私、分级、广告或内购披露、数据收集与账号删除要求。
 2. 新渠道先新增独立平台矩阵行，完成适配、资料、合规和测试评审后再纳入候选。
