@@ -11,7 +11,7 @@ description: 面向 Phaser 4、TypeScript、Vite 与 Capacitor 的移动端 2D �
 
 1. 新游戏立项，或任务需要进入标准、发布通道且项目尚无 docs/project-profile.yaml 时，运行 scripts/initialize_project_docs.py --project-root .；随后按项目现状和当前任务显式填写阶段与通道，不得沿用待定值。已有代码库中的低风险实现任务不因缺少协作文档而强制初始化。默认不覆盖，只有人工明确要求时传 --force。
 2. 快速通道优先读取与任务直接相关的代码、配置和测试；标准、发布通道再读取 docs/project-profile.yaml、docs/GDD.md、docs/visual-design.md、docs/control-plane.md，实施任务按需读取 docs/TDD.md。
-3. 标准、发布通道的审核先读 references/review-funnel.md；进入游戏实现时读 references/game-implementation.md；任务涉及视觉改动、参考还原、正式资源或视觉完成汇报时必须读 references/visual-quality-gate.md；新建或改变模块边界时读 references/module-decomposition.md；启动本地验证服务时读 references/local-service-validation.md；新建可选交付物时读 references/delivery-artifacts.md；检查质量门时读 references/quality-gates.md；需要人工决策或处理需求变更时读 references/grilling-integration.md；人工明确要求使用 worktree 且存在多个并发写入者时读 references/worktree-integration.md。
+3. 标准、发布通道的审核先读 references/review-funnel.md；进入游戏实现时读 references/game-implementation.md；任务涉及视觉改动、参考还原、正式资源或视觉完成汇报时必须读 references/visual-quality-gate.md；新增、重做、还原或修复 UI 布局时必须读 references/ui-layout-precision.md；新建或改变模块边界时读 references/module-decomposition.md；启动本地验证服务时读 references/local-service-validation.md；新建可选交付物时读 references/delivery-artifacts.md；检查质量门时读 references/quality-gates.md；需要人工决策或处理需求变更时读 references/grilling-integration.md；人工明确要求使用 worktree 且存在多个并发写入者时读 references/worktree-integration.md。
 
 所有项目文档和新增代码注释使用简体中文。技术基线为 Phaser 4、TypeScript、Vite 与 Capacitor；小游戏、iOS、Google Play 是独立目标，未批准的能力开关不得接入。
 
@@ -42,7 +42,7 @@ G0 至 G3 表示生命周期汇合点，F0 至 F4 表示候选物审核深度。
 | 阶段 | 调度与按需初始化 | 汇合条件 |
 | --- | --- | --- |
 | G0 立项 | 标准或发布通道的新游戏先由制作策划定义最小范围，美术建立全局视觉基线；各角色在 F1/F2 消除可行性问题，总控在 F3 汇总后只把受保护决策送入 F4。 | 人工决定核心循环、最小范围、首发渠道和视觉方向；视觉系统允许未完成，但风格关键词、禁用方向、参考来源与代表性基准画面必须有结论；可选能力默认关闭。 |
-| G1 切片 | 冻结增量并执行“候选模块图 → F0/F1/F2 → 强制拷问与 F4 决策 → TDD 契约”；参考还原任务先建立逐状态功能契约与视觉基线；进入 A1 前按缺失项运行 `--include assets,qa`；再执行 A1 至 A6，每个候选产物走漏斗，只有受保护决策进入 F4。 | 模块批准记录与实现一致；核心循环可完成；A1 至 A6 的 F1/F2/F3 证据齐全，需要 F4 的项目均有当前版本明确结论；功能复现和同条件逐状态视觉对比通过；正式结构无黑边、透明缝或背景交互；正式资源已登记并通过 Phaser 验证；低保真实现已删除；测试、构建和视觉证据可复现；至少一个目标渠道可运行。 |
+| G1 切片 | 冻结增量并执行“候选模块图 → F0/F1/F2 → 强制拷问与 F4 决策 → TDD 契约”；参考还原任务先建立逐状态功能契约与视觉基线；进入 A1 前按缺失项运行 `--include assets,qa`；再执行 A1 至 A6，每个候选产物走漏斗，只有受保护决策进入 F4。UI 增量在 A1 同步冻结参照物、停靠点、距离、尺寸策略、横纵排列、安全区、断点和精度阈值。 | 模块批准记录与实现一致；核心循环可完成；A1 至 A6 的 F1/F2/F3 证据齐全，需要 F4 的项目均有当前版本明确结论；UI 逐组件实测边界、中心、间距和响应式结果符合布局契约；功能复现和同条件逐状态视觉对比通过；正式结构无黑边、透明缝或背景交互；正式资源已登记并通过 Phaser 验证；低保真实现已删除；测试、构建和视觉证据可复现；至少一个目标渠道可运行。 |
 | G2 制作 | 每个新增或边界变化模块先重新进入漏斗和拷问；每个增量重复 A1 至 A6，变化只退回最早受影响的 F 层与 A 阶段；渠道进入候选时运行 --include platform。 | 范围、模块边界与视觉系统冻结；全部批准功能已实现；正式预制体或场景结构化、可编辑、可测试；低保真、占位、效果图替代物和未验收资源已清零；设备与性能证据齐备；F3 无未处置 P0/P1，豁免均有 F4 记录。 |
 | G3 发布 | 运行 --include platform,release 后，测试与发布合规并行执行 F1/F2，总控在 F3 聚合候选风险，最终放行进入 F4。 | 逐渠道候选包、提审资料、风险与回滚方案齐备，并获人工放行。 |
 
@@ -65,6 +65,6 @@ Worktree 不是默认能力，仅在人工明确要求且确有多个并发写�
 - 角色只更新自己独占负责的交付物，不复述输入文档；状态、证据索引和冲突按审核包提交给总控，由总控串行更新控制面。
 - 汇报只列状态变化、交付物路径、可复现证据、阻断项和下一步，不重述 GDD、TDD 或历史决策。
 
-视觉任务完成汇报前，总控必须按 references/visual-quality-gate.md 完成 F3 审计，逐项回答：通道选择理由，A1 至 A6 的 F1/F2/F3 证据与按需 F4 记录位置，正式资源与代码绘制对象划分，代码绘制对象符合允许范围的理由，参考图与运行图的视口等条件是否一致，测试验证结构还是最终画面，以及是否残留低保真或占位实现。任一项无法提供证据时不得报告“高保真完成”“视觉还原通过”或“A6 完成”。人工指出明显细节不足时立即撤销完成状态，按根因退回最早受影响的审核层和 A 阶段，不得以局部坐标调整掩盖资源质量问题。
+视觉任务完成汇报前，总控必须按 references/visual-quality-gate.md 完成 F3 审计，逐项回答：通道选择理由，A1 至 A6 的 F1/F2/F3 证据与按需 F4 记录位置，正式资源与代码绘制对象划分，代码绘制对象符合允许范围的理由，涉及 UI 时布局契约及逐组件精度证据位置，参考图与运行图的视口等条件是否一致，测试验证结构还是最终画面，以及是否残留低保真或占位实现。任一项无法提供证据时不得报告“高保真完成”“视觉还原通过”或“A6 完成”。人工指出明显细节不足时立即撤销完成状态，按根因退回最早受影响的审核层和 A 阶段，不得以局部坐标调整掩盖资源质量问题。
 
 仅当 G3 获人工放行、所选渠道候选包与资料齐备、证据可复现且风险已交接时，报告“达到上架准备状态”。实际提交与审核是外部状态，必须如实区分。
