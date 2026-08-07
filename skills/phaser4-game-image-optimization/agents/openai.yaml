@@ -1,0 +1,7 @@
+interface:
+  display_name: "Phaser 4 图片资源优化"
+  short_description: "手动压缩运行时图片资源并验证画质渠道兼容性与总体积收益"
+  default_prompt: "使用 $phaser4-game-image-optimization 手动优化 Phaser 4 项目的图片资源并提交压缩报告。"
+
+policy:
+  allow_implicit_invocation: false
