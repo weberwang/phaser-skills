@@ -10,7 +10,7 @@
 | 核心 | docs/TDD.md | 技术架构 | 初始化 |
 | 核心 | docs/control-plane.md | 总控独占写入；各角色提交状态包 | 初始化 |
 | 可选 | docs/balance.md | 数值设计 | 数值进入实施 |
-| 可选 | docs/asset-license-register.md | 美术接入维护；音频提交记录并由美术接入串行写入 | A1 低保真确认启动，或音频进入制作/接入 |
+| 可选 | docs/asset-license-register.md、docs/visual-assets.json | 美术接入维护；前者登记权属，后者提供机器可校验的预算、路线、状态与证据 | V0 进入正式资源生产，或音频进入制作/接入 |
 | 可选 | docs/qa-plan.md | 测试性能 | G1 前 |
 | 可选 | docs/platform-matrix.md | 发布合规 | 渠道进入候选 |
 | 可选 | docs/release-checklist.md | 发布合规 | G3 前 |
