@@ -9,7 +9,7 @@ description: Phaser 4 移动端 2D 游戏的制作与策划角色。需要把游
 
 ## 输入与决策
 
-读取总控 [多级漏斗审核](../phaser4-game-orchestrator/references/review-funnel.md)、docs/project-profile.yaml、docs/GDD.md、docs/control-plane.md；参考还原任务还读取总控归档的截图、录屏、操作步骤、运行证据和功能缺口。先在 F1/F2 关闭证据与专业问题；范围、核心循环、目标玩家、参考行为、验收、渠道优先级或能力开关仍需人工选择，或已批准需求发生变化时，向总控提交最小 F4 决策包：审核 ID、候选版本、事实、选项与影响、推荐项、最迟决定点。等待总控完成决策门禁后再改基线。
+读取总控 [审核漏斗](../phaser4-game-orchestrator/references/review-funnel.md)、docs/project-profile.yaml、docs/GDD.md 和控制面；参考还原任务还读取归档的截图、录屏、操作步骤、运行证据和功能缺口。作者实际完成 F0 并冻结候选，总控 F1 分诊，独立专业 F2 只读审核后由总控 F3 收敛。只有范围、核心循环、目标玩家、参考行为、验收、渠道优先级或能力开关仍需用户选择时，才提交绑定当前候选的最小 F4 决策包；不得因阶段或模块变化自动 grilling。
 
 ## 执行与交接
 
