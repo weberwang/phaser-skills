@@ -50,7 +50,7 @@ V0 先分流：
 - 组件/资源集：走 V1→V5；按影响执行 V2a/V2b，V4 做 F2，V5 做 F3。
 - 场景、整套 UI、视觉系统、参考还原：走完整 V1→V5；V2a/V2b、V3、V4 做 F2，V5 做 F3。
 
-V1 建立逐状态玩法视觉契约、必要灰盒和早期预算；V2 依次完成 V2a 方向基准、V2b 整体视觉审阅与动态可玩样片，缺少非作者独立美术时标记“专业视觉未验证”并阻断 V3；V3 按 UI、像素美术、逐帧/骨骼动画、Tilemap、VFX、装饰背景、玩法环境或 AI 合成栅格等路线设计可编辑源文件、运行时输出和机器清单；V4 生产正式资源并做资源级验收；V5 结构化集成、动态玩法视觉验收和低保真清理。
+V1 建立逐状态玩法视觉契约、全局视觉基线候选、必要灰盒和早期预算；V2 依次完成 V2a 方向基准、冻结单一版本化全局视觉基线、V2b 整体视觉审阅与动态可玩样片，缺少非作者独立美术时标记“专业视觉未验证”并阻断 V3；V3 按 UI、像素美术、逐帧/骨骼动画、Tilemap、VFX、装饰背景、玩法环境或 AI 合成栅格等路线设计可编辑源文件、运行时输出和机器清单，并将每个资源绑定基线 ID、版本与风格指纹；V4 生产正式资源并以联系表和同屏截图做跨资源一致性验收；V5 结构化集成、运行态一致性、动态玩法视觉验收和低保真清理。
 
 视觉完成按实际路径检查适用 V 阶段、适用 F2、适用时 F3 和按需 F4，并要求 V2a/V2b 的视觉可交付结论与 V4/V5 的工程可交付结论同时有效。原子资源可以引用既有 V1 契约、视觉可交付结论与预算，不为形式重跑 V1，也不因进入 V5 自动要求 F3。
 
@@ -72,7 +72,7 @@ python .\.agents\skills\phaser4-game-orchestrator\scripts\initialize_project_doc
 python .\.agents\skills\phaser4-game-orchestrator\scripts\initialize_project_docs.py --project-root . --include assets,qa
 ```
 
-`--include assets` 同时创建 `docs/asset-license-register.md` 和 `docs/visual-assets.json`，并在任何目标已存在时拒绝整组覆盖；只有明确需要时使用 `--force`。视觉清单可用以下脚本验证：
+`--include assets` 同时创建 `docs/asset-license-register.md` 和 schema 1.1 的 `docs/visual-assets.json`，并在任何目标已存在时拒绝整组覆盖；只有明确需要时使用 `--force`。初始化清单的全局视觉基线为 `draft`、指纹与预算为空，预期在 V1/V2a 完成冻结前不通过正式校验。冻结后将 `docs/visual-design.md` 完整文件的 SHA-256 以 `sha256:<64 位小写十六进制>` 写入清单；`--check-files` 会重新计算并拒绝静默修改。视觉清单可用以下脚本验证：
 
 ```powershell
 python .\.agents\skills\phaser4-game-asset-integration\scripts\validate_visual_manifest.py .\docs\visual-assets.json --project-root . --check-files

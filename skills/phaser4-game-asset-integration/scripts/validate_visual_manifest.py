@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -21,7 +23,25 @@ ALLOWED_ROUTES = {
     "gameplay-environment",
     "ai-composite-raster",
 }
-ALLOWED_STATUSES = {"planned", "producing", "review", "accepted", "rejected", "replaced"}
+ALLOWED_STATUSES = {
+    "planned",
+    "producing",
+    "review",
+    "accepted",
+    "rejected",
+    "replaced",
+}
+BASELINE_BOUND_STATUSES = {"producing", "review", "accepted"}
+SCHEMA_VERSION = "1.1"
+STYLE_FINGERPRINT_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+AI_REQUIRED_TEXT_FIELDS = (
+    "global_prompt_prefix",
+    "asset_prompt",
+    "state_prompt",
+    "negative_prompt",
+    "model",
+    "model_version",
+)
 REQUIRED_BUDGETS = {
     "max_texture_size",
     "texture_memory_mb",
@@ -57,6 +77,94 @@ def _validate_budget_block(budgets: Any, errors: list[str]) -> None:
             errors.append(f"budgets.{name} 必须是正数")
 
 
+def _validate_path_list(value: Any, label: str, errors: list[str]) -> None:
+    """验证证据字段是非空项目内路径列表。"""
+    if not isinstance(value, list) or not value or not all(
+        _non_empty_string(item) for item in value
+    ):
+        errors.append(f"{label} 必须是非空路径列表")
+
+
+def _validate_visual_baseline(
+    baseline: Any, errors: list[str]
+) -> dict[str, Any] | None:
+    """验证根节点冻结基线的身份、文档和锚点证据。"""
+    if not isinstance(baseline, dict):
+        errors.append("visual_baseline 必须是对象")
+        return None
+    for field in ("id", "version", "style_fingerprint", "document"):
+        if not _non_empty_string(baseline.get(field)):
+            errors.append(f"visual_baseline.{field} 必须是非空字符串")
+    fingerprint = baseline.get("style_fingerprint")
+    if _non_empty_string(fingerprint) and not STYLE_FINGERPRINT_PATTERN.fullmatch(
+        fingerprint
+    ):
+        errors.append(
+            "visual_baseline.style_fingerprint 必须是 sha256: 后接 64 位小写十六进制"
+        )
+    if baseline.get("status") != "frozen":
+        errors.append("visual_baseline.status 必须为 frozen")
+    _validate_path_list(
+        baseline.get("anchor_evidence"), "visual_baseline.anchor_evidence", errors
+    )
+    return baseline
+
+
+def _validate_asset_baseline_binding(
+    asset: dict[str, Any],
+    baseline: dict[str, Any] | None,
+    label: str,
+    errors: list[str],
+) -> None:
+    """验证生产中及已验收资源绑定当前根基线。"""
+    field_map = {
+        "visual_baseline_id": "id",
+        "visual_baseline_version": "version",
+        "style_fingerprint": "style_fingerprint",
+    }
+    for asset_field, baseline_field in field_map.items():
+        value = asset.get(asset_field)
+        if not _non_empty_string(value):
+            errors.append(f"{label}.{asset_field} 必须是非空字符串")
+            continue
+        expected = baseline.get(baseline_field) if baseline is not None else None
+        if _non_empty_string(expected) and value != expected:
+            errors.append(
+                f"{label}.{asset_field} 与 visual_baseline.{baseline_field} 不一致"
+            )
+
+
+def _validate_ai_generation_record(
+    asset: dict[str, Any], label: str, errors: list[str]
+) -> None:
+    """验证 AI 合成栅格路线的可复现生成包。"""
+    generation_record = asset.get("generation_record")
+    if not isinstance(generation_record, dict):
+        errors.append(f"{label}.generation_record 必须是对象")
+        return
+    for field in AI_REQUIRED_TEXT_FIELDS:
+        if not _non_empty_string(generation_record.get(field)):
+            errors.append(f"{label}.generation_record.{field} 必须是非空字符串")
+    seed = generation_record.get("seed")
+    if not (
+        _non_empty_string(seed)
+        or (isinstance(seed, int) and not isinstance(seed, bool))
+    ):
+        errors.append(f"{label}.generation_record.seed 必须是非空字符串或整数")
+    _validate_path_list(
+        generation_record.get("reference_inputs"),
+        f"{label}.generation_record.reference_inputs",
+        errors,
+    )
+    postprocess = generation_record.get("postprocess")
+    if not isinstance(postprocess, list) or not postprocess or not all(
+        _non_empty_string(step) for step in postprocess
+    ):
+        errors.append(
+            f"{label}.generation_record.postprocess 必须是非空字符串列表"
+        )
+
+
 def _validate_accepted_asset(asset: dict[str, Any], label: str, errors: list[str]) -> None:
     """验证已验收资源具备来源、授权、输出及运行证据。"""
     source_file = asset.get("source_file")
@@ -69,8 +177,17 @@ def _validate_accepted_asset(asset: dict[str, Any], label: str, errors: list[str
         if not _non_empty_string(asset.get(field)):
             errors.append(f"{label} accepted 缺少 {field}")
     outputs = asset.get("runtime_outputs")
-    if not isinstance(outputs, list) or not outputs or not all(_non_empty_string(item) for item in outputs):
+    if (
+        not isinstance(outputs, list)
+        or not outputs
+        or not all(_non_empty_string(item) for item in outputs)
+    ):
         errors.append(f"{label} accepted 的 runtime_outputs 必须是非空路径列表")
+    _validate_path_list(
+        asset.get("consistency_evidence"),
+        f"{label} accepted 的 consistency_evidence",
+        errors,
+    )
 
 
 def validate_manifest(data: Any) -> list[str]:
@@ -78,8 +195,9 @@ def validate_manifest(data: Any) -> list[str]:
     errors: list[str] = []
     if not isinstance(data, dict):
         return ["清单根节点必须是对象"]
-    if data.get("schema_version") != "1.0":
-        errors.append("schema_version 必须为 1.0")
+    if data.get("schema_version") != SCHEMA_VERSION:
+        errors.append(f"schema_version 必须为 {SCHEMA_VERSION}")
+    baseline = _validate_visual_baseline(data.get("visual_baseline"), errors)
     _validate_budget_block(data.get("budgets"), errors)
 
     assets = data.get("assets")
@@ -119,6 +237,10 @@ def validate_manifest(data: Any) -> list[str]:
                     errors.append(f"{label}.runtime_outputs 路径重复：{output}")
                 seen["output"].add(output)
 
+        if status in BASELINE_BOUND_STATUSES:
+            _validate_asset_baseline_binding(asset, baseline, label, errors)
+            if route == "ai-composite-raster":
+                _validate_ai_generation_record(asset, label, errors)
         if status == "accepted":
             _validate_accepted_asset(asset, label, errors)
     return errors
@@ -135,29 +257,93 @@ def _project_path(project_root: Path, relative_path: str) -> Path:
 
 
 def check_manifest_files(data: dict[str, Any], project_root: Path) -> list[str]:
-    """检查已验收资源声明的本地文件是否存在。"""
+    """检查全局基线与已验收资源声明的本地文件是否存在。"""
     errors: list[str] = []
     root = project_root.resolve()
+    baseline = data.get("visual_baseline")
+    root_paths: list[tuple[str, str]] = []
+    if isinstance(baseline, dict):
+        document = baseline.get("document")
+        if _non_empty_string(document):
+            root_paths.append(("visual_baseline.document", document))
+        anchor_evidence = baseline.get("anchor_evidence")
+        if isinstance(anchor_evidence, list):
+            root_paths.extend(
+                ("visual_baseline.anchor_evidence", path)
+                for path in anchor_evidence
+                if _non_empty_string(path)
+            )
+
+    for field, relative_path in root_paths:
+        try:
+            target = _project_path(root, relative_path)
+        except ManifestValidationError as error:
+            errors.append(f"{field}：{error}")
+            continue
+        if not target.is_file():
+            errors.append(f"{field} 文件不存在：{relative_path}")
+
+    # 风格指纹绑定冻结文档字节，防止文档在冻结后被静默改写。
+    if isinstance(baseline, dict):
+        document = baseline.get("document")
+        if _non_empty_string(document):
+            try:
+                target = _project_path(root, document)
+                if target.is_file():
+                    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+                    actual = f"sha256:{digest}"
+                    if baseline.get("style_fingerprint") != actual:
+                        errors.append(
+                            "visual_baseline.style_fingerprint 与 document 文件 SHA-256 不一致"
+                        )
+            except (ManifestValidationError, OSError) as error:
+                errors.append(f"visual_baseline.document 无法计算 SHA-256：{error}")
+
     assets = data.get("assets")
     # 结构校验负责报告容器类型；文件检查在结构错误时应安全跳过，避免遮蔽可读错误。
     if not isinstance(assets, list):
         return errors
     for index, asset in enumerate(assets):
-        if not isinstance(asset, dict) or asset.get("status") != "accepted":
+        if not isinstance(asset, dict):
             continue
         paths: list[tuple[str, str]] = []
-        source_file = asset.get("source_file")
-        if _non_empty_string(source_file):
-            paths.append(("source_file", source_file))
-        for field in ("license_record", "phaser_evidence", "gameplay_visual_evidence"):
-            value = asset.get(field)
-            if _non_empty_string(value):
-                paths.append((field, value))
-        runtime_outputs = asset.get("runtime_outputs")
-        if isinstance(runtime_outputs, list):
-            for output in runtime_outputs:
-                if _non_empty_string(output):
-                    paths.append(("runtime_outputs", output))
+        status = asset.get("status")
+        if status == "accepted":
+            source_file = asset.get("source_file")
+            if _non_empty_string(source_file):
+                paths.append(("source_file", source_file))
+            for field in (
+                "license_record",
+                "phaser_evidence",
+                "gameplay_visual_evidence",
+            ):
+                value = asset.get(field)
+                if _non_empty_string(value):
+                    paths.append((field, value))
+            runtime_outputs = asset.get("runtime_outputs")
+            if isinstance(runtime_outputs, list):
+                for output in runtime_outputs:
+                    if _non_empty_string(output):
+                        paths.append(("runtime_outputs", output))
+            consistency_evidence = asset.get("consistency_evidence")
+            if isinstance(consistency_evidence, list):
+                for evidence in consistency_evidence:
+                    if _non_empty_string(evidence):
+                        paths.append(("consistency_evidence", evidence))
+
+        if (
+            asset.get("route") == "ai-composite-raster"
+            and status in BASELINE_BOUND_STATUSES
+        ):
+            generation_record = asset.get("generation_record")
+            if isinstance(generation_record, dict):
+                reference_inputs = generation_record.get("reference_inputs")
+                if isinstance(reference_inputs, list):
+                    for reference_input in reference_inputs:
+                        if _non_empty_string(reference_input):
+                            paths.append(
+                                ("generation_record.reference_inputs", reference_input)
+                            )
 
         for field, relative_path in paths:
             try:
@@ -186,7 +372,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="验证 Phaser 视觉资源机器清单")
     parser.add_argument("manifest", type=Path, help="visual-assets.json 路径")
     parser.add_argument("--project-root", type=Path, help="资源路径解析根目录；默认清单上级的上级")
-    parser.add_argument("--check-files", action="store_true", help="检查 accepted 资源引用的文件")
+    parser.add_argument(
+        "--check-files",
+        action="store_true",
+        help="检查全局基线与 accepted 资源引用的文件",
+    )
     return parser.parse_args()
 
 
