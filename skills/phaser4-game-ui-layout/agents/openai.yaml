@@ -1,0 +1,4 @@
+interface:
+  display_name: "Phaser 4 游戏 UI 布局"
+  short_description: "为 Phaser 4 游戏建立可验证的响应式 UI 布局合同与证据门禁"
+  default_prompt: "使用 $phaser4-game-ui-layout 建立布局合同、实现响应式重排，并按 V0-V5、F0-F4 与 G0-G3 完成证据审核。"

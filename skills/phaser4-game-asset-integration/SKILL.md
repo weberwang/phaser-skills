@@ -18,7 +18,7 @@ description: 为 Phaser 4 游戏规划、生产、登记、验证并集成 UI、
 
 - 参考截图、录屏、运行项目或源码还原：读取 [视觉还原](references/visual-reconstruction.md)。
 - 装饰性屏幕空间满幅背景：读取 [满幅背景](references/full-bleed-background.md)；世界空间关卡、Tilemap 或玩法环境改读资产生产路线。
-- UI：同时读取总控 [UI 精准布局](../phaser4-game-orchestrator/references/ui-layout-precision.md)。
+- UI：同时读取 [`phaser4-game-ui-layout`](../phaser4-game-ui-layout/SKILL.md) 的布局合同、Phaser 适配器和证据矩阵；资源 origin、布局锚点与动画偏移按合同分离，资产接入不得重新发明布局规则。
 
 ## 审核与交付
 

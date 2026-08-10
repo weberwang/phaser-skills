@@ -10,7 +10,7 @@ description: 面向 Phaser 4、TypeScript、Vite 与 Capacitor 的移动端 2D �
 ## 启动与参考
 
 1. 新游戏进入标准/发布通道且缺少项目文档时，运行 `scripts/initialize_project_docs.py --project-root .`。需要资源和测试交付物时运行 `--include assets,qa`；`assets` 会同时创建 `asset-license-register.md` 和 `visual-assets.json`。默认拒绝覆盖。
-2. 标准/发布通道读取项目配置、GDD、visual-design、TDD 和控制面。按任务读取 [审核漏斗](references/review-funnel.md)、[游戏实现](references/game-implementation.md)、[视觉质量门](references/visual-quality-gate.md)、[UI 精准布局](references/ui-layout-precision.md)、[模块划分](references/module-decomposition.md)、[服务复用](references/local-service-validation.md)、[交付物](references/delivery-artifacts.md)、[依赖能力档与服务边界](references/dependency-capability-profiles.md) 与 [质量门](references/quality-gates.md)。
+2. 标准/发布通道读取项目配置、GDD、visual-design、TDD 和控制面。按任务读取 [审核漏斗](references/review-funnel.md)、[游戏实现](references/game-implementation.md)、[视觉质量门](references/visual-quality-gate.md)、[UI 布局技能](../phaser4-game-ui-layout/SKILL.md)、[模块划分](references/module-decomposition.md)、[服务复用](references/local-service-validation.md)、[交付物](references/delivery-artifacts.md)、[依赖能力档与服务边界](references/dependency-capability-profiles.md) 与 [质量门](references/quality-gates.md)。
 3. 所有项目文档和新增代码注释使用简体中文。可选平台与商业能力未经批准不得启用。
 
 ## 工作通道
@@ -27,7 +27,9 @@ V0 分为三档：原子资源只有在视觉方向冻结、结构/交互/布局
 
 所有视觉候选先实际完成适用 F0 并冻结候选 Git SHA，或为未提交工件记录候选 ID、SHA-256 及绑定代码 SHA，再由总控 F1 分诊。原子资源在 V4 做独立资源/美术 F2，V5 提交动态集成证据；组件/资源集和完整场景路径按变化触发 V2a/V2b、V3/V4 专业通道，V5 后由总控 F3 收敛。F2 必须由独立非作者只读执行并返回结构化结论；V2a/V2b 必须由独立美术判断，总控不能代替。适用 V1/V2 均在必需 F2 与 F3 后进入独立 F4 用户确认，不能被风险降级跳过，也不能互相替代。
 
-玩法独占规则、状态和交互代码。美术可拥有纯表现资源配置、布局/表现预制数据和视觉集成调整，但不得改变玩法规则；V5 由双方协作。AI 合成栅格框选拆分只是可选路线，装饰屏幕空间背景与世界空间玩法环境必须区分。
+玩法独占规则、状态和交互代码。UI 布局技能独占布局合同、坐标空间、参照关系、响应式重排和布局证据，不拥有玩法状态或视觉方向。美术可拥有纯表现资源配置、布局/表现预制数据和视觉集成调整，但不得改变玩法规则；V5 由双方协作。AI 合成栅格框选拆分只是可选路线，装饰屏幕空间背景与世界空间玩法环境必须区分。
+
+涉及 UI 的任务必须建立版本化布局合同，并由 `$phaser4-game-ui-layout` 统一描述坐标空间、锚点、尺寸、断点、安全区、滚动、动态文案、遮挡回退与证据。合同验证器属于 F0 的一项实际命令；F0 仍须执行其他适用的项目原生命令，不能缩窄为格式检查。检测到固定尺寸、绝对定位、悬浮 HUD、手写断点或单行省略时触发布局专项 F2，不凭模式本身判错。普通测试验证关系不变量；Golden 仅在冻结视口、DPR、语言、状态和稳定帧下验证精确视觉。
 
 ## 审核与质量门
 
