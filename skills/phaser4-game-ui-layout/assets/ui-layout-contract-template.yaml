@@ -1,0 +1,206 @@
+{
+  "schema_version": "1.0.0",
+  "contract_id": "main-menu-layout",
+  "contract_version": "1.0.0",
+  "scope": {
+    "scenes": ["MainScene"],
+    "states": ["default", "loading", "submitting"],
+    "ui_ids": ["safe-area", "ui-root", "title", "content-panel", "primary-action", "scroll-content"],
+    "bindings": {
+      "gdd": "docs/GDD.md",
+      "tdd": "docs/TDD.md",
+      "low_fidelity_candidate": "candidate:v1-main-menu",
+      "visual_baseline": "baseline:ui-v1",
+      "code_candidate": "git:0000000000000000000000000000000000000000"
+    },
+    "owner": "ui-layout",
+    "reviewer": "qa"
+  },
+  "targets": {
+    "min": {"width": 320, "height": 480, "orientation": "portrait"},
+    "preferred": {"width": 390, "height": 844, "orientation": "portrait"},
+    "max": {"width": 1366, "height": 1024, "orientation": "landscape"},
+    "orientations": ["portrait", "landscape"],
+    "aspect_ratio": {"min": 0.5, "max": 2.0},
+    "scale": {
+      "mode": "FIT",
+      "canvas": "logical",
+      "css_size": "viewport",
+      "render_resolution": "device_pixel_ratio",
+      "dpr_policy": "project-defined"
+    }
+  },
+  "coordinate_spaces": [
+    {"id": "screen-space", "kind": "canvas", "parent": null},
+    {"id": "ui-space", "kind": "screen-container", "parent": "screen-space"},
+    {"id": "scroll-space", "kind": "ui-scroll-content", "parent": "ui-space"}
+  ],
+  "regions": [
+    {
+      "id": "safe-area",
+      "semantic_role": "platform-inset-boundary",
+      "parent_space": "screen-space",
+      "reference_id": "viewport",
+      "positioning": "relative",
+      "anchors": {
+        "horizontal": {"self": "stretch", "reference": "viewport", "offset": 0},
+        "vertical": {"self": "stretch", "reference": "viewport", "offset": 0}
+      },
+      "size": {"min": {"width": 1, "height": 1}, "preferred": {"width": "safe-width", "height": "safe-height"}, "max": {"width": "safe-width", "height": "safe-height"}, "strategy": "stretch"},
+      "layout_group": "root",
+      "z_index": 0,
+      "layout_participation": "container",
+      "scroll": "none",
+      "input": "passthrough",
+      "clip": "none",
+      "origin": "top-left",
+      "layout_anchor": "top-left",
+      "animation_offset": {"x": 0, "y": 0}
+    },
+    {
+      "id": "ui-root",
+      "semantic_role": "screen-ui-root",
+      "parent_space": "ui-space",
+      "reference_id": "safe-area",
+      "positioning": "relative",
+      "anchors": {
+        "horizontal": {"self": "stretch", "reference": "stretch", "offset": 0},
+        "vertical": {"self": "stretch", "reference": "stretch", "offset": 0}
+      },
+      "size": {"min": {"width": 1, "height": 1}, "preferred": {"width": "safe-width", "height": "safe-height"}, "max": {"width": "safe-width", "height": "safe-height"}, "strategy": "stretch"},
+      "layout_group": "root",
+      "z_index": 0,
+      "layout_participation": "container",
+      "scroll": "none",
+      "input": "passthrough",
+      "clip": "none",
+      "origin": "top-left",
+      "layout_anchor": "top-left",
+      "animation_offset": {"x": 0, "y": 0}
+    },
+    {
+      "id": "title",
+      "semantic_role": "page-title",
+      "parent_space": "ui-space",
+      "reference_id": "ui-root",
+      "positioning": "relative",
+      "anchors": {
+        "horizontal": {"self": "center", "reference": "center", "offset": 0},
+        "vertical": {"self": "top", "reference": "top", "offset": 32}
+      },
+      "size": {"min": {"width": 160, "height": 48}, "preferred": {"width": "content", "height": "content"}, "max": {"width": 720, "height": 160}, "strategy": "content"},
+      "layout_group": "header",
+      "z_index": 10,
+      "layout_participation": "flow",
+      "scroll": "none",
+      "input": "none",
+      "clip": "none",
+      "origin": "center",
+      "layout_anchor": "center",
+      "animation_offset": {"x": 0, "y": 0}
+    },
+    {
+      "id": "content-panel",
+      "semantic_role": "primary-content",
+      "parent_space": "ui-space",
+      "reference_id": "title",
+      "positioning": "relative",
+      "anchors": {
+        "horizontal": {"self": "center", "reference": "center", "offset": 0},
+        "vertical": {"self": "top", "reference": "bottom", "offset": 24}
+      },
+      "size": {"min": {"width": 280, "height": 160}, "preferred": {"width": "min(100%-32,max-content-width)", "height": "content"}, "max": {"width": 720, "height": 900}, "strategy": "content"},
+      "layout_group": "content",
+      "z_index": 5,
+      "layout_participation": "flow",
+      "scroll": "vertical-owner",
+      "input": "gesture-owner",
+      "clip": "content",
+      "origin": "top-left",
+      "layout_anchor": "top-left",
+      "animation_offset": {"x": 0, "y": 0}
+    },
+    {
+      "id": "scroll-content",
+      "semantic_role": "scrollable-content",
+      "parent_space": "scroll-space",
+      "reference_id": "content-panel",
+      "positioning": "relative",
+      "anchors": {
+        "horizontal": {"self": "stretch", "reference": "stretch", "offset": 0},
+        "vertical": {"self": "top", "reference": "top", "offset": 0}
+      },
+      "size": {"min": {"width": 1, "height": 1}, "preferred": {"width": "content-width", "height": "content-height"}, "max": {"width": 720, "height": "unbounded"}, "strategy": "content"},
+      "layout_group": "content",
+      "z_index": 6,
+      "layout_participation": "flow",
+      "scroll": "vertical-content",
+      "input": "gesture-owner",
+      "clip": "panel",
+      "origin": "top-left",
+      "layout_anchor": "top-left",
+      "animation_offset": {"x": 0, "y": 0}
+    },
+    {
+      "id": "primary-action",
+      "semantic_role": "critical-action",
+      "parent_space": "ui-space",
+      "reference_id": "safe-area",
+      "positioning": "relative",
+      "anchors": {
+        "horizontal": {"self": "center", "reference": "center", "offset": 0},
+        "vertical": {"self": "bottom", "reference": "bottom", "offset": -24}
+      },
+      "size": {"min": {"width": 200, "height": 48}, "preferred": {"width": 280, "height": 56}, "max": {"width": 480, "height": 80}, "strategy": "content"},
+      "layout_group": "actions",
+      "z_index": 20,
+      "layout_participation": "docked-overlay",
+      "scroll": "none",
+      "input": "exclusive",
+      "clip": "none",
+      "origin": "center",
+      "layout_anchor": "center",
+      "animation_offset": {"x": 0, "y": 0}
+    }
+  ],
+  "content": {
+    "max_width": 720,
+    "columns": {"compact": 1, "wide": 2},
+    "gaps": {"horizontal": 16, "vertical": 16},
+    "margins": {"horizontal": 16, "vertical": 16}
+  },
+  "breakpoints": [
+    {"id": "compact", "when": {"width_lt": 560}, "structure_changes": ["columns:1", "actions:stacked"]},
+    {"id": "wide", "when": {"width_gte": 560}, "structure_changes": ["columns:2", "actions:row"]}
+  ],
+  "platform_insets": {
+    "safe_area": {"top": "runtime", "right": "runtime", "bottom": "runtime", "left": "runtime", "zero_case": "content-margins"},
+    "system_bars": {"top": "excluded", "bottom": "excluded"},
+    "keyboard": {"behavior": "resize-content", "dismiss": "contract-defined"},
+    "folding": {"behavior": "avoid-hinge"},
+    "split_screen": {"behavior": "reflow-at-breakpoint"}
+  },
+  "scrolling": {
+    "axes": [{"axis": "vertical", "owner_id": "content-panel", "content_region_id": "scroll-content", "gesture_priority": "content-before-world", "bounds": "panel-clip"}],
+    "narrow_height_degradation": {"trigger": "content-height-exceeds-safe-height", "strategy": "vertical-scroll", "fallback": "collapse-secondary-content"}
+  },
+  "dynamic_content": {
+    "localization": {"default_language": "zh-CN", "longest_copy": "fixtures/longest-copy.json", "wrap": "word-or-grapheme", "growth": "reflow", "truncate_policy": "forbid-critical"},
+    "text_scaling": {"default": 1.0, "maximum": 2.0, "strategy": "grow-and-reflow"},
+    "key_actions": [{"id": "primary-action", "states": ["default", "disabled", "pressed", "submitting", "completed", "error"], "text_truncation": "forbid"}],
+    "dynamic_values": ["member-count", "timer"],
+    "reflow_events": ["text-change", "member-change", "state-change", "resize", "safe-area-change"]
+  },
+  "overlay_rules": [{"id": "primary-action-overlay", "element_id": "primary-action", "mode": "docked", "occlusion": "must-not-cover-scroll-content-or-safe-area", "fallback": "move-into-content-flow-and-preserve-action"}],
+  "invariants": [
+    {"id": "title-centered", "description": "标题水平中心与安全区域水平中心重合", "applies_to": ["title", "safe-area"], "expression": "center_x(title) == center_x(safe-area)", "tolerance": 2, "evidence": {"automation": ["tests/layout/title-centered"], "visual": ["snapshots/title-centered"]}},
+    {"id": "action-safe-bottom", "description": "关键动作保持安全区底部距离且不遮挡内容", "applies_to": ["primary-action", "safe-area", "content-panel"], "expression": "bottom(safe-area) - bottom(primary-action) >= 24 && !occludes(primary-action,content-panel)", "tolerance": 2, "evidence": {"automation": ["tests/layout/action-safe-bottom"], "visual": ["snapshots/action-safe-bottom"]}},
+    {"id": "single-scroll-owner", "description": "垂直滚动轴只有内容面板负责", "applies_to": ["content-panel", "scroll-content"], "expression": "owner(vertical) == content-panel", "tolerance": 0, "evidence": {"automation": ["tests/layout/scroll-owner"], "visual": ["snapshots/scroll-owner"]}}
+  ],
+  "evidence_matrix": {
+    "candidate_binding": "same-candidate-only",
+    "required_axes": ["breakpoint-neighbors", "width", "height", "orientation", "text-scale", "localization", "safe-area", "action-state", "dpr", "dynamic-values", "scene-lifecycle", "overlay-keyboard-scroll"],
+    "golden_policy": "frozen-viewport-only",
+    "snapshot_stability": "stable-frame-after-reflow"
+  }
+}

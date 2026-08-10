@@ -2,7 +2,7 @@
 
 本文件是 QA 的测量字段、假通过禁令、完整 viewport 证据、同页面动态 resize、根因
 分类、只读 Hook 和脚本用法的唯一详细事实来源。契约字段和 V1-V5 门禁见总控的
-[UI 精准布局与响应式视觉契约](../../phaser4-game-orchestrator/references/ui-layout-precision.md)。
+[`phaser4-game-ui-layout` 布局合同](../../phaser4-game-ui-layout/references/layout-contract.md)。
 资产流程只引用本文件，不复制规范。
 
 ## 目录
