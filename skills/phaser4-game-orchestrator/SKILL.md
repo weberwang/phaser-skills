@@ -10,7 +10,7 @@ description: 面向 Phaser 4、TypeScript、Vite 与 Capacitor 的移动端 2D �
 ## 启动与参考
 
 1. 新游戏进入标准/发布通道且缺少项目文档时，运行 `scripts/initialize_project_docs.py --project-root .`。需要资源和测试交付物时运行 `--include assets,qa`；`assets` 会同时创建 `asset-license-register.md` 和 `visual-assets.json`。默认拒绝覆盖。
-2. 标准/发布通道读取项目配置、GDD、visual-design、TDD 和控制面。按任务读取 [审核漏斗](references/review-funnel.md)、[游戏实现](references/game-implementation.md)、[视觉质量门](references/visual-quality-gate.md)、[UI 精准布局](references/ui-layout-precision.md)、[模块划分](references/module-decomposition.md)、[服务复用](references/local-service-validation.md)、[交付物](references/delivery-artifacts.md) 与 [质量门](references/quality-gates.md)。
+2. 标准/发布通道读取项目配置、GDD、visual-design、TDD 和控制面。按任务读取 [审核漏斗](references/review-funnel.md)、[游戏实现](references/game-implementation.md)、[视觉质量门](references/visual-quality-gate.md)、[UI 精准布局与响应式视觉契约](references/ui-layout-precision.md)、[模块划分](references/module-decomposition.md)、[服务复用](references/local-service-validation.md)、[交付物](references/delivery-artifacts.md) 与 [质量门](references/quality-gates.md)。响应式测量、动态 resize、完整 viewport 证据和只读 Hook 由 QA 的 [响应式视觉验证](../phaser4-game-qa-performance/references/responsive-visual-validation.md) 统一提供。
 3. 所有项目文档和新增代码注释使用简体中文。可选平台与商业能力未经批准不得启用。
 
 ## 工作通道
@@ -23,7 +23,7 @@ description: 面向 Phaser 4、TypeScript、Vite 与 Capacitor 的移动端 2D �
 
 ## 视觉 V0-V5
 
-V0 分为三档：原子资源只有在视觉方向冻结、结构/交互/布局不变，并且已有适用且有效的玩法视觉契约、视觉可交付结论与预算基线可引用时，才走 V3→V4→V5；缺少可引用基线时升级为组件/资源集或场景路径。“重做、重新设计、提升游戏感、替换整套 UI”不得按原子资源跳过 V2。组件/资源集走 V1→V5；场景、整套 UI、视觉系统和参考还原走完整 V1→V5。V1 建立玩法视觉契约、必要灰盒和早期预算；V2 依次完成 V2a 方向基准、V2b 整体视觉审阅和动态可玩样片；V3 选择资产类型路线、可编辑源文件、生产计划和机器清单；V4 生产并做资源级验收；V5 结构化集成、动态玩法视觉验收和低保真清理。
+V0 分为三档：原子资源只有在视觉方向冻结、结构/交互/布局不变，并且已有适用且有效的玩法视觉契约、视觉可交付结论与预算基线可引用时，才走 V3→V4→V5；若影响布局、满幅背景、安全区、文本尺寸或视口行为也必须升级路径。缺少可引用基线时升级为组件/资源集或场景路径。“重做、重新设计、提升游戏感、替换整套 UI”不得按原子资源跳过 V2。组件/资源集走 V1→V5；场景、整套 UI、视觉系统和参考还原走完整 V1→V5。V1 建立玩法视觉契约、总控[响应式视觉契约](references/ui-layout-precision.md)、必要灰盒和早期预算；响应式契约缺失阻断 V2。V2 依次完成 V2a 方向基准、V2b 整体视觉审阅和覆盖矩阵的动态可玩样片；仅有基准静态图阻断 V3。V3 选择资产类型路线、可编辑源文件、生产计划和机器清单；V4 生产并由非作者 F2 做完整 viewport 资源级验收；V5 结构化集成、动态玩法视觉验收和适用的非作者 F3，并清理低保真。
 
 原子资源：F0 一次、F1 逐包、V4 做 F2、V5 做集成 F1 与动态证据，只有跨域风险才 F3。组件/资源集：按影响执行 V2a/V2b，V4 做 F2，V5 做 F3。场景/系统/参考还原：V2a/V2b、V3、V4 做 F2，V5 做 F3。F2 必须由非作者执行；V2a/V2b 必须由独立美术给出专业视觉结论，总控代审只能检查流程和证据完整性，缺独立美术时标记“专业视觉未验证”并阻断 V3。F3 只处理适用路径的集成和跨域风险；F4 始终只处理受保护决策，不能豁免明显审美缺陷、游戏感缺失或缺证。
 
