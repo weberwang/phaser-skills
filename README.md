@@ -26,6 +26,7 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 - `$phaser4-gameplay-development`：玩法规则、状态、交互和功能还原。
 - `$phaser4-game-ui-layout`：UI 布局合同、坐标空间、锚点、断点、安全区、滚动、响应式重排与布局证据。
 - `$phaser4-game-asset-integration`：玩法视觉契约、资产生产、授权、验证与视觉集成。
+- `$phaser4-spine-generative-reskin`：逐 Cell 生成 Spine Atlas 新纹理，记录可恢复进度并从透明空白 Page 重建验证。
 - `$phaser4-game-balance`、`$phaser4-game-audio`、`$phaser4-game-qa-performance`、`$phaser4-game-release`：数值、音频、测试性能与发布。
 - `$grilling`：只处理无法从代码、配置、权威工件或确定性执行关闭的实质用户取舍；新阶段、新模块或边界变化不自动触发。V1 当前低保真、适用 V2 当前高保真、外部发布放行和明确风险接受是 F4 例外。
 
