@@ -10,7 +10,7 @@ description: 面向 Phaser 4、TypeScript、Vite 与 Capacitor 的移动端 2D �
 ## 启动与参考
 
 1. 新游戏进入标准/发布通道且缺少项目文档时，运行 `scripts/initialize_project_docs.py --project-root .`。需要资源和测试交付物时运行 `--include assets,qa`；`assets` 会同时创建 `asset-license-register.md` 和 `visual-assets.json`。默认拒绝覆盖。
-2. 标准/发布通道读取项目配置、GDD、visual-design、TDD 和控制面。按任务读取 [审核漏斗](references/review-funnel.md)、[游戏实现](references/game-implementation.md)、[视觉质量门](references/visual-quality-gate.md)、[UI 布局技能](../phaser4-game-ui-layout/SKILL.md)、[模块划分](references/module-decomposition.md)、[服务复用](references/local-service-validation.md)、[交付物](references/delivery-artifacts.md)、[依赖能力档与服务边界](references/dependency-capability-profiles.md) 与 [质量门](references/quality-gates.md)。
+2. 标准/发布通道读取项目配置、GDD、visual-design、TDD 和控制面。按任务读取 [审核漏斗](references/review-funnel.md)、[游戏实现](references/game-implementation.md)、[视觉质量门](references/visual-quality-gate.md)、[UI 布局技能](../phaser4-game-ui-layout/SKILL.md)、[模块划分](references/module-decomposition.md)、[服务复用](references/local-service-validation.md)、[交付物](references/delivery-artifacts.md)、[依赖能力档与服务边界](references/dependency-capability-profiles.md) 与 [质量门](references/quality-gates.md)。响应式测量、动态 resize、完整 viewport 证据和只读 Hook 由 QA 的 [响应式视觉验证](../phaser4-game-qa-performance/references/responsive-visual-validation.md) 统一提供。
 3. 所有项目文档和新增代码注释使用简体中文。可选平台与商业能力未经批准不得启用。
 
 ## 工作通道
@@ -23,7 +23,7 @@ description: 面向 Phaser 4、TypeScript、Vite 与 Capacitor 的移动端 2D �
 
 ## 视觉 V0-V5
 
-V0 分为三档：原子资源只有在视觉方向冻结、结构/交互/布局不变，并且已有适用、有效、绑定版本且覆盖当前范围的玩法视觉契约、低保真确认记录、高保真确认记录、视觉可交付结论与预算基线可引用时，才走 V3→V4→V5；缺少任一项时升级为组件/资源集或场景路径。“重做、重新设计、提升游戏感、替换整套 UI”不得按原子资源跳过 V1/V2。组件/资源集走 V1→V5，只要新建或改变结构、布局、交互、状态集合或资源槽就必须执行 V1 出口低保真确认；候选定义或改变用户可见高保真形态时还必须执行 V2。场景、整套 UI、视觉系统、参考还原及所有重做类任务走完整 V1→V5，必须执行 V1 出口低保真确认与 V2 出口高保真确认。V1 建立玩法视觉契约、必要低保真草图或可运行灰盒和早期预算，关闭相关玩法/架构/UI 布局问题后提交当前低保真候选确认包，用户明确“通过”后才进入 V2；V2 依次完成 V2a 方向基准、V2b 整体视觉审阅、动态可玩样片、独立美术 F2 和出口高保真效果图用户确认；V3 选择资产类型路线、可编辑源文件、生产计划和机器清单；V4 生产并做资源级验收；V5 结构化集成、动态玩法视觉验收和低保真清理。
+V0 分为三档：原子资源只有在视觉方向冻结、结构/交互/布局和视口行为不变，并且已有适用、有效、绑定版本且覆盖当前范围的玩法视觉契约、低保真确认记录、高保真确认记录、视觉可交付结论与预算基线可引用时，才走 V3→V4→V5；影响满幅背景、安全区、文本尺寸或视口行为，或缺少任一引用时升级为组件/资源集或场景路径。“重做、重新设计、提升游戏感、替换整套 UI”不得按原子资源跳过 V1/V2。组件/资源集走 V1→V5，只要新建或改变结构、布局、交互、状态集合或资源槽就必须执行 V1 出口低保真确认；候选定义或改变用户可见高保真形态时还必须执行 V2。场景、整套 UI、视觉系统、参考还原及所有重做类任务走完整 V1→V5，必须执行 V1 出口低保真确认与 V2 出口高保真确认。V1 建立玩法视觉契约、[`phaser4-game-ui-layout`](../phaser4-game-ui-layout/SKILL.md) 的版本化布局合同、必要低保真草图或可运行灰盒和早期预算；布局合同缺失时阻断 V2。关闭相关玩法/架构/UI 布局问题后提交当前低保真候选确认包，用户明确“通过”后才进入 V2；V2 依次完成 V2a 方向基准、V2b 整体视觉审阅、覆盖矩阵的动态可玩样片、独立美术 F2 和出口高保真效果图用户确认，仅有基准静态图阻断 V3；V3 选择资产类型路线、可编辑源文件、生产计划和机器清单；V4 生产并由非作者 F2 做完整 viewport 资源级验收；V5 结构化集成、动态玩法视觉验收、适用的非作者 F3 和低保真清理。
 
 所有视觉候选先实际完成适用 F0 并冻结候选 Git SHA，或为未提交工件记录候选 ID、SHA-256 及绑定代码 SHA，再由总控 F1 分诊。原子资源在 V4 做独立资源/美术 F2，V5 提交动态集成证据；组件/资源集和完整场景路径按变化触发 V2a/V2b、V3/V4 专业通道，V5 后由总控 F3 收敛。F2 必须由独立非作者只读执行并返回结构化结论；V2a/V2b 必须由独立美术判断，总控不能代替。适用 V1/V2 均在必需 F2 与 F3 后进入独立 F4 用户确认，不能被风险降级跳过，也不能互相替代。
 
