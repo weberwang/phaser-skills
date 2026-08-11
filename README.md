@@ -21,7 +21,7 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 
 统一门语义：F0 授权与流程合规、F1 规格一致性、F2 领域质量、F3 工程验证、F4 集成/发布决策。
 
-A0-A6 唯一语义：A0 只读调查；A1 文档和候选；A2 隔离原型/沙盒/验证页/非生产资源；A3 生产实现；A4 正式入口替换、迁移、删除旧实现和跨模块高影响集成；A5 PR、消息、第三方 API、上传构建和云配置等非 Git 外部状态；A6 数据删除、生产迁移、真机、商店提审、正式发布和线上回滚。A0-A2 直接执行；安全 A3 以用户当前请求形成的任务授权和有效 Implementation Package 为依据，不二次请求批准。普通 A3 在 F0-F3 通过后可直接 `COMPLETE`；纯 Git 的远端或破坏性动作属于独立 `VERSION_CONTROL(GIT)` 通道，不按 A5/A6 审批语义解释。
+A0-A6 只描述 Phaser 项目生命周期：A0 项目只读调查；A1 项目规格和候选；A2 Phaser 隔离原型；A3 Phaser 代码、资源、UI、音频、数值及 QA/构建实现；A4 正式入口替换、迁移和高影响游戏集成；A5 游戏构建上传、游戏后端或渠道配置；A6 Phaser 真机、商店、正式发布及线上游戏回滚。A0-A2 直接执行；安全 A3 以任务授权和有效 Implementation Package 为依据，F0-F3 通过后可直接 `COMPLETE`。
 
 Work Item 的 `taskAuthorization` 保存用户原始请求、目标和范围；它是 A0-A3 本地工作的任务授权，不写入 Approval Ledger。产品、视觉或架构取舍属于 `USER_DECISION`：澄清后更新任务授权、权威工件或决策记录，不生成审批。只有 A4、A5、A6 的具体操作才生成 pending 和操作批准记录；记录精确冻结操作、影响、对象、门、基线、路径、服务、外部目标与副作用，A6 永不自动放行。
 
@@ -33,12 +33,12 @@ CLI 无第三方依赖，只做校验和记录，不执行外部动作或自动�
 node <skill-dir>\scripts\workflow-control.mjs help
 node <skill-dir>\scripts\workflow-control.mjs init --repo . --work-item-id WI-1 --project-id game --module-id docs --domain product --stage-id G0 --baseline-id <git-sha> --baseline-version 1 --baseline-hash <sha256> --objective "建立控制面" --user-text "为本项目建立首个工作项和审批账本" --object "workflow bootstrap" --allowed-path docs
 node <skill-dir>\scripts\workflow-control.mjs route --work-item .workflow-control\work-items\WI-1.json
-node <skill-dir>\scripts\workflow-control.mjs preflight --work-item .workflow-control\work-items\WI-1.json --implementation-package .workflow-control\implementation-package.json --action-level A3 --action-type code-change --path src\main.ts
+node <skill-dir>\scripts\workflow-control.mjs preflight --work-item .workflow-control\work-items\WI-1.json --implementation-package .workflow-control\implementation-package.json --action-level A3 --action-type phaser-code-change --path src\main.ts
 node <skill-dir>\scripts\workflow-control.mjs diff-audit --work-item .workflow-control\work-items\WI-1.json --implementation-package .workflow-control\implementation-package.json --baseline <git-sha> --baseline-hash <sha256> --action-level A3 --record .workflow-control\evidence\WI-1\diff-audit.json
 # 仅 A4-A6 具体操作使用 prepare-approval、handoff、approve 与 --ledger，并用 --impact 冻结影响。
 ```
 
-命令覆盖受限 `init`、`route`、`advance`、`prepare-approval`、`handoff`、`preflight`、`approve`、`delegate-check`、`diff-audit`、`evidence-check`、`transition`、`status` 与 `lint`。`route` 对 A0-A3 输出 `TASK_AUTHORIZATION`，纯 Git 通过只读参数 `route --action-level <A0-A3> --action-type git-<verb>` 输出 `VERSION_CONTROL(GIT)`，不得把 Git 写入任何 `pendingApproval*`；未决取舍输出 `USER_INPUT_REQUIRED`，仅 A4-A6 输出 `EXPLICIT_APPROVAL`。纯 Git 必须精确绑定任务授权、实际子命令/参数、仓库、路径、远端目标、基线和所有权，失败直接阻断且永不写 Approval Ledger；PR、GitHub Release、部署和第三方 API 不属于纯 Git。A1/A2 可用 artifact-only 审计，安全 A3 保留实施包、真实 diff、独立审查和 F0-F3；A4-A6 保留硬门。
+命令只控制白名单 `phaser-*` 动作。`route` 对 Phaser A0-A3 输出 `TASK_AUTHORIZATION`，未决取舍输出 `USER_INPUT_REQUIRED`，仅 Phaser A4-A6 输出 `EXPLICIT_APPROVAL`。Git、通用 Shell/文件管理、包管理、浏览器、消息、GitHub、普通云配置、第三方 API 和通用进程管理完全属于 `OUT_OF_SCOPE`，无需 Work Item 或 Ledger，也不会触发状态迁移；它们由上层系统安全规则与当前用户任务处理。本控制面仅把 Git diff 和本地服务查重当作 Phaser 验证证据。
 
 ## 领域 Skills
 
@@ -59,4 +59,4 @@ python .\.agents\skills\phaser4-game-orchestrator\scripts\initialize_project_doc
 npm run test:workflow
 ```
 
-启动本地服务前必须检查同项目健康实例并复用；查重后，本项目、非特权、无外部写入的本地验证服务不需要批准。终止归属不明进程仍禁止。真机、商店、生产迁移、非 Git 外部写入和发布保留精确显式批准；A6 永不自动。Git push 等白名单纯 Git 操作只走任务授权；force-push、删除远端 ref、reset --hard、clean 和删除本地引用等破坏性 Git 还必须由原始任务精确授权动作与目标，否则直接阻断。不得自动回滚共享工作区。
+Phaser 验证流程启动本地服务前必须检查同项目健康实例并复用；查重后，本项目、非特权、无外部写入的验证服务不需要批准。终止归属不明进程仍禁止。Phaser 真机、商店、生产迁移和正式发布保留精确显式批准；A6 永不自动。通用进程和 Git 操作不由本控制面批准或阻断。

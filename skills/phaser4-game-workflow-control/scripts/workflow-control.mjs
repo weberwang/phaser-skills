@@ -6,11 +6,18 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import process from 'node:process';
-import { GIT_DESTRUCTIVE_ACTIONS, GIT_PATH_DESTRUCTIVE_ACTIONS, GIT_READ_ONLY_ACTIONS, GIT_REMOTE_ACTIONS, analyzeGitCommand, isGitAction, isGitLikeAction } from './workflow-git-policy.mjs';
 
 const STATES = ['INTAKE', 'BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING', 'VALIDATING', 'PASSED', 'INTEGRATING', 'RELEASE_APPROVAL_REQUIRED', 'RELEASING', 'COMPLETE', 'RETURN', 'BLOCKED'];
 const LEVELS = ['A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6'];
 const GATES = ['F0', 'F1', 'F2', 'F3', 'F4'];
+const PHASER_ACTION_LEVEL = new Map([
+  ['phaser-inspect', 'A0'], ['phaser-spec-candidate', 'A1'], ['phaser-prototype', 'A2'],
+  ['phaser-code-change', 'A3'], ['phaser-asset-change', 'A3'], ['phaser-ui-change', 'A3'], ['phaser-audio-change', 'A3'], ['phaser-balance-change', 'A3'], ['phaser-qa-build', 'A3'],
+  ['phaser-integration', 'A4'], ['phaser-build-upload', 'A5'], ['phaser-backend-config', 'A5'], ['phaser-channel-config', 'A5'],
+  ['phaser-device-test', 'A6'], ['phaser-store-submit', 'A6'], ['phaser-release', 'A6'], ['phaser-game-rollback', 'A6']
+]);
+const PHASER_ACTIONS = new Set(PHASER_ACTION_LEVEL.keys());
+const AUTOMATIC_PHASER_ACTIONS = new Set([...PHASER_ACTION_LEVEL].filter(([, level]) => ['A0', 'A1', 'A2', 'A3'].includes(level)).map(([action]) => action));
 const WORK_REQUIRED = ['workItemId', 'projectId', 'moduleId', 'domain', 'stageId', 'globalState', 'baselineId', 'baselineVersion', 'baselineHash', 'objective', 'taskAuthorization', 'inScope', 'outOfScope', 'approvedRequirements', 'allowedActions', 'allowedActionLevels', 'explicitApprovalActionLevels', 'prohibitedActions', 'allowedPaths', 'forbiddenPaths', 'allowedExternalTargets', 'protectedExternalTargets', 'requiredGates', 'approvalRecord', 'assignedAgent', 'delegatedAgents', 'expectedOutputs', 'validationPlan', 'exitCriteria', 'nextGate', 'rollbackPolicy', 'evidenceRoot', 'pendingApprovalId', 'pendingApprovalObject', 'pendingApprovalStage', 'pendingApprovalActionLevel', 'pendingApprovalGate', 'pendingApprovalState', 'pendingApprovalContext', 'pendingApprovalActionType', 'pendingApprovalImpactSummary', 'pendingApprovalFileScope', 'pendingApprovalServices', 'pendingApprovalAllowServiceStart', 'pendingApprovalAllowDelete', 'pendingApprovalExternalWrite', 'pendingApprovalDestructive', 'pendingApprovalPhysicalDevice', 'pendingApprovalRelease', 'pendingApprovalExternalTargets', 'pendingApprovalPreparedAt', 'pendingApprovalPresentedId', 'pendingApprovalPresentedAt', 'validationBatchId', 'changeRequestFiles'];
 const APPROVAL_FIELDS = ['approvalId', 'promptContextId', 'pendingState', 'pendingContext', 'workItemId', 'userOriginalText', 'approvedAt', 'explicitObject', 'stageId', 'moduleId', 'baselineVersion', 'baselineHash', 'actionType', 'actionLevel', 'impactSummary', 'fileScope', 'services', 'allowServiceStart', 'allowDelete', 'externalWrite', 'destructive', 'physicalDevice', 'release', 'gate', 'invalidatedWhen'];
 const DELEGATION_REQUIRED = ['workItemId', 'stageId', 'authorizationId', 'owner', 'assignedAgent', 'ownership', 'allowedActions', 'forbiddenActions', 'actionLevel', 'allowedPaths', 'forbiddenPaths', 'acceptanceCommands', 'completionBoundary', 'outOfScopeReturn', 'preserveOthersChanges'];
@@ -28,6 +35,25 @@ const NEGATIVE_APPROVAL = /(不同意|不批准|拒绝|取消|停止)/;
 function fail(message, code = 2) {
   process.stderr.write(`拒绝：${message}\n`);
   process.exit(code);
+}
+
+/** 校验 Phaser 生命周期动作白名单及其唯一等级，未知 phaser-* 也不得旁路。 */
+function validatePhaserAction(actionType, level = null, label = 'actionType') {
+  if (!PHASER_ACTIONS.has(actionType)) fail(`${label} 不是受控 Phaser 动作白名单成员：${actionType}`);
+  if (level && PHASER_ACTION_LEVEL.get(actionType) !== level) fail(`${label} 与动作等级不一致：${actionType} 只能使用 ${PHASER_ACTION_LEVEL.get(actionType)}`);
+}
+
+/** 非 Phaser 操作完全退出本控制面，不读取或修改任何工作流工件。 */
+function returnOutOfScope(actionType) {
+  process.stdout.write(JSON.stringify({ controlled: false, channel: 'OUT_OF_SCOPE', authorizationBasis: 'OUTSIDE_PHASER_WORKFLOW', explicitApprovalRequired: false }));
+  return true;
+}
+
+/** 在读取 Work Item 前判定显式 actionType 是否属于本控制面。 */
+function bypassOutsidePhaser(args) {
+  const actionType = String(args['action-type'] ?? '');
+  if (!actionType || actionType.startsWith('phaser-')) return false;
+  return returnOutOfScope(actionType);
 }
 
 /** 将命令行解析为支持重复选项的键值对象。 */
@@ -92,7 +118,7 @@ function validateWorkItem(work) {
   if (!STATES.includes(work.globalState)) fail(`未知全局状态 ${work.globalState}`);
   if (!GATES.includes(work.nextGate) || !GATES.includes(work.pendingApprovalGate)) fail('Work Item nextGate/pendingApprovalGate 必须为 F0-F4');
   if (!LEVELS.includes(work.pendingApprovalActionLevel)) fail('Work Item pendingApprovalActionLevel 无效');
-  if (isGitLikeAction(work.pendingApprovalActionType)) fail('纯 Git actionType 不得写入 Work Item pendingApproval 字段');
+  validatePhaserAction(work.pendingApprovalActionType, work.pendingApprovalActionLevel, 'Work Item.pendingApprovalActionType');
   if (!STATES.includes(work.pendingApprovalState) || !work.pendingApprovalContext) fail('Work Item pending approval 必须绑定有效全局状态与上下文');
   if (Number.isNaN(Date.parse(work.pendingApprovalPreparedAt))) fail('Work Item.pendingApprovalPreparedAt 必须为有效时间');
   if (work.pendingApprovalPresentedId !== null && work.pendingApprovalPresentedId !== work.pendingApprovalId) fail('Work Item pending 展示记录与当前审批点不一致');
@@ -103,11 +129,21 @@ function validateWorkItem(work) {
   if (!work.taskAuthorization.authorizationId || !work.taskAuthorization.userOriginalText || !work.taskAuthorization.authorizedObjective || Number.isNaN(Date.parse(work.taskAuthorization.authorizedAt))) fail('任务授权必须绑定用户原始请求、目标、范围与时间');
   if (work.inScope.some((item) => !work.taskAuthorization.authorizedScope.includes(item))) fail('Work Item.inScope 超出任务授权范围');
   for (const field of ['inScope', 'outOfScope', 'approvedRequirements', 'allowedActions', 'allowedActionLevels', 'explicitApprovalActionLevels', 'prohibitedActions', 'allowedPaths', 'forbiddenPaths', 'allowedExternalTargets', 'protectedExternalTargets', 'requiredGates', 'delegatedAgents', 'expectedOutputs', 'validationPlan', 'exitCriteria', 'changeRequestFiles', 'pendingApprovalImpactSummary', 'pendingApprovalFileScope', 'pendingApprovalServices', 'pendingApprovalExternalTargets']) requireStringArray(work[field], `Work Item.${field}`);
+  for (const action of [...work.allowedActions, ...work.prohibitedActions, ...work.taskAuthorization.authorizedActions]) validatePhaserAction(action, null, 'Work Item 动作');
+  // 当前动作必须同时受白名单和工作项集合约束，避免 diff-audit 绕过 preflight 的动作检查。
+  if (!work.allowedActions.includes(work.pendingApprovalActionType) || work.prohibitedActions.includes(work.pendingApprovalActionType) || work.allowedActions.some((action) => work.prohibitedActions.includes(action))) fail('Work Item 当前动作必须已允许、未禁止，且 allowedActions/prohibitedActions 不得相交');
+  if (work.taskAuthorization.authorizedActions.some((action) => !AUTOMATIC_PHASER_ACTIONS.has(action))) fail('taskAuthorization.authorizedActions 只能包含 A0-A3 Phaser 动作');
+  if (work.taskAuthorization.authorizedActions.some((action) => !work.taskAuthorization.authorizedActionLevels.includes(PHASER_ACTION_LEVEL.get(action)))) fail('taskAuthorization.authorizedActions 与 A0-A3 授权等级不一致');
+  if (work.allowedActions.some((action) => !(['A0', 'A1', 'A2', 'A3'].includes(PHASER_ACTION_LEVEL.get(action)) ? work.allowedActionLevels : work.explicitApprovalActionLevels).includes(PHASER_ACTION_LEVEL.get(action)))) fail('Work Item.allowedActions 与自动/显式动作等级不一致');
   for (const field of ['pendingApprovalAllowServiceStart', 'pendingApprovalAllowDelete', 'pendingApprovalExternalWrite', 'pendingApprovalDestructive', 'pendingApprovalPhysicalDevice', 'pendingApprovalRelease']) if (typeof work[field] !== 'boolean') fail(`Work Item.${field} 必须为布尔值`);
   if (['A4', 'A5', 'A6'].includes(work.pendingApprovalActionLevel) && (!work.pendingApprovalImpactSummary.length || work.pendingApprovalImpactSummary.some((item) => !item.trim()))) fail('A4-A6 pendingApprovalImpactSummary 必须为非空影响列表');
   if (work.allowedActionLevels.some((level) => !['A0', 'A1', 'A2', 'A3'].includes(level)) || work.explicitApprovalActionLevels.some((level) => !['A4', 'A5', 'A6'].includes(level))) fail('Work Item 自动/显式批准等级分区无效');
   if (work.taskAuthorization.authorizedActionLevels.some((level) => !['A0', 'A1', 'A2', 'A3'].includes(level))) fail('任务授权等级只能为 A0-A3');
-  if (work.allowedActions.some((action) => !work.taskAuthorization.authorizedActions.includes(action)) || work.allowedActionLevels.some((level) => !work.taskAuthorization.authorizedActionLevels.includes(level)) || work.allowedPaths.some((path) => !work.taskAuthorization.authorizedPaths.some((authorized) => pathMatches(path, authorized)))) fail('Work Item 动作、自动等级或路径超出任务授权');
+  if (work.allowedActions.some((action) => ['A0', 'A1', 'A2', 'A3'].includes(PHASER_ACTION_LEVEL.get(action)) && !work.taskAuthorization.authorizedActions.includes(action)) || work.allowedActionLevels.some((level) => !work.taskAuthorization.authorizedActionLevels.includes(level)) || work.allowedPaths.some((path) => !work.taskAuthorization.authorizedPaths.some((authorized) => pathMatches(path, authorized)))) fail('Work Item 动作、自动等级或路径超出任务授权');
+  const pendingEffects = work.pendingApprovalExternalWrite || work.pendingApprovalDestructive || work.pendingApprovalPhysicalDevice || work.pendingApprovalRelease || work.pendingApprovalAllowDelete;
+  if (['A0', 'A1', 'A2', 'A3'].includes(work.pendingApprovalActionLevel) && pendingEffects) fail('A0-A3 Phaser pending 不得声明外部、破坏、真机、发布或删除副作用');
+  if (work.pendingApprovalActionLevel === 'A5' && (!work.pendingApprovalExternalWrite || !work.pendingApprovalExternalTargets.length)) fail('A5 Phaser pending 必须冻结外部写入与精确游戏目标');
+  if (work.pendingApprovalActionLevel === 'A6' && !(work.pendingApprovalExternalWrite || work.pendingApprovalPhysicalDevice || work.pendingApprovalRelease || work.pendingApprovalDestructive)) fail('A6 Phaser pending 必须冻结高风险副作用');
   if (work.requiredGates.some((gate) => !GATES.includes(gate))) fail('Work Item.requiredGates 含未知 F 门');
   if (work.legacyReadOnly) fail('旧记录只能只读迁移，不能驱动新任务');
   if (!work.workItemId || !work.pendingApprovalId || !work.pendingApprovalObject || !work.pendingApprovalActionType || !work.validationBatchId) fail('Work Item 关键标识不能为空');
@@ -117,7 +153,7 @@ function validateWorkItem(work) {
 /** 校验审批记录全部类型、枚举和哈希。 */
 function validateApproval(approval) {
   requireFields(approval, APPROVAL_FIELDS, `审批 ${approval?.approvalId ?? '<unknown>'}`);
-  if (isGitLikeAction(approval.actionType)) fail('纯 Git actionType 永远不得写入 Approval Ledger');
+  validatePhaserAction(approval.actionType, approval.actionLevel, 'Approval Ledger.actionType');
   requireHash(approval.baselineHash, '审批 baselineHash');
   if (!['A4', 'A5', 'A6'].includes(approval.actionLevel) || !GATES.includes(approval.gate)) fail('操作审批只能使用 A4-A6 与有效 F 门');
   if (!STATES.includes(approval.pendingState) || !approval.pendingContext) fail('审批未绑定 pending 全局状态与上下文');
@@ -133,7 +169,10 @@ function validateApproval(approval) {
 function validateDelegation(delegation) {
   requireFields(delegation, DELEGATION_REQUIRED, 'Delegation Package');
   for (const field of ['ownership', 'allowedActions', 'forbiddenActions', 'allowedPaths', 'forbiddenPaths', 'acceptanceCommands']) requireStringArray(delegation[field], `Delegation Package.${field}`);
-  if (!LEVELS.includes(delegation.actionLevel)) fail('Delegation Package.actionLevel 无效');
+  for (const action of [...delegation.allowedActions, ...delegation.forbiddenActions]) validatePhaserAction(action, null, 'Delegation Package 动作');
+  if (!['A0', 'A1', 'A2', 'A3'].includes(delegation.actionLevel)) fail('Delegation Package 只能委派 A0-A3 Phaser 动作');
+  if ([...delegation.allowedActions, ...delegation.forbiddenActions].some((action) => !AUTOMATIC_PHASER_ACTIONS.has(action))) fail('Delegation Package 动作只能包含 A0-A3 Phaser 动作');
+  if (delegation.allowedActions.some((action) => PHASER_ACTION_LEVEL.get(action) !== delegation.actionLevel)) fail('Delegation Package.allowedActions 与 actionLevel 不一致');
   if (delegation.preserveOthersChanges !== true) fail('委派包必须明确不得覆盖他人修改');
   return delegation;
 }
@@ -242,11 +281,9 @@ function matchingApprovals(work, ledger, options) {
     if (approval.gate !== options.gate || approval.explicitObject !== options.object || approval.actionLevel !== options.level) return false;
     if (options.approvalId && approval.approvalId !== options.approvalId) return false;
     if (options.actionType && approval.actionType !== options.actionType) return false;
-    if (options.external && !approval.externalWrite) return false;
-    if (options.device && !approval.physicalDevice) return false;
-    if (options.release && !approval.release) return false;
-    if (options.destructive && !approval.destructive) return false;
-    if (options.serviceStart && (!approval.allowServiceStart || !approval.services.includes(options.serviceType))) return false;
+    // preflight 总会传入布尔副作用；此处必须精确相等，不能让省略 flag 消费更宽的批准。
+    for (const [option, field] of [['external', 'externalWrite'], ['device', 'physicalDevice'], ['release', 'release'], ['destructive', 'destructive'], ['allowDelete', 'allowDelete'], ['serviceStart', 'allowServiceStart']]) if (options[option] !== undefined && approval[field] !== options[option]) return false;
+    if (options.serviceStart && !approval.services.includes(options.serviceType)) return false;
     if (options.paths?.some((path) => !approval.fileScope.some((pattern) => pathMatches(path, pattern)))) return false;
     if (options.targets?.some((target) => !(approval.externalTargets ?? []).includes(target))) return false;
     return true;
@@ -262,34 +299,10 @@ function effectiveApproval(work, ledger) {
 
 /** 按确定性副作用规则判断动作是否需要显式批准；任务授权不是审批记录。 */
 function requiresExplicitApproval(level, flags = {}) {
-  if (flags.gitOperation) return false;
   if (level === 'A6') return true;
   if (level === 'A5' || level === 'A4') return true;
   if (flags.external || flags.device || flags.release || flags.destructive || flags.allowDelete) return true;
   return false;
-}
-
-/** 校验纯 Git 的基线、远端、破坏性动作与文件所有权，不把失败转成审批请求。 */
-function validateGitOperation(args, work, actionType, level, paths, targets) {
-  if (!['A0', 'A1', 'A2', 'A3'].includes(level) || !work.allowedActions.includes(actionType) || !work.taskAuthorization.authorizedActions.includes(actionType)) fail('纯 Git 操作必须由当前 taskAuthorization 精确授权为 A0-A3 动作');
-  if (String(args['baseline-hash'] ?? '') !== work.baselineHash) fail('纯 Git 操作必须精确绑定当前 --baseline-hash');
-  let descriptor;
-  try { descriptor = analyzeGitCommand(String(args['git-command'] ?? '').trim()); } catch (error) { fail(error.message); }
-  if (descriptor.actionType !== actionType) fail(`actionType 与实际 Git 子命令/危险参数不一致：应为 ${descriptor.actionType}`);
-  if (GIT_REMOTE_ACTIONS.has(actionType) && !targets.length) fail(`${actionType} 必须声明精确 --external-target`);
-  if (targets.length !== descriptor.targets.length || targets.some((target) => !descriptor.targets.includes(target))) fail('声明的 Git target 与实际子命令目标不一致');
-  if (targets.some((target) => !work.taskAuthorization.authorizedScope.includes(target))) fail('Git target 未被用户原始 taskAuthorization 精确覆盖');
-  const destructive = GIT_DESTRUCTIVE_ACTIONS.has(actionType);
-  if (destructive !== (args.destructive === true)) fail('破坏性 Git 必须使用专用 actionType 并显式声明 --destructive');
-  if (destructive && !targets.length && !(GIT_PATH_DESTRUCTIVE_ACTIONS.has(actionType) && paths.length)) fail('破坏性 Git 必须由用户原始任务授权精确包含动作及目标或工作区路径');
-  if (!GIT_READ_ONLY_ACTIONS.has(actionType)) {
-    const pkg = validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work);
-    for (const path of paths) {
-      const owners = Object.entries(pkg.fileOwnership).filter(([pattern]) => pathMatches(path, pattern));
-      if (owners.length !== 1 || owners[0][1] !== work.assignedAgent) fail(`Git 操作路径未唯一绑定当前代理所有权：${path}`);
-    }
-  }
-  return descriptor;
 }
 
 /** 判断是否仍有必须由用户选择、但不属于操作审批的未决问题。 */
@@ -307,23 +320,22 @@ function workAllowsLevel(work, level) {
   return ['A0', 'A1', 'A2', 'A3'].includes(level) ? work.allowedActionLevels.includes(level) : work.explicitApprovalActionLevels.includes(level);
 }
 
-/** 纯函数：Git 使用只读动作描述，非 Git A4-A6 仍按实际审批或冻结 pending 推导路线。 */
-function deriveRoute(work, approval, currentAction = null) {
-  const level = currentAction?.level ?? approval?.actionLevel ?? work.pendingApprovalActionLevel;
-  const gitOperation = currentAction?.gitOperation === true;
-  const channel = gitOperation ? 'VERSION_CONTROL' : (({ A1: 'CANDIDATE', A2: 'PROTOTYPE', A3: 'PRODUCTION', A4: 'INTEGRATION', A5: 'EXTERNAL', A6: 'RELEASE' })[level] ?? 'CANDIDATE');
+/** 纯函数：按 Phaser 审批或冻结工作项推导生命周期路线。 */
+function deriveRoute(work, approval) {
+  const level = approval?.actionLevel ?? work.pendingApprovalActionLevel;
+  const channel = (({ A0: 'INSPECTION', A1: 'CANDIDATE', A2: 'PROTOTYPE', A3: 'PRODUCTION', A4: 'INTEGRATION', A5: 'EXTERNAL', A6: 'RELEASE' })[level] ?? 'CANDIDATE');
   const requiredArtifacts = {
     CANDIDATE: ['Task Authorization', 'Artifact Audit', 'Evidence Manifest'],
     PROTOTYPE: ['Task Authorization', 'Artifact/Diff Audit', 'Evidence Manifest'],
     PRODUCTION: ['Task Authorization', 'Implementation Package', 'Diff Audit', 'F0-F3 Evidence'],
     INTEGRATION: ['A4/F4 Approval', 'Diff Audit', 'F4 Evidence'],
     EXTERNAL: ['A5 Exact Target Approval', 'External Receipt Artifact', 'Manual External Execution'],
-    RELEASE: ['Independent Release Work Item', 'A6/F4 Exact Target Approval', 'Release Receipt Artifact', 'Manual Release Execution']
-    , VERSION_CONTROL: ['Task Authorization', 'Exact Git Action', 'Repository/Path/Target Scope', 'Baseline/Ownership Evidence']
+    RELEASE: ['Independent Release Work Item', 'A6/F4 Exact Target Approval', 'Release Receipt Artifact', 'Manual Release Execution'],
+    INSPECTION: ['Task Authorization', 'Read-only Phaser Evidence']
   }[channel];
   const blockers = [];
   const decisionRequired = userInputRequired(work);
-  const explicitRequired = requiresExplicitApproval(level, { gitOperation, external: work.pendingApprovalExternalWrite, device: work.pendingApprovalPhysicalDevice, release: work.pendingApprovalRelease, destructive: work.pendingApprovalDestructive, allowDelete: work.pendingApprovalAllowDelete });
+  const explicitRequired = requiresExplicitApproval(level, { external: work.pendingApprovalExternalWrite, device: work.pendingApprovalPhysicalDevice, release: work.pendingApprovalRelease, destructive: work.pendingApprovalDestructive, allowDelete: work.pendingApprovalAllowDelete });
   if (explicitRequired && !approval) blockers.push(work.pendingApprovalPresentedId === work.pendingApprovalId ? '等待当前 pending 用户确认' : '先运行 handoff 展示当前 pending');
   if (decisionRequired) blockers.push('USER_INPUT_REQUIRED：先澄清选择并更新任务授权或权威工件');
   if (channel === 'RELEASE' && !work.releaseWorkItem) blockers.push('A6 必须使用独立发布 Work Item');
@@ -337,28 +349,16 @@ function deriveRoute(work, approval, currentAction = null) {
 
 /** 输出自动推导的风险通道和下一条安全命令，不执行任何动作。 */
 function route(args) {
-  const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
+  if (bypassOutsidePhaser(args)) return;
   const requestedType = String(args['action-type'] ?? '');
-  const requestedLevel = String(args['action-level'] ?? '');
-  if (requestedType && !isGitAction(requestedType)) fail(isGitLikeAction(requestedType) ? `未知纯 Git actionType：${requestedType}` : 'route 的显式动作参数仅用于纯 Git；A4-A6 必须使用冻结 pending');
-  const gitOperation = isGitAction(requestedType);
-  if (gitOperation && (!['A0', 'A1', 'A2', 'A3'].includes(requestedLevel) || !workAllowsLevel(work, requestedLevel) || !work.allowedActions.includes(requestedType) || !work.taskAuthorization.authorizedActions.includes(requestedType))) fail('Git route 必须由当前 taskAuthorization 精确授权为 A0-A3 动作');
-  const targets = list(args['external-target']);
-  if (gitOperation && targets.some((target) => work.protectedExternalTargets.includes(target) || !work.allowedExternalTargets.includes(target))) fail('Git route 外部目标受保护或未授权');
-  if (gitOperation && targets.some((target) => !work.taskAuthorization.authorizedScope.includes(target))) fail('Git route target 未被用户原始 taskAuthorization 精确覆盖');
-  const ledger = !gitOperation && args.ledger ? readLedger(args.ledger) : { schemaVersion: '1.0', approvals: [] };
+  if (requestedType) validatePhaserAction(requestedType, args['action-level'] ? String(args['action-level']) : null, 'route actionType');
+  const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
+  if (requestedType && requestedType !== work.pendingApprovalActionType) fail('route 显式 Phaser 动作必须匹配 Work Item 当前动作');
+  const ledger = args.ledger ? readLedger(args.ledger) : { schemaVersion: '1.0', approvals: [] };
   const approval = effectiveApproval(work, ledger);
-  const result = deriveRoute(work, approval, gitOperation ? { level: requestedLevel, actionType: requestedType, targets, gitOperation: true } : null);
-  if (gitOperation && GIT_REMOTE_ACTIONS.has(requestedType) && !targets.length) result.blockers.push('缺少远端 Git --external-target，必须绑定实际命令目标');
+  const result = deriveRoute(work, approval);
   let nextCommand;
   if (result.userInputRequired) nextCommand = '向用户提出一个精确选择问题；记录 USER_DECISION，更新 taskAuthorization/权威工件并清除未决标志';
-  else if (gitOperation) {
-    const pathArg = requestedLevel === 'A0' ? '' : ' --path <path>';
-    const packageArg = GIT_READ_ONLY_ACTIONS.has(requestedType) ? '' : ' --implementation-package <package>';
-    const targetArg = GIT_REMOTE_ACTIONS.has(requestedType) ? ` --external-target ${targets[0] ?? '<target>'}` : '';
-    const destructiveArg = GIT_DESTRUCTIVE_ACTIONS.has(requestedType) ? ' --destructive' : '';
-    nextCommand = `node <skill-dir>/scripts/workflow-control.mjs preflight --work-item ${args['work-item']}${packageArg} --action-level ${requestedLevel} --action-type ${requestedType} --git-command "<subcommand and args>"${pathArg} --baseline-hash ${work.baselineHash}${targetArg}${destructiveArg}`;
-  }
   else if (result.explicitApprovalRequired && !approval) nextCommand = work.pendingApprovalPresentedId === work.pendingApprovalId ? `node <skill-dir>/scripts/workflow-control.mjs approve --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'} --approval-id <id> --user-text "批准"` : `node <skill-dir>/scripts/workflow-control.mjs handoff --work-item ${args['work-item']}`;
   else if (work.globalState === 'REVIEW' && result.actionLevel === 'A3') {
     result.blockers.push('A3 进入 IMPLEMENTING 需要严格 Implementation Package');
@@ -376,7 +376,7 @@ function route(args) {
     result.blockers.push('生产候选需要新的 A4/F4 集成审批点');
     nextCommand = `node <skill-dir>/scripts/workflow-control.mjs prepare-approval --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'} --action-level A4 --gate F4 ...`;
   } else nextCommand = `node <skill-dir>/scripts/workflow-control.mjs advance --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'}`;
-  process.stdout.write(JSON.stringify({ workItemId: work.workItemId, globalState: work.globalState, ...result, actionType: gitOperation ? requestedType : work.pendingApprovalActionType, targets, nextCommand }, null, 2));
+  process.stdout.write(JSON.stringify({ workItemId: work.workItemId, globalState: work.globalState, ...result, actionType: work.pendingApprovalActionType, nextCommand }, null, 2));
 }
 
 /** 阻断影响当前模块且尚未形成用户决定的 Change Request。 */
@@ -401,36 +401,36 @@ function validateActionState(work, level, flags) {
   if (level === 'A3' && work.globalState !== 'IMPLEMENTING') fail('A3 生产实现只能在 IMPLEMENTING');
   if (level === 'A4' && work.globalState !== 'INTEGRATING') fail('A4 集成与迁移只能在 INTEGRATING');
   if (level === 'A5' && !flags.external) fail('A5 必须是具有精确外部目标的外部状态操作');
-  if (level === 'A6' && !flags.external) fail('A6 必须声明精确外部目标');
+  if (level === 'A6' && !(flags.external || flags.device || flags.destructive || flags.release || flags.allowDelete)) fail('A6 必须声明真机、破坏、发布、删除或外部写入副作用');
   if (flags.external && !['A5', 'A6'].includes(level)) fail('外部状态写入至少为 A5');
   if ((flags.device || flags.destructive || flags.release) && level !== 'A6') fail('真机、破坏性或发布动作必须为 A6');
+  if (flags.allowDelete && !['A4', 'A6'].includes(level)) fail('删除旧实现只允许 A4/A6');
 }
 
 /** 执行写入或副作用前的统一预检。 */
 function preflight(args) {
+  if (bypassOutsidePhaser(args)) return;
+  const actionType = String(args['action-type'] ?? '');
+  const level = String(args['action-level'] ?? '');
+  validatePhaserAction(actionType, level, 'preflight actionType');
   const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
   requireResolvedUserInput(work);
-  const level = String(args['action-level'] ?? '');
-  const actionType = String(args['action-type'] ?? '');
-  const gitOperation = isGitAction(actionType);
-  if (isGitLikeAction(actionType) && !gitOperation) fail(`未知纯 Git actionType：${actionType}`);
   if (!LEVELS.includes(level) || !workAllowsLevel(work, level)) fail('动作 A 等级无效或未获 Work Item 授权/显式批准通道');
-  if (level !== 'A0' && (!actionType || !work.allowedActions.includes(actionType))) fail('动作类型未获 Work Item.allowedActions 授权');
+  if (!work.allowedActions.includes(actionType)) fail('动作类型未获 Work Item.allowedActions 授权');
   if (work.prohibitedActions.includes(actionType)) fail(`动作命中 prohibitedActions：${actionType}`);
   const repo = resolve(String(args.repo ?? process.cwd()));
   const paths = checkPaths(list(args.path), work.allowedPaths, work.forbiddenPaths, repo);
   if (level !== 'A0' && paths.length === 0 && !['A5', 'A6'].includes(level)) fail('本地动作必须声明至少一个 --path');
   const targets = list(args['external-target']);
-  const external = args.external === true || targets.length > 0;
-  const flags = { gitOperation, external, device: args.device === true, release: args.release === true, destructive: args.destructive === true, allowDelete: args.delete === true };
-  const gitDescriptor = gitOperation ? validateGitOperation(args, work, actionType, level, paths, targets) : null;
-  if (!gitOperation) validateActionState(work, level, flags);
-  if ((external || flags.device || flags.release) && targets.length === 0) fail('外部、真机或发布动作必须声明精确 --external-target');
+  const external = args.external === true;
+  const flags = { external, device: args.device === true, release: args.release === true, destructive: args.destructive === true, allowDelete: args.delete === true };
+  validateActionState(work, level, flags);
+  if (['A5', 'A6'].includes(level) && targets.length === 0) fail('A5/A6 动作必须声明精确 --external-target');
   if (targets.some((target) => work.protectedExternalTargets.includes(target) || !work.allowedExternalTargets.includes(target))) fail('外部目标受保护或未授权');
   const explicitRequired = requiresExplicitApproval(level, flags);
   const ledger = explicitRequired ? readLedger(args.ledger) : null;
   validateChangeRequests(work, repo, level, ledger);
-  if (['A3', 'A4'].includes(level) && !gitOperation) {
+  if (['A3', 'A4'].includes(level)) {
     const pkg = validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work);
     if (level === 'A3' && pkg.expectedDeletedFiles.length) fail('A3 不得删除旧实现；删除或正式替换必须升级到 A4/A6');
   }
@@ -445,23 +445,25 @@ function preflight(args) {
     const approvals = matchingApprovals(work, ledger, { approvalId: work.approvalRecord, level, gate: String(args.gate ?? work.nextGate), object: String(args.object ?? ''), actionType, paths, targets, ...flags, serviceStart: args['start-process'] === true, serviceType: processEvidence?.serviceType });
     if (approvals.length !== 1) fail('没有唯一且与当前对象、基线、模块、路径、动作等级和副作用精确匹配的审批');
   }
-  const output = { ok: true, command: 'preflight', workItemId: work.workItemId, state: work.globalState, channel: gitOperation ? 'VERSION_CONTROL(GIT)' : undefined, gitOperation: gitDescriptor, level, actionType, authorizationBasis: explicitRequired ? 'EXPLICIT_APPROVAL' : 'TASK_AUTHORIZATION', explicitApprovalRequired: explicitRequired, paths, targets };
+  const output = { ok: true, command: 'preflight', controlled: true, workItemId: work.workItemId, state: work.globalState, level, actionType, authorizationBasis: explicitRequired ? 'EXPLICIT_APPROVAL' : 'TASK_AUTHORIZATION', explicitApprovalRequired: explicitRequired, paths, targets };
   if (args.record) writeJson(args.record, output);
   process.stdout.write(JSON.stringify(output, null, 2));
 }
 
 /** 由控制面创建新的单次审批点，并让上一审批记录退出当前授权位置。 */
 function prepareApproval(args) {
+  const requestedActionType = String(args['action-type'] ?? '');
+  const requestedLevel = String(args['action-level'] ?? '');
+  validatePhaserAction(requestedActionType, requestedLevel, 'prepare-approval actionType');
   const workPath = resolve(String(args['work-item']));
   const work = validateWorkItem(readJson(workPath, 'Work Item'));
   const pendingId = String(args['pending-id'] ?? '');
   const object = String(args.object ?? '');
   const stage = String(args.stage ?? '');
-  const level = String(args['action-level'] ?? '');
+  const level = requestedLevel;
   const gate = String(args.gate ?? '');
   const context = String(args.context ?? '');
-  const actionType = String(args['action-type'] ?? '');
-  if (isGitLikeAction(actionType)) fail('纯 Git 命名空间不得创建 pending 或 Approval Ledger');
+  const actionType = requestedActionType;
   const ledger = readLedger(args.ledger);
   const impactSummary = list(args.impact);
   let fileScope = list(args.path);
@@ -511,6 +513,8 @@ function prepareApproval(args) {
   work.pendingApprovalPresentedAt = null;
   work.nextGate = gate;
   work.approvalRecord = null;
+  // 先在内存中验证完整 pending，失败时不得把下次无法读取的半成品写回磁盘。
+  validateWorkItem(work);
   writeJson(workPath, work);
   process.stdout.write(JSON.stringify({ ok: true, command: 'prepare-approval', workItemId: work.workItemId, pendingApprovalId: pendingId, object, stage, actionType, actionLevel: level, impactSummary, gate, state: work.globalState, context, fileScope, services, externalTargets, ...flags }, null, 2));
 }
@@ -518,7 +522,6 @@ function prepareApproval(args) {
 /** 追加审批，且所有原文只能绑定当前已展示 pending approval。 */
 function approve(args) {
   const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
-  if (isGitLikeAction(work.pendingApprovalActionType)) fail('纯 Git 命名空间不得使用 approve 或 Approval Ledger');
   if (!['A4', 'A5', 'A6'].includes(work.pendingApprovalActionLevel)) fail('approve 仅接受 A4-A6 具体操作审批');
   const ledger = existsSync(resolve(String(args.ledger))) ? readLedger(args.ledger) : { schemaVersion: '1.0', approvals: [] };
   // 无 record 时，记录完全从当前已冻结 pending 生成，调用者不能借短回复扩权。
@@ -648,6 +651,9 @@ function diffAudit(args) {
   const baseline = String(args.baseline ?? work.baselineId);
   if (baseline !== work.baselineId || String(args['baseline-hash'] ?? '') !== work.baselineHash) fail('diff-audit 基线漂移');
   const level = String(args['action-level'] ?? work.pendingApprovalActionLevel);
+  const actionType = String(args['action-type'] ?? work.pendingApprovalActionType);
+  validatePhaserAction(actionType, level, 'diff-audit actionType');
+  if (actionType !== work.pendingApprovalActionType) fail('diff-audit actionType 与 Work Item 当前动作不一致');
   const explicitRequired = requiresExplicitApproval(level, { external: ['A5', 'A6'].includes(level), destructive: args.destructive === true, allowDelete: args.delete === true });
   const ledger = explicitRequired ? readLedger(args.ledger) : null;
   const pkg = ['A3', 'A4'].includes(level) ? validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work) : null;
@@ -666,7 +672,7 @@ function diffAudit(args) {
       if (ownership.length > 1) fail(`diff 文件所有权重叠：${entry.file}`);
       if (entry.status === 'A' && !pkg.expectedAddedFiles.includes(entry.file)) fail(`新增文件不在 Implementation Package.expectedAddedFiles：${entry.file}`);
     }
-    const candidates = ledger ? matchingApprovals(work, ledger, { level, gate: String(args.gate ?? work.nextGate), object: String(args.object ?? work.pendingApprovalObject), actionType: String(args['action-type'] ?? ''), paths: [entry.file], targets: [] }) : [];
+    const candidates = ledger ? matchingApprovals(work, ledger, { level, gate: String(args.gate ?? work.nextGate), object: String(args.object ?? work.pendingApprovalObject), actionType, paths: [entry.file], targets: [] }) : [];
     if (ledger && candidates.length === 0) fail(`未归属或未审批 diff：${entry.file}`);
     if (ledger && candidates.length > 1) fail(`审批范围重叠：${entry.file}`);
     const approval = candidates[0] ?? null;
@@ -677,7 +683,7 @@ function diffAudit(args) {
   }
   if (!entries.length) {
     if (ledger) {
-      const candidates = matchingApprovals(work, ledger, { level, gate: String(args.gate ?? work.nextGate), object: String(args.object ?? work.pendingApprovalObject), actionType: String(args['action-type'] ?? ''), paths: ['A1', 'A2'].includes(level) ? artifacts.map((item) => item.file) : [], targets: list(args['external-target']) });
+      const candidates = matchingApprovals(work, ledger, { level, gate: String(args.gate ?? work.nextGate), object: String(args.object ?? work.pendingApprovalObject), actionType, paths: ['A1', 'A2'].includes(level) ? artifacts.map((item) => item.file) : [], targets: list(args['external-target']) });
       if (candidates.length !== 1 || candidates[0].approvalId !== work.approvalRecord) fail('artifact-only 审计缺少当前精确审批或审批范围重叠');
     }
   }
@@ -839,7 +845,6 @@ function advance(args) {
 function handoff(args) {
   const workPath = resolve(String(args['work-item']));
   const work = validateWorkItem(readJson(workPath, 'Work Item'));
-  if (isGitLikeAction(work.pendingApprovalActionType)) fail('纯 Git 命名空间不得使用 handoff 或 pending');
   const repo = resolve(String(args.repo ?? process.cwd()));
   if (!['A4', 'A5', 'A6'].includes(work.pendingApprovalActionLevel) || !requiresExplicitApproval(work.pendingApprovalActionLevel, { external: work.pendingApprovalExternalWrite, device: work.pendingApprovalPhysicalDevice, release: work.pendingApprovalRelease, destructive: work.pendingApprovalDestructive, allowDelete: work.pendingApprovalAllowDelete })) fail('handoff 仅展示 A4-A6 的具体操作及影响；用户选择不得进入审批账本');
   if (work.pendingApprovalState !== work.globalState || work.approvalRecord !== null) fail('handoff 只能针对当前状态新准备且尚未批准的 pending approval');
@@ -896,8 +901,8 @@ function init(args) {
   for (const directory of ['approvals', 'work-items', 'delegations', `evidence/${record.workItemId}`, 'change-requests']) mkdirSync(join(controlRoot, directory), { recursive: true });
   const work = {
     workItemId: record.workItemId, projectId: record.projectId, moduleId: record.moduleId, domain: record.domain, stageId: record.stageId, globalState: 'INTAKE', baselineId: record.baselineId, baselineVersion: record.baselineVersion, baselineHash: record.baselineHash, objective: record.objective,
-    taskAuthorization: { authorizationId: `TASK-${record.workItemId}`, userOriginalText: record.userOriginalText, authorizedObjective: record.objective, authorizedScope: [record.explicitObject], authorizedActions: ['document-candidate'], authorizedActionLevels: ['A0', 'A1'], authorizedPaths: record.allowedPaths, authorizedAt: new Date().toISOString() }, inScope: [record.explicitObject], outOfScope: [], approvedRequirements: [], allowedActions: ['document-candidate'], allowedActionLevels: ['A0', 'A1'], explicitApprovalActionLevels: [], prohibitedActions: ['external-write', 'device', 'release', 'destructive'], allowedPaths: record.allowedPaths, forbiddenPaths: ['.git'], allowedExternalTargets: [], protectedExternalTargets: ['production'], requiredGates: ['F0', 'F1', 'F2', 'F3'], approvalRecord: null, assignedAgent: 'orchestrator', delegatedAgents: [], expectedOutputs: [], validationPlan: [], exitCriteria: [], nextGate: 'F0', rollbackPolicy: '不自动回滚共享工作区', evidenceRoot: `.workflow-control/evidence/${record.workItemId}`,
-    pendingApprovalId: record.pendingApprovalId ?? `PENDING-${record.workItemId}-F0`, pendingApprovalObject: record.explicitObject, pendingApprovalStage: record.stageId, pendingApprovalActionLevel: 'A1', pendingApprovalGate: 'F0', pendingApprovalState: 'INTAKE', pendingApprovalContext: 'bootstrap', pendingApprovalActionType: 'document-candidate', pendingApprovalImpactSummary: [], pendingApprovalFileScope: record.allowedPaths, pendingApprovalServices: [], pendingApprovalAllowServiceStart: false, pendingApprovalAllowDelete: false, pendingApprovalExternalWrite: false, pendingApprovalDestructive: false, pendingApprovalPhysicalDevice: false, pendingApprovalRelease: false, pendingApprovalExternalTargets: [], pendingApprovalPreparedAt: new Date().toISOString(), pendingApprovalPresentedId: null, pendingApprovalPresentedAt: null, validationBatchId: `BATCH-${record.workItemId}-1`, changeRequestFiles: [], moduleGateRequired: false, releaseWorkItem: false
+    taskAuthorization: { authorizationId: `TASK-${record.workItemId}`, userOriginalText: record.userOriginalText, authorizedObjective: record.objective, authorizedScope: [record.explicitObject], authorizedActions: ['phaser-inspect', 'phaser-spec-candidate'], authorizedActionLevels: ['A0', 'A1'], authorizedPaths: record.allowedPaths, authorizedAt: new Date().toISOString() }, inScope: [record.explicitObject], outOfScope: [], approvedRequirements: [], allowedActions: ['phaser-inspect', 'phaser-spec-candidate'], allowedActionLevels: ['A0', 'A1'], explicitApprovalActionLevels: [], prohibitedActions: ['phaser-build-upload', 'phaser-device-test', 'phaser-release', 'phaser-game-rollback'], allowedPaths: record.allowedPaths, forbiddenPaths: ['.git'], allowedExternalTargets: [], protectedExternalTargets: ['production'], requiredGates: ['F0', 'F1', 'F2', 'F3'], approvalRecord: null, assignedAgent: 'orchestrator', delegatedAgents: [], expectedOutputs: [], validationPlan: [], exitCriteria: [], nextGate: 'F0', rollbackPolicy: '不自动回滚共享工作区', evidenceRoot: `.workflow-control/evidence/${record.workItemId}`,
+    pendingApprovalId: record.pendingApprovalId ?? `PENDING-${record.workItemId}-F0`, pendingApprovalObject: record.explicitObject, pendingApprovalStage: record.stageId, pendingApprovalActionLevel: 'A1', pendingApprovalGate: 'F0', pendingApprovalState: 'INTAKE', pendingApprovalContext: 'bootstrap', pendingApprovalActionType: 'phaser-spec-candidate', pendingApprovalImpactSummary: [], pendingApprovalFileScope: record.allowedPaths, pendingApprovalServices: [], pendingApprovalAllowServiceStart: false, pendingApprovalAllowDelete: false, pendingApprovalExternalWrite: false, pendingApprovalDestructive: false, pendingApprovalPhysicalDevice: false, pendingApprovalRelease: false, pendingApprovalExternalTargets: [], pendingApprovalPreparedAt: new Date().toISOString(), pendingApprovalPresentedId: null, pendingApprovalPresentedAt: null, validationBatchId: `BATCH-${record.workItemId}-1`, changeRequestFiles: [], moduleGateRequired: false, releaseWorkItem: false
   };
   writeJson(join(controlRoot, 'approvals', 'ledger.json'), { schemaVersion: '1.0', approvals: [] });
   writeJson(join(controlRoot, 'work-items', `${record.workItemId}.json`), work);
@@ -909,7 +914,7 @@ function repositoryLint(repo) {
   const skillsRoot = join(repo, 'skills');
   const oldSemantics = [/F0.{0,20}(作者|命令|冻结)/, /F1.{0,20}(分诊|选择.*F2)/, /F3.{0,20}(收敛|聚合|非作者)/, /F4.{0,20}(人工|受保护决策)/];
   const unconditionalVisualApproval = [/两道.{0,12}确认.{0,12}(强制|必须)/, /只有.{0,20}用户.{0,12}(通过|确认).{0,20}进入\s*V[23]/, /必须同时绑定.{0,40}低保真.{0,40}高保真/, /V[12].{0,40}(Approval Ledger|显式审批)/i, /(视觉|产品|架构).{0,30}(取舍|选择).{0,30}(Approval Ledger|审批点|显式批准)/i, /A[123].{0,40}(取舍|选择).{0,40}(审批|pending|handoff|approve)/i];
-  const oldGitApproval = [/PR[、/]push.{0,20}A5/i, /push.{0,4}(属于|为)\s*A5/i, /所有外部写入.{0,20}(审批|批准)/];
+  const oldOutsideControl = [/(GitHub|Git|消息|包管理).{0,20}(属于|进入|作为)\s*A[0-6]/i, /PR[、/]push.{0,20}A5/i];
   for (const name of readdirSync(skillsRoot)) {
     const skillPath = join(skillsRoot, name, 'SKILL.md');
     if (!existsSync(skillPath) || name === 'phaser4-game-workflow-control') continue;
@@ -918,7 +923,7 @@ function repositoryLint(repo) {
     if (!/(提议|提出)/.test(text) || !/(审查|审阅)/.test(text) || !/(任务授权|A4-A6.{0,20}批准)/.test(text) || !/(回到|回总控|提交给).*?(控制面|phaser4-game-workflow-control)/s.test(text)) fail(`${name} 未声明提议/审查/任务授权内修改/回控制面边界`);
     if (oldSemantics.some((pattern) => pattern.test(text))) fail(`${name} 保留旧 F0-F4 执行者语义`);
     if (unconditionalVisualApproval.some((pattern) => pattern.test(text))) fail(`${name} 保留无条件 V1/V2 人工确认语义`);
-    if (oldGitApproval.some((pattern) => pattern.test(text))) fail(`${name} 错把纯 Git 操作归入审批通道`);
+    if (oldOutsideControl.some((pattern) => pattern.test(text))) fail(`${name} 错把非 Phaser 操作纳入生命周期控制`);
   }
   const references = join(skillsRoot, 'phaser4-game-workflow-control', 'references');
   for (const file of readdirSync(references).filter((name) => name.endsWith('.json'))) JSON.parse(readFileSync(join(references, file), 'utf8'));
@@ -926,7 +931,7 @@ function repositoryLint(repo) {
     const text = readFileSync(markdown, 'utf8');
     if (oldSemantics.some((pattern) => pattern.test(text))) fail(`仓库保留旧 F0-F4 执行者语义：${markdown}`);
     if (unconditionalVisualApproval.some((pattern) => pattern.test(text))) fail(`仓库保留无条件 V1/V2 人工确认语义：${markdown}`);
-    if (oldGitApproval.some((pattern) => pattern.test(text))) fail(`仓库错把纯 Git 操作归入审批通道：${markdown}`);
+    if (oldOutsideControl.some((pattern) => pattern.test(text))) fail(`仓库错把非 Phaser 操作纳入生命周期控制：${markdown}`);
     checkMarkdownLinks(markdown);
   }
 }

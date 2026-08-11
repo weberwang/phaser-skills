@@ -4,8 +4,210 @@
   "title": "委派包",
   "type": "object",
   "additionalProperties": false,
-  "required": ["workItemId", "stageId", "authorizationId", "owner", "assignedAgent", "ownership", "allowedActions", "forbiddenActions", "actionLevel", "allowedPaths", "forbiddenPaths", "acceptanceCommands", "completionBoundary", "outOfScopeReturn", "preserveOthersChanges"],
+  "required": [
+    "workItemId",
+    "stageId",
+    "authorizationId",
+    "owner",
+    "assignedAgent",
+    "ownership",
+    "allowedActions",
+    "forbiddenActions",
+    "actionLevel",
+    "allowedPaths",
+    "forbiddenPaths",
+    "acceptanceCommands",
+    "completionBoundary",
+    "outOfScopeReturn",
+    "preserveOthersChanges"
+  ],
   "properties": {
-    "workItemId": {"type": "string", "minLength": 1}, "stageId": {"type": "string", "minLength": 1}, "authorizationId": {"type": "string", "minLength": 1}, "owner": {"type": "string", "minLength": 1}, "assignedAgent": {"type": "string", "minLength": 1}, "ownership": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "allowedActions": {"type": "array", "items": {"type": "string"}}, "forbiddenActions": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "actionLevel": {"enum": ["A0", "A1", "A2", "A3", "A4", "A5", "A6"]}, "allowedPaths": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "forbiddenPaths": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "acceptanceCommands": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "completionBoundary": {"type": "string", "minLength": 1}, "outOfScopeReturn": {"type": "string", "minLength": 1}, "preserveOthersChanges": {"const": true}
-  }
+    "workItemId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stageId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "authorizationId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "assignedAgent": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ownership": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "allowedActions": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "phaser-inspect",
+          "phaser-spec-candidate",
+          "phaser-prototype",
+          "phaser-code-change",
+          "phaser-asset-change",
+          "phaser-ui-change",
+          "phaser-audio-change",
+          "phaser-balance-change",
+          "phaser-qa-build"
+        ]
+      }
+    },
+    "forbiddenActions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": [
+          "phaser-inspect",
+          "phaser-spec-candidate",
+          "phaser-prototype",
+          "phaser-code-change",
+          "phaser-asset-change",
+          "phaser-ui-change",
+          "phaser-audio-change",
+          "phaser-balance-change",
+          "phaser-qa-build"
+        ]
+      }
+    },
+    "actionLevel": {
+      "enum": [
+        "A0",
+        "A1",
+        "A2",
+        "A3"
+      ]
+    },
+    "allowedPaths": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "forbiddenPaths": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "acceptanceCommands": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "completionBoundary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "outOfScopeReturn": {
+      "type": "string",
+      "minLength": 1
+    },
+    "preserveOthersChanges": {
+      "const": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "actionLevel": {
+            "const": "A0"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "allowedActions": {
+            "items": {
+              "enum": [
+                "phaser-inspect"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "actionLevel": {
+            "const": "A1"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "allowedActions": {
+            "items": {
+              "enum": [
+                "phaser-spec-candidate"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "actionLevel": {
+            "const": "A2"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "allowedActions": {
+            "items": {
+              "enum": [
+                "phaser-prototype"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "actionLevel": {
+            "const": "A3"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "allowedActions": {
+            "items": {
+              "enum": [
+                "phaser-code-change",
+                "phaser-asset-change",
+                "phaser-ui-change",
+                "phaser-audio-change",
+                "phaser-balance-change",
+                "phaser-qa-build"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
 }

@@ -562,7 +562,7 @@ def run_preflight(
         "--action-level",
         "A1",
         "--action-type",
-        "document-candidate",
+        "phaser-spec-candidate",
         "--gate",
         "F0",
         "--object",
