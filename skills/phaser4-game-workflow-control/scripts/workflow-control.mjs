@@ -17,9 +17,11 @@ const EVIDENCE_REQUIRED = ['evidenceId', 'batchId', 'workItemId', 'baselineHash'
 const PACKAGE_REQUIRED = ['packageId', 'workItemId', 'baselineVersion', 'baselineHash', 'approvalId', 'approvedRequirements', 'approvedArchitecture', 'fileOwnership', 'allowedPaths', 'forbiddenPaths', 'expectedAddedFiles', 'expectedDeletedFiles', 'testScope', 'outOfScope', 'compatibilityStrategy', 'definitionOfDone', 'stopConditions'];
 const CHANGE_REQUIRED = ['changeRequestId', 'workItemId', 'change', 'reason', 'affectedModules', 'affectedBaselineHash', 'invalidatedApprovalIds', 'newRisk', 'newAcceptance', 'userDecisionRequest', 'status'];
 const TRANSITIONS = {
-  INTAKE: ['BASELINE', 'BLOCKED'], BASELINE: ['PROPOSAL', 'BLOCKED'], PROPOSAL: ['REVIEW', 'RETURN', 'BLOCKED'], REVIEW: ['APPROVAL_REQUIRED', 'RETURN', 'BLOCKED'], APPROVAL_REQUIRED: ['APPROVED', 'RETURN', 'BLOCKED'], APPROVED: ['IMPLEMENTING', 'RETURN', 'BLOCKED'], IMPLEMENTING: ['VALIDATING', 'RETURN', 'BLOCKED'], VALIDATING: ['PASSED', 'RETURN', 'BLOCKED'], PASSED: ['INTEGRATING', 'RETURN', 'BLOCKED'], INTEGRATING: ['COMPLETE', 'RELEASE_APPROVAL_REQUIRED', 'RETURN', 'BLOCKED'], RELEASE_APPROVAL_REQUIRED: ['RELEASING', 'RETURN', 'BLOCKED'], RELEASING: ['COMPLETE', 'BLOCKED'], COMPLETE: [], RETURN: ['BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING', 'BLOCKED'], BLOCKED: ['BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING']
+  INTAKE: ['BASELINE', 'BLOCKED'], BASELINE: ['PROPOSAL', 'BLOCKED'], PROPOSAL: ['REVIEW', 'RETURN', 'BLOCKED'], REVIEW: ['APPROVAL_REQUIRED', 'RETURN', 'BLOCKED'], APPROVAL_REQUIRED: ['APPROVED', 'RETURN', 'BLOCKED'], APPROVED: ['IMPLEMENTING', 'VALIDATING', 'RETURN', 'BLOCKED'], IMPLEMENTING: ['VALIDATING', 'RETURN', 'BLOCKED'], VALIDATING: ['PASSED', 'RETURN', 'BLOCKED'], PASSED: ['INTEGRATING', 'COMPLETE', 'RETURN', 'BLOCKED'], INTEGRATING: ['COMPLETE', 'RELEASE_APPROVAL_REQUIRED', 'RETURN', 'BLOCKED'], RELEASE_APPROVAL_REQUIRED: ['RELEASING', 'RETURN', 'BLOCKED'], RELEASING: ['COMPLETE', 'BLOCKED'], COMPLETE: [], RETURN: ['BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING', 'BLOCKED'], BLOCKED: ['BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING']
 };
 const SHORT_APPROVAL = /^(批准|同意|可以|继续|就这个|选\s*[a-zA-Z]|按流程推进|你看着办|做完它|批准然后按(?:照)?工作流推进)[。！!\s]*$/i;
+const AFFIRMATIVE_APPROVAL = /^(批准|同意|确认|接受|通过)(?:$|[\s，,：:。！!].*)/;
+const NEGATIVE_APPROVAL = /(不同意|不批准|拒绝|取消|停止)/;
 
 /** 输出中文错误并使用稳定的非零退出码终止。 */
 function fail(message, code = 2) {
@@ -242,6 +244,63 @@ function matchingApprovals(work, ledger, options) {
   });
 }
 
+/** 返回当前冻结 pending 唯一对应且仍有效的审批记录。 */
+function effectiveApproval(work, ledger) {
+  if (!work.approvalRecord) return null;
+  const matches = matchingApprovals(work, ledger, { approvalId: work.approvalRecord, level: work.pendingApprovalActionLevel, gate: work.pendingApprovalGate, object: work.pendingApprovalObject, actionType: work.pendingApprovalActionType, paths: work.pendingApprovalFileScope, targets: work.pendingApprovalExternalTargets, external: work.pendingApprovalExternalWrite, device: work.pendingApprovalPhysicalDevice, release: work.pendingApprovalRelease, destructive: work.pendingApprovalDestructive });
+  return matches.length === 1 ? matches[0] : null;
+}
+
+/** 纯函数：按实际审批/冻结等级推导风险通道、下一状态、工件和阻塞项。 */
+function deriveRoute(work, approval) {
+  const level = approval?.actionLevel ?? work.pendingApprovalActionLevel;
+  const channel = ({ A1: 'CANDIDATE', A2: 'PROTOTYPE', A3: 'PRODUCTION', A4: 'INTEGRATION', A5: 'EXTERNAL', A6: 'RELEASE' })[level] ?? 'CANDIDATE';
+  const requiredArtifacts = {
+    CANDIDATE: ['Approval Ledger', 'Artifact Audit', 'Evidence Manifest'],
+    PROTOTYPE: ['Approval Ledger', 'Artifact/Diff Audit', 'Evidence Manifest'],
+    PRODUCTION: ['A3 Approval', 'Implementation Package', 'Diff Audit', 'F0-F3 Evidence', 'A4/F4 Integration Approval'],
+    INTEGRATION: ['A4/F4 Approval', 'Diff Audit', 'F4 Evidence'],
+    EXTERNAL: ['A5 Exact Target Approval', 'External Receipt Artifact', 'Manual External Execution'],
+    RELEASE: ['Independent Release Work Item', 'A6/F4 Exact Target Approval', 'Release Receipt Artifact', 'Manual Release Execution']
+  }[channel];
+  const blockers = [];
+  if (!approval) blockers.push(work.pendingApprovalPresentedId === work.pendingApprovalId ? '等待当前 pending 用户确认' : '先运行 handoff 展示当前 pending');
+  if (channel === 'RELEASE' && !work.releaseWorkItem) blockers.push('A6 必须使用独立发布 Work Item');
+  if (['EXTERNAL', 'RELEASE'].includes(channel)) blockers.push('自动化不得执行外部动作或发布');
+  const nextState = work.globalState === 'APPROVED' && level === 'A1' ? 'VALIDATING'
+    : work.globalState === 'APPROVED' && ['A2', 'A3'].includes(level) ? 'IMPLEMENTING'
+      : work.globalState === 'PASSED' && ['A1', 'A2'].includes(level) ? 'COMPLETE'
+        : (TRANSITIONS[work.globalState] ?? [])[0] ?? null;
+  return { channel: `${channel}(${level})`, actionLevel: level, nextLegalState: nextState, requiredArtifacts, blockers };
+}
+
+/** 输出自动推导的风险通道和下一条安全命令，不执行任何动作。 */
+function route(args) {
+  const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
+  const ledger = args.ledger ? readLedger(args.ledger) : { schemaVersion: '1.0', approvals: [] };
+  const approval = effectiveApproval(work, ledger);
+  const result = deriveRoute(work, approval);
+  let nextCommand;
+  if (!approval) nextCommand = work.pendingApprovalPresentedId === work.pendingApprovalId ? `node <skill-dir>/scripts/workflow-control.mjs approve --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'} --approval-id <id> --user-text "批准"` : `node <skill-dir>/scripts/workflow-control.mjs handoff --work-item ${args['work-item']}`;
+  else if (work.globalState === 'APPROVED' && approval.actionLevel === 'A3') {
+    result.blockers.push('A3 进入 IMPLEMENTING 需要严格 Implementation Package');
+    nextCommand = `node <skill-dir>/scripts/workflow-control.mjs advance --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'} --implementation-package <package>`;
+  } else if ((work.globalState === 'APPROVED' && approval.actionLevel === 'A1') || (work.globalState === 'IMPLEMENTING' && ['A2', 'A3'].includes(approval.actionLevel))) {
+    if (!work.diffAuditRecord) { result.blockers.push('缺少当前候选 Diff/Artifact Audit'); nextCommand = `node <skill-dir>/scripts/workflow-control.mjs diff-audit --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'}${approval.actionLevel === 'A3' ? ' --implementation-package <package>' : ''} --record <record> ...`; }
+    else nextCommand = `node <skill-dir>/scripts/workflow-control.mjs advance --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'}`;
+  } else if (work.globalState === 'VALIDATING') {
+    result.blockers.push('需要当前批次 Evidence Manifest');
+    nextCommand = `node <skill-dir>/scripts/workflow-control.mjs advance --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'} --evidence <evidence>`;
+  } else if (work.globalState === 'PASSED' && ['A1', 'A2'].includes(approval.actionLevel)) {
+    result.blockers.push('COMPLETE 仍需当前 Evidence Manifest');
+    nextCommand = `node <skill-dir>/scripts/workflow-control.mjs advance --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'} --evidence <evidence>`;
+  } else if (work.globalState === 'PASSED') {
+    result.blockers.push('生产候选需要新的 A4/F4 集成审批点');
+    nextCommand = `node <skill-dir>/scripts/workflow-control.mjs prepare-approval --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'} --action-level A4 --gate F4 ...`;
+  } else nextCommand = `node <skill-dir>/scripts/workflow-control.mjs advance --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'}`;
+  process.stdout.write(JSON.stringify({ workItemId: work.workItemId, globalState: work.globalState, ...result, nextCommand }, null, 2));
+}
+
 /** 验证当前基线绑定的模块批准和 grilling 决策，拒绝手填布尔绕过。 */
 function validateModuleGate(work, ledger) {
   if (!work.moduleGateRequired) return;
@@ -380,7 +439,20 @@ function prepareApproval(args) {
 function approve(args) {
   const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
   const ledger = existsSync(resolve(String(args.ledger))) ? readLedger(args.ledger) : { schemaVersion: '1.0', approvals: [] };
-  const approval = validateApproval(readJson(args.record, '审批记录'));
+  // 无 record 时，记录完全从当前已冻结 pending 生成，调用者不能借短回复扩权。
+  const generated = args.record ? null : {
+    approvalId: args['approval-id'], promptContextId: work.pendingApprovalId, pendingState: work.pendingApprovalState, pendingContext: work.pendingApprovalContext,
+    workItemId: work.workItemId, userOriginalText: args['user-text'], approvedAt: new Date().toISOString(), explicitObject: work.pendingApprovalObject,
+    stageId: work.pendingApprovalStage, moduleId: work.moduleId, baselineVersion: work.baselineVersion, baselineHash: work.baselineHash,
+    actionType: work.pendingApprovalActionType, actionLevel: work.pendingApprovalActionLevel, fileScope: work.pendingApprovalFileScope, services: work.pendingApprovalServices,
+    allowServiceStart: work.pendingApprovalAllowServiceStart, allowDelete: work.pendingApprovalAllowDelete, externalWrite: work.pendingApprovalExternalWrite,
+    destructive: work.pendingApprovalDestructive, physicalDevice: work.pendingApprovalPhysicalDevice, release: work.pendingApprovalRelease,
+    externalTargets: work.pendingApprovalExternalTargets, gate: work.pendingApprovalGate,
+    invalidatedWhen: ['pending 轮换', '对象、阶段、范围或基线变化']
+  };
+  if (!args.record && (!args['approval-id'] || !args['user-text'])) fail('自动审批记录需要 --approval-id 与 --user-text');
+  if (!args.record && (NEGATIVE_APPROVAL.test(String(args['user-text']).trim()) || (!SHORT_APPROVAL.test(String(args['user-text']).trim()) && !AFFIRMATIVE_APPROVAL.test(String(args['user-text']).trim())))) fail('自动审批原文必须是无否定冲突的当前 pending 肯定确认');
+  const approval = validateApproval(args.record ? readJson(args.record, '审批记录') : generated);
   if (ledger.approvals.some((item) => item.approvalId === approval.approvalId)) fail(`approvalId 已存在：${approval.approvalId}`);
   if (work.pendingApprovalPresentedId !== work.pendingApprovalId || !work.pendingApprovalPresentedAt) fail('当前 pending approval 尚未由 handoff 展示，不能批准');
   const pendingMatches = approval.promptContextId === work.pendingApprovalId && approval.pendingState === work.pendingApprovalState && approval.pendingContext === work.pendingApprovalContext && approval.explicitObject === work.pendingApprovalObject && approval.stageId === work.pendingApprovalStage && approval.actionLevel === work.pendingApprovalActionLevel && approval.gate === work.pendingApprovalGate && approval.gate === work.nextGate && approval.actionType === work.pendingApprovalActionType && JSON.stringify(approval.fileScope) === JSON.stringify(work.pendingApprovalFileScope) && JSON.stringify(approval.services) === JSON.stringify(work.pendingApprovalServices) && JSON.stringify(approval.externalTargets ?? []) === JSON.stringify(work.pendingApprovalExternalTargets) && approval.allowServiceStart === work.pendingApprovalAllowServiceStart && approval.allowDelete === work.pendingApprovalAllowDelete && approval.externalWrite === work.pendingApprovalExternalWrite && approval.destructive === work.pendingApprovalDestructive && approval.physicalDevice === work.pendingApprovalPhysicalDevice && approval.release === work.pendingApprovalRelease && work.globalState === work.pendingApprovalState;
@@ -458,6 +530,30 @@ function diffFingerprint(repo, baseline, entries) {
   return `sha256:${hash.digest('hex')}`;
 }
 
+/** 读取实际工件并生成可复算的路径/哈希记录。 */
+function artifactRecords(repo, paths, work, externalReceipt = false) {
+  const normalized = externalReceipt ? paths.map((path) => normalizeRepoPath(repo, path)) : checkPaths(paths, work.allowedPaths, work.forbiddenPaths, repo);
+  if (externalReceipt) {
+    const evidenceRoot = resolve(repo, work.evidenceRoot);
+    for (const file of normalized) {
+      if (work.forbiddenPaths.some((pattern) => pathMatches(file, pattern))) fail(`回执工件命中 forbiddenPaths：${file}`);
+      if (relative(evidenceRoot, resolve(repo, file)).startsWith('..')) fail(`A5/A6 回执工件必须位于 evidenceRoot：${file}`);
+    }
+  }
+  return normalized.map((file) => {
+    const target = resolve(repo, file);
+    if (!existsSync(target)) fail(`审计工件不存在：${file}`);
+    return { file, hash: fileHash(target) };
+  });
+}
+
+/** 计算无 Git diff 工件集合的稳定指纹。 */
+function artifactFingerprint(artifacts) {
+  const hash = createHash('sha256');
+  for (const item of [...artifacts].sort((a, b) => a.file.localeCompare(b.file))) hash.update(`${item.file}\0${item.hash}\n`);
+  return `sha256:${hash.digest('hex')}`;
+}
+
 /** 对真实 diff 执行审批、模块、删除、所有权、路径和基线审计。 */
 function diffAudit(args) {
   const workPath = resolve(String(args['work-item']));
@@ -465,12 +561,15 @@ function diffAudit(args) {
   const repo = resolve(String(args.repo ?? process.cwd()));
   const baseline = String(args.baseline ?? work.baselineId);
   if (baseline !== work.baselineId || String(args['baseline-hash'] ?? '') !== work.baselineHash) fail('diff-audit 基线漂移');
-  const level = String(args['action-level'] ?? (work.globalState === 'INTEGRATING' ? 'A4' : work.globalState === 'IMPLEMENTING' ? 'A3' : 'A2'));
   const ledger = readLedger(args.ledger);
+  const level = String(args['action-level'] ?? effectiveApproval(work, ledger)?.actionLevel ?? work.pendingApprovalActionLevel);
   const pkg = ['A3', 'A4'].includes(level) ? validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work, ledger, level === 'A3') : null;
   const entries = changedEntries(repo, baseline).filter((entry) => !pathMatches(entry.file, '.workflow-control'));
-  if (!entries.length) fail('没有可审计的实际 diff');
-  checkPaths(entries.map((entry) => entry.file), work.allowedPaths, work.forbiddenPaths, repo);
+  const artifacts = entries.length ? [] : artifactRecords(repo, list(args.artifact), work, ['A5', 'A6'].includes(level));
+  if (!entries.length && ['A3', 'A4'].includes(level)) fail('A3/A4 生产或集成审计禁止空 diff');
+  if (!entries.length && !['A1', 'A2', 'A5', 'A6'].includes(level)) fail('当前等级不允许 artifact-only 审计');
+  if (!entries.length && !artifacts.length) fail('无 Git diff 时必须提供至少一个真实 --artifact');
+  if (entries.length) checkPaths(entries.map((entry) => entry.file), work.allowedPaths, work.forbiddenPaths, repo);
   const mapping = [];
   for (const entry of entries) {
     if (pkg) {
@@ -488,8 +587,12 @@ function diffAudit(args) {
     if (entry.status === 'D' && pkg && !pkg.expectedDeletedFiles.includes(entry.file)) fail(`删除不在 Implementation Package.expectedDeletedFiles：${entry.file}`);
     mapping.push({ ...entry, workItemId: work.workItemId, moduleId: work.moduleId, domain: work.domain, stageId: work.stageId, actionLevel: level, approvalId: approval.approvalId, owner: pkg ? Object.entries(pkg.fileOwnership).find(([pattern]) => pathMatches(entry.file, pattern))[1] : work.assignedAgent });
   }
-  const fingerprint = diffFingerprint(repo, baseline, entries);
-  const record = { recordType: 'DIFF_AUDIT', workItemId: work.workItemId, baselineId: baseline, baselineHash: work.baselineHash, diffFingerprint: fingerprint, actionLevel: level, approvalId: work.approvalRecord, recordedAt: new Date().toISOString(), entries: mapping, verdict: 'PASS' };
+  if (!entries.length) {
+    const candidates = matchingApprovals(work, ledger, { level, gate: String(args.gate ?? work.nextGate), object: String(args.object ?? work.pendingApprovalObject), actionType: String(args['action-type'] ?? ''), paths: ['A1', 'A2'].includes(level) ? artifacts.map((item) => item.file) : [], targets: list(args['external-target']) });
+    if (candidates.length !== 1 || candidates[0].approvalId !== work.approvalRecord) fail('artifact-only 审计缺少当前精确审批或审批范围重叠');
+  }
+  const fingerprint = entries.length ? diffFingerprint(repo, baseline, entries) : artifactFingerprint(artifacts);
+  const record = { recordType: 'DIFF_AUDIT', workItemId: work.workItemId, baselineId: baseline, baselineHash: work.baselineHash, diffFingerprint: fingerprint, actionLevel: level, approvalId: work.approvalRecord, recordedAt: new Date().toISOString(), entries: mapping, artifacts, verdict: 'PASS' };
   if (!args.record) fail('diff-audit 必须使用 --record 保存可验证记录');
   writeJson(args.record, record);
   work.diffAuditRecord = normalizeRepoPath(repo, args.record);
@@ -505,13 +608,16 @@ function diffAudit(args) {
 function verifyDiffAudit(work, repo, path) {
   if (!path) fail('缺少 Diff Audit Record 路径');
   const record = readJson(resolve(repo, path), 'Diff Audit Record');
-  requireFields(record, ['recordType', 'workItemId', 'baselineId', 'baselineHash', 'diffFingerprint', 'actionLevel', 'approvalId', 'recordedAt', 'entries', 'verdict'], 'Diff Audit Record');
-  if (record.recordType !== 'DIFF_AUDIT' || record.verdict !== 'PASS' || record.workItemId !== work.workItemId || record.baselineId !== work.baselineId || record.baselineHash !== work.baselineHash || record.approvalId !== work.diffAuditApprovalRecord || !LEVELS.includes(record.actionLevel) || Number.isNaN(Date.parse(record.recordedAt)) || !Array.isArray(record.entries)) fail('Diff Audit Record 绑定不一致');
+  requireFields(record, ['recordType', 'workItemId', 'baselineId', 'baselineHash', 'diffFingerprint', 'actionLevel', 'approvalId', 'recordedAt', 'entries', 'artifacts', 'verdict'], 'Diff Audit Record');
+  if (record.recordType !== 'DIFF_AUDIT' || record.verdict !== 'PASS' || record.workItemId !== work.workItemId || record.baselineId !== work.baselineId || record.baselineHash !== work.baselineHash || record.approvalId !== work.diffAuditApprovalRecord || !LEVELS.includes(record.actionLevel) || Number.isNaN(Date.parse(record.recordedAt)) || !Array.isArray(record.entries) || !Array.isArray(record.artifacts)) fail('Diff Audit Record 绑定不一致');
   if (!work.diffAuditLedgerRecord) fail('Diff Audit Record 缺少审批账本绑定');
   const approval = readLedger(resolve(repo, work.diffAuditLedgerRecord)).approvals.find((item) => item.approvalId === record.approvalId && !item.invalidatedAt && !item.legacyReadOnly);
   if (!approval || approval.workItemId !== work.workItemId || approval.moduleId !== work.moduleId || approval.baselineHash !== work.baselineHash || approval.actionLevel !== record.actionLevel) fail('Diff Audit Record 审批已失效或绑定不一致');
   const entries = changedEntries(repo, work.baselineId).filter((entry) => !pathMatches(entry.file, '.workflow-control'));
-  if (diffFingerprint(repo, work.baselineId, entries) !== record.diffFingerprint) fail('Diff Audit Record 已过期');
+  if (!entries.length && record.artifacts.length) {
+    const currentArtifacts = artifactRecords(repo, record.artifacts.map((item) => item.file), work, ['A5', 'A6'].includes(record.actionLevel));
+    if (JSON.stringify(currentArtifacts) !== JSON.stringify(record.artifacts) || artifactFingerprint(currentArtifacts) !== record.diffFingerprint) fail('Diff Audit Record 工件哈希已过期');
+  } else if (record.artifacts.length || diffFingerprint(repo, work.baselineId, entries) !== record.diffFingerprint) fail('Diff Audit Record 已过期');
   checkPaths(entries.map((entry) => entry.file), work.allowedPaths, work.forbiddenPaths, repo);
   if (record.entries.length !== entries.length) fail('Diff Audit Record.entries 与真实 diff 数量不一致');
   if (['A3', 'A4'].includes(record.actionLevel) && !work.implementationPackageRecord) fail('Diff Audit Record 缺少 Implementation Package 绑定');
@@ -560,8 +666,12 @@ function evidenceCheck(args, silent = false) {
     if (result.status !== 'PASS' || result.baselineHash !== work.baselineHash || result.diffFingerprint !== evidence.diffFingerprint) fail(`${gate} 未绑定当前候选并通过`);
   }
   const reviewer = evidence.gateResults.F2.reviewer;
-  if (evidence.gateResults.F0.approvalId !== audit.approvalId || evidence.gateResults.F3.evidenceId !== evidence.evidenceId || !reviewer) fail('F0 审批、F2 独立审查或 F3 证据绑定不完整');
-  if (reviewer === work.assignedAgent || work.delegatedAgents.includes(reviewer)) fail('F2 reviewer 必须独立于实施所有者与 delegated implementer');
+  const reviewMode = evidence.gateResults.F2.reviewMode;
+  if (evidence.gateResults.F0.approvalId !== audit.approvalId || evidence.gateResults.F3.evidenceId !== evidence.evidenceId || !reviewer) fail('F0 审批、F2 审查或 F3 证据绑定不完整');
+  if (['A1', 'A2'].includes(audit.actionLevel)) {
+    if (!['SELF', 'INDEPENDENT'].includes(reviewMode)) fail('A1/A2 F2 必须声明 SELF 或 INDEPENDENT reviewMode');
+    if (reviewMode === 'SELF' && reviewer !== work.assignedAgent) fail('SELF reviewer 必须是 Work Item.assignedAgent');
+  } else if (reviewMode !== 'INDEPENDENT' || reviewer === work.assignedAgent || work.delegatedAgents.includes(reviewer)) fail('A3-A6 F2 必须由独立 reviewer 审查');
   if (!silent) process.stdout.write(JSON.stringify({ ok: true, command: 'evidence-check', evidenceId: evidence.evidenceId, fingerprint: evidence.diffFingerprint }, null, 2));
   return evidence;
 }
@@ -580,10 +690,14 @@ function transition(args) {
   }
   if (target === 'IMPLEMENTING') {
     const ledger = readLedger(args.ledger);
-    const pkg = validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work, ledger, true);
-    if (pkg.approvalId !== work.approvalRecord || work.pendingApprovalState !== 'APPROVAL_REQUIRED') fail('进入 IMPLEMENTING 必须绑定在 APPROVAL_REQUIRED 准备的当前 A3 实施审批');
-    validateModuleGate(work, ledger);
-    validateChangeRequests(work, repo, 'A3', ledger);
+    const approval = effectiveApproval(work, ledger);
+    if (!approval || !['A2', 'A3'].includes(approval.actionLevel) || work.pendingApprovalState !== 'APPROVAL_REQUIRED') fail('进入 IMPLEMENTING 必须绑定当前 A2/A3 审批');
+    if (approval.actionLevel === 'A3') {
+      const pkg = validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work, ledger, true);
+      if (pkg.approvalId !== work.approvalRecord) fail('进入 A3 IMPLEMENTING 必须绑定当前 Implementation Package');
+      validateModuleGate(work, ledger);
+      validateChangeRequests(work, repo, 'A3', ledger);
+    }
   }
   if (target === 'VALIDATING') verifyDiffAudit(work, repo, work.diffAuditRecord);
   if (target === 'PASSED') evidenceCheck(args, true);
@@ -601,11 +715,14 @@ function transition(args) {
   if (target === 'COMPLETE') {
     const evidence = evidenceCheck(args, true);
     if (work.expectedOutputs.some((item) => !evidence.completedOutputs.includes(item)) || work.exitCriteria.some((item) => !evidence.satisfiedExitCriteria.includes(item))) fail('COMPLETE 前 expectedOutputs/exitCriteria 未全部绑定完成证据');
-    const requiredLevel = work.releaseWorkItem ? 'A6' : 'A4';
-    const currentApproval = readLedger(args.ledger).approvals.find((item) => item.approvalId === work.approvalRecord && !item.invalidatedAt && item.promptContextId === work.pendingApprovalId && item.pendingState === work.pendingApprovalState && item.pendingContext === work.pendingApprovalContext);
-    const f4 = evidence.gateResults.F4;
-    requireFields(f4, ['status', 'baselineHash', 'diffFingerprint', 'approvalId'], 'Evidence.gateResults.F4');
-    if (!currentApproval || currentApproval.actionLevel !== requiredLevel || currentApproval.gate !== 'F4' || Date.parse(evidence.recordedAt) < Date.parse(currentApproval.approvedAt) || f4.status !== 'PASS' || f4.baselineHash !== work.baselineHash || f4.diffFingerprint !== evidence.diffFingerprint || f4.approvalId !== work.approvalRecord) fail('COMPLETE 缺少当前精确 F4 集成/发布审批与证据');
+    const audit = verifyDiffAudit(work, repo, work.diffAuditRecord);
+    if (!['A1', 'A2'].includes(audit.actionLevel)) {
+      const requiredLevel = work.releaseWorkItem ? 'A6' : 'A4';
+      const currentApproval = readLedger(args.ledger).approvals.find((item) => item.approvalId === work.approvalRecord && !item.invalidatedAt && item.promptContextId === work.pendingApprovalId && item.pendingState === work.pendingApprovalState && item.pendingContext === work.pendingApprovalContext);
+      const f4 = evidence.gateResults.F4;
+      requireFields(f4, ['status', 'baselineHash', 'diffFingerprint', 'approvalId'], 'Evidence.gateResults.F4');
+      if (!currentApproval || currentApproval.actionLevel !== requiredLevel || currentApproval.gate !== 'F4' || Date.parse(evidence.recordedAt) < Date.parse(currentApproval.approvedAt) || f4.status !== 'PASS' || f4.baselineHash !== work.baselineHash || f4.diffFingerprint !== evidence.diffFingerprint || f4.approvalId !== work.approvalRecord) fail('COMPLETE 缺少当前精确 F4 集成/发布审批与证据');
+    }
   }
   work.globalState = target;
   if (args['next-gate']) {
@@ -614,6 +731,25 @@ function transition(args) {
   }
   writeJson(workPath, work);
   process.stdout.write(JSON.stringify({ ok: true, command: 'transition', workItemId: work.workItemId, globalState: target }, null, 2));
+}
+
+/** 自动推进一个状态；审批边界和外部动作始终停止，不自动准备或批准。 */
+function advance(args) {
+  const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
+  const ledger = readLedger(args.ledger);
+  const approval = effectiveApproval(work, ledger);
+  const routeResult = deriveRoute(work, approval);
+  if (['EXTERNAL(A5)', 'RELEASE(A6)'].includes(routeResult.channel)) fail('A5/A6 只能人工执行精确批准的外部动作，advance 不会执行');
+  if (work.globalState === 'APPROVAL_REQUIRED' && !approval) fail('已到审批边界；先运行 handoff，再由用户确认并运行 approve');
+  let target;
+  if (work.globalState === 'APPROVAL_REQUIRED') target = 'APPROVED';
+  else if (work.globalState === 'APPROVED') target = approval?.actionLevel === 'A1' ? 'VALIDATING' : ['A2', 'A3'].includes(approval?.actionLevel) ? 'IMPLEMENTING' : null;
+  else if (work.globalState === 'IMPLEMENTING') target = 'VALIDATING';
+  else if (work.globalState === 'VALIDATING') target = 'PASSED';
+  else if (work.globalState === 'PASSED' && ['A1', 'A2'].includes(approval?.actionLevel ?? work.pendingApprovalActionLevel)) target = 'COMPLETE';
+  else if (['INTAKE', 'BASELINE', 'PROPOSAL', 'REVIEW'].includes(work.globalState)) target = (TRANSITIONS[work.globalState] ?? [])[0];
+  if (!target) fail('当前状态不能自动推进；需要新的审批点、F4 决策或人工外部执行');
+  transition({ ...args, to: target, object: work.pendingApprovalObject, 'action-type': work.pendingApprovalActionType, 'external-target': work.pendingApprovalExternalTargets });
 }
 
 /** 输出绑定真实候选与单次 pending 审批点的机器可执行交接包。 */
@@ -647,6 +783,7 @@ function handoff(args) {
     externalTargets,
     approvalPrompt: '回复「批准」即可确认当前审批点；该回复只确认本次交接展示的唯一 pending，不会授权后续阶段或扩大范围。',
     acceptedShortReplies: ['批准', '同意', '可以', '继续', '批准然后按流程推进'],
+    nextCommand: `node <skill-dir>/scripts/workflow-control.mjs approve --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'} --approval-id <id> --user-text "批准"`,
     auditApprovalBinding: { pendingApprovalId: work.pendingApprovalId, object: work.pendingApprovalObject, stage: work.pendingApprovalStage, actionLevel: work.pendingApprovalActionLevel, gate: work.pendingApprovalGate, state: work.pendingApprovalState, context: work.pendingApprovalContext, presentedAt: work.pendingApprovalPresentedAt }
   };
   process.stdout.write(JSON.stringify(output, null, 2));
@@ -655,7 +792,7 @@ function handoff(args) {
 /** 输出工作项关键状态。 */
 function status(args) {
   const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
-  process.stdout.write(JSON.stringify({ workItemId: work.workItemId, projectId: work.projectId, moduleId: work.moduleId, domain: work.domain, stageId: work.stageId, globalState: work.globalState, nextGate: work.nextGate, baselineId: work.baselineId, baselineVersion: work.baselineVersion, baselineHash: work.baselineHash, approvalRecord: work.approvalRecord, pendingApprovalId: work.pendingApprovalId, pendingApprovalState: work.pendingApprovalState, pendingApprovalContext: work.pendingApprovalContext, pendingApprovalPresentedId: work.pendingApprovalPresentedId, pendingApprovalPresentedAt: work.pendingApprovalPresentedAt, diffAuditRecord: work.diffAuditRecord ?? null }, null, 2));
+  process.stdout.write(JSON.stringify({ workItemId: work.workItemId, projectId: work.projectId, moduleId: work.moduleId, domain: work.domain, stageId: work.stageId, globalState: work.globalState, nextGate: work.nextGate, baselineId: work.baselineId, baselineVersion: work.baselineVersion, baselineHash: work.baselineHash, approvalRecord: work.approvalRecord, pendingApprovalId: work.pendingApprovalId, pendingApprovalState: work.pendingApprovalState, pendingApprovalContext: work.pendingApprovalContext, pendingApprovalPresentedId: work.pendingApprovalPresentedId, pendingApprovalPresentedAt: work.pendingApprovalPresentedAt, diffAuditRecord: work.diffAuditRecord ?? null, nextCommand: `node <skill-dir>/scripts/workflow-control.mjs route --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'}` }, null, 2));
 }
 
 /** 仅在控制目录不存在时创建空账本、目录和首个 Work Item。 */
@@ -740,10 +877,10 @@ function lint(args) {
 
 /** 输出命令帮助。 */
 function help() {
-  process.stdout.write('用法：node <skill-dir>/scripts/workflow-control.mjs <init|prepare-approval|handoff|preflight|approve|delegate-check|diff-audit|evidence-check|transition|status|lint> [选项]\n');
+  process.stdout.write('用法：node <skill-dir>/scripts/workflow-control.mjs <init|route|advance|prepare-approval|handoff|preflight|approve|delegate-check|diff-audit|evidence-check|transition|status|lint> [选项]\n');
 }
 
 const [command, ...rest] = process.argv.slice(2);
 const args = parseArgs(rest);
 if (!command || args.help === true || command === 'help') help();
-else ({ init, 'prepare-approval': prepareApproval, handoff, preflight, approve, 'delegate-check': delegateCheck, 'diff-audit': diffAudit, 'evidence-check': evidenceCheck, transition, status, lint }[command] ?? (() => fail(`未知命令 ${command}`)))(args);
+else ({ init, route, advance, 'prepare-approval': prepareApproval, handoff, preflight, approve, 'delegate-check': delegateCheck, 'diff-audit': diffAudit, 'evidence-check': evidenceCheck, transition, status, lint }[command] ?? (() => fail(`未知命令 ${command}`)))(args);

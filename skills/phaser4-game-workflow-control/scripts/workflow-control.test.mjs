@@ -104,7 +104,7 @@ function makeEvidence(fixture, fingerprint, overrides = {}) {
   const common = { status: 'PASS', baselineHash: HASH_A, diffFingerprint: fingerprint };
   const auditRecord = JSON.parse(readFileSync(join(fixture.root, 'evidence', 'WI-1', 'diff-audit.json'), 'utf8'));
   return {
-    evidenceId: 'EV-1', batchId: 'BATCH-1', workItemId: 'WI-1', baselineHash: HASH_A, codeFingerprint: `git:${fixture.head}`, diffFingerprint: fingerprint, recordedAt: new Date(Date.parse(auditRecord.recordedAt) + 1000).toISOString(), commands: [{ command: 'node --test', exitCode: 0, outputFile: rel, outputHash: hashFile(output) }], environment: { node: process.version }, dataSources: ['git diff', rel], files: [rel], fileHashes: { [rel]: hashFile(output) }, gateResults: { F0: { ...common, approvalId: 'AP-A3' }, F1: { ...common }, F2: { ...common, reviewer: 'independent-reviewer' }, F3: { ...common, evidenceId: 'EV-1' } }, verdict: 'PASS', uncoveredItems: [], completedOutputs: ['src/main.js'], satisfiedExitCriteria: ['tests pass'],
+    evidenceId: 'EV-1', batchId: 'BATCH-1', workItemId: 'WI-1', baselineHash: HASH_A, codeFingerprint: `git:${fixture.head}`, diffFingerprint: fingerprint, recordedAt: new Date(Date.parse(auditRecord.recordedAt) + 1000).toISOString(), commands: [{ command: 'node --test', exitCode: 0, outputFile: rel, outputHash: hashFile(output) }], environment: { node: process.version }, dataSources: ['git diff', rel], files: [rel], fileHashes: { [rel]: hashFile(output) }, gateResults: { F0: { ...common, approvalId: 'AP-A3' }, F1: { ...common }, F2: { ...common, reviewer: 'independent-reviewer', reviewMode: 'INDEPENDENT' }, F3: { ...common, evidenceId: 'EV-1' } }, verdict: 'PASS', uncoveredItems: [], completedOutputs: ['src/main.js'], satisfiedExitCriteria: ['tests pass'],
     ...overrides
   };
 }
@@ -453,9 +453,119 @@ test('负向：F2 reviewer 不独立或证据时间早于 diff audit 时拒绝',
   const evidence = makeEvidence(f, JSON.parse(result.stdout).diffFingerprint);
   const path = join(f.root, 'evidence', 'WI-1', 'review.json');
   evidence.gateResults.F2.reviewer = 'implementer'; writeJson(path, evidence);
-  rejects(run('evidence-check', ['--work-item', f.workPath, '--evidence', path], f.repo), /reviewer 必须独立/);
+  rejects(run('evidence-check', ['--work-item', f.workPath, '--evidence', path], f.repo), /独立 reviewer/);
   evidence.gateResults.F2.reviewer = 'independent-reviewer'; evidence.recordedAt = '2000-01-01T00:00:00.000Z'; writeJson(path, evidence);
   rejects(run('evidence-check', ['--work-item', f.workPath, '--evidence', path], f.repo), /早于当前 Diff Audit/);
+});
+
+/** 建立并执行一个 artifact-only 的 A1/A2 自动闭环。 */
+function runLowRiskFlow(level) {
+  const actionType = level === 'A1' ? 'document-candidate' : 'prototype';
+  const object = level === 'A1' ? 'candidate report' : 'sandbox prototype';
+  const approvalId = `AP-${level}`;
+  const artifact = '.workflow-control/evidence/WI-1/candidate.txt';
+  const f = setup({
+    globalState: 'APPROVAL_REQUIRED', approvalRecord: null, assignedAgent: 'implementer', allowedActionLevels: ['A0', level], allowedPaths: ['src', 'docs', '.workflow-control/evidence/WI-1'],
+    pendingApprovalId: `PENDING-${level}`, pendingApprovalObject: object, pendingApprovalActionLevel: level, pendingApprovalState: 'APPROVAL_REQUIRED', pendingApprovalContext: `${level} approval`, pendingApprovalActionType: actionType,
+    pendingApprovalFileScope: [artifact], pendingApprovalPresentedId: null, pendingApprovalPresentedAt: null, expectedOutputs: [artifact], exitCriteria: ['tests pass']
+  }, []);
+  writeFileSync(join(f.repo, artifact), `${level} artifact\n`);
+  assert.equal(run('handoff', ['--work-item', f.workPath, '--ledger', f.ledgerPath], f.repo).status, 0);
+  const approved = run('approve', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--approval-id', approvalId, '--user-text', '批准'], f.repo);
+  assert.equal(approved.status, 0, approved.stderr);
+  assert.equal(JSON.parse(readFileSync(f.ledgerPath, 'utf8')).approvals[0].fileScope[0], artifact);
+  assert.equal(run('advance', ['--work-item', f.workPath, '--ledger', f.ledgerPath], f.repo).status, 0);
+  if (level === 'A2') assert.equal(run('advance', ['--work-item', f.workPath, '--ledger', f.ledgerPath], f.repo).status, 0);
+  const auditPath = join(f.root, 'evidence', 'WI-1', 'diff-audit.json');
+  const audited = run('diff-audit', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--baseline', f.head, '--baseline-hash', HASH_A, '--gate', 'F0', '--object', object, '--action-type', actionType, '--artifact', artifact, '--record', auditPath], f.repo);
+  assert.equal(audited.status, 0, audited.stderr);
+  assert.equal(JSON.parse(audited.stdout).actionLevel, level);
+  assert.equal(run('advance', ['--work-item', f.workPath, '--ledger', f.ledgerPath], f.repo).status, 0);
+  const fingerprint = JSON.parse(audited.stdout).diffFingerprint;
+  const evidence = makeEvidence(f, fingerprint);
+  evidence.gateResults.F0.approvalId = approvalId;
+  evidence.gateResults.F2 = { ...evidence.gateResults.F2, reviewer: 'implementer', reviewMode: 'SELF' };
+  evidence.completedOutputs = [artifact];
+  const evidencePath = join(f.root, 'evidence', 'WI-1', `${level}-evidence.json`);
+  writeJson(evidencePath, evidence);
+  assert.equal(run('advance', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--evidence', evidencePath], f.repo).status, 0);
+  const completed = run('advance', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--evidence', evidencePath], f.repo);
+  assert.equal(completed.status, 0, completed.stderr);
+  assert.equal(JSON.parse(readFileSync(f.workPath, 'utf8')).globalState, 'COMPLETE');
+}
+
+test('正向：A1 与 A2 使用自动审批、SELF 审查和工件审计闭环', () => {
+  runLowRiskFlow('A1');
+  runLowRiskFlow('A2');
+});
+
+test('负向：自动审批拒绝否定原文且不能在审批边界前推进', () => {
+  const f = setup({ globalState: 'APPROVAL_REQUIRED', approvalRecord: null, pendingApprovalPresentedId: null, pendingApprovalPresentedAt: null }, []);
+  rejects(run('advance', ['--work-item', f.workPath, '--ledger', f.ledgerPath], f.repo), /审批边界/);
+  assert.equal(run('handoff', ['--work-item', f.workPath], f.repo).status, 0);
+  rejects(run('approve', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--approval-id', 'AP-NO', '--user-text', '我不同意'], f.repo), /肯定确认/);
+  rejects(run('approve', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--approval-id', 'AP-CONFLICT', '--user-text', '批准，但我不同意'], f.repo), /否定冲突|肯定确认/);
+});
+
+test('负向：A3 自动推进不绕过 Implementation Package 或 F4', () => {
+  const f = setup({ globalState: 'APPROVED' });
+  rejects(run('advance', ['--work-item', f.workPath, '--ledger', f.ledgerPath], f.repo), /Implementation Package/);
+  const passed = setup({ globalState: 'PASSED' });
+  rejects(run('advance', ['--work-item', passed.workPath, '--ledger', passed.ledgerPath], passed.repo), /F4|审批点/);
+});
+
+test('正向：route 按当前状态报告真实缺失工件与下一命令', () => {
+  const approved = setup({ globalState: 'APPROVED' });
+  const packageRoute = run('route', ['--work-item', approved.workPath, '--ledger', approved.ledgerPath], approved.repo);
+  assert.equal(packageRoute.status, 0, packageRoute.stderr);
+  assert.match(packageRoute.stdout, /Implementation Package/);
+  const implementing = setup();
+  const auditRoute = run('route', ['--work-item', implementing.workPath, '--ledger', implementing.ledgerPath], implementing.repo);
+  assert.match(auditRoute.stdout, /diff-audit.*implementation-package/);
+  const passed = setup({ globalState: 'PASSED' });
+  const integrationRoute = run('route', ['--work-item', passed.workPath, '--ledger', passed.ledgerPath], passed.repo);
+  assert.match(integrationRoute.stdout, /A4\/F4|prepare-approval/);
+  const lowApproval = makeApproval({ approvalId: 'AP-A1', promptContextId: 'PENDING-A1', explicitObject: 'candidate', actionType: 'document-candidate', actionLevel: 'A1', fileScope: ['docs'] });
+  const low = setup({ globalState: 'PASSED', approvalRecord: 'AP-A1', pendingApprovalId: 'PENDING-A1', pendingApprovalObject: 'candidate', pendingApprovalActionLevel: 'A1', pendingApprovalActionType: 'document-candidate', pendingApprovalFileScope: ['docs'] }, [lowApproval]);
+  const completeRoute = run('route', ['--work-item', low.workPath, '--ledger', low.ledgerPath], low.repo);
+  assert.match(completeRoute.stdout, /advance.*--evidence <evidence>/);
+});
+
+test('负向：A3 空 diff 即使提供真实工件也被拒绝，且 A3 SELF 审查失败', () => {
+  const f = setup();
+  rejects(run('diff-audit', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--implementation-package', f.packagePath, '--baseline', f.head, '--baseline-hash', HASH_A, '--action-level', 'A3', '--artifact', 'src/main.js', '--record', join(f.root, 'empty.json')], f.repo), /禁止空 diff/);
+  const audited = audit(f); assert.equal(audited.result.status, 0, audited.result.stderr);
+  const work = JSON.parse(readFileSync(f.workPath, 'utf8')); work.globalState = 'VALIDATING'; writeJson(f.workPath, work);
+  const evidence = makeEvidence(f, JSON.parse(audited.result.stdout).diffFingerprint);
+  evidence.gateResults.F2 = { ...evidence.gateResults.F2, reviewer: 'implementer', reviewMode: 'SELF' };
+  const evidencePath = join(f.root, 'evidence', 'WI-1', 'self-a3.json'); writeJson(evidencePath, evidence);
+  rejects(run('evidence-check', ['--work-item', f.workPath, '--evidence', evidencePath], f.repo), /A3-A6.*独立/);
+});
+
+test('正向：A5/A6 外部回执可用 evidenceRoot 工件审计但 advance 不执行', () => {
+  for (const level of ['A5', 'A6']) {
+    const target = level === 'A5' ? 'origin/feature' : 'store/app-1';
+    const actionType = level === 'A5' ? 'external-state' : 'release';
+    const approval = makeApproval({ approvalId: `AP-${level}`, promptContextId: `PENDING-${level}`, pendingState: level === 'A5' ? 'INTEGRATING' : 'RELEASE_APPROVAL_REQUIRED', pendingContext: `${level} approval`, explicitObject: `${level} action`, actionType, actionLevel: level, fileScope: [], externalWrite: true, release: level === 'A6', gate: level === 'A6' ? 'F4' : 'F0', externalTargets: [target] });
+    const state = level === 'A5' ? 'INTEGRATING' : 'RELEASE_APPROVAL_REQUIRED';
+    const f = setup({ globalState: state, releaseWorkItem: level === 'A6', approvalRecord: `AP-${level}`, allowedActions: [actionType], allowedActionLevels: ['A0', level], prohibitedActions: [], allowedPaths: ['src'], allowedExternalTargets: [target], nextGate: level === 'A6' ? 'F4' : 'F0', pendingApprovalId: `PENDING-${level}`, pendingApprovalObject: `${level} action`, pendingApprovalActionLevel: level, pendingApprovalGate: level === 'A6' ? 'F4' : 'F0', pendingApprovalState: state, pendingApprovalContext: `${level} approval`, pendingApprovalActionType: actionType, pendingApprovalFileScope: [], pendingApprovalExternalWrite: true, pendingApprovalRelease: level === 'A6', pendingApprovalExternalTargets: [target] }, [approval]);
+    const receipt = '.workflow-control/evidence/WI-1/receipt.txt'; writeFileSync(join(f.repo, receipt), `${level} receipt\n`);
+    const audited = run('diff-audit', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--baseline', f.head, '--baseline-hash', HASH_A, '--object', `${level} action`, '--action-type', actionType, '--external-target', target, '--artifact', receipt, '--record', join(f.root, `${level}.json`)], f.repo);
+    assert.equal(audited.status, 0, audited.stderr);
+    rejects(run('advance', ['--work-item', f.workPath, '--ledger', f.ledgerPath], f.repo), /A5\/A6/);
+  }
+});
+
+test('负向：A5 回执位于 evidenceRoot 外或 forbiddenPaths 时拒绝', () => {
+  const approval = makeApproval({ approvalId: 'AP-A5', promptContextId: 'PENDING-A5', pendingState: 'INTEGRATING', pendingContext: 'A5 approval', explicitObject: 'A5 action', actionType: 'external-state', actionLevel: 'A5', fileScope: [], externalWrite: true, externalTargets: ['origin/feature'] });
+  const f = setup({ globalState: 'INTEGRATING', approvalRecord: 'AP-A5', allowedActions: ['external-state'], allowedActionLevels: ['A0', 'A5'], prohibitedActions: [], allowedPaths: ['src'], allowedExternalTargets: ['origin/feature'], pendingApprovalId: 'PENDING-A5', pendingApprovalObject: 'A5 action', pendingApprovalActionLevel: 'A5', pendingApprovalState: 'INTEGRATING', pendingApprovalContext: 'A5 approval', pendingApprovalActionType: 'external-state', pendingApprovalFileScope: [], pendingApprovalExternalWrite: true, pendingApprovalExternalTargets: ['origin/feature'] }, [approval]);
+  writeFileSync(join(f.root, 'outside.txt'), 'receipt\n');
+  const args = ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--baseline', f.head, '--baseline-hash', HASH_A, '--object', 'A5 action', '--action-type', 'external-state', '--external-target', 'origin/feature', '--artifact', '.workflow-control/outside.txt', '--record', join(f.root, 'outside-a5.json')];
+  rejects(run('diff-audit', args, f.repo), /evidenceRoot/);
+  const work = JSON.parse(readFileSync(f.workPath, 'utf8')); work.forbiddenPaths.push('.workflow-control/evidence/WI-1/blocked.txt'); writeJson(f.workPath, work);
+  writeFileSync(join(f.root, 'evidence', 'WI-1', 'blocked.txt'), 'blocked\n');
+  const blockedArgs = args.map((item) => item === '.workflow-control/outside.txt' ? '.workflow-control/evidence/WI-1/blocked.txt' : item);
+  rejects(run('diff-audit', blockedArgs, f.repo), /forbiddenPaths/);
 });
 
 test('负向：伪造 Diff Audit entries 的文件状态或归属映射时拒绝', () => {

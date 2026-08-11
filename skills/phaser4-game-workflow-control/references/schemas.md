@@ -24,4 +24,4 @@
 
 Work Item 使用 `baselineVersion`、`baselineHash`，并保存由 `prepare-approval` 轮换的 pending ID、所属状态/上下文、动作、文件范围、服务、外部目标、全部副作用、准备时间和最近展示记录；审批记录必须逐字段相等。短回复只在 `pendingApprovalPresentedId` 等于当前 ID 时有效。Implementation Package 在 A3 前冻结批准需求、架构/模块批准、文件所有权、增删文件、测试、非目标、兼容策略、完成定义和停止条件。Change Request 未批准时阻断受影响 A3/A4。
 
-证据必须绑定工作项、批次、baseline hash、代码/diff 指纹、时间、实际命令输出及哈希、环境、数据源、证据文件及哈希、独立 reviewer、F0-F4、完成输出、退出条件、判定与未覆盖项。证据时间不得早于 diff audit；`COMPLETE` 仍会重验真实 entries 映射、审批账本和当前 F4 决定。
+证据必须绑定工作项、批次、baseline hash、代码/diff 或 artifact 指纹、时间、实际命令输出及哈希、环境、数据源、证据文件及哈希、F0-F4、完成输出、退出条件、判定与未覆盖项。F2 明确 `reviewMode`：A1/A2 可由 assignedAgent 使用 `SELF`，A3-A6 必须 `INDEPENDENT`。证据时间不得早于审计；A3/A4 禁止空 diff，A5/A6 回执工件必须位于 evidenceRoot 且复算哈希。

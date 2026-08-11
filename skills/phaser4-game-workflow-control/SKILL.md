@@ -13,10 +13,10 @@ description: Phaser 4 游戏仓库的唯一全局工作流控制面。用于任�
 2. 为每项工作建立独立 Work Item；需求变化建立 Change Request，发布建立独立 Work Item。
 3. 到达审批点时先运行 `prepare-approval` 冻结新的 pending ID、状态、上下文、动作、文件/目标和副作用，再运行 `handoff` 展示完整审批交接。用户可只回复“批准”“同意”“可以”“继续”或“批准然后按流程推进”；`approve` 只把短回复绑定到最近展示的当前唯一 pending。旧审批点不得复用。
 4. 在任何写入、命令副作用或外部操作前运行 `node <skill-dir>/scripts/workflow-control.mjs preflight ...`。首次模块实现或边界变化先完成模块门与 grilling；架构批准不得代替实现批准。
-5. 进入 `IMPLEMENTING` 前冻结 Implementation Package，包括审批记录、基线、范围、路径所有权、委派、输出、验证与退出条件。
+5. A3 进入 `IMPLEMENTING` 前冻结 Implementation Package，包括审批记录、基线、范围、路径所有权、委派、输出、验证与退出条件；A2 隔离原型不要求 A3 包。
 6. 子代理启动前生成 Delegation Package 并运行 `delegate-check`；A3/A4 委派必须带 Implementation Package，代理和 ownership 必须已登记且一致。
-7. 实施后运行 `diff-audit`，按真实 Git diff 审计范围；运行验证后生成 Evidence Manifest 并执行 `evidence-check`。
-8. 只有当前门全部通过才运行 `transition`。进入 `COMPLETE` 仍须当前 diff、证据、交付物、退出条件和 F4 决定全部有效。
+7. 先运行 `route` 自动推导通道、缺失工件和下一条命令。实施后运行 `diff-audit`：A1/A2 或仅外部回执可用真实 `--artifact` 哈希，A3/A4 必须有真实 Git diff；验证后生成 Evidence Manifest。
+8. 使用 `advance` 一次最多推进一个状态。A1/A2 可在审批、审计和证据满足后自动闭环；A3+ 保留 Implementation Package、独立审查及 F4 硬门。自动化不批准、不扩权、不执行 A5/A6。
 
 ## 硬限制
 
@@ -28,4 +28,4 @@ description: Phaser 4 游戏仓库的唯一全局工作流控制面。用于任�
 
 ## 命令
 
-首次使用先运行 `node <skill-dir>/scripts/workflow-control.mjs init ...`，它只在控制目录不存在时创建空账本、标准目录和首个 Work Item。`<skill-dir>` 必须解析为本 Skill 的实际根目录，不能按游戏项目当前工作目录猜测。之后运行 `node <skill-dir>/scripts/workflow-control.mjs <prepare-approval|handoff|preflight|approve|delegate-check|diff-audit|evidence-check|transition|status|lint> --help`。命令只使用 Node.js 标准库；失败退出码非零，且绝不自动修复、回滚、发布或执行外部动作。
+首次使用先运行 `node <skill-dir>/scripts/workflow-control.mjs init ...`，它只在控制目录不存在时创建空账本、标准目录和首个 Work Item。`<skill-dir>` 必须解析为本 Skill 的实际根目录，不能按游戏项目当前工作目录猜测。之后运行 `node <skill-dir>/scripts/workflow-control.mjs <route|advance|prepare-approval|handoff|preflight|approve|delegate-check|diff-audit|evidence-check|transition|status|lint> --help`。`approve --approval-id <id> --user-text "批准"` 会从当前已展示 pending 自动生成完整记录；否定或无关文本拒绝。命令只使用 Node.js 标准库，且绝不自动回滚、发布或执行外部动作。

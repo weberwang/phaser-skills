@@ -34,11 +34,13 @@ node <skill-dir>\scripts\workflow-control.mjs help
 node <skill-dir>\scripts\workflow-control.mjs init --repo . --work-item-id WI-1 --project-id game --module-id docs --domain product --stage-id G0 --baseline-id <git-sha> --baseline-version 1 --baseline-hash <sha256> --objective "建立控制面" --user-text "为本项目建立首个工作项和审批账本" --object "workflow bootstrap" --allowed-path docs
 node <skill-dir>\scripts\workflow-control.mjs prepare-approval --work-item .workflow-control\work-items\WI-1.json --ledger .workflow-control\approvals\ledger.json --pending-id PENDING-WI-1-A3 --object "core production implementation" --stage G1 --action-type code-change --action-level A3 --gate F0 --context "implementation-v1" --path src\main.ts
 node <skill-dir>\scripts\workflow-control.mjs handoff --work-item .workflow-control\work-items\WI-1.json
+node <skill-dir>\scripts\workflow-control.mjs approve --work-item .workflow-control\work-items\WI-1.json --ledger .workflow-control\approvals\ledger.json --approval-id AP-WI-1-A3 --user-text "批准"
+node <skill-dir>\scripts\workflow-control.mjs route --work-item .workflow-control\work-items\WI-1.json --ledger .workflow-control\approvals\ledger.json
 node <skill-dir>\scripts\workflow-control.mjs preflight --work-item .workflow-control\work-items\WI-1.json --ledger .workflow-control\approvals\ledger.json --implementation-package .workflow-control\implementation-package.json --action-level A3 --action-type code-change --gate F0 --object "core production implementation" --path src\main.ts
 node <skill-dir>\scripts\workflow-control.mjs diff-audit --work-item .workflow-control\work-items\WI-1.json --ledger .workflow-control\approvals\ledger.json --baseline <git-sha> --baseline-hash <sha256> --record .workflow-control\evidence\WI-1\diff-audit.json
 ```
 
-命令覆盖受限 `init`、`prepare-approval`、`handoff`、`preflight`、`approve`、`delegate-check`、`diff-audit`、`evidence-check`、`transition`、`status` 与 `lint`。`prepare-approval` 轮换 pending 审批点并冻结精确范围；`handoff` 输出完整机器审计上下文，同时友好提示“回复『批准』即可确认当前审批点”。用户无需复制长串 ID 或参数。首次 `init` 只创建控制目录和首个 Work Item，不写领域文档。
+命令覆盖受限 `init`、`route`、`advance`、`prepare-approval`、`handoff`、`preflight`、`approve`、`delegate-check`、`diff-audit`、`evidence-check`、`transition`、`status` 与 `lint`。`route` 推导 CANDIDATE(A1) 至 RELEASE(A6) 通道、阻塞项和下一命令；`advance` 一次只推进一个已满足状态。A1/A2 可用 artifact-only 审计和 `SELF` 审查，A3 保留实施包与真实 diff，A4-A6 保留硬门；自动化不会批准、扩权或执行外部动作。`approve --user-text "批准"` 仅从当前已展示 pending 生成完整账本记录。
 
 ## 领域 Skills
 

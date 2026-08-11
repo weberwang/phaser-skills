@@ -6,6 +6,8 @@
 
 每个后续审批点必须由控制 CLI 运行 `prepare-approval` 轮换 pending ID 并冻结状态、上下文、动作、文件/外部对象和副作用，然后运行 `handoff` 输出 Work Item、阶段、已完成、真实修改范围、未执行、风险、验证、下一阶段权限和将修改对象。交接明确提示用户可回复“批准”；该短回复只绑定最近展示的当前唯一 pending，旧 bootstrap 或上一门审批不能复用。
 
+总控 `route` 自动推导 A1-A6 风险通道和缺失工件，`advance` 每次只推进一个已满足状态。A1/A2 可采用真实 artifact 哈希和 SELF 审查降低手续；A3 仍需 Implementation Package、真实 diff 与独立审查，A4-A6 仍需精确硬门，外部动作与发布不自动执行。
+
 ## 领域工件
 
 | 文件 | 领域权威内容 |

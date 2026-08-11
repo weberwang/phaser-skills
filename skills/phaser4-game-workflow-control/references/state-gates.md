@@ -2,7 +2,7 @@
 
 ## 全局状态
 
-主路径：`INTAKE → BASELINE → PROPOSAL → REVIEW → APPROVAL_REQUIRED → APPROVED → IMPLEMENTING → VALIDATING → PASSED → INTEGRATING → RELEASE_APPROVAL_REQUIRED → RELEASING → COMPLETE`。
+生产主路径：`INTAKE → BASELINE → PROPOSAL → REVIEW → APPROVAL_REQUIRED → APPROVED → IMPLEMENTING → VALIDATING → PASSED → INTEGRATING → RELEASE_APPROVAL_REQUIRED → RELEASING → COMPLETE`。A1 可走 `APPROVED → VALIDATING → PASSED → COMPLETE`；A2 可走 `APPROVED → IMPLEMENTING → VALIDATING → PASSED → COMPLETE`。
 
 任一活动状态可在有理由时进入 `RETURN` 或 `BLOCKED`；`RETURN` 只能回到 `BASELINE`、`PROPOSAL`、`REVIEW` 或 `IMPLEMENTING`；阻断解除后必须回到明确的前序状态，不得跳门。
 
@@ -33,4 +33,5 @@ V0-V5、G0-G3 与领域阶段是 `stageId`，不是另一套状态机。只有�
 - 验证通过但实际 diff 越界：不得进入 `PASSED`。
 - 发布：必须是独立 Work Item；本地构建或测试通过不授权 A5/A6。
 - 每个审批点先在当前合法状态运行 `prepare-approval`，再运行 `handoff` 展示唯一 pending。用户回复“批准”等短词即可确认该点；未展示 pending、旧 ID、旧状态或手改范围不能驱动当前或后续门。
-- `COMPLETE` 不是空跳终态：expectedOutputs、exitCriteria、当前 diff/evidence 和 F4 集成或发布证据必须仍有效。
+- `route` 只自动推导风险通道；`advance` 一次只推进一个已满足状态，到审批边界即停止。A5/A6 永不自动执行。
+- `COMPLETE` 不是空跳终态：expectedOutputs、exitCriteria 和当前 diff/artifact/evidence 必须仍有效；A3-A6 还必须具有当前 F4 集成或发布证据。
