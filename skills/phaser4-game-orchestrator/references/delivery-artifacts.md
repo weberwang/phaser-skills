@@ -4,7 +4,7 @@
 
 首次运行受限 `init`：基于明确 A1 bootstrap 原文一次创建空账本、首个 Work Item 及 `work-items/`、`delegations/`、`evidence/`、`change-requests/` 目录。重复 init 拒绝，且 init 不创建任何领域文档。之后 initializer 必须使用已存在 Work Item/ledger 并通过 A1 preflight。
 
-每个后续审批点必须由控制 CLI 运行 `prepare-approval` 轮换 pending ID 并冻结状态、上下文、动作、文件/外部对象和副作用，然后运行 `handoff` 输出 Work Item、阶段、已完成、真实修改范围、未执行、风险、验证、下一阶段权限、将修改对象及精确审批语句。旧 bootstrap 或上一门审批不能复用。
+每个后续审批点必须由控制 CLI 运行 `prepare-approval` 轮换 pending ID 并冻结状态、上下文、动作、文件/外部对象和副作用，然后运行 `handoff` 输出 Work Item、阶段、已完成、真实修改范围、未执行、风险、验证、下一阶段权限和将修改对象。交接明确提示用户可回复“批准”；该短回复只绑定最近展示的当前唯一 pending，旧 bootstrap 或上一门审批不能复用。
 
 ## 领域工件
 
@@ -23,7 +23,7 @@
 
 ## 留痕
 
-- 旧 Markdown 状态和模糊审批只读保留，标记 legacy，不迁移为有效新审批。
+- 旧 Markdown 状态和未绑定具体 pending 的历史审批只读保留，标记 legacy，不迁移为有效新审批。
 - 需求变化建立 Change Request；未批准时阻断受影响 A3/A4，并使旧基线审批失效。首次模块或边界变化记录绑定当前 baselineHash 的模块批准与 grilling 决策。
 - A3 前冻结严格 Implementation Package：批准需求、架构/模块批准、文件所有权、路径、预期增删文件、测试、非目标、兼容策略、完成定义与停止条件必须和当前工作项/审批/基线一致。
 - 委派包、diff 审计和证据清单引用领域工件，不复制事实正文。

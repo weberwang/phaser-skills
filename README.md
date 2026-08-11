@@ -23,7 +23,7 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 
 A0-A6 唯一语义：A0 只读调查；A1 文档和候选；A2 隔离原型/沙盒/验证页/非生产资源；A3 生产实现；A4 正式集成与迁移；A5 PR、push、消息、第三方、上传构建和云配置等外部状态；A6 数据删除、生产迁移、真机、商店提审、正式发布和线上回滚。低等级审批不能授权高等级动作。
 
-审批必须精确绑定 Work Item、用户原文、对象、当前门、阶段、模块、基线版本/哈希、动作、文件范围、服务、外部目标与失效条件。“继续”“可以”或 blanket approval 只能覆盖当前明确下一门，不能传递、推断、扩展或追溯补签。
+审批必须精确绑定 Work Item、用户原文、对象、当前门、阶段、模块、基线版本/哈希、动作、文件范围、服务、外部目标与失效条件。`handoff` 展示当前唯一 pending 后，用户可仅回复“批准”“同意”“可以”“继续”或“批准然后按流程推进”；短回复只覆盖当前审批点，不能传递、推断、扩展或追溯补签。
 
 ## CLI
 
@@ -38,7 +38,7 @@ node <skill-dir>\scripts\workflow-control.mjs preflight --work-item .workflow-co
 node <skill-dir>\scripts\workflow-control.mjs diff-audit --work-item .workflow-control\work-items\WI-1.json --ledger .workflow-control\approvals\ledger.json --baseline <git-sha> --baseline-hash <sha256> --record .workflow-control\evidence\WI-1\diff-audit.json
 ```
 
-命令覆盖受限 `init`、`prepare-approval`、`handoff`、`preflight`、`approve`、`delegate-check`、`diff-audit`、`evidence-check`、`transition`、`status` 与 `lint`。`prepare-approval` 轮换 pending 审批点并冻结精确范围；`handoff` 从 Work Item、真实 diff 和证据输出阶段、完成项、未执行项、风险、验证、下一权限、文件/外部对象及不可扩展的精确审批语句。首次 `init` 只创建控制目录和首个 Work Item，不写领域文档。
+命令覆盖受限 `init`、`prepare-approval`、`handoff`、`preflight`、`approve`、`delegate-check`、`diff-audit`、`evidence-check`、`transition`、`status` 与 `lint`。`prepare-approval` 轮换 pending 审批点并冻结精确范围；`handoff` 输出完整机器审计上下文，同时友好提示“回复『批准』即可确认当前审批点”。用户无需复制长串 ID 或参数。首次 `init` 只创建控制目录和首个 Work Item，不写领域文档。
 
 ## 领域 Skills
 

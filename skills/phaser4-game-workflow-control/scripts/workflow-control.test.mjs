@@ -29,6 +29,7 @@ function makeRepo() {
   execFileSync('git', ['init', '-q'], { cwd: repo });
   execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: repo });
   execFileSync('git', ['config', 'user.name', '测试'], { cwd: repo });
+  execFileSync('git', ['config', 'core.autocrlf', 'false'], { cwd: repo });
   mkdirSync(join(repo, 'src'), { recursive: true });
   writeFileSync(join(repo, 'src', 'main.js'), 'export const value = 1;\n');
   writeFileSync(join(repo, 'src', 'old.js'), 'export const old = true;\n');
@@ -39,12 +40,14 @@ function makeRepo() {
 
 /** 构造当前 A3 实施工作项。 */
 function makeWork(head, overrides = {}) {
-  return {
+  const work = {
     workItemId: 'WI-1', projectId: 'P-1', moduleId: 'core', domain: 'code', stageId: 'G1', globalState: 'IMPLEMENTING', baselineId: head, baselineVersion: '1', baselineHash: HASH_A,
     objective: '实现明确功能', inScope: ['core'], outOfScope: ['release'], approvedRequirements: ['REQ-1'], allowedActions: ['code-change', 'prototype', 'integration', 'external-state', 'document-candidate'], allowedActionLevels: ['A0', 'A1', 'A2', 'A3', 'A4'], prohibitedActions: ['external-write', 'device', 'release', 'destructive'], allowedPaths: ['src', 'docs'], forbiddenPaths: ['src/secret', '.git'], allowedExternalTargets: [], protectedExternalTargets: ['production'], requiredGates: ['F0', 'F1', 'F2', 'F3', 'F4'], approvalRecord: 'AP-A3', assignedAgent: 'implementer', delegatedAgents: [], expectedOutputs: ['src/main.js'], validationPlan: ['node --test'], exitCriteria: ['tests pass'], nextGate: 'F0', rollbackPolicy: '不自动回滚共享工作区', evidenceRoot: '.workflow-control/evidence/WI-1',
-    pendingApprovalId: 'PENDING-A3', pendingApprovalObject: 'core production implementation', pendingApprovalStage: 'G1', pendingApprovalActionLevel: 'A3', pendingApprovalGate: 'F0', pendingApprovalState: 'APPROVAL_REQUIRED', pendingApprovalContext: 'implementation approval', pendingApprovalActionType: 'code-change', pendingApprovalFileScope: ['src'], pendingApprovalServices: [], pendingApprovalAllowServiceStart: false, pendingApprovalAllowDelete: false, pendingApprovalExternalWrite: false, pendingApprovalDestructive: false, pendingApprovalPhysicalDevice: false, pendingApprovalRelease: false, pendingApprovalExternalTargets: [], validationBatchId: 'BATCH-1', changeRequestFiles: [], moduleGateRequired: false, releaseWorkItem: false,
+    pendingApprovalId: 'PENDING-A3', pendingApprovalObject: 'core production implementation', pendingApprovalStage: 'G1', pendingApprovalActionLevel: 'A3', pendingApprovalGate: 'F0', pendingApprovalState: 'APPROVAL_REQUIRED', pendingApprovalContext: 'implementation approval', pendingApprovalActionType: 'code-change', pendingApprovalFileScope: ['src'], pendingApprovalServices: [], pendingApprovalAllowServiceStart: false, pendingApprovalAllowDelete: false, pendingApprovalExternalWrite: false, pendingApprovalDestructive: false, pendingApprovalPhysicalDevice: false, pendingApprovalRelease: false, pendingApprovalExternalTargets: [], pendingApprovalPreparedAt: '2026-08-11T00:00:00.000Z', pendingApprovalPresentedId: 'PENDING-A3', pendingApprovalPresentedAt: '2026-08-11T00:01:00.000Z', validationBatchId: 'BATCH-1', changeRequestFiles: [], moduleGateRequired: false, releaseWorkItem: false,
     ...overrides
   };
+  if (!Object.hasOwn(overrides, 'pendingApprovalPresentedId')) work.pendingApprovalPresentedId = work.pendingApprovalId;
+  return work;
 }
 
 /** 构造完整审批记录。 */
@@ -115,6 +118,8 @@ function prepareAndApprove(fixture, options) {
   if (options.release) prepareArgs.push('--release');
   const prepared = run('prepare-approval', prepareArgs, fixture.repo);
   assert.equal(prepared.status, 0, prepared.stderr);
+  const handoffResult = run('handoff', ['--work-item', fixture.workPath], fixture.repo);
+  assert.equal(handoffResult.status, 0, handoffResult.stderr);
   const work = JSON.parse(readFileSync(fixture.workPath, 'utf8'));
   const record = join(fixture.root, `${options.approvalId}.json`);
   writeJson(record, makeApproval({ approvalId: options.approvalId, promptContextId: work.pendingApprovalId, pendingState: work.pendingApprovalState, pendingContext: work.pendingApprovalContext, userOriginalText: `批准 ${options.object}`, explicitObject: options.object, actionType: options.actionType, actionLevel: options.level, fileScope: work.pendingApprovalFileScope, services: work.pendingApprovalServices, allowServiceStart: work.pendingApprovalAllowServiceStart, allowDelete: work.pendingApprovalAllowDelete, externalWrite: work.pendingApprovalExternalWrite, destructive: work.pendingApprovalDestructive, physicalDevice: work.pendingApprovalPhysicalDevice, release: work.pendingApprovalRelease, gate: work.pendingApprovalGate, externalTargets: work.pendingApprovalExternalTargets }));
@@ -213,8 +218,37 @@ test('正向：prepare-approval 轮换审批点且 handoff 输出完整精确交
   const handoff = run('handoff', ['--work-item', f.workPath], f.repo);
   assert.equal(handoff.status, 0, handoff.stderr);
   const payload = JSON.parse(handoff.stdout);
-  for (const field of ['workItem', 'stage', 'completed', 'actualModifiedScope', 'notExecuted', 'risks', 'validation', 'nextStagePermissions', 'plannedFiles', 'externalTargets', 'exactApprovalStatement']) assert.ok(Object.hasOwn(payload, field), field);
-  assert.match(payload.exactApprovalStatement, /pendingApprovalId=PENDING-NEW-A3.*object=core production v2.*actionLevel=A3.*gate=F0/s);
+  for (const field of ['workItem', 'stage', 'completed', 'actualModifiedScope', 'notExecuted', 'risks', 'validation', 'nextStagePermissions', 'plannedFiles', 'externalTargets', 'approvalPrompt', 'acceptedShortReplies', 'auditApprovalBinding']) assert.ok(Object.hasOwn(payload, field), field);
+  assert.match(payload.approvalPrompt, /回复「批准」即可确认当前审批点/);
+  assert.equal(payload.auditApprovalBinding.pendingApprovalId, 'PENDING-NEW-A3');
+  assert.equal(JSON.parse(readFileSync(f.workPath, 'utf8')).pendingApprovalPresentedId, 'PENDING-NEW-A3');
+});
+
+test('正向：单独“批准”和流程短确认只批准当前已展示 pending', () => {
+  for (const reply of ['批准', '批准然后按流程推进']) {
+    const f = setup({ globalState: 'APPROVAL_REQUIRED' });
+    const suffix = reply === '批准' ? 'SHORT' : 'FLOW';
+    assert.equal(run('prepare-approval', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--pending-id', `PENDING-${suffix}`, '--object', 'core short approval', '--stage', 'G1', '--action-type', 'code-change', '--action-level', 'A3', '--gate', 'F0', '--context', `short-${suffix}`, '--path', 'src/main.js'], f.repo).status, 0);
+    assert.equal(run('handoff', ['--work-item', f.workPath], f.repo).status, 0);
+    const record = join(f.root, `${suffix}.json`);
+    writeJson(record, makeApproval({ approvalId: `AP-${suffix}`, promptContextId: `PENDING-${suffix}`, pendingContext: `short-${suffix}`, userOriginalText: reply, explicitObject: 'core short approval', fileScope: ['src/main.js'] }));
+    const approved = run('approve', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--record', record], f.repo);
+    assert.equal(approved.status, 0, approved.stderr);
+    const work = JSON.parse(readFileSync(f.workPath, 'utf8'));
+    assert.equal(work.approvalRecord, `AP-${suffix}`);
+    assert.equal(work.globalState, 'APPROVAL_REQUIRED');
+  }
+});
+
+test('负向：短确认不能批准旧 pending 或尚未展示的 pending', () => {
+  const f = setup({ globalState: 'APPROVAL_REQUIRED' });
+  assert.equal(run('prepare-approval', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--pending-id', 'PENDING-UNSEEN', '--object', 'unseen approval', '--stage', 'G1', '--action-type', 'code-change', '--action-level', 'A3', '--gate', 'F0', '--context', 'unseen', '--path', 'src/main.js'], f.repo).status, 0);
+  const unseen = join(f.root, 'unseen.json');
+  writeJson(unseen, makeApproval({ approvalId: 'AP-UNSEEN', promptContextId: 'PENDING-UNSEEN', pendingContext: 'unseen', userOriginalText: '批准', explicitObject: 'unseen approval', fileScope: ['src/main.js'] }));
+  rejects(run('approve', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--record', unseen], f.repo), /尚未由 handoff 展示/);
+  assert.equal(run('handoff', ['--work-item', f.workPath], f.repo).status, 0);
+  writeJson(unseen, makeApproval({ approvalId: 'AP-OLD-SHORT', promptContextId: 'PENDING-A3', pendingContext: 'implementation approval', userOriginalText: '可以' }));
+  rejects(run('approve', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--record', unseen], f.repo), /pending approval/);
 });
 
 test('负向：旧 bootstrap 审批不能跨审批点驱动实现、集成或发布', () => {
@@ -227,11 +261,13 @@ test('负向：旧 bootstrap 审批不能跨审批点驱动实现、集成或发
 test('负向：交接冻结后不得扩大文件、外部目标或副作用', () => {
   const f = setup({ globalState: 'APPROVAL_REQUIRED' });
   assert.equal(run('prepare-approval', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--pending-id', 'PENDING-SCOPE', '--object', 'core scoped implementation', '--stage', 'G1', '--action-type', 'code-change', '--action-level', 'A3', '--gate', 'F0', '--context', 'scope-v1', '--path', 'src/main.js'], f.repo).status, 0);
+  assert.equal(run('handoff', ['--work-item', f.workPath], f.repo).status, 0);
   const record = join(f.root, 'expanded.json');
   writeJson(record, makeApproval({ approvalId: 'AP-EXPANDED', promptContextId: 'PENDING-SCOPE', pendingContext: 'scope-v1', explicitObject: 'core scoped implementation', fileScope: ['src/main.js', 'src/old.js'], allowDelete: true }));
   rejects(run('approve', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--record', record], f.repo), /pending approval/);
   const external = setup({ globalState: 'INTEGRATING', allowedActions: ['external-state'], allowedActionLevels: ['A0', 'A5'], prohibitedActions: [], allowedExternalTargets: ['origin/feature', 'origin/main'] });
   assert.equal(run('prepare-approval', ['--work-item', external.workPath, '--ledger', external.ledgerPath, '--pending-id', 'PENDING-EXT', '--object', 'push feature', '--stage', 'G1', '--action-type', 'external-state', '--action-level', 'A5', '--gate', 'F4', '--context', 'push-v1', '--external-write', '--external-target', 'origin/feature'], external.repo).status, 0);
+  assert.equal(run('handoff', ['--work-item', external.workPath], external.repo).status, 0);
   const extRecord = join(external.root, 'expanded-external.json');
   writeJson(extRecord, makeApproval({ approvalId: 'AP-EXT-EXPANDED', promptContextId: 'PENDING-EXT', pendingState: 'INTEGRATING', pendingContext: 'push-v1', explicitObject: 'push feature', actionType: 'external-state', actionLevel: 'A5', fileScope: [], gate: 'F4', externalWrite: true, release: true, externalTargets: ['origin/feature', 'origin/main'] }));
   rejects(run('approve', ['--work-item', external.workPath, '--ledger', external.ledgerPath, '--record', extRecord], external.repo), /pending approval/);

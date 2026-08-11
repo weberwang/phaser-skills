@@ -11,7 +11,7 @@ description: Phaser 4 游戏仓库的唯一全局工作流控制面。用于任�
 
 1. 先把 `<skill-dir>` 解析为本 `SKILL.md` 所在目录，再读取 [控制模型](references/control-model.md)、[状态与门](references/state-gates.md) 和 [Schema](references/schemas.md)。
 2. 为每项工作建立独立 Work Item；需求变化建立 Change Request，发布建立独立 Work Item。
-3. 到达审批点时先运行 `prepare-approval` 冻结新的 pending ID、状态、上下文、动作、文件/目标和副作用，再运行 `handoff` 输出完整审批交接；收到精确原文后才运行 `approve`。旧审批点不得复用。
+3. 到达审批点时先运行 `prepare-approval` 冻结新的 pending ID、状态、上下文、动作、文件/目标和副作用，再运行 `handoff` 展示完整审批交接。用户可只回复“批准”“同意”“可以”“继续”或“批准然后按流程推进”；`approve` 只把短回复绑定到最近展示的当前唯一 pending。旧审批点不得复用。
 4. 在任何写入、命令副作用或外部操作前运行 `node <skill-dir>/scripts/workflow-control.mjs preflight ...`。首次模块实现或边界变化先完成模块门与 grilling；架构批准不得代替实现批准。
 5. 进入 `IMPLEMENTING` 前冻结 Implementation Package，包括审批记录、基线、范围、路径所有权、委派、输出、验证与退出条件。
 6. 子代理启动前生成 Delegation Package 并运行 `delegate-check`；A3/A4 委派必须带 Implementation Package，代理和 ownership 必须已登记且一致。
@@ -20,7 +20,7 @@ description: Phaser 4 游戏仓库的唯一全局工作流控制面。用于任�
 
 ## 硬限制
 
-- 将“继续”“可以”“批准然后按流程推进”等只解释为当前明确下一门；禁止传递、推断、自动扩展或追溯补签审批。
+- 将“批准”“同意”“继续”“可以”“批准然后按流程推进”等只解释为最近 `handoff` 展示的当前唯一 pending；短回复不会批准后续门。禁止传递、推断、自动扩展或追溯补签审批。
 - 默认禁止外部写入、真机、模拟器、商店、云、生产迁移与发布。A4 集成必须有 F4 精确审批；A5/A6 必须再精确绑定外部目标；真机、破坏与发布一律 A6。
 - 禁止自动回滚共享工作区，禁止覆盖他人修改。并行写入必须具备互斥文件所有权。
 - 启动进程前先检查同项目、类型、模式、端口、PID 与健康状态并复用；不得终止归属不明的进程。

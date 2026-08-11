@@ -32,5 +32,5 @@ V0-V5、G0-G3 与领域阶段是 `stageId`，不是另一套状态机。只有�
 - 路径、外部目标、基线或所有权不匹配：停止且报告，不自动回滚。
 - 验证通过但实际 diff 越界：不得进入 `PASSED`。
 - 发布：必须是独立 Work Item；本地构建或测试通过不授权 A5/A6。
-- 每个审批点先在当前合法状态运行 `prepare-approval`，再运行 `handoff`；旧 pending ID、旧状态或手改范围不能驱动后续门。
+- 每个审批点先在当前合法状态运行 `prepare-approval`，再运行 `handoff` 展示唯一 pending。用户回复“批准”等短词即可确认该点；未展示 pending、旧 ID、旧状态或手改范围不能驱动当前或后续门。
 - `COMPLETE` 不是空跳终态：expectedOutputs、exitCriteria、当前 diff/evidence 和 F4 集成或发布证据必须仍有效。
