@@ -4,7 +4,13 @@
   "description": "Phaser 4 移动端游戏协作 skills 的项目级安装器",
   "type": "module",
   "bin": {
-    "phaser-skills": "./scripts/install-project-skills.mjs"
+    "phaser-skills": "./scripts/install-project-skills.mjs",
+    "phaser-workflow": "./skills/phaser4-game-workflow-control/scripts/workflow-control.mjs"
+  },
+  "scripts": {
+    "test": "node --test skills/phaser4-game-workflow-control/scripts/workflow-control.test.mjs && node --test skills/phaser4-game-qa-performance/scripts/responsive-visual-validation.test.mjs",
+    "test:workflow": "node --test skills/phaser4-game-workflow-control/scripts/workflow-control.test.mjs",
+    "lint:workflow": "node skills/phaser4-game-workflow-control/scripts/workflow-control.mjs lint --repository ."
   },
   "engines": {
     "node": ">=22.20.0"

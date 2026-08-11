@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "phaser4-delegation-package.schema.json",
+  "title": "委派包",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["workItemId", "stageId", "approvalId", "owner", "assignedAgent", "ownership", "allowedActions", "forbiddenActions", "actionLevel", "allowedPaths", "forbiddenPaths", "acceptanceCommands", "completionBoundary", "outOfScopeReturn", "preserveOthersChanges"],
+  "properties": {
+    "workItemId": {"type": "string", "minLength": 1}, "stageId": {"type": "string", "minLength": 1}, "approvalId": {"type": "string", "minLength": 1}, "owner": {"type": "string", "minLength": 1}, "assignedAgent": {"type": "string", "minLength": 1}, "ownership": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "allowedActions": {"type": "array", "items": {"type": "string"}}, "forbiddenActions": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "actionLevel": {"enum": ["A0", "A1", "A2", "A3", "A4", "A5", "A6"]}, "allowedPaths": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "forbiddenPaths": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "acceptanceCommands": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "completionBoundary": {"type": "string", "minLength": 1}, "outOfScopeReturn": {"type": "string", "minLength": 1}, "preserveOthersChanges": {"const": true}
+  }
+}

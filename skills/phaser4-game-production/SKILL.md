@@ -5,11 +5,17 @@ description: Phaser 4 移动端 2D 游戏的制作与策划角色。需要把游
 
 # Phaser 4 制作策划
 
+## 全局控制接入
+
+控制面边界：可提议、可审查、可在批准 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审批。
+
+本领域可提议和审查需求，只能在批准的 Work Item、A 等级和路径内修改规格。需求变化必须创建 Change Request，回到 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 重新基线、审批与迁移；不能用 PRD 批准授权实现。
+
 将游戏意图拆为可批准、可实现、可验收的范围；不替人工批准产品、商业化、渠道或资源权属。
 
 ## 输入与决策
 
-读取总控 [审核漏斗](../phaser4-game-orchestrator/references/review-funnel.md)、docs/project-profile.yaml、docs/GDD.md 和控制面；参考还原任务还读取归档的截图、录屏、操作步骤、运行证据和功能缺口。作者实际完成 F0 并冻结候选，总控 F1 分诊，独立专业 F2 只读审核后由总控 F3 收敛。只有范围、核心循环、目标玩家、参考行为、验收、渠道优先级或能力开关仍需用户选择时，才提交绑定当前候选的最小 F4 决策包；不得因阶段或模块变化自动 grilling。
+读取全局 Work Item、项目配置、GDD 和参考证据。按 F0 授权合规、F1 规格一致性、F2 产品质量、F3 可验证性和 F4 集成/发布决策提交结果。首次模块或边界变化必须触发模块门和 grilling。
 
 ## 执行与交接
 

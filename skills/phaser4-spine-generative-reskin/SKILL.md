@@ -5,6 +5,12 @@ description: 对 Phaser 4 Spine Atlas/纹理图集的全部 Region/Cell 逐项�
 
 # Phaser 4 Spine 生成式换皮
 
+## 全局控制接入
+
+控制面边界：可提议、可审查、可在批准 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审批。
+
+Spine 换皮是资源生产域，不得旁路全局控制。只在批准的 Work Item、冻结 Implementation Package、A 等级和 Atlas/输出路径内修改；每次恢复、生成、重建与验证都按 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 提交证据和状态，不自行批准后续 V 阶段。
+
 先将 `<skill-dir>` 解析为本 `SKILL.md` 所在的 Skill 根目录；以下所有工具命令都使用 `python <skill-dir>/scripts/...`，不依赖当前工作目录。
 
 按以下顺序完成整套换皮。任何一个 Cell 未完成、校验失败或状态不明，都不得宣称交付完成。

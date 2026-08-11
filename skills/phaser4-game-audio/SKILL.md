@@ -5,7 +5,13 @@ description: Phaser 4 移动端 2D 游戏的音频设计角色。需要规划、
 
 # Phaser 4 音频设计
 
-快速通道仅读取任务直接相关的音频资源、代码、规格和验证；标准、发布通道读取总控 [审核漏斗](../phaser4-game-orchestrator/references/review-funnel.md)、docs/project-profile.yaml、docs/GDD.md、docs/TDD.md 和控制面，资源进入制作后再读取资源登记和测试计划。作者实际执行 F0 并冻结候选 SHA 或工件哈希，总控 F1 分诊，独立音频/QA F2 只读审核后由总控 F3 收敛；只有音频方向、授权、预算或发布资格仍需用户取舍时提交 F4。
+## 全局控制接入
+
+控制面边界：可提议、可审查、可在批准 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审批。
+
+本领域可提议、审查，并仅在批准的 Work Item、Implementation Package、A 等级与文件范围内修改。所有动作先通过 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) preflight，结果回总控审批；领域规则只能收紧。
+
+读取全局 Work Item、项目规格、资源登记和测试计划。按 F0 授权合规、F1 规格一致性、F2 音频质量、F3 工程验证和 F4 集成/发布决策提交证据；音频方向批准不自动授权生产或发布。
 
 1. 按核心反馈、UI、环境、音乐和可访问性定义需求。
 2. 向美术接入角色提交音频资源登记包，包含来源、授权或生成记录、循环点、格式、时长、响度、大小、用途和发布资格；由美术接入角色串行写入资源登记，避免共享文件并发写入。

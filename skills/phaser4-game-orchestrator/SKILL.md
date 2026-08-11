@@ -1,65 +1,34 @@
 ---
 name: phaser4-game-orchestrator
-description: 面向 Phaser 4、TypeScript、Vite 与 Capacitor 的移动端 2D 游戏全周期总控。用于协调范围、架构、玩法、美术、音频、测试和发布，组织模块审计、F0-F4 审核、V0-V5 视觉生产、质量门和多渠道交付。
+description: Phaser 4 游戏的领域编排角色。用于在全局控制面已建立 Work Item 后协调产品、架构、玩法、视觉、资源、音频、数值、QA 与发布交付；不拥有全局状态或审批账本。
 ---
 
-# Phaser 4 游戏总控
+# Phaser 4 游戏编排
 
-将角色交付物收敛为可玩、可构建、可测试、可提审的项目。人工决定范围、受保护风险、指标和发布放行；未知项不得默认批准。
+控制面边界：可提议、可审查、可在批准 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审批。
 
-## 启动与参考
+以 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 为唯一全局状态与审批权威。本 Skill 只编排领域提议、审查、实施包和证据，不能批准、推断授权、扩展范围或改变全局状态。
 
-1. 新游戏进入标准/发布通道且缺少项目文档时，运行 `scripts/initialize_project_docs.py --project-root .`。需要资源和测试交付物时运行 `--include assets,qa`；`assets` 会同时创建 `asset-license-register.md` 和 `visual-assets.json`。默认拒绝覆盖。
-2. 标准/发布通道读取项目配置、GDD、visual-design、TDD 和控制面。按任务读取 [审核漏斗](references/review-funnel.md)、[游戏实现](references/game-implementation.md)、[视觉质量门](references/visual-quality-gate.md)、[UI 布局技能](../phaser4-game-ui-layout/SKILL.md)、[模块划分](references/module-decomposition.md)、[服务复用](references/local-service-validation.md)、[交付物](references/delivery-artifacts.md)、[依赖能力档与服务边界](references/dependency-capability-profiles.md) 与 [质量门](references/quality-gates.md)。响应式测量、动态 resize、完整 viewport 证据和只读 Hook 由 QA 的 [响应式视觉验证](../phaser4-game-qa-performance/references/responsive-visual-validation.md) 统一提供。
-3. 所有项目文档和新增代码注释使用简体中文。可选平台与商业能力未经批准不得启用。
+## 启动
 
-## 工作通道
+1. 先读取全局 Work Item、Approval Ledger、当前基线与状态；任何写入前运行全局 `preflight`。
+2. 缺项目文档时，先受限 bootstrap，再在已批准 A1 路径内运行 `scripts/initialize_project_docs.py --project-root . --work-item <file> --ledger <file> --object <approved-object>`；默认拒绝覆盖。
+3. 按领域读取 [模块划分](references/module-decomposition.md)、[游戏实现](references/game-implementation.md)、[视觉质量门](references/visual-quality-gate.md)、[服务复用](references/local-service-validation.md)、[交付物](references/delivery-artifacts.md)、[依赖与服务边界](references/dependency-capability-profiles.md)。
 
-- 快速通道：只处理不新增正式资源、不改变视觉方向、资源拆分、结构、交互或布局，且既有低保真确认记录仍适用、有效、绑定版本并覆盖当前范围的局部尺寸、锚点、采样、九宫格、文本、间距和颜色修复；仍执行 F0→F1→轻量 F3，缺少记录时升级 V0 路径。
-- 标准通道：新模块、跨模块、正式资源、组件/场景/视觉系统、参考还原，或影响架构、存档、数值、资源、性能的任务。
-- 发布通道：影响目标渠道、隐私、商业能力、资源权属、候选包或发布放行的任务。
+## 编排规则
 
-影响扩大时升级工作通道，并由总控重新判定 `light`、`standard`、`high` 或 `release` 风险；工作通道决定交付范围，风险决定验证与审核深度，V0 决定视觉路径。风险不授权并行写入或 worktree。
+- 将 G0-G3、V0-V5 和产品/架构/生产/测试/发布阶段写入 `stageId`，按 [全局状态映射](../phaser4-game-workflow-control/references/state-gates.md) 汇总；不得建立第二套状态机。
+- F0-F4 只采用 [唯一语义](../phaser4-game-workflow-control/references/control-model.md)：F0 授权与流程合规、F1 规格一致性、F2 领域质量、F3 工程验证、F4 集成/发布决策。
+- 需求 Change Request、首次模块或边界变化先停止受影响实现；完成模块门和 grilling 后重新基线与审批。架构批准不批准实现。
+- 进入 `IMPLEMENTING` 前冻结 Implementation Package。每个子代理委派含 workItemId、阶段、审批、所有权、allowed/forbidden、A 等级、禁止动作、验收命令、完成边界、超范围返回与不得覆盖他人，并在启动前通过 `delegate-check`。
+- 实施后用真实 Git diff 执行 `diff-audit`；领域验证生成 Evidence Manifest 并执行 `evidence-check`。越界只报告并停止，不自动回滚共享工作区。
+- 启动服务前检查同项目健康实例并复用。默认禁止真机、模拟器、商店、云、生产迁移和外部写入。
+- 发布使用独立 Work Item；A5 外部准备与 A6 真机/商店/正式发布分别逐对象精确审批。本地构建、测试、G3 候选或旧批准都不授权发布。
 
-## 视觉 V0-V5
+## 视觉与 UI
 
-V0 分为三档：原子资源只有在视觉方向冻结、结构/交互/布局和视口行为不变，并且已有适用、有效、绑定版本且覆盖当前范围的玩法视觉契约、低保真确认记录、高保真确认记录、视觉可交付结论与预算基线可引用时，才走 V3→V4→V5；影响满幅背景、安全区、文本尺寸或视口行为，或缺少任一引用时升级为组件/资源集或场景路径。“重做、重新设计、提升游戏感、替换整套 UI”不得按原子资源跳过 V1/V2。组件/资源集走 V1→V5，只要新建或改变结构、布局、交互、状态集合或资源槽就必须执行 V1 出口低保真确认；候选定义或改变用户可见高保真形态时还必须执行 V2。场景、整套 UI、视觉系统、参考还原及所有重做类任务走完整 V1→V5，必须执行 V1 出口低保真确认与 V2 出口高保真确认。V1 建立玩法视觉契约、[`phaser4-game-ui-layout`](../phaser4-game-ui-layout/SKILL.md) 的版本化布局合同、必要低保真草图或可运行灰盒和早期预算；布局合同缺失时阻断 V2。关闭相关玩法/架构/UI 布局问题后提交当前低保真候选确认包，用户明确“通过”后才进入 V2；V2 依次完成 V2a 方向基准、V2b 整体视觉审阅、覆盖矩阵的动态可玩样片、独立美术 F2 和出口高保真效果图用户确认，仅有基准静态图阻断 V3；V3 选择资产类型路线、可编辑源文件、生产计划和机器清单；V4 生产并由非作者 F2 做完整 viewport 资源级验收；V5 结构化集成、动态玩法视觉验收、适用的非作者 F3 和低保真清理。
+V0 分流，V1 契约/低保真，V2 方向/高保真，V3 生产规划，V4 正式资源，V5 运行态集成。UI、Spine、图片优化均受全局控制；视觉方向批准不授权正式资源，资源批准不授权 Scene 或玩法代码。动态玩法、布局合同、基线、授权与运行态证据按领域规则收紧，但不能替代 F0、F1、F3 或 F4。
 
-所有视觉候选先实际完成适用 F0 并冻结候选 Git SHA，或为未提交工件记录候选 ID、SHA-256 及绑定代码 SHA，再由总控 F1 分诊。原子资源在 V4 做独立资源/美术 F2，V5 提交动态集成证据；组件/资源集和完整场景路径按变化触发 V2a/V2b、V3/V4 专业通道，V5 后由总控 F3 收敛。F2 必须由独立非作者只读执行并返回结构化结论；V2a/V2b 必须由独立美术判断，总控不能代替。适用 V1/V2 均在必需 F2 与 F3 后进入独立 F4 用户确认，不能被风险降级跳过，也不能互相替代。
+## 完成
 
-玩法独占规则、状态和交互代码。UI 布局技能独占布局合同、坐标空间、参照关系、响应式重排和布局证据，不拥有玩法状态或视觉方向。美术可拥有纯表现资源配置、布局/表现预制数据和视觉集成调整，但不得改变玩法规则；V5 由双方协作。AI 合成栅格框选拆分只是可选路线，装饰屏幕空间背景与世界空间玩法环境必须区分。
-
-涉及 UI 的任务必须建立版本化布局合同，并由 `$phaser4-game-ui-layout` 统一描述坐标空间、锚点、尺寸、断点、安全区、滚动、动态文案、遮挡回退与证据。合同验证器属于 F0 的一项实际命令；F0 仍须执行其他适用的项目原生命令，不能缩窄为格式检查。检测到固定尺寸、绝对定位、悬浮 HUD、手写断点或单行省略时触发布局专项 F2，不凭模式本身判错。普通测试验证关系不变量；Golden 仅在冻结视口、DPR、语言、状态和稳定帧下验证精确视觉。
-
-## 审核与质量门
-
-F0 是作者实际执行当前任务适用的项目原生命令并形成候选，F1 是总控分诊，F2 是独立非作者只读审核，F3 是总控收敛同一候选；F4 是 Phaser 受保护人工决定扩展。阻断候选形成的实质用户决定可在候选前 grilling，并绑定决策 ID 与权威工件版本；已有候选时事实缺口退 F0、专业问题走 F2，候选相关 F4 必须在 F3 后。新模块或边界变化不自动触发；V1/V2、G3 和风险接受按专用顺序执行。
-
-G0 冻结核心循环、最小范围、首发渠道、视觉方向和 V1 契约基础；G1 交付可玩切片及适用 V 阶段证据；G2 冻结范围和视觉系统、完成全部集成与预算回归；G3 聚合逐渠道候选包、合规、风险与回滚并由人工放行。
-
-## 服务、交接与完成
-
-启动验证服务前检查同项目、类型、模式、端口、进程和健康状态；健康实例必须复用，不得终止归属不明的进程。`docs/control-plane.md` 与适用 `docs/tasks/<task-id>/review.md` 由总控独占写入，其他角色只提交候选证据或结构化 F2 结论。跨角色交接才创建 `brief.md`，需要持久独立验收才创建 `review.md`；Markdown 只留决策、证据和结论，不驱动状态机、自动合并或清理。
-
---include 的值为逗号分隔的 balance、assets、qa、platform、release。
-
-## 手动附加任务
-
-图片资源优化不属于工作通道、V0 至 V5 或 G0 至 G3 的自动调度步骤。只有用户显式调用 `$phaser4-game-image-optimization` 时才执行；总控不得因为包体、资源、性能、构建、测试或发布状态主动调用，也不得把它写入质量门、构建脚本、Git 钩子或 CI。任务完成后只接收压缩前后体积、画质、Phaser 加载、测试、生产构建、未验证项与回退方式报告；如果优化修改了当前候选包使用的资源或引用，按现有规则重新验证受影响证据，但不得因此把图片优化变成质量门前置条件。
-
-## 工作区隔离
-
-默认单写者、普通分支、顺序执行；只读探索和互不依赖的 F2 审核可以并行。Worktree 或并行写入只有用户明确要求时才允许；启用后每个写入者必须有互斥文件或模块归属，它不参与质量门、角色交接或项目阶段。
-
-未获用户明确授权时均直接使用当前工作区。F3 不自动集成；合并前核对当前分支、批准候选 SHA、干净工作区、`git diff --check`、测试/CI、有效审核结论和授权，再走标准 Git/PR/CI。不得自动合并、删除 worktree 或删除分支。
-
-## 交接与输出
-
-- `docs/control-plane.md` 是标准、发布通道中审核层级、决策、角色状态和变更影响的简短索引，由总控单独写入；任务审核按条件写入 `docs/tasks/<task-id>/review.md`，也仅由总控写。交接物保存细节与证据。
-- 每个质量门汇合时，合并相同根因并删除已写入基线且不再影响后续工作的条目；保留当前 G 门/F 层、未决项、阻断项和仍有效的结论链接，不保留审核全文。
-- 角色只更新自己独占负责的交付物，不复述输入文档；状态、证据索引和冲突按审核包提交给总控，由总控串行更新控制面。
-- 汇报只列状态变化、交付物路径、可复现证据、阻断项和下一步，不重述 GDD、TDD 或历史决策。
-
-视觉完成必须具备 V0 分流、适用 V 阶段、绑定当前候选的 F0-F3、按需 F4 与独立 V1/V2 确认，以及契约/预算、动态证据、机器清单、正式资源、授权、Phaser 证据、工程可交付、结构化集成和低保真清理。确认包字段、候选哈希、失效规则和顺序以 [审核漏斗](references/review-funnel.md) 为准；当前低保真确认、绑定当前高保真确认的视觉可交付及 V4/V5 工程可交付必须同时有效。结构根因退 V1 并重做模块审计，只有受保护取舍才 grilling。静态高保真、像素接近、资源齐全、源码检查或构建成功不能单独证明完成。
-
-仅当 G3 获人工放行、所选渠道候选包与资料齐备、证据可复现且风险已交接时，报告“达到上架准备状态”。实际提交与审核是外部状态，必须如实区分。
+只报告状态包、交付物、实际 diff、可复现证据、未覆盖项和下一门。仅全局控制面可迁移到 `PASSED`、`INTEGRATING`、`RELEASING` 或 `COMPLETE`。

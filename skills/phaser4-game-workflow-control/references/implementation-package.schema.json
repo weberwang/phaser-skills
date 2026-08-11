@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "phaser4-implementation-package.schema.json",
+  "title": "实施包",
+  "type": "object",
+  "required": ["packageId", "workItemId", "baselineVersion", "baselineHash", "approvalId", "approvedRequirements", "approvedArchitecture", "fileOwnership", "allowedPaths", "forbiddenPaths", "expectedAddedFiles", "expectedDeletedFiles", "testScope", "outOfScope", "compatibilityStrategy", "definitionOfDone", "stopConditions"],
+  "properties": {
+    "packageId": {"type": "string", "minLength": 1},
+    "workItemId": {"type": "string", "minLength": 1},
+    "baselineVersion": {"type": "string", "minLength": 1},
+    "baselineHash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "approvalId": {"type": "string", "minLength": 1},
+    "approvedRequirements": {"$ref": "#/$defs/nonEmptyStrings"},
+    "approvedArchitecture": {"type": "string", "minLength": 1},
+    "fileOwnership": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"type": "string", "minLength": 1}
+    },
+    "allowedPaths": {"$ref": "#/$defs/nonEmptyStrings"},
+    "forbiddenPaths": {"$ref": "#/$defs/strings"},
+    "expectedAddedFiles": {"$ref": "#/$defs/strings"},
+    "expectedDeletedFiles": {"$ref": "#/$defs/strings"},
+    "testScope": {"$ref": "#/$defs/nonEmptyStrings"},
+    "outOfScope": {"$ref": "#/$defs/strings"},
+    "compatibilityStrategy": {"type": "string", "minLength": 1},
+    "definitionOfDone": {"$ref": "#/$defs/nonEmptyStrings"},
+    "stopConditions": {"$ref": "#/$defs/nonEmptyStrings"}
+  },
+  "$defs": {
+    "strings": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "nonEmptyStrings": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+  }
+}

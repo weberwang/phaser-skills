@@ -1,4 +1,4 @@
 interface:
   display_name: "拷问"
   short_description: "在模块实现前强制确认边界，并逐项拷问产品与研发关键决策"
-  default_prompt: "使用 $grilling 在模块实现前确认模块边界，并逐项压力测试当前游戏计划。"
+  default_prompt: "使用 $grilling 澄清模块门或实质取舍，并把精确决定提交给 $phaser4-game-workflow-control。"

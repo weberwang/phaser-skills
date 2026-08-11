@@ -5,9 +5,15 @@ description: Phaser 4 移动端 2D 游戏的发布与合规角色。需要为小
 
 # Phaser 4 发布与合规
 
+## 全局控制接入
+
+控制面边界：可提议、可审查、可在批准 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审批。
+
+发布必须创建独立 Work Item。PR/push/第三方/上传构建/云配置为 A5；真机安装、生产迁移、商店提审和正式发布为 A6。全部先由 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 校验精确外部目标和 F4 审批。
+
 准备可提审交付物不等于已经提交或上架。账号、签名密钥、令牌和个人数据只可放在受控外部密钥系统。
 
-读取总控 [审核漏斗](../phaser4-game-orchestrator/references/review-funnel.md)、[依赖能力档与服务边界](../phaser4-game-orchestrator/references/dependency-capability-profiles.md)、docs/project-profile.yaml、docs/GDD.md、docs/TDD.md 和控制面；发布阶段再读取平台矩阵、资源登记、测试计划和发布清单。发布候选为 `release` 风险：作者实际执行 F0 并冻结候选 SHA，总控 F1 后至少启用 QA、技术和 Release F2，只读审阅者返回结构化结论，由总控 F3 收敛。渠道范围、数据处理取舍、风险接受和 G3 放行才进入 F4。
+读取独立发布 Work Item、平台矩阵、资源登记、测试计划和发布清单。F0 校验授权合规，F1 校验候选与发布规格，F2 完成 QA/技术/合规领域质量，F3 绑定工程证据，F4 只决定记录中明确的外部对象和发布动作。
 
 1. 分别核对小游戏、iOS、Google Play 的打包、版本、图标截图、描述、隐私、分级、广告或内购披露、数据收集与账号删除要求。
 2. 新渠道先新增独立平台矩阵行，完成适配、资料、合规和测试评审后再纳入候选。

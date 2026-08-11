@@ -1,4 +1,4 @@
 interface:
   display_name: "Phaser 4 测试性能"
   short_description: "验证功能还原、逐状态视觉、兼容性能及发布候选证据"
-  default_prompt: "使用 $phaser4-game-qa-performance 验证 Phaser 4 移动端候选版本；参考还原任务分别判定功能与视觉结果。"
+  default_prompt: "在 $phaser4-game-workflow-control 当前工作项内使用 $phaser4-game-qa-performance 生成可复现工程证据。"

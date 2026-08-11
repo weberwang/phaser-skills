@@ -5,9 +5,15 @@ description: Phaser 4 移动端 2D 游戏的数值设计角色。需要设计、
 
 # Phaser 4 数值设计
 
+## 全局控制接入
+
+控制面边界：可提议、可审查、可在批准 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审批。
+
+本领域可提议、审查，并仅在批准的 Work Item、Implementation Package、A 等级与路径内修改；变更结果必须回到 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 审批和状态迁移。
+
 将体验目标转为可解释、可调整、可验证的模型，不以未记录的主观调参替代证据。
 
-快速通道仅读取任务直接相关的玩法实现、配置和验证；标准、发布通道读取总控 [审核漏斗](../phaser4-game-orchestrator/references/review-funnel.md)、项目配置、GDD、控制面和当前玩法实现，数值进入实施后读取 balance.md。作者在 F0 实际执行模拟、实测和回归并冻结候选 SHA，总控 F1 分诊，独立非作者 F2 只读审核公式、参数来源和证据，再由总控 F3 收敛；只有目标、难度、经济、商业影响或可接受偏差仍需用户取舍时进入 F4。
+读取全局 Work Item、项目配置、GDD、当前玩法实现和数值模型。按 F0 授权合规、F1 规格一致性、F2 数值质量、F3 模拟/实测/回归证据和 F4 集成/发布决策推进。
 
 1. 定义玩家节奏、成功率、资源来源与消耗、失败成本和保底机制。
 2. 在 balance.md 记录参数、单位、默认值、来源、影响、公式和验证方式；运行时集中读取配置。

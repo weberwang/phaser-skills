@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -18,7 +19,8 @@ project:
 workflow:
   当前通道: 待总控根据任务影响确定
   当前风险: 待按 light/standard/high/release 判定
-  审核机制: F0实际验证并冻结候选 → F1总控分诊 → F2独立只读专业审核 → F3总控收敛 → 适用F4受保护人工决定
+  审核机制: F0授权与流程合规 → F1规格一致性 → F2领域质量 → F3工程验证 → F4集成/发布决策
+  全局控制: .workflow-control 中的 Work Item、Approval Ledger、Delegation Package、Evidence Manifest
   视觉分流: V0原子资源/组件或资源集/场景或视觉系统或参考还原
   原子资源条件: 仅当结构/布局/交互不变，且已有适用、有效、绑定版本并覆盖当前范围的玩法视觉契约、低保真确认记录、高保真确认记录、视觉可交付结论、冻结全局视觉基线与预算基线可引用时走V3至V5，否则升级路径
   升级条件: 跨模块、架构或数据边界、正式资源、视觉系统、参考还原、资源权属、目标渠道、质量或发布风险发生变化
@@ -139,18 +141,18 @@ quality_targets:
 
 ## V1 出口：低保真草图用户确认
 
-场景、整套 UI、视觉系统、参考还原和所有重做类任务必须填写；组件/资源集新建或改变结构、布局、交互、状态集合或资源槽时也必须填写。顺序固定为 V1 契约与草图/灰盒、适用 F0、冻结候选身份、F1 分诊、必需 F2、F3 收敛、总控提交当前候选、用户结论；只有明确“通过”才进入 V2。
+场景、整套 UI、视觉系统、参考还原和所有重做类任务必须填写；组件/资源集新建或改变结构、布局、交互、状态集合或资源槽时也必须填写。顺序固定为 V1 契约与草图/灰盒、F0 授权合规、F1 规格一致性、必需 F2 领域质量、F3 工程验证、当前门精确审批；只有明确批准当前对象才进入 V2。
 
-本确认只批准结构、交互与布局意图，不批准最终视觉质量。历史记录只能追加。“修改后重提”必须产生新候选、重跑受影响 F0/F1、重开覆盖事实变化的 F2、重新 F3，再重提 F4；“拒绝”按根因退回最早受影响阶段。
+本确认只批准结构、交互与布局意图，不批准最终视觉质量、正式资源或实现。历史记录只能追加；修改后必须产生新候选并重跑受影响门。
 
 | 确认 ID | 候选 SHA 或候选 ID/工件 SHA-256 | 绑定基线/代码 SHA | 适用范围 | 功能/模块契约版本 | 草图或灰盒 | 关键状态 | 信息层级/资源槽 | 交互/输入 | 布局/安全区/断点 | 失败恢复/排除项 | 待 V2 变量 | F0-F3 已关闭问题 | 进入 V2/返工影响 | 用户结论 | 日期/意见 | 状态/失效原因 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 
 ## V2 出口：高保真效果图用户确认
 
-场景、整套 UI、视觉系统、参考还原和所有重做类任务必须填写；组件/资源集只要适用 V2 且候选定义或改变用户可见高保真形态也必须填写。顺序固定为 V2a、V2b 与动态样片、适用 F0、冻结候选身份、F1、独立美术及其他必需 F2、F3、总控提交确认包、用户结论。该记录与低保真确认独立绑定。
+场景、整套 UI、视觉系统、参考还原和所有重做类任务必须填写；组件/资源集只要适用 V2 且改变用户可见高保真形态也必须填写。依次完成 F0 授权合规、F1 规格一致性、独立美术 F2 与 F3 工程验证，再请求当前对象精确审批。
 
-历史记录只能追加，不能覆盖。“修改后重提”必须产生新候选、重跑受影响 F0/F1、重开覆盖事实变化的 F2、重新 F3，再重提 F4；“拒绝”按根因退 V2a 或 V1。
+历史记录只能追加，不能覆盖。修改后产生新候选并重新执行受影响门；方向审批不能授权 V3/V4 正式资源。
 
 | 确认 ID | 候选 SHA 或候选 ID/工件 SHA-256 | 绑定代码 SHA | 适用范围 | 全局基线 ID/版本/风格指纹 | 代表图/关键状态 | 动态样片/轨迹 | 差异 | 独立美术 F2 | F3/已关闭问题 | V3 范围/返工影响 | 用户结论 | 日期/意见 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -224,7 +226,7 @@ quality_targets:
 | 模块 | 职责/非目标 | 输入/输出 | 状态所有权 | 依赖 | 生命周期/失败边界 | 测试 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 
-新模块首次实现或边界变化先审计，但不因模块存在自动 grilling。阻断候选形成的实质决定可在候选前 grilling 并绑定决策 ID/权威工件版本；候选形成后再完成适用 F0-F3，候选相关 F4 必须在 F3 后。
+新模块首次实现或边界变化必须停止受影响实现，完成模块门与 grilling，并重新建立基线和精确审批。架构批准不批准实现。
 
 ### 候选模块明细
 
@@ -243,9 +245,9 @@ quality_targets:
 
 ### 模块审核与决策记录
 
-记录必须绑定候选 SHA 与实际模块；没有受保护用户取舍时 F4 留空，不写 `N/A`。
+记录必须绑定 Work Item、候选 SHA、实际模块、当前审批与 F0-F4 统一门语义。
 
-| 审核 ID/候选 SHA | 模块 ID | F0 实际命令 | 风险/F1 分诊 | F2 技术/QA 结论 | F3 收敛 | 适用 F4 决定 | 日期/负责人 | 状态 |
+| 审核 ID/候选 SHA | 模块 ID | F0 授权合规 | F1 规格一致性 | F2 技术/QA 质量 | F3 工程证据 | F4 集成/发布决定 | 日期/负责人 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 
 ## 依赖能力档
@@ -301,41 +303,16 @@ UI 的 `x/y` 只表示相对已声明参照物的本地距离；资源原点不�
 | 服务 | 项目根目录 | 命令 | 主机/端口 | PID/会话 | 健康检查 | 复用/新启动 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 """,
-    "control-plane.md": """# 项目控制面
+    "control-plane.md": """# 项目控制面迁移索引
 
-本文件由总控独占写入。其他角色只提交状态包。
+全局状态与审批只存在于 `.workflow-control/` 的 Work Item 和 Approval Ledger。本文件不驱动状态机，也不能作为授权。
 
-## 当前质量门与审核漏斗
+## 当前索引
 
-| 审核 ID | 风险 | 候选 SHA 或 ID/哈希 | G 门/V 阶段 | F0 命令证据 | F1 分诊 | F2 只读结论 | F3 收敛 | 适用 F4 例外 | 阻断项/证据 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Work Item | 阶段 | 模块 | 领域 | 基线 | 证据根 | 备注 |
+| --- | --- | --- | --- | --- | --- | --- |
 
-## F4 人工决策
-
-阻断候选形成的实质决定可在候选前执行，并绑定决策 ID 与权威工件版本；候选相关 F4 必须在 F3 后。V1/V2 当前候选确认是独立强制例外。
-
-| 日期 | 决策/确认 ID | 权威工件版本或候选身份 | 适用范围 | 受保护决策 | 候选前依据或 F0-F3 结论 | 推荐项/确认包 | 人工结论 | 失效条件/下一步 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-
-## 视觉完成审计
-
-| 审计问题 | 结论 | 证据位置 |
-| --- | --- | --- |
-| V0 分流及适用 V/F 路径是什么？ | 待审计 |  |
-| 本任务产出的 V1 玩法视觉契约/全局视觉基线/预算，或原子资源引用的既有基线在哪里？ | 待审计 |  |
-| 当前低保真确认包是否绑定候选版本、范围、功能/模块契约、草图/灰盒、关键状态、层级/资源槽、交互/输入、布局/安全区/断点、失败恢复、排除项、待 V2 变量、已关闭问题与返工影响？ | 待审计 |  |
-| 用户是否对当前低保真候选明确“通过”，并记录日期、意见、范围与失效条件？ | 待审计 |  |
-| 适用 V2 与所有 V5 的动态可玩证据在哪里？ | 待审计 |  |
-| 当前高保真确认包是否包含确认 ID、候选版本、范围、基线身份、代表图/关键状态、动态证据、差异、独立美术 F2、已关闭问题及 V3 生产/返工影响？ | 待审计 |  |
-| 用户是否对当前候选明确“通过”，并记录日期、修改意见与适用范围？视觉可交付结论绑定哪个确认 ID？ | 待审计 |  |
-| 低保真确认与高保真确认是否分别绑定当前版本和范围，且没有互相替代？ | 待审计 |  |
-| 修改后重提是否产生新候选并重跑受影响 F0/F1、重开变化事实对应 F2、重新 F3 后再重提 F4？ | 待审计 |  |
-| V3 资产路线、可编辑来源与机器清单在哪里？ | 待审计 |  |
-| V4 资源级验收和非作者 F2 在哪里？ | 待审计 |  |
-| V5 实际 F0、动态证据、F1 分诊、F3 收敛与低保真清理在哪里？ | 待审计 |  |
-| 当前冻结全局基线的 ID、版本、风格指纹与主/分系统锚点在哪里？ | 待审计 |  |
-| 资源绑定、跨资源联系表、同屏截图和运行态一致性证据在哪里？ | 待审计 |  |
-| 基线变更后的失效证据、影响面和重验记录在哪里？ | 待审计 |  |
+旧记录只读保留，不得迁移为新任务的有效审批。领域角色只能提交提议、审查、实际 diff 与证据；状态迁移由全局控制 CLI 完成。
 """,
 }
 
@@ -409,16 +386,16 @@ OPTIONAL_TEMPLATES = {
 
 ## 缺陷分级与关闭
 
-P0-P3 只采用 `phaser4-game-orchestrator/references/review-funnel.md` 的“P0-P3 缺陷优先级唯一标准”，本计划不复制定义。G2 前按该标准复验 P0/P1；P0/P1 豁免必须绑定当前候选版本并取得 F4 人工结论。
+P0/P1 在 G2 前必须复验关闭；风险接受必须建立明确对象的审批记录，不能用 F4 追溯补签未授权动作。
 
 | 缺陷 ID | 候选版本 | P0-P3 | 判定证据 | 影响范围 | 修复/补偿措施 | 回归证据 | F4 豁免记录 | 负责人 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 
 ## 审核漏斗
 
-作者在 F0 实际执行当前任务适用的项目原生命令并冻结候选身份；总控 F1 按 light/standard/high/release 风险分诊；独立非作者 F2 只读审核并返回结构化结论；总控 F3 收敛。V2a/V2b 和跨资源一致性必须由独立美术审阅。适用 V1/V2 候选各自在完成 F0、冻结、F1、必需 F2 和 F3 后进行独立用户确认。
+F0 校验授权与流程合规，F1 校验规格一致性，F2 形成独立领域质量结论，F3 绑定当前代码/diff 的工程证据，F4 只做精确集成/发布决定。V2a/V2b 和跨资源一致性仍必须由独立美术审阅。
 
-| 审核 ID/候选 SHA 或工件哈希 | 风险 | G 门/V 阶段 | F0 命令 | F1 分诊 | F2 非作者结论 | F3 收敛 | 适用 F4/独立 V1-V2 确认 | 回归范围/证据 |
+| 审核 ID/候选 SHA 或工件哈希 | A 等级 | G 门/V 阶段 | F0 授权合规 | F1 规格一致 | F2 非作者质量 | F3 工程证据 | F4 集成/发布决定 | 回归范围/证据 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 
 ## 低保真确认复核
@@ -426,14 +403,14 @@ P0-P3 只采用 `phaser4-game-orchestrator/references/review-funnel.md` 的“P0
 | 确认 ID/候选版本 | 适用范围 | 功能/模块契约版本 | 草图/灰盒 | 关键场景/状态 | 信息层级/稳定 ID/资源槽 | 交互区/输入轨迹 | 布局/安全区/断点 | 失败恢复/排除项 | 待 V2 变量/已关闭问题 | 进入 V2/返工影响 | 用户结论/日期/意见 | 状态/失效原因 | 结果 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 
-“修改后重提”保留旧记录，产生新候选，重跑受影响 F0/F1、重开覆盖事实变化的 F2、重新 F3，再重提 F4；“拒绝”按根因退最早受影响阶段。
+“修改后重提”保留旧记录，产生新候选并重跑受影响的 F0-F4；“拒绝”按根因退最早受影响状态。
 
 ## 高保真确认复核
 
 | 确认 ID/候选版本 | 适用范围 | 全局基线 ID/版本/风格指纹 | 代表图/关键状态 | 动态样片/轨迹 | 差异 | 独立美术 F2 | 已关闭问题 | V3 范围/返工影响 | 用户结论/日期/意见 | 视觉可交付结论 ID | 结果 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 
-“修改后重提”保留旧记录，产生新候选，重跑受影响 F0/F1、重开覆盖事实变化的 F2、重新 F3，再重提 F4；“拒绝”按根因退 V2a 或 V1。
+“修改后重提”保留旧记录，产生新候选并重跑受影响的 F0-F4；“拒绝”按根因退 V2a 或 V1。
 
 ## 动态玩法视觉验证
 
@@ -505,6 +482,9 @@ def parse_args() -> argparse.Namespace:
     """解析项目目录、可选交付物和覆盖授权。"""
     parser = argparse.ArgumentParser(description="按阶段初始化 Phaser 4 游戏协作文档")
     parser.add_argument("--project-root", required=True, type=Path, help="目标游戏项目根目录")
+    parser.add_argument("--work-item", required=True, type=Path, help="已 bootstrap 的 Work Item")
+    parser.add_argument("--ledger", required=True, type=Path, help="Approval Ledger")
+    parser.add_argument("--object", required=True, help="与 A1 审批完全一致的初始化对象")
     parser.add_argument(
         "--include",
         type=parse_include_list,
@@ -537,18 +517,65 @@ def select_templates(include: list[str] | None) -> dict[str, str]:
 def initialize_documents(
     project_root: Path, templates: dict[str, str], force: bool
 ) -> list[Path]:
-    """创建所选交付物，并在写入前统一检查覆盖冲突。"""
+    """只创建已通过 A1 preflight 的领域文档，并在写入前统一检查覆盖冲突。"""
     docs_dir = project_root / "docs"
-    targets = [docs_dir / filename for filename in templates]
+    targets = [
+        project_root / filename if filename.startswith(".workflow-control/")
+        else docs_dir / filename
+        for filename in templates
+    ]
     existing = [path for path in targets if path.exists()]
     if existing and not force:
         names = "、".join(path.name for path in existing)
         raise FileExistsError(f"拒绝覆盖已有文档：{names}。如确需覆盖，请显式传入 --force。")
 
-    docs_dir.mkdir(parents=True, exist_ok=True)
-    for path in targets:
-        path.write_text(templates[path.name], encoding="utf-8")
+    for filename, path in zip(templates, targets, strict=True):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(templates[filename], encoding="utf-8")
     return targets
+
+
+def run_preflight(
+    project_root: Path,
+    work_item: Path,
+    ledger: Path,
+    approval_object: str,
+    templates: dict[str, str],
+) -> None:
+    """调用唯一控制 CLI 验证 A1 审批，拒绝 initializer 自行 bootstrap。"""
+    cli = (
+        Path(__file__).resolve().parents[2]
+        / "phaser4-game-workflow-control"
+        / "scripts"
+        / "workflow-control.mjs"
+    )
+    if not cli.is_file():
+        raise FileNotFoundError(f"找不到全局控制 CLI：{cli}")
+    command = [
+        "node",
+        str(cli),
+        "preflight",
+        "--repo",
+        str(project_root),
+        "--work-item",
+        str(work_item.resolve()),
+        "--ledger",
+        str(ledger.resolve()),
+        "--action-level",
+        "A1",
+        "--action-type",
+        "document-candidate",
+        "--gate",
+        "F0",
+        "--object",
+        approval_object,
+    ]
+    for filename in templates:
+        command.extend(["--path", f"docs/{filename}"])
+    result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8")
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip()
+        raise PermissionError(f"A1 preflight 未通过：{detail}")
 
 
 def main() -> int:
@@ -557,6 +584,13 @@ def main() -> int:
     try:
         project_root = validate_project_root(args.project_root)
         templates = select_templates(args.include)
+        run_preflight(
+            project_root,
+            args.work_item,
+            args.ledger,
+            args.object,
+            templates,
+        )
         written = initialize_documents(project_root, templates, args.force)
     except (OSError, ValueError) as error:
         print(f"初始化失败：{error}", file=sys.stderr)
