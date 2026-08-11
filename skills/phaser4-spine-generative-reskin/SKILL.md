@@ -7,9 +7,9 @@ description: 对 Phaser 4 Spine Atlas/纹理图集的全部 Region/Cell 逐项�
 
 ## 全局控制接入
 
-控制面边界：可提议、可审查、可在批准 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审批。
+控制面边界：可提议、可审查、可在已建立且任务授权有效的 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审计和状态迁移；仅实际 A4-A6 操作请求批准。
 
-Spine 换皮是资源生产域，不得旁路全局控制。只在批准的 Work Item、冻结 Implementation Package、A 等级和 Atlas/输出路径内修改；每次恢复、生成、重建与验证都按 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 提交证据和状态，不自行批准后续 V 阶段。
+Spine 换皮是资源生产域，不得旁路全局控制。只在已建立且任务授权有效的 Work Item、冻结 Implementation Package、A 等级和 Atlas/输出路径内修改；每次恢复、生成、重建与验证都按 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 提交证据和状态，仅实际 A4-A6 操作请求批准。
 
 先将 `<skill-dir>` 解析为本 `SKILL.md` 所在的 Skill 根目录；以下所有工具命令都使用 `python <skill-dir>/scripts/...`，不依赖当前工作目录。
 

@@ -7,9 +7,9 @@ description: Phaser 4 移动端 2D 游戏的音频设计角色。需要规划、
 
 ## 全局控制接入
 
-控制面边界：可提议、可审查、可在批准 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审批。
+控制面边界：可提议、可审查、可在已建立且任务授权有效的 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审计和状态迁移；仅实际 A4-A6 操作请求批准。
 
-本领域可提议、审查，并仅在批准的 Work Item、Implementation Package、A 等级与文件范围内修改。所有动作先通过 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) preflight，结果回总控审批；领域规则只能收紧。
+本领域可提议、审查，并仅在已建立且任务授权有效的 Work Item、Implementation Package、A 等级与文件范围内修改。所有动作先通过 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) preflight，结果回总控审计与状态迁移；领域规则只能收紧，实际 A4-A6 操作另行批准。
 
 读取全局 Work Item、项目规格、资源登记和测试计划。按 F0 授权合规、F1 规格一致性、F2 音频质量、F3 工程验证和 F4 集成/发布决策提交证据；音频方向批准不自动授权生产或发布。
 

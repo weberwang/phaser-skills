@@ -2,7 +2,7 @@
 
 ## 全局状态
 
-生产主路径按风险跳过不适用的人工状态：A1 走候选、验证与完成；A2 走隔离实现、验证与完成；安全 A3 走 `IMPLEMENTING → VALIDATING → PASSED → COMPLETE`。只有 A4-A6 或实质用户取舍进入 `APPROVAL_REQUIRED`；A4 进入 `INTEGRATING`，发布工作项进入 `RELEASE_APPROVAL_REQUIRED → RELEASING`。
+生产主路径按风险跳过不适用的人工状态：A1 走候选、验证与完成；A2 走隔离实现、验证与完成；安全 A3 走 `IMPLEMENTING → VALIDATING → PASSED → COMPLETE`。实质用户取舍形成 `USER_INPUT_REQUIRED` 澄清阻塞而不进入审批状态；只有 A4-A6 具体操作进入操作批准门，A4 进入 `INTEGRATING`，发布工作项进入 `RELEASE_APPROVAL_REQUIRED → RELEASING`。
 
 任一活动状态可在有理由时进入 `RETURN` 或 `BLOCKED`；`RETURN` 只能回到 `BASELINE`、`PROPOSAL`、`REVIEW` 或 `IMPLEMENTING`；阻断解除后必须回到明确的前序状态，不得跳门。
 
@@ -14,9 +14,9 @@
 | G1 可玩切片 | `IMPLEMENTING` 至 `PASSED` |
 | G2 制作冻结/完整集成 | `VALIDATING` 至 `INTEGRATING` |
 | G3 发布候选 | `RELEASE_APPROVAL_REQUIRED` 至 `COMPLETE` |
-| V0 分流、V1 低保真、V2 视觉方向 | `PROPOSAL/REVIEW`；仅新方向或实质视觉取舍进入批准状态 |
+| V0 分流、V1 低保真、V2 视觉方向 | `PROPOSAL/REVIEW`；新方向或实质视觉取舍进入 `USER_INPUT_REQUIRED` 澄清阻塞 |
 | V3 生产规划、V4 正式资源、V5 运行态集成 | `IMPLEMENTING/VALIDATING/PASSED/INTEGRATING` |
-| 产品/需求/架构提案 | `PROPOSAL/REVIEW/APPROVAL_REQUIRED` |
+| 产品/需求/架构提案 | `PROPOSAL/REVIEW`；未决用户选择以 `USER_INPUT_REQUIRED` 阻断，决定后直接进入适用验证或实施状态 |
 | 代码/资源/音频/数值生产 | `IMPLEMENTING` |
 | 测试/性能 | `VALIDATING/PASSED` |
 | 发布 | 独立工作项的 `RELEASE_APPROVAL_REQUIRED/RELEASING/COMPLETE` |
@@ -27,11 +27,10 @@ V0-V5、G0-G3 与领域阶段是 `stageId`，不是另一套状态机。只有�
 
 - 用户请求范围变化：停止受影响实现，创建 Change Request；只有存在实质产品、行为、预算、合规或数据边界取舍时请求决定。
 - 首次模块或边界变化先通过代码、配置和权威工件确定事实；仅实质架构取舍触发模块决定门与 grilling，不得机械触发。
-- 架构批准：只批准架构对象，不批准代码、生产资源或实现动作。
-- 视觉方向批准：不批准 V3/V4 正式资源；资源批准不批准 Scene 或玩法代码。
+- 架构或视觉方向选择记录为 `USER_DECISION` 并回写权威工件；它不是实现操作授权。
 - 路径、外部目标、基线或所有权不匹配：停止且报告，不自动回滚。
 - 验证通过但实际 diff 越界：不得进入 `PASSED`。
 - 发布：必须是独立 Work Item；本地构建或测试通过不授权 A5/A6。
-- 只有 A4-A6 或实质取舍准备 pending；未展示 pending、旧 ID、旧状态或手改范围不能驱动显式批准门。
+- 只有 A4-A6 具体操作准备 pending；实质取舍先澄清并更新任务授权/权威工件。未展示 pending、旧 ID、旧状态、影响或范围变化不能驱动操作批准门。
 - `route` 推导风险通道和授权依据；`advance` 一次只推进一个已满足状态。A5/A6 永不自动执行。
 - `COMPLETE` 不是空跳终态：expectedOutputs、exitCriteria 和当前 diff/artifact/evidence 必须仍有效。安全 A3 只要求 F0-F3；A4-A6 才要求当前 F4 集成或发布证据。

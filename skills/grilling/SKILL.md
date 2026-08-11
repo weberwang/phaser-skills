@@ -9,7 +9,7 @@ description: 围绕计划、产品规格、设计、技术方案、实施或发�
 
 控制面边界：可提议、可审查、可在 Work Item 任务授权或显式批准范围内记录决定，且必须回到 `$phaser4-game-workflow-control` 风险门。
 
-Grilling 只形成实质用户决定。只有该决定本身属于人工门时，才将用户原文、对象、基线和失效条件提交给 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 写 Approval Ledger；不得把任务授权伪造成审批。
+Grilling 只形成 `USER_DECISION` 澄清记录。把用户选择回写到 `taskAuthorization`、需求/架构/视觉等权威工件或独立决策记录，并清除对应未决标志；不得写 Approval Ledger，也不得使用批准、审批、pending、handoff 或 approve 描述产品选择。
 
 只让用户决定不能从代码库、配置、现有权威工件或确定性执行确认的事项。不要阻塞纯事实查询、专业可判定缺陷或已确认的低风险执行。
 

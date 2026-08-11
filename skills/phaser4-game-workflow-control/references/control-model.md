@@ -32,8 +32,8 @@ Work Item 的 `taskAuthorization` 保存用户原始请求、目标、范围、�
 
 `substantiveTradeoffRequired` 或 `visualDecisionRequired` 为 true 时，即使动作是 A1-A3 也必须进入显式决定门。普通 A1-A3 禁止创建多余 pending。
 
-显式批准记录只用于实质取舍和 A4-A6，保存用户原文、时间、明确对象、阶段、模块、基线、动作、路径/服务/外部目标、副作用与失效条件。`handoff` 后的短回复只确认当前 pending。A5/A6 批准精确、就近、一次性；A6 永不自动执行。
+产品、视觉、架构、预算、合规和数据边界取舍属于 `USER_DECISION`，只更新任务授权、权威工件或决策记录，不进入审批账本。显式批准只用于 A4-A6 具体操作，保存用户原文、时间、明确对象、阶段、模块、基线、动作、非空影响摘要、路径/服务/外部目标、副作用与失效条件。`handoff` 后的短回复只确认当前展示的操作及影响；A6 永不自动执行。
 
-`route` 依据确定性规则输出 CANDIDATE(A1) 至 RELEASE(A6)，并标记 `authorizationBasis` 为 `TASK_AUTHORIZATION` 或 `EXPLICIT_APPROVAL`。普通 A3 保持真实 diff、独立 F2 和 F0-F3 证据，完成后无需 F4；A4-A6 保持精确批准硬门。
+`route` 依据确定性规则输出 CANDIDATE(A1) 至 RELEASE(A6)：A0-A3 标记 `TASK_AUTHORIZATION`，未决用户选择额外标记 `USER_INPUT_REQUIRED`，只有 A4-A6 标记 `EXPLICIT_APPROVAL`。普通 A3 保持真实 diff、独立 F2 和 F0-F3 证据，完成后无需 F4；A4-A6 保持精确批准硬门。
 
 新审批不得让未授权的既往动作合法化。基线、对象、阶段、模块、文件范围或动作等级改变时，创建新审批。旧记录只读保留。

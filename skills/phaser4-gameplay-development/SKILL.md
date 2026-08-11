@@ -7,9 +7,9 @@ description: Phaser 4 移动端 2D 游戏的玩法开发角色。用于依据 GD
 
 ## 全局控制接入
 
-控制面边界：可提议、可审查、可在批准 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审批。
+控制面边界：可提议、可审查、可在已建立且任务授权有效的 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审计和状态迁移；仅实际 A4-A6 操作请求批准。
 
-本领域可提议、审查，并仅在批准的 Work Item、冻结 Implementation Package、A 等级与路径内修改；任何实现前运行 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) preflight，实施后执行 diff-audit 与 evidence-check，再回总控迁移。
+本领域可提议、审查，并仅在已建立且任务授权有效的 Work Item、冻结 Implementation Package、A 等级与路径内修改；任何实现前运行 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) preflight，实施后执行 diff-audit 与 evidence-check，再回总控审计和状态迁移；仅实际 A4-A6 操作请求批准。
 
 ## 所有权
 
@@ -29,4 +29,4 @@ description: Phaser 4 移动端 2D 游戏的玩法开发角色。用于依据 GD
 
 截图对比记录相同视口、设备像素比、状态、操作轨迹、语言、时间点、ROI、容差、稳定帧和遮罩说明。生成式内容、动画和 VFX 不得只靠像素差判断；源码、固定坐标、类型检查、构建成功和元素存在只能证明结构或工程状态。
 
-F0 只校验授权与流程合规，F1 核对批准规格，F2 由非作者验证玩法领域质量，F3 绑定当前候选工程证据，F4 只做精确集成/发布决定。行为或验收变化建立 Change Request。新增或修改的类、函数、实体及复杂逻辑使用简体中文注释。
+F0 只校验授权与流程合规，F1 核对既定规格，F2 由非作者验证玩法领域质量，F3 绑定当前候选工程证据，F4 只做 A4-A6 精确集成/发布操作批准。行为或验收变化建立 Change Request 并记录用户决定。新增或修改的类、函数、实体及复杂逻辑使用简体中文注释。

@@ -1,13 +1,13 @@
 ---
 name: phaser4-game-image-optimization
-description: Phaser 4 项目的手动图片资源优化任务。仅当用户显式调用 $phaser4-game-image-optimization 时使用，用于盘点运行时位图、生成压缩候选、验证画质与渠道兼容性，并在全局 Work Item、精确审批、路径和证据控制下替换资源。
+description: Phaser 4 项目的手动图片资源优化任务。仅当用户显式调用 $phaser4-game-image-optimization 时使用，用于盘点运行时位图、生成压缩候选、验证画质与渠道兼容性，并在全局 Work Item、任务授权、路径和证据控制下替换资源；A4-A6 操作另行批准。
 ---
 
 # Phaser 4 图片资源优化
 
 ## 全局控制接入
 
-控制面边界：可提议、可审查、可在批准 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审批。
+控制面边界：可提议、可审查、可在已建立且任务授权有效的 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审计和状态迁移；仅实际 A4-A6 操作请求批准。
 
 显式调用只触发提案，不等于授权写入。所有盘点、候选生成、替换和验证都必须进入 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md)；本 Skill 不拥有全局状态或审批，不得旁路 diff 审计与证据门。
 
@@ -15,7 +15,7 @@ description: Phaser 4 项目的手动图片资源优化任务。仅当用户显�
 
 ## 执行边界
 
-- 只有用户显式调用 `$phaser4-game-image-optimization` 时才提出任务；写入仍须独立 Work Item 和当前门精确审批。不得因包体偏大、进入发布阶段、执行构建或运行测试而自动调用。
+- 只有用户显式调用 `$phaser4-game-image-optimization` 时才提出任务；A0-A3 写入使用独立 Work Item 的任务授权，实际 A4-A6 操作才请求精确批准。不得因包体偏大、进入发布阶段、执行构建或运行测试而自动调用。
 - 将本任务视为显式触发的资源领域任务，并按实际动作纳入 A0-A3、本地阶段与统一门；不得自动加入构建脚本、Git 钩子或 CI，也不得由发布状态隐式触发。
 - 默认只处理项目内被运行时代码、资源清单或加载配置引用的 PNG、JPEG 和 WebP。设计源文件、参考图、审核证据、截图、测试夹具、构建产物、缓存以及未被运行时引用的素材不在范围内。
 - GIF、APNG、纹理图集、法线图、像素画、九宫格和带特殊色彩空间的图片属于高风险资源；保留其帧、像素网格、通道、边界和元数据语义，只在相应验证可执行时处理。

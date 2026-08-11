@@ -9,12 +9,12 @@ description: 为 Phaser 4 游戏规划、生产、登记、验证并集成 UI、
 
 控制面边界：可提议、可审查、可在 Work Item 任务授权或显式批准范围内修改，且必须回到 `$phaser4-game-workflow-control` 风险门。
 
-本领域可提议、审查，并仅在批准的 Work Item、Implementation Package、A 等级和路径内生产或接入资源；所有结论回到 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md)。V0-V5 是 `stageId`，不得旁路全局状态、精确审批、diff 审计和证据门。
+本领域可提议、审查，并仅在已建立且任务授权有效的 Work Item、Implementation Package、A 等级和路径内生产或接入资源；所有结论回到 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 审计和状态迁移。V0-V5 是 `stageId`，不得旁路全局状态、A4-A6 精确操作批准、diff 审计和证据门。
 
 ## 工作流
 
 1. 读取项目配置、GDD、visual-design、TDD、控制面和资源登记；执行 [V0-V5 视觉生产管线](references/visual-production-pipeline.md)。
-2. V0 先判断任务属于原子资源、组件/资源集，还是场景/整套 UI/视觉系统/参考还原。原子资源只有在结构、布局、交互和视口行为不变，且已有适用视觉契约、自动决策记录或显式确认记录、视觉可交付结论与预算基线时才能跳过 V1/V2。
+2. V0 先判断任务属于原子资源、组件/资源集，还是场景/整套 UI/视觉系统/参考还原。原子资源只有在结构、布局、交互和视口行为不变，且已有适用视觉契约、`AUTO` 或 `USER_DECISION` 记录、视觉可交付结论与预算基线时才能跳过 V1/V2。
 3. V1 建立玩法视觉契约、必要低保真/灰盒与预算，V2 执行方向基准、整体视觉审阅、动态样片和独立美术 F2。已有明确需求、参考或冻结基线且仅忠实实现/专业修复时自动验证；只有新方向、多种同等方案、可见结构/交互变化或高返工成本取舍请求一次精确确认。不得无条件要求低保真与高保真双重批准。
 4. V3 按 [资产生产路线](references/asset-production-routes.md) 选择可编辑源文件、运行时输出和机器清单，每个资源绑定当前基线 ID、版本、风格指纹和锚点。只有选择 AI 合成栅格路线时才读取 [效果图拆分](references/effect-image-splitting.md)。
 5. V4 生产正式资源并逐项验证来源、授权、预算、基线绑定、跨资源联系表、同屏一致性、Phaser 加载和玩法视觉证据。运行 `scripts/validate_visual_manifest.py` 检查 `docs/visual-assets.json`。
@@ -29,4 +29,4 @@ description: 为 Phaser 4 游戏规划、生产、登记、验证并集成 UI、
 
 ## 审核与交付
 
-所有候选先通过 F0-F3，F4 只用于 A4-A6。V1/V2 专业检查必须执行；人工确认是条件性的。自动路径记录 `AUTO` 决策依据，实质取舍只记录一次精确确认。每个交付包记录任务授权或显式批准、候选身份、基线、来源、预算和证据。
+所有候选先通过 F0-F3，F4 只用于 A4-A6。V1/V2 专业检查必须执行；用户选择是条件性的。自动路径记录 `AUTO` 决策依据，实质取舍记录一次 `USER_DECISION` 并回写权威工件。每个交付包记录任务授权或 A4-A6 操作批准、候选身份、基线、来源、预算和证据。

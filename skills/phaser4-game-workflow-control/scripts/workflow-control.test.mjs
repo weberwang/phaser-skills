@@ -45,7 +45,7 @@ function makeWork(head, overrides = {}) {
     objective: '实现明确功能', taskAuthorization: { authorizationId: 'TASK-WI-1', userOriginalText: '实现 core 明确功能', authorizedObjective: '实现明确功能', authorizedScope: ['core'], authorizedActions: ['document-candidate', 'prototype', 'code-change', 'integration', 'external-state', 'release'], authorizedActionLevels: ['A0', 'A1', 'A2', 'A3'], authorizedPaths: ['src', 'docs'], authorizedAt: '2026-08-11T00:00:00.000Z' },
     inScope: ['core'], outOfScope: ['release'], approvedRequirements: ['REQ-1'], allowedActions: ['document-candidate', 'prototype', 'code-change', 'integration', 'external-state', 'release'], allowedActionLevels: ['A0', 'A1', 'A2', 'A3'], explicitApprovalActionLevels: ['A4', 'A5', 'A6'], prohibitedActions: [], allowedPaths: ['src', 'docs'], forbiddenPaths: ['.git', 'src/secret'], allowedExternalTargets: ['origin/feature', 'store/app'], protectedExternalTargets: ['production'], requiredGates: ['F0', 'F1', 'F2', 'F3'], approvalRecord: null,
     assignedAgent: 'implementer', delegatedAgents: [], expectedOutputs: ['src/main.js'], validationPlan: ['node --test'], exitCriteria: ['tests pass'], nextGate: 'F0', rollbackPolicy: '不自动回滚共享工作区', evidenceRoot: '.workflow-control/evidence/WI-1',
-    pendingApprovalId: 'PENDING-1', pendingApprovalObject: 'core implementation', pendingApprovalStage: 'G1', pendingApprovalActionLevel: 'A3', pendingApprovalGate: 'F0', pendingApprovalState: 'APPROVAL_REQUIRED', pendingApprovalContext: 'implementation', pendingApprovalActionType: 'code-change', pendingApprovalFileScope: ['src'], pendingApprovalServices: [], pendingApprovalAllowServiceStart: false, pendingApprovalAllowDelete: false, pendingApprovalExternalWrite: false, pendingApprovalDestructive: false, pendingApprovalPhysicalDevice: false, pendingApprovalRelease: false, pendingApprovalExternalTargets: [], pendingApprovalPreparedAt: '2026-08-11T00:00:00.000Z', pendingApprovalPresentedId: null, pendingApprovalPresentedAt: null,
+    pendingApprovalId: 'PENDING-1', pendingApprovalObject: 'core implementation', pendingApprovalStage: 'G1', pendingApprovalActionLevel: 'A3', pendingApprovalGate: 'F0', pendingApprovalState: 'IMPLEMENTING', pendingApprovalContext: 'implementation', pendingApprovalActionType: 'code-change', pendingApprovalImpactSummary: [], pendingApprovalFileScope: ['src'], pendingApprovalServices: [], pendingApprovalAllowServiceStart: false, pendingApprovalAllowDelete: false, pendingApprovalExternalWrite: false, pendingApprovalDestructive: false, pendingApprovalPhysicalDevice: false, pendingApprovalRelease: false, pendingApprovalExternalTargets: [], pendingApprovalPreparedAt: '2026-08-11T00:00:00.000Z', pendingApprovalPresentedId: null, pendingApprovalPresentedAt: null,
     validationBatchId: 'BATCH-1', changeRequestFiles: [], moduleGateRequired: false, substantiveTradeoffRequired: false, visualDecisionRequired: false, releaseWorkItem: false,
     ...overrides
   };
@@ -59,7 +59,7 @@ function makePackage(overrides = {}) {
 /** 构造精确显式批准记录。 */
 function makeApproval(work, overrides = {}) {
   return {
-    approvalId: 'AP-1', promptContextId: work.pendingApprovalId, pendingState: work.pendingApprovalState, pendingContext: work.pendingApprovalContext, workItemId: work.workItemId, userOriginalText: '批准当前唯一对象', approvedAt: '2026-08-11T00:01:00.000Z', explicitObject: work.pendingApprovalObject, stageId: work.stageId, moduleId: work.moduleId, baselineVersion: work.baselineVersion, baselineHash: work.baselineHash, actionType: work.pendingApprovalActionType, actionLevel: work.pendingApprovalActionLevel, fileScope: work.pendingApprovalFileScope, services: work.pendingApprovalServices, allowServiceStart: work.pendingApprovalAllowServiceStart, allowDelete: work.pendingApprovalAllowDelete, externalWrite: work.pendingApprovalExternalWrite, destructive: work.pendingApprovalDestructive, physicalDevice: work.pendingApprovalPhysicalDevice, release: work.pendingApprovalRelease, gate: work.pendingApprovalGate, invalidatedWhen: ['baseline changes'], externalTargets: work.pendingApprovalExternalTargets, invalidatedAt: null,
+    approvalId: 'AP-1', promptContextId: work.pendingApprovalId, pendingState: work.pendingApprovalState, pendingContext: work.pendingApprovalContext, workItemId: work.workItemId, userOriginalText: '批准当前唯一对象', approvedAt: '2026-08-11T00:01:00.000Z', explicitObject: work.pendingApprovalObject, stageId: work.stageId, moduleId: work.moduleId, baselineVersion: work.baselineVersion, baselineHash: work.baselineHash, actionType: work.pendingApprovalActionType, actionLevel: work.pendingApprovalActionLevel, impactSummary: work.pendingApprovalImpactSummary, fileScope: work.pendingApprovalFileScope, services: work.pendingApprovalServices, allowServiceStart: work.pendingApprovalAllowServiceStart, allowDelete: work.pendingApprovalAllowDelete, externalWrite: work.pendingApprovalExternalWrite, destructive: work.pendingApprovalDestructive, physicalDevice: work.pendingApprovalPhysicalDevice, release: work.pendingApprovalRelease, gate: work.pendingApprovalGate, invalidatedWhen: ['baseline changes'], externalTargets: work.pendingApprovalExternalTargets, invalidatedAt: null,
     ...overrides
   };
 }
@@ -139,6 +139,30 @@ test('A3：F0-F3 通过后 PASSED 可直接 COMPLETE', () => {
   assert.equal(complete.status, 0, complete.stderr);
 });
 
+test('A1：从 REVIEW 连续推进不经过审批状态且不需要 Ledger', () => {
+  const f = setup({ globalState: 'REVIEW', pendingApprovalActionLevel: 'A1', pendingApprovalActionType: 'document-candidate', pendingApprovalFileScope: ['docs'] });
+  const record = join(f.root, 'evidence', 'WI-1', 'a1-audit.json');
+  const audited = run('diff-audit', ['--work-item', f.workPath, '--baseline', f.head, '--baseline-hash', HASH, '--action-level', 'A1', '--action-type', 'document-candidate', '--artifact', 'docs/spec.md', '--record', record], f.repo);
+  assert.equal(audited.status, 0, audited.stderr);
+  const audit = JSON.parse(audited.stdout);
+  const evidencePath = join(f.root, 'evidence', 'WI-1', 'a1-evidence.json');
+  writeJson(evidencePath, makeEvidence(f, audit));
+  for (const expected of ['VALIDATING', 'PASSED', 'COMPLETE']) {
+    const args = ['--work-item', f.workPath];
+    if (expected !== 'VALIDATING') args.push('--evidence', evidencePath);
+    const result = run('advance', args, f.repo);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(readFileSync(f.workPath, 'utf8')).globalState, expected);
+  }
+});
+
+test('A3：从 REVIEW 直接进入 IMPLEMENTING，不经过审批状态且不需要 Ledger', () => {
+  const f = setup({ globalState: 'REVIEW' });
+  const result = run('advance', ['--work-item', f.workPath, '--implementation-package', f.packagePath], f.repo);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(readFileSync(f.workPath, 'utf8')).globalState, 'IMPLEMENTING');
+});
+
 test('A3：删除旧实现被拒绝并升级到 A4/A6', () => {
   const f = setup();
   writeJson(f.packagePath, makePackage({ expectedDeletedFiles: ['src/old.js'] }));
@@ -159,7 +183,7 @@ test('本地服务：查重后的本项目安全验证启动不需要批准', ()
 });
 
 test('A4：高影响集成默认需要 F4 精确显式批准', () => {
-  const base = makeWork('HEAD', { globalState: 'INTEGRATING', approvalRecord: 'AP-1', pendingApprovalId: 'PENDING-A4', pendingApprovalObject: 'replace entry', pendingApprovalActionLevel: 'A4', pendingApprovalGate: 'F4', pendingApprovalState: 'PASSED', pendingApprovalContext: 'integration', pendingApprovalActionType: 'integration', pendingApprovalFileScope: ['src'], nextGate: 'F4' });
+  const base = makeWork('HEAD', { globalState: 'INTEGRATING', approvalRecord: 'AP-1', pendingApprovalId: 'PENDING-A4', pendingApprovalObject: 'replace entry', pendingApprovalActionLevel: 'A4', pendingApprovalGate: 'F4', pendingApprovalState: 'PASSED', pendingApprovalContext: 'integration', pendingApprovalActionType: 'integration', pendingApprovalImpactSummary: ['替换正式入口'], pendingApprovalFileScope: ['src'], nextGate: 'F4' });
   const approval = makeApproval(base);
   const f = setup({ ...base, baselineId: undefined }, [approval]);
   const work = JSON.parse(readFileSync(f.workPath, 'utf8')); work.baselineId = f.head; writeJson(f.workPath, work);
@@ -168,12 +192,12 @@ test('A4：高影响集成默认需要 F4 精确显式批准', () => {
 });
 
 test('A5：没有当前精确外部目标批准时拒绝', () => {
-  const f = setup({ globalState: 'INTEGRATING', pendingApprovalActionLevel: 'A5', pendingApprovalActionType: 'external-state', pendingApprovalExternalWrite: true, pendingApprovalExternalTargets: ['origin/feature'], pendingApprovalFileScope: [] });
+  const f = setup({ globalState: 'INTEGRATING', pendingApprovalActionLevel: 'A5', pendingApprovalActionType: 'external-state', pendingApprovalImpactSummary: ['写入远端分支'], pendingApprovalExternalWrite: true, pendingApprovalExternalTargets: ['origin/feature'], pendingApprovalFileScope: [] });
   rejects(run('preflight', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--action-level', 'A5', '--action-type', 'external-state', '--object', 'push', '--external-target', 'origin/feature'], f.repo), /没有唯一|审批/);
 });
 
 test('A6：破坏、真机与发布永不按任务授权放行', () => {
-  const f = setup({ globalState: 'RELEASE_APPROVAL_REQUIRED', releaseWorkItem: true, pendingApprovalActionLevel: 'A6', pendingApprovalActionType: 'release', pendingApprovalExternalWrite: true, pendingApprovalRelease: true, pendingApprovalExternalTargets: ['store/app'], pendingApprovalFileScope: [] });
+  const f = setup({ globalState: 'RELEASE_APPROVAL_REQUIRED', releaseWorkItem: true, pendingApprovalActionLevel: 'A6', pendingApprovalActionType: 'release', pendingApprovalImpactSummary: ['发布到应用商店'], pendingApprovalExternalWrite: true, pendingApprovalRelease: true, pendingApprovalExternalTargets: ['store/app'], pendingApprovalFileScope: [] });
   rejects(run('preflight', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--action-level', 'A6', '--action-type', 'release', '--object', 'store release', '--external-target', 'store/app', '--release'], f.repo), /没有唯一|审批/);
   const device = setup();
   rejects(run('preflight', ['--work-item', device.workPath, '--action-level', 'A3', '--action-type', 'code-change', '--path', 'src/main.js', '--device', '--external-target', 'store/app'], device.repo), /必须为 A6|至少为 A5/);
@@ -183,7 +207,7 @@ test('模块与视觉：已有事实基线不机械触发人工门', () => {
   const f = setup({ moduleGateRequired: true, substantiveTradeoffRequired: false, visualDecisionRequired: false });
   assert.equal(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'code-change', '--path', 'src/main.js'], f.repo).status, 0);
   const work = JSON.parse(readFileSync(f.workPath, 'utf8')); work.substantiveTradeoffRequired = true; writeJson(f.workPath, work);
-  rejects(run('preflight', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'code-change', '--path', 'src/main.js'], f.repo), /模块批准|实质模块取舍/);
+  rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'code-change', '--path', 'src/main.js'], f.repo), /USER_INPUT_REQUIRED/);
 });
 
 test('任务授权：范围外路径和伪造 Implementation Package 均被拒绝', () => {
@@ -205,31 +229,56 @@ test('任务授权：手改扩大动作、自动等级或路径时 Work Item 校
   }
 });
 
-test('条件决定门：视觉或实质取舍使 A1/A3 停在显式批准门', () => {
+test('用户选择：视觉或实质取舍输出 USER_INPUT_REQUIRED 且不创建审批', () => {
   const visual = setup({ globalState: 'REVIEW', visualDecisionRequired: true, pendingApprovalActionLevel: 'A1', pendingApprovalActionType: 'document-candidate', pendingApprovalFileScope: ['docs'] });
-  const routeResult = run('route', ['--work-item', visual.workPath, '--ledger', visual.ledgerPath], visual.repo);
-  assert.equal(JSON.parse(routeResult.stdout).authorizationBasis, 'EXPLICIT_APPROVAL');
-  rejects(run('preflight', ['--work-item', visual.workPath, '--ledger', visual.ledgerPath, '--action-level', 'A1', '--action-type', 'document-candidate', '--path', 'docs/spec.md'], visual.repo), /没有唯一|审批/);
+  const route = JSON.parse(run('route', ['--work-item', visual.workPath], visual.repo).stdout);
+  assert.equal(route.authorizationBasis, 'TASK_AUTHORIZATION');
+  assert.equal(route.userInputRequired, true);
+  rejects(run('preflight', ['--work-item', visual.workPath, '--action-level', 'A1', '--action-type', 'document-candidate', '--path', 'docs/spec.md'], visual.repo), /USER_INPUT_REQUIRED/);
+  rejects(run('advance', ['--work-item', visual.workPath], visual.repo), /USER_INPUT_REQUIRED/);
+  assert.deepEqual(JSON.parse(readFileSync(visual.ledgerPath, 'utf8')).approvals, []);
   const substantive = setup({ substantiveTradeoffRequired: true, moduleGateRequired: false });
-  rejects(run('preflight', ['--work-item', substantive.workPath, '--ledger', substantive.ledgerPath, '--implementation-package', substantive.packagePath, '--action-level', 'A3', '--action-type', 'code-change', '--path', 'src/main.js'], substantive.repo), /没有唯一|审批/);
+  rejects(run('preflight', ['--work-item', substantive.workPath, '--implementation-package', substantive.packagePath, '--action-level', 'A3', '--action-type', 'code-change', '--path', 'src/main.js'], substantive.repo), /USER_INPUT_REQUIRED/);
 });
 
-test('审批入口：普通 A1-A3 拒绝制造 pending，条件决定门允许准备', () => {
-  const ordinary = setup({ globalState: 'APPROVAL_REQUIRED', pendingApprovalActionLevel: 'A1', pendingApprovalActionType: 'document-candidate', pendingApprovalFileScope: ['docs'] });
+test('用户选择：A1-A3 即使有未决选择也不能 prepare-approval，澄清后继续任务授权', () => {
+  const ordinary = setup({ globalState: 'REVIEW', pendingApprovalState: 'REVIEW', pendingApprovalActionLevel: 'A1', pendingApprovalActionType: 'document-candidate', pendingApprovalFileScope: ['docs'] });
   const baseArgs = ['--work-item', ordinary.workPath, '--ledger', ordinary.ledgerPath, '--pending-id', 'PENDING-NEW', '--object', 'visual choice', '--stage', 'G1', '--action-type', 'document-candidate', '--action-level', 'A1', '--gate', 'F0', '--context', 'decision', '--path', 'docs'];
-  rejects(run('prepare-approval', baseArgs, ordinary.repo), /仅在存在实质或视觉取舍/);
+  rejects(run('prepare-approval', baseArgs, ordinary.repo), /不能在|A1/);
   const work = JSON.parse(readFileSync(ordinary.workPath, 'utf8')); work.visualDecisionRequired = true; writeJson(ordinary.workPath, work);
-  const prepared = run('prepare-approval', baseArgs, ordinary.repo);
-  assert.equal(prepared.status, 0, prepared.stderr);
+  rejects(run('prepare-approval', [...baseArgs, '--impact', '改变视觉方向'], ordinary.repo), /不能在|A1/);
+  work.visualDecisionRequired = false; work.globalState = 'REVIEW'; writeJson(ordinary.workPath, work);
+  assert.equal(run('preflight', ['--work-item', ordinary.workPath, '--action-level', 'A1', '--action-type', 'document-candidate', '--path', 'docs/spec.md'], ordinary.repo).status, 0);
 });
 
 test('route：明确区分任务授权与显式批准', () => {
   const safe = setup();
   const safeRoute = run('route', ['--work-item', safe.workPath], safe.repo);
   assert.equal(JSON.parse(safeRoute.stdout).authorizationBasis, 'TASK_AUTHORIZATION');
-  const external = setup({ globalState: 'INTEGRATING', pendingApprovalActionLevel: 'A5', pendingApprovalActionType: 'external-state', pendingApprovalExternalWrite: true, pendingApprovalExternalTargets: ['origin/feature'], pendingApprovalFileScope: [] });
+  const external = setup({ globalState: 'INTEGRATING', pendingApprovalActionLevel: 'A5', pendingApprovalActionType: 'external-state', pendingApprovalImpactSummary: ['写入远端分支'], pendingApprovalExternalWrite: true, pendingApprovalExternalTargets: ['origin/feature'], pendingApprovalFileScope: [] });
   const externalRoute = run('route', ['--work-item', external.workPath, '--ledger', external.ledgerPath], external.repo);
   assert.equal(JSON.parse(externalRoute.stdout).authorizationBasis, 'EXPLICIT_APPROVAL');
+});
+
+test('操作审批：A4-A6 缺少影响摘要时拒绝准备', () => {
+  const f = setup({ globalState: 'PASSED' });
+  const args = ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--pending-id', 'PENDING-A4', '--object', 'replace entry', '--stage', 'G1', '--action-type', 'integration', '--action-level', 'A4', '--gate', 'F4', '--context', 'integration', '--path', 'src'];
+  rejects(run('prepare-approval', args, f.repo), /--impact|影响/);
+});
+
+test('操作审批：操作与影响精确匹配可通过，篡改或遗漏影响被拒绝', () => {
+  const f = setup({ globalState: 'PASSED' });
+  const args = ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--pending-id', 'PENDING-A4', '--object', 'replace entry', '--stage', 'G1', '--action-type', 'integration', '--action-level', 'A4', '--gate', 'F4', '--context', 'integration', '--path', 'src', '--impact', '替换正式入口'];
+  assert.equal(run('prepare-approval', args, f.repo).status, 0);
+  assert.equal(run('handoff', ['--work-item', f.workPath], f.repo).status, 0);
+  const work = JSON.parse(readFileSync(f.workPath, 'utf8'));
+  const recordPath = join(f.root, 'tampered-approval.json');
+  writeJson(recordPath, makeApproval(work, { approvalId: 'AP-BAD', impactSummary: ['删除用户数据'] }));
+  rejects(run('approve', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--record', recordPath], f.repo), /当前已展示|影响|扩写/);
+  const approved = run('approve', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--approval-id', 'AP-GOOD', '--user-text', '批准'], f.repo);
+  assert.equal(approved.status, 0, approved.stderr);
+  const ledger = JSON.parse(readFileSync(f.ledgerPath, 'utf8'));
+  assert.deepEqual(ledger.approvals[0].impactSummary, ['替换正式入口']);
 });
 
 test('基线与实施包：旧 hash、范围漂移和所有权缺失均拒绝', () => {
@@ -253,7 +302,17 @@ test('路径门：forbiddenPaths、仓库越界和未授权动作不能旁路', 
 test('变更请求：未决范围变化阻断安全 A3', () => {
   const f = setup({ changeRequestFiles: ['.workflow-control/change-requests/CR-1.json'] });
   writeJson(join(f.root, 'change-requests', 'CR-1.json'), { changeRequestId: 'CR-1', workItemId: 'WI-1', change: '扩大玩家可见行为', reason: '新增需求', affectedModules: ['core'], affectedBaselineHash: HASH, invalidatedApprovalIds: [], newRisk: '产品范围变化', newAcceptance: ['new behavior'], userDecisionRequest: '是否扩大范围', status: 'PENDING' });
-  rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'code-change', '--path', 'src/main.js'], f.repo), /Change Request.*未批准/);
+  rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'code-change', '--path', 'src/main.js'], f.repo), /Change Request.*ACCEPTED 用户决定/);
+});
+
+test('变更请求：使用用户决定状态且拒绝旧 APPROVED 审批语义', () => {
+  const f = setup({ changeRequestFiles: ['.workflow-control/change-requests/CR-2.json'] });
+  const path = join(f.root, 'change-requests', 'CR-2.json');
+  const change = { changeRequestId: 'CR-2', workItemId: 'WI-1', change: '扩大玩家可见行为', reason: '用户选择新范围', affectedModules: ['core'], affectedBaselineHash: `sha256:${'b'.repeat(64)}`, invalidatedApprovalIds: [], newRisk: '产品范围变化', newAcceptance: ['new behavior'], userDecisionRequest: '是否接受新范围', status: 'APPROVED' };
+  writeJson(path, change);
+  rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'code-change', '--path', 'src/main.js'], f.repo), /PENDING\/ACCEPTED\/REJECTED|用户决定/);
+  change.status = 'ACCEPTED'; writeJson(path, change);
+  assert.equal(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'code-change', '--path', 'src/main.js'], f.repo).status, 0);
 });
 
 test('服务复用：已有健康实例时禁止重复启动', () => {
@@ -264,7 +323,7 @@ test('服务复用：已有健康实例时禁止重复启动', () => {
 });
 
 test('A4：缺少批准、路径不匹配和删除未授权均拒绝', () => {
-  const base = makeWork('HEAD', { globalState: 'INTEGRATING', pendingApprovalId: 'PENDING-A4', pendingApprovalObject: 'replace entry', pendingApprovalActionLevel: 'A4', pendingApprovalGate: 'F4', pendingApprovalState: 'PASSED', pendingApprovalContext: 'integration', pendingApprovalActionType: 'integration', pendingApprovalFileScope: ['src/main.js'], nextGate: 'F4' });
+  const base = makeWork('HEAD', { globalState: 'INTEGRATING', pendingApprovalId: 'PENDING-A4', pendingApprovalObject: 'replace entry', pendingApprovalActionLevel: 'A4', pendingApprovalGate: 'F4', pendingApprovalState: 'PASSED', pendingApprovalContext: 'integration', pendingApprovalActionType: 'integration', pendingApprovalImpactSummary: ['替换正式入口'], pendingApprovalFileScope: ['src/main.js'], nextGate: 'F4' });
   const f = setup({ ...base, baselineId: undefined });
   const work = JSON.parse(readFileSync(f.workPath, 'utf8')); work.baselineId = f.head; writeJson(f.workPath, work);
   rejects(run('preflight', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--implementation-package', f.packagePath, '--action-level', 'A4', '--action-type', 'integration', '--gate', 'F4', '--object', 'replace entry', '--path', 'src/main.js'], f.repo), /没有唯一|审批/);
@@ -275,7 +334,7 @@ test('A4：缺少批准、路径不匹配和删除未授权均拒绝', () => {
 });
 
 test('A5/A6：错误外部目标、受保护目标和低等级设备动作均拒绝', () => {
-  const f = setup({ globalState: 'INTEGRATING', pendingApprovalActionLevel: 'A5', pendingApprovalActionType: 'external-state', pendingApprovalExternalWrite: true, pendingApprovalExternalTargets: ['origin/feature'], pendingApprovalFileScope: [] });
+  const f = setup({ globalState: 'INTEGRATING', pendingApprovalActionLevel: 'A5', pendingApprovalActionType: 'external-state', pendingApprovalImpactSummary: ['写入远端分支'], pendingApprovalExternalWrite: true, pendingApprovalExternalTargets: ['origin/feature'], pendingApprovalFileScope: [] });
   rejects(run('preflight', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--action-level', 'A5', '--action-type', 'external-state', '--object', 'push', '--external-target', 'production'], f.repo), /受保护|未授权/);
   rejects(run('preflight', ['--work-item', f.workPath, '--action-level', 'A5', '--action-type', 'external-state', '--object', 'device', '--external-target', 'store/app', '--device'], f.repo), /必须为 A6/);
 });

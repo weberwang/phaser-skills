@@ -17,13 +17,13 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 
 `$phaser4-game-workflow-control` 独占全局状态、风险门、动作等级、路径/外部目标门、状态迁移与证据一致性。任何领域 Skill 只能提议、审查或在 Work Item 授权范围内修改，并必须回到总控；领域规则只能收紧。
 
-全局状态为：`INTAKE`、`BASELINE`、`PROPOSAL`、`REVIEW`、`APPROVAL_REQUIRED`、`APPROVED`、`IMPLEMENTING`、`VALIDATING`、`PASSED`、`INTEGRATING`、`RELEASE_APPROVAL_REQUIRED`、`RELEASING`、`COMPLETE`、`RETURN`、`BLOCKED`。G0-G3、V0-V5 和领域生产阶段都映射为 `stageId`，不能形成第二套状态机。
+全局状态为：`INTAKE`、`BASELINE`、`PROPOSAL`、`REVIEW`、`IMPLEMENTING`、`VALIDATING`、`PASSED`、`INTEGRATING`、`RELEASE_APPROVAL_REQUIRED`、`RELEASING`、`COMPLETE`、`RETURN`、`BLOCKED`。A1-A3 从 `REVIEW` 直接进入适用验证或实施状态；G0-G3、V0-V5 和领域生产阶段都映射为 `stageId`，不能形成第二套状态机。
 
 统一门语义：F0 授权与流程合规、F1 规格一致性、F2 领域质量、F3 工程验证、F4 集成/发布决策。
 
 A0-A6 唯一语义：A0 只读调查；A1 文档和候选；A2 隔离原型/沙盒/验证页/非生产资源；A3 生产实现；A4 正式入口替换、迁移、删除旧实现和跨模块高影响集成；A5 PR、push、消息、第三方、上传构建和云配置等外部状态；A6 数据删除、生产迁移、真机、商店提审、正式发布和线上回滚。A0-A2 直接执行；安全 A3 以用户当前请求形成的任务授权和有效 Implementation Package 为依据，不二次请求批准。普通 A3 在 F0-F3 通过后可直接 `COMPLETE`。
 
-Work Item 的 `taskAuthorization` 保存用户原始请求、目标和范围；它是任务授权，不写入 Approval Ledger。只有 A4、A5、A6 或实质用户取舍才生成 pending 和显式批准记录。显式批准精确绑定对象、门、基线、路径、服务、外部目标和失效条件，并且仅消费一次；A6 永不自动放行。
+Work Item 的 `taskAuthorization` 保存用户原始请求、目标和范围；它是 A0-A3 本地工作的任务授权，不写入 Approval Ledger。产品、视觉或架构取舍属于 `USER_DECISION`：澄清后更新任务授权、权威工件或决策记录，不生成审批。只有 A4、A5、A6 的具体操作才生成 pending 和操作批准记录；记录精确冻结操作、影响、对象、门、基线、路径、服务、外部目标与副作用，A6 永不自动放行。
 
 ## CLI
 
@@ -35,10 +35,10 @@ node <skill-dir>\scripts\workflow-control.mjs init --repo . --work-item-id WI-1 
 node <skill-dir>\scripts\workflow-control.mjs route --work-item .workflow-control\work-items\WI-1.json
 node <skill-dir>\scripts\workflow-control.mjs preflight --work-item .workflow-control\work-items\WI-1.json --implementation-package .workflow-control\implementation-package.json --action-level A3 --action-type code-change --path src\main.ts
 node <skill-dir>\scripts\workflow-control.mjs diff-audit --work-item .workflow-control\work-items\WI-1.json --implementation-package .workflow-control\implementation-package.json --baseline <git-sha> --baseline-hash <sha256> --action-level A3 --record .workflow-control\evidence\WI-1\diff-audit.json
-# 仅 A4-A6 或实质取舍使用 prepare-approval、handoff、approve 与 --ledger。
+# 仅 A4-A6 具体操作使用 prepare-approval、handoff、approve 与 --ledger，并用 --impact 冻结影响。
 ```
 
-命令覆盖受限 `init`、`route`、`advance`、`prepare-approval`、`handoff`、`preflight`、`approve`、`delegate-check`、`diff-audit`、`evidence-check`、`transition`、`status` 与 `lint`。`route` 用确定性规则输出 `TASK_AUTHORIZATION` 或 `EXPLICIT_APPROVAL`。A1/A2 可用 artifact-only 审计，安全 A3 保留实施包、真实 diff、独立审查和 F0-F3；A4-A6 保留硬门。系统不会把任务授权伪造成审批，也不会执行 A5/A6 外部动作。
+命令覆盖受限 `init`、`route`、`advance`、`prepare-approval`、`handoff`、`preflight`、`approve`、`delegate-check`、`diff-audit`、`evidence-check`、`transition`、`status` 与 `lint`。`route` 对 A0-A3 输出 `TASK_AUTHORIZATION`，对未决取舍输出 `USER_INPUT_REQUIRED`，仅对 A4-A6 输出 `EXPLICIT_APPROVAL`。A1/A2 可用 artifact-only 审计，安全 A3 保留实施包、真实 diff、独立审查和 F0-F3；A4-A6 保留硬门。系统不会把任务授权或用户选择伪造成审批，也不会执行 A5/A6 外部动作。
 
 ## 领域 Skills
 

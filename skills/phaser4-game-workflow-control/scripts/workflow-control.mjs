@@ -7,17 +7,17 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import process from 'node:process';
 
-const STATES = ['INTAKE', 'BASELINE', 'PROPOSAL', 'REVIEW', 'APPROVAL_REQUIRED', 'APPROVED', 'IMPLEMENTING', 'VALIDATING', 'PASSED', 'INTEGRATING', 'RELEASE_APPROVAL_REQUIRED', 'RELEASING', 'COMPLETE', 'RETURN', 'BLOCKED'];
+const STATES = ['INTAKE', 'BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING', 'VALIDATING', 'PASSED', 'INTEGRATING', 'RELEASE_APPROVAL_REQUIRED', 'RELEASING', 'COMPLETE', 'RETURN', 'BLOCKED'];
 const LEVELS = ['A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6'];
 const GATES = ['F0', 'F1', 'F2', 'F3', 'F4'];
-const WORK_REQUIRED = ['workItemId', 'projectId', 'moduleId', 'domain', 'stageId', 'globalState', 'baselineId', 'baselineVersion', 'baselineHash', 'objective', 'taskAuthorization', 'inScope', 'outOfScope', 'approvedRequirements', 'allowedActions', 'allowedActionLevels', 'explicitApprovalActionLevels', 'prohibitedActions', 'allowedPaths', 'forbiddenPaths', 'allowedExternalTargets', 'protectedExternalTargets', 'requiredGates', 'approvalRecord', 'assignedAgent', 'delegatedAgents', 'expectedOutputs', 'validationPlan', 'exitCriteria', 'nextGate', 'rollbackPolicy', 'evidenceRoot', 'pendingApprovalId', 'pendingApprovalObject', 'pendingApprovalStage', 'pendingApprovalActionLevel', 'pendingApprovalGate', 'pendingApprovalState', 'pendingApprovalContext', 'pendingApprovalActionType', 'pendingApprovalFileScope', 'pendingApprovalServices', 'pendingApprovalAllowServiceStart', 'pendingApprovalAllowDelete', 'pendingApprovalExternalWrite', 'pendingApprovalDestructive', 'pendingApprovalPhysicalDevice', 'pendingApprovalRelease', 'pendingApprovalExternalTargets', 'pendingApprovalPreparedAt', 'pendingApprovalPresentedId', 'pendingApprovalPresentedAt', 'validationBatchId', 'changeRequestFiles'];
-const APPROVAL_REQUIRED = ['approvalId', 'promptContextId', 'pendingState', 'pendingContext', 'workItemId', 'userOriginalText', 'approvedAt', 'explicitObject', 'stageId', 'moduleId', 'baselineVersion', 'baselineHash', 'actionType', 'actionLevel', 'fileScope', 'services', 'allowServiceStart', 'allowDelete', 'externalWrite', 'destructive', 'physicalDevice', 'release', 'gate', 'invalidatedWhen'];
+const WORK_REQUIRED = ['workItemId', 'projectId', 'moduleId', 'domain', 'stageId', 'globalState', 'baselineId', 'baselineVersion', 'baselineHash', 'objective', 'taskAuthorization', 'inScope', 'outOfScope', 'approvedRequirements', 'allowedActions', 'allowedActionLevels', 'explicitApprovalActionLevels', 'prohibitedActions', 'allowedPaths', 'forbiddenPaths', 'allowedExternalTargets', 'protectedExternalTargets', 'requiredGates', 'approvalRecord', 'assignedAgent', 'delegatedAgents', 'expectedOutputs', 'validationPlan', 'exitCriteria', 'nextGate', 'rollbackPolicy', 'evidenceRoot', 'pendingApprovalId', 'pendingApprovalObject', 'pendingApprovalStage', 'pendingApprovalActionLevel', 'pendingApprovalGate', 'pendingApprovalState', 'pendingApprovalContext', 'pendingApprovalActionType', 'pendingApprovalImpactSummary', 'pendingApprovalFileScope', 'pendingApprovalServices', 'pendingApprovalAllowServiceStart', 'pendingApprovalAllowDelete', 'pendingApprovalExternalWrite', 'pendingApprovalDestructive', 'pendingApprovalPhysicalDevice', 'pendingApprovalRelease', 'pendingApprovalExternalTargets', 'pendingApprovalPreparedAt', 'pendingApprovalPresentedId', 'pendingApprovalPresentedAt', 'validationBatchId', 'changeRequestFiles'];
+const APPROVAL_FIELDS = ['approvalId', 'promptContextId', 'pendingState', 'pendingContext', 'workItemId', 'userOriginalText', 'approvedAt', 'explicitObject', 'stageId', 'moduleId', 'baselineVersion', 'baselineHash', 'actionType', 'actionLevel', 'impactSummary', 'fileScope', 'services', 'allowServiceStart', 'allowDelete', 'externalWrite', 'destructive', 'physicalDevice', 'release', 'gate', 'invalidatedWhen'];
 const DELEGATION_REQUIRED = ['workItemId', 'stageId', 'authorizationId', 'owner', 'assignedAgent', 'ownership', 'allowedActions', 'forbiddenActions', 'actionLevel', 'allowedPaths', 'forbiddenPaths', 'acceptanceCommands', 'completionBoundary', 'outOfScopeReturn', 'preserveOthersChanges'];
 const EVIDENCE_REQUIRED = ['evidenceId', 'batchId', 'workItemId', 'baselineHash', 'codeFingerprint', 'diffFingerprint', 'recordedAt', 'commands', 'environment', 'dataSources', 'files', 'fileHashes', 'gateResults', 'verdict', 'uncoveredItems', 'completedOutputs', 'satisfiedExitCriteria'];
 const PACKAGE_REQUIRED = ['packageId', 'workItemId', 'baselineVersion', 'baselineHash', 'taskAuthorizationId', 'approvedRequirements', 'approvedArchitecture', 'fileOwnership', 'allowedPaths', 'forbiddenPaths', 'expectedAddedFiles', 'expectedDeletedFiles', 'testScope', 'outOfScope', 'compatibilityStrategy', 'definitionOfDone', 'stopConditions'];
 const CHANGE_REQUIRED = ['changeRequestId', 'workItemId', 'change', 'reason', 'affectedModules', 'affectedBaselineHash', 'invalidatedApprovalIds', 'newRisk', 'newAcceptance', 'userDecisionRequest', 'status'];
 const TRANSITIONS = {
-  INTAKE: ['BASELINE', 'BLOCKED'], BASELINE: ['PROPOSAL', 'BLOCKED'], PROPOSAL: ['REVIEW', 'RETURN', 'BLOCKED'], REVIEW: ['APPROVAL_REQUIRED', 'RETURN', 'BLOCKED'], APPROVAL_REQUIRED: ['APPROVED', 'RETURN', 'BLOCKED'], APPROVED: ['IMPLEMENTING', 'VALIDATING', 'RETURN', 'BLOCKED'], IMPLEMENTING: ['VALIDATING', 'RETURN', 'BLOCKED'], VALIDATING: ['PASSED', 'RETURN', 'BLOCKED'], PASSED: ['INTEGRATING', 'COMPLETE', 'RETURN', 'BLOCKED'], INTEGRATING: ['COMPLETE', 'RELEASE_APPROVAL_REQUIRED', 'RETURN', 'BLOCKED'], RELEASE_APPROVAL_REQUIRED: ['RELEASING', 'RETURN', 'BLOCKED'], RELEASING: ['COMPLETE', 'BLOCKED'], COMPLETE: [], RETURN: ['BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING', 'BLOCKED'], BLOCKED: ['BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING']
+  INTAKE: ['BASELINE', 'BLOCKED'], BASELINE: ['PROPOSAL', 'BLOCKED'], PROPOSAL: ['REVIEW', 'RETURN', 'BLOCKED'], REVIEW: ['VALIDATING', 'IMPLEMENTING', 'RETURN', 'BLOCKED'], IMPLEMENTING: ['VALIDATING', 'RETURN', 'BLOCKED'], VALIDATING: ['PASSED', 'RETURN', 'BLOCKED'], PASSED: ['INTEGRATING', 'COMPLETE', 'RETURN', 'BLOCKED'], INTEGRATING: ['COMPLETE', 'RELEASE_APPROVAL_REQUIRED', 'RETURN', 'BLOCKED'], RELEASE_APPROVAL_REQUIRED: ['RELEASING', 'RETURN', 'BLOCKED'], RELEASING: ['COMPLETE', 'BLOCKED'], COMPLETE: [], RETURN: ['BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING', 'BLOCKED'], BLOCKED: ['BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING']
 };
 const SHORT_APPROVAL = /^(批准|同意|可以|继续|就这个|选\s*[a-zA-Z]|按流程推进|你看着办|做完它|批准然后按(?:照)?工作流推进)[。！!\s]*$/i;
 const AFFIRMATIVE_APPROVAL = /^(批准|同意|确认|接受|通过)(?:$|[\s，,：:。！!].*)/;
@@ -100,8 +100,9 @@ function validateWorkItem(work) {
   for (const field of ['authorizedScope', 'authorizedActions', 'authorizedActionLevels', 'authorizedPaths']) requireStringArray(work.taskAuthorization[field], `Work Item.taskAuthorization.${field}`);
   if (!work.taskAuthorization.authorizationId || !work.taskAuthorization.userOriginalText || !work.taskAuthorization.authorizedObjective || Number.isNaN(Date.parse(work.taskAuthorization.authorizedAt))) fail('任务授权必须绑定用户原始请求、目标、范围与时间');
   if (work.inScope.some((item) => !work.taskAuthorization.authorizedScope.includes(item))) fail('Work Item.inScope 超出任务授权范围');
-  for (const field of ['inScope', 'outOfScope', 'approvedRequirements', 'allowedActions', 'allowedActionLevels', 'explicitApprovalActionLevels', 'prohibitedActions', 'allowedPaths', 'forbiddenPaths', 'allowedExternalTargets', 'protectedExternalTargets', 'requiredGates', 'delegatedAgents', 'expectedOutputs', 'validationPlan', 'exitCriteria', 'changeRequestFiles', 'pendingApprovalFileScope', 'pendingApprovalServices', 'pendingApprovalExternalTargets']) requireStringArray(work[field], `Work Item.${field}`);
+  for (const field of ['inScope', 'outOfScope', 'approvedRequirements', 'allowedActions', 'allowedActionLevels', 'explicitApprovalActionLevels', 'prohibitedActions', 'allowedPaths', 'forbiddenPaths', 'allowedExternalTargets', 'protectedExternalTargets', 'requiredGates', 'delegatedAgents', 'expectedOutputs', 'validationPlan', 'exitCriteria', 'changeRequestFiles', 'pendingApprovalImpactSummary', 'pendingApprovalFileScope', 'pendingApprovalServices', 'pendingApprovalExternalTargets']) requireStringArray(work[field], `Work Item.${field}`);
   for (const field of ['pendingApprovalAllowServiceStart', 'pendingApprovalAllowDelete', 'pendingApprovalExternalWrite', 'pendingApprovalDestructive', 'pendingApprovalPhysicalDevice', 'pendingApprovalRelease']) if (typeof work[field] !== 'boolean') fail(`Work Item.${field} 必须为布尔值`);
+  if (['A4', 'A5', 'A6'].includes(work.pendingApprovalActionLevel) && (!work.pendingApprovalImpactSummary.length || work.pendingApprovalImpactSummary.some((item) => !item.trim()))) fail('A4-A6 pendingApprovalImpactSummary 必须为非空影响列表');
   if (work.allowedActionLevels.some((level) => !['A0', 'A1', 'A2', 'A3'].includes(level)) || work.explicitApprovalActionLevels.some((level) => !['A4', 'A5', 'A6'].includes(level))) fail('Work Item 自动/显式批准等级分区无效');
   if (work.taskAuthorization.authorizedActionLevels.some((level) => !['A0', 'A1', 'A2', 'A3'].includes(level))) fail('任务授权等级只能为 A0-A3');
   if (work.allowedActions.some((action) => !work.taskAuthorization.authorizedActions.includes(action)) || work.allowedActionLevels.some((level) => !work.taskAuthorization.authorizedActionLevels.includes(level)) || work.allowedPaths.some((path) => !work.taskAuthorization.authorizedPaths.some((authorized) => pathMatches(path, authorized)))) fail('Work Item 动作、自动等级或路径超出任务授权');
@@ -113,11 +114,12 @@ function validateWorkItem(work) {
 
 /** 校验审批记录全部类型、枚举和哈希。 */
 function validateApproval(approval) {
-  requireFields(approval, APPROVAL_REQUIRED, `审批 ${approval?.approvalId ?? '<unknown>'}`);
+  requireFields(approval, APPROVAL_FIELDS, `审批 ${approval?.approvalId ?? '<unknown>'}`);
   requireHash(approval.baselineHash, '审批 baselineHash');
-  if (!LEVELS.includes(approval.actionLevel) || !GATES.includes(approval.gate)) fail('审批含未知 A 等级或 F 门');
+  if (!['A4', 'A5', 'A6'].includes(approval.actionLevel) || !GATES.includes(approval.gate)) fail('操作审批只能使用 A4-A6 与有效 F 门');
   if (!STATES.includes(approval.pendingState) || !approval.pendingContext) fail('审批未绑定 pending 全局状态与上下文');
-  for (const field of ['fileScope', 'services', 'invalidatedWhen']) requireStringArray(approval[field], `审批.${field}`);
+  for (const field of ['impactSummary', 'fileScope', 'services', 'invalidatedWhen']) requireStringArray(approval[field], `审批.${field}`);
+  if (!approval.impactSummary.length || approval.impactSummary.some((item) => !item.trim())) fail('审批 impactSummary 必须为非空影响列表');
   if (approval.externalTargets !== undefined) requireStringArray(approval.externalTargets, '审批.externalTargets');
   for (const field of ['allowServiceStart', 'allowDelete', 'externalWrite', 'destructive', 'physicalDevice', 'release']) if (typeof approval[field] !== 'boolean') fail(`审批.${field} 必须为布尔值`);
   if (Number.isNaN(Date.parse(approval.approvedAt))) fail('审批 approvedAt 必须为有效时间');
@@ -164,7 +166,7 @@ function validateImplementationPackage(pkg, work) {
   if (pkg.workItemId !== work.workItemId || pkg.baselineVersion !== work.baselineVersion || pkg.baselineHash !== work.baselineHash) fail('Implementation Package 未绑定当前工作项与基线');
   if (JSON.stringify(pkg.approvedRequirements) !== JSON.stringify(work.approvedRequirements) || JSON.stringify(pkg.allowedPaths) !== JSON.stringify(work.allowedPaths) || JSON.stringify(pkg.forbiddenPaths) !== JSON.stringify(work.forbiddenPaths) || JSON.stringify(pkg.outOfScope) !== JSON.stringify(work.outOfScope)) fail('Implementation Package 与工作项范围不一致');
   if (pkg.taskAuthorizationId !== work.taskAuthorization.authorizationId) fail('Implementation Package 未绑定当前任务授权');
-  if (work.moduleGateRequired && work.substantiveTradeoffRequired && pkg.approvedArchitecture !== work.moduleApprovalId) fail('Implementation Package 未绑定当前模块批准');
+  if (work.substantiveTradeoffRequired || work.visualDecisionRequired) fail('存在未决用户选择；请先澄清并更新任务授权或权威工件');
   for (const path of [...pkg.expectedAddedFiles, ...pkg.expectedDeletedFiles, ...Object.keys(pkg.fileOwnership)]) {
     if (!work.allowedPaths.some((pattern) => pathMatches(path, pattern)) || work.forbiddenPaths.some((pattern) => pathMatches(path, pattern))) fail(`Implementation Package 文件超出范围：${path}`);
   }
@@ -178,7 +180,7 @@ function validateChangeRequestShape(change) {
   for (const field of ['affectedModules', 'invalidatedApprovalIds', 'newAcceptance']) requireStringArray(change[field], `Change Request.${field}`);
   requireHash(change.affectedBaselineHash, 'Change Request.affectedBaselineHash');
   if (!change.changeRequestId || !change.workItemId || !change.change || !change.reason || !change.newRisk || !change.userDecisionRequest || !change.affectedModules.length || !change.newAcceptance.length) fail('Change Request 标识、内容、原因、模块、风险、验收与决策请求不能为空');
-  if (!['PENDING', 'APPROVED', 'REJECTED'].includes(change.status)) fail('Change Request 状态无效');
+  if (!['PENDING', 'ACCEPTED', 'REJECTED'].includes(change.status)) fail('Change Request 状态只能为 PENDING/ACCEPTED/REJECTED；它记录用户决定而非审批');
   return change;
 }
 
@@ -231,7 +233,7 @@ function matchingApprovals(work, ledger, options) {
     if (approval.legacyReadOnly || approval.invalidatedAt) return false;
     if (approval.workItemId !== work.workItemId || approval.stageId !== work.stageId || approval.moduleId !== work.moduleId) return false;
     if (approval.promptContextId !== work.pendingApprovalId || approval.pendingState !== work.pendingApprovalState || approval.pendingContext !== work.pendingApprovalContext) return false;
-    if (approval.actionType !== work.pendingApprovalActionType || JSON.stringify(approval.fileScope) !== JSON.stringify(work.pendingApprovalFileScope) || JSON.stringify(approval.services) !== JSON.stringify(work.pendingApprovalServices) || JSON.stringify(approval.externalTargets ?? []) !== JSON.stringify(work.pendingApprovalExternalTargets)) return false;
+    if (approval.actionType !== work.pendingApprovalActionType || JSON.stringify(approval.impactSummary) !== JSON.stringify(work.pendingApprovalImpactSummary) || JSON.stringify(approval.fileScope) !== JSON.stringify(work.pendingApprovalFileScope) || JSON.stringify(approval.services) !== JSON.stringify(work.pendingApprovalServices) || JSON.stringify(approval.externalTargets ?? []) !== JSON.stringify(work.pendingApprovalExternalTargets)) return false;
     if (approval.allowServiceStart !== work.pendingApprovalAllowServiceStart || approval.allowDelete !== work.pendingApprovalAllowDelete || approval.externalWrite !== work.pendingApprovalExternalWrite || approval.destructive !== work.pendingApprovalDestructive || approval.physicalDevice !== work.pendingApprovalPhysicalDevice || approval.release !== work.pendingApprovalRelease) return false;
     if (approval.baselineVersion !== work.baselineVersion || approval.baselineHash !== work.baselineHash) return false;
     if (approval.gate !== options.gate || approval.explicitObject !== options.object || approval.actionLevel !== options.level) return false;
@@ -257,11 +259,20 @@ function effectiveApproval(work, ledger) {
 
 /** 按确定性副作用规则判断动作是否需要显式批准；任务授权不是审批记录。 */
 function requiresExplicitApproval(level, flags = {}) {
-  if (flags.decisionRequired) return true;
   if (level === 'A6') return true;
   if (level === 'A5' || level === 'A4') return true;
   if (flags.external || flags.device || flags.release || flags.destructive || flags.allowDelete) return true;
   return false;
+}
+
+/** 判断是否仍有必须由用户选择、但不属于操作审批的未决问题。 */
+function userInputRequired(work) {
+  return work.substantiveTradeoffRequired === true || work.visualDecisionRequired === true;
+}
+
+/** 在执行受影响动作前阻断未决选择，要求回写任务授权或权威工件后继续。 */
+function requireResolvedUserInput(work) {
+  if (userInputRequired(work)) fail('USER_INPUT_REQUIRED：请先澄清用户选择，更新任务授权或权威工件并清除未决标志；不得写入 Approval Ledger');
 }
 
 /** 判断动作等级是否位于 Work Item 对应的自动或显式批准分区。 */
@@ -282,15 +293,17 @@ function deriveRoute(work, approval) {
     RELEASE: ['Independent Release Work Item', 'A6/F4 Exact Target Approval', 'Release Receipt Artifact', 'Manual Release Execution']
   }[channel];
   const blockers = [];
-  const explicitRequired = requiresExplicitApproval(level, { decisionRequired: work.substantiveTradeoffRequired || work.visualDecisionRequired, external: work.pendingApprovalExternalWrite, device: work.pendingApprovalPhysicalDevice, release: work.pendingApprovalRelease, destructive: work.pendingApprovalDestructive, allowDelete: work.pendingApprovalAllowDelete });
+  const decisionRequired = userInputRequired(work);
+  const explicitRequired = requiresExplicitApproval(level, { external: work.pendingApprovalExternalWrite, device: work.pendingApprovalPhysicalDevice, release: work.pendingApprovalRelease, destructive: work.pendingApprovalDestructive, allowDelete: work.pendingApprovalAllowDelete });
   if (explicitRequired && !approval) blockers.push(work.pendingApprovalPresentedId === work.pendingApprovalId ? '等待当前 pending 用户确认' : '先运行 handoff 展示当前 pending');
+  if (decisionRequired) blockers.push('USER_INPUT_REQUIRED：先澄清选择并更新任务授权或权威工件');
   if (channel === 'RELEASE' && !work.releaseWorkItem) blockers.push('A6 必须使用独立发布 Work Item');
   if (['EXTERNAL', 'RELEASE'].includes(channel)) blockers.push('自动化不得执行外部动作或发布');
-  const nextState = work.globalState === 'APPROVED' && level === 'A1' ? 'VALIDATING'
-    : work.globalState === 'APPROVED' && ['A2', 'A3'].includes(level) ? 'IMPLEMENTING'
+  const nextState = work.globalState === 'REVIEW' && level === 'A1' ? 'VALIDATING'
+    : work.globalState === 'REVIEW' && ['A2', 'A3'].includes(level) ? 'IMPLEMENTING'
       : work.globalState === 'PASSED' && ['A1', 'A2'].includes(level) ? 'COMPLETE'
         : (TRANSITIONS[work.globalState] ?? [])[0] ?? null;
-  return { channel: `${channel}(${level})`, actionLevel: level, authorizationBasis: explicitRequired ? 'EXPLICIT_APPROVAL' : 'TASK_AUTHORIZATION', explicitApprovalRequired: explicitRequired, nextLegalState: nextState, requiredArtifacts, blockers };
+  return { channel: `${channel}(${level})`, actionLevel: level, authorizationBasis: explicitRequired ? 'EXPLICIT_APPROVAL' : 'TASK_AUTHORIZATION', userInputRequired: decisionRequired, explicitApprovalRequired: explicitRequired, nextLegalState: decisionRequired ? null : nextState, requiredArtifacts, blockers };
 }
 
 /** 输出自动推导的风险通道和下一条安全命令，不执行任何动作。 */
@@ -300,11 +313,12 @@ function route(args) {
   const approval = effectiveApproval(work, ledger);
   const result = deriveRoute(work, approval);
   let nextCommand;
-  if (result.explicitApprovalRequired && !approval) nextCommand = work.pendingApprovalPresentedId === work.pendingApprovalId ? `node <skill-dir>/scripts/workflow-control.mjs approve --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'} --approval-id <id> --user-text "批准"` : `node <skill-dir>/scripts/workflow-control.mjs handoff --work-item ${args['work-item']}`;
-  else if (work.globalState === 'APPROVED' && result.actionLevel === 'A3') {
+  if (result.userInputRequired) nextCommand = '向用户提出一个精确选择问题；记录 USER_DECISION，更新 taskAuthorization/权威工件并清除未决标志';
+  else if (result.explicitApprovalRequired && !approval) nextCommand = work.pendingApprovalPresentedId === work.pendingApprovalId ? `node <skill-dir>/scripts/workflow-control.mjs approve --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'} --approval-id <id> --user-text "批准"` : `node <skill-dir>/scripts/workflow-control.mjs handoff --work-item ${args['work-item']}`;
+  else if (work.globalState === 'REVIEW' && result.actionLevel === 'A3') {
     result.blockers.push('A3 进入 IMPLEMENTING 需要严格 Implementation Package');
-    nextCommand = `node <skill-dir>/scripts/workflow-control.mjs advance --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'} --implementation-package <package>`;
-  } else if ((work.globalState === 'APPROVED' && result.actionLevel === 'A1') || (work.globalState === 'IMPLEMENTING' && ['A2', 'A3'].includes(result.actionLevel))) {
+    nextCommand = `node <skill-dir>/scripts/workflow-control.mjs advance --work-item ${args['work-item']} --implementation-package <package>`;
+  } else if ((work.globalState === 'REVIEW' && result.actionLevel === 'A1') || (work.globalState === 'IMPLEMENTING' && ['A2', 'A3'].includes(result.actionLevel))) {
     if (!work.diffAuditRecord) { result.blockers.push('缺少当前候选 Diff/Artifact Audit'); nextCommand = `node <skill-dir>/scripts/workflow-control.mjs diff-audit --work-item ${args['work-item']}${result.actionLevel === 'A3' ? ' --implementation-package <package>' : ''} --record <record> ...`; }
     else nextCommand = `node <skill-dir>/scripts/workflow-control.mjs advance --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'}`;
   } else if (work.globalState === 'VALIDATING') {
@@ -320,24 +334,15 @@ function route(args) {
   process.stdout.write(JSON.stringify({ workItemId: work.workItemId, globalState: work.globalState, ...result, nextCommand }, null, 2));
 }
 
-/** 验证当前基线绑定的模块批准和 grilling 决策，拒绝手填布尔绕过。 */
-function validateModuleGate(work, ledger) {
-  if (!work.moduleGateRequired || !work.substantiveTradeoffRequired) return;
-  if (!work.moduleApprovalId || !work.grillingDecisionId || work.moduleApprovalBaselineHash !== work.baselineHash || work.grillingBaselineHash !== work.baselineHash) fail('模块门必须绑定当前基线的模块批准与 grilling 决策');
-  const moduleApproval = ledger.approvals.find((item) => item.approvalId === work.moduleApprovalId && item.actionType === 'module-approval' && item.baselineHash === work.baselineHash && !item.invalidatedAt);
-  const grilling = ledger.approvals.find((item) => item.approvalId === work.grillingDecisionId && item.actionType === 'grilling-decision' && item.baselineHash === work.baselineHash && !item.invalidatedAt);
-  if (!moduleApproval || !grilling) fail('模块门账本记录不存在、失效或未绑定当前基线');
-}
-
-/** 阻断影响当前模块且尚未批准的 Change Request。 */
+/** 阻断影响当前模块且尚未形成用户决定的 Change Request。 */
 function validateChangeRequests(work, repo, level, ledger) {
   if (!['A3', 'A4'].includes(level)) return;
   for (const path of work.changeRequestFiles) {
     const change = validateChangeRequest(readJson(resolve(repo, path), 'Change Request'), work);
-    if (change.affectedModules.includes(work.moduleId) && change.status !== 'APPROVED') fail(`Change Request ${change.changeRequestId} 未批准`);
-    if (change.status === 'APPROVED') {
-      if (change.affectedBaselineHash === work.baselineHash) fail(`Change Request ${change.changeRequestId} 批准后尚未建立新基线`);
-      // 安全 A3 只有任务授权而无审批记录；仅在确实存在账本时校验旧显式批准失效。
+    if (change.affectedModules.includes(work.moduleId) && change.status !== 'ACCEPTED') fail(`Change Request ${change.changeRequestId} 尚未形成 ACCEPTED 用户决定`);
+    if (change.status === 'ACCEPTED') {
+      if (change.affectedBaselineHash === work.baselineHash) fail(`Change Request ${change.changeRequestId} 接受后尚未建立新基线`);
+      // Change Request 本身不是审批；仅在存在 A4-A6 账本时校验被影响的旧操作批准已失效。
       if (ledger && (!change.invalidatedApprovalIds.length || change.invalidatedApprovalIds.some((id) => !ledger.approvals.some((approval) => approval.approvalId === id && approval.invalidatedAt)))) fail(`Change Request ${change.changeRequestId} 未使旧审批失效`);
     }
   }
@@ -346,8 +351,8 @@ function validateChangeRequests(work, repo, level, ledger) {
 /** 验证各动作等级的唯一状态和副作用语义。 */
 function validateActionState(work, level, flags) {
   if (['BLOCKED', 'COMPLETE', 'RETURN'].includes(work.globalState) && level !== 'A0') fail(`${work.globalState} 状态禁止动作`);
-  if (level === 'A1' && !['INTAKE', 'BASELINE', 'PROPOSAL', 'REVIEW', 'APPROVAL_REQUIRED', 'APPROVED'].includes(work.globalState)) fail('A1 仅用于文档和候选阶段');
-  if (level === 'A2' && !['APPROVED', 'IMPLEMENTING'].includes(work.globalState)) fail('A2 仅用于批准后的隔离原型/沙盒');
+  if (level === 'A1' && !['INTAKE', 'BASELINE', 'PROPOSAL', 'REVIEW'].includes(work.globalState)) fail('A1 仅用于任务授权内的文档和候选阶段');
+  if (level === 'A2' && !['REVIEW', 'IMPLEMENTING'].includes(work.globalState)) fail('A2 仅用于任务授权内的隔离原型/沙盒阶段');
   if (level === 'A3' && work.globalState !== 'IMPLEMENTING') fail('A3 生产实现只能在 IMPLEMENTING');
   if (level === 'A4' && work.globalState !== 'INTEGRATING') fail('A4 集成与迁移只能在 INTEGRATING');
   if (level === 'A5' && !flags.external) fail('A5 必须是具有精确外部目标的外部状态操作');
@@ -359,6 +364,7 @@ function validateActionState(work, level, flags) {
 /** 执行写入或副作用前的统一预检。 */
 function preflight(args) {
   const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
+  requireResolvedUserInput(work);
   const level = String(args['action-level'] ?? '');
   const actionType = String(args['action-type'] ?? '');
   if (!LEVELS.includes(level) || !workAllowsLevel(work, level)) fail('动作 A 等级无效或未获 Work Item 授权/显式批准通道');
@@ -369,17 +375,12 @@ function preflight(args) {
   if (level !== 'A0' && paths.length === 0 && !['A5', 'A6'].includes(level)) fail('本地动作必须声明至少一个 --path');
   const targets = list(args['external-target']);
   const external = args.external === true || targets.length > 0;
-  const flags = { decisionRequired: work.substantiveTradeoffRequired || work.visualDecisionRequired, external, device: args.device === true, release: args.release === true, destructive: args.destructive === true, allowDelete: args.delete === true };
+  const flags = { external, device: args.device === true, release: args.release === true, destructive: args.destructive === true, allowDelete: args.delete === true };
   validateActionState(work, level, flags);
   if ((external || flags.device || flags.release) && targets.length === 0) fail('外部、真机或发布动作必须声明精确 --external-target');
   if (targets.some((target) => work.protectedExternalTargets.includes(target) || !work.allowedExternalTargets.includes(target))) fail('外部目标受保护或未授权');
   const explicitRequired = requiresExplicitApproval(level, flags);
   const ledger = explicitRequired ? readLedger(args.ledger) : null;
-  if (ledger) {
-    validateModuleGate(work, ledger);
-  } else if (work.moduleGateRequired && work.substantiveTradeoffRequired) {
-    fail('存在实质模块取舍，必须完成模块决定门');
-  }
   validateChangeRequests(work, repo, level, ledger);
   if (['A3', 'A4'].includes(level)) {
     const pkg = validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work);
@@ -413,18 +414,18 @@ function prepareApproval(args) {
   const gate = String(args.gate ?? '');
   const context = String(args.context ?? '');
   const actionType = String(args['action-type'] ?? '');
+  const impactSummary = list(args.impact);
   let fileScope = list(args.path);
   const services = list(args.service);
   const externalTargets = list(args['external-target']);
   const flags = { allowServiceStart: args['allow-service-start'] === true, allowDelete: args['allow-delete'] === true, externalWrite: args['external-write'] === true, destructive: args.destructive === true, physicalDevice: args.device === true, release: args.release === true };
-  if (['A1', 'A2', 'A3'].includes(level) && !(work.substantiveTradeoffRequired || work.visualDecisionRequired)) fail('A1-A3 仅在存在实质或视觉取舍时准备显式决定门');
   const allowed = {
-    APPROVAL_REQUIRED: { levels: ['A1', 'A2', 'A3'], gates: ['F0', 'F1', 'F2', 'F3'] },
     PASSED: { levels: ['A4'], gates: ['F4'] },
     INTEGRATING: { levels: ['A5', 'A6'], gates: ['F4'] },
     RELEASE_APPROVAL_REQUIRED: { levels: ['A6'], gates: ['F4'] }
   }[work.globalState];
   if (!allowed || !allowed.levels.includes(level) || !allowed.gates.includes(gate)) fail(`不能在 ${work.globalState} 准备 ${level}/${gate} 审批点`);
+  if (!impactSummary.length) fail('操作审批必须用至少一个 --impact 冻结明确影响');
   if (!pendingId || !object || !context || stage !== work.stageId) fail('新审批点必须提供唯一 ID、明确对象、当前阶段与上下文');
   if (!workAllowsLevel(work, level) || !work.allowedActions.includes(actionType)) fail('新审批点动作类型或 A 等级未获 Work Item 授权');
   if (['A1', 'A2', 'A3', 'A4'].includes(level) && !fileScope.length) fail('本地审批点必须冻结至少一个精确 --path');
@@ -446,6 +447,7 @@ function prepareApproval(args) {
   work.pendingApprovalState = work.globalState;
   work.pendingApprovalContext = context;
   work.pendingApprovalActionType = actionType;
+  work.pendingApprovalImpactSummary = impactSummary;
   work.pendingApprovalFileScope = fileScope;
   work.pendingApprovalServices = services;
   work.pendingApprovalAllowServiceStart = flags.allowServiceStart;
@@ -461,19 +463,20 @@ function prepareApproval(args) {
   work.nextGate = gate;
   work.approvalRecord = null;
   writeJson(workPath, work);
-  process.stdout.write(JSON.stringify({ ok: true, command: 'prepare-approval', workItemId: work.workItemId, pendingApprovalId: pendingId, object, stage, actionType, actionLevel: level, gate, state: work.globalState, context, fileScope, services, externalTargets, ...flags }, null, 2));
+  process.stdout.write(JSON.stringify({ ok: true, command: 'prepare-approval', workItemId: work.workItemId, pendingApprovalId: pendingId, object, stage, actionType, actionLevel: level, impactSummary, gate, state: work.globalState, context, fileScope, services, externalTargets, ...flags }, null, 2));
 }
 
 /** 追加审批，且所有原文只能绑定当前已展示 pending approval。 */
 function approve(args) {
   const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
+  if (!['A4', 'A5', 'A6'].includes(work.pendingApprovalActionLevel)) fail('approve 仅接受 A4-A6 具体操作审批');
   const ledger = existsSync(resolve(String(args.ledger))) ? readLedger(args.ledger) : { schemaVersion: '1.0', approvals: [] };
   // 无 record 时，记录完全从当前已冻结 pending 生成，调用者不能借短回复扩权。
   const generated = args.record ? null : {
     approvalId: args['approval-id'], promptContextId: work.pendingApprovalId, pendingState: work.pendingApprovalState, pendingContext: work.pendingApprovalContext,
     workItemId: work.workItemId, userOriginalText: args['user-text'], approvedAt: new Date().toISOString(), explicitObject: work.pendingApprovalObject,
     stageId: work.pendingApprovalStage, moduleId: work.moduleId, baselineVersion: work.baselineVersion, baselineHash: work.baselineHash,
-    actionType: work.pendingApprovalActionType, actionLevel: work.pendingApprovalActionLevel, fileScope: work.pendingApprovalFileScope, services: work.pendingApprovalServices,
+    actionType: work.pendingApprovalActionType, actionLevel: work.pendingApprovalActionLevel, impactSummary: work.pendingApprovalImpactSummary, fileScope: work.pendingApprovalFileScope, services: work.pendingApprovalServices,
     allowServiceStart: work.pendingApprovalAllowServiceStart, allowDelete: work.pendingApprovalAllowDelete, externalWrite: work.pendingApprovalExternalWrite,
     destructive: work.pendingApprovalDestructive, physicalDevice: work.pendingApprovalPhysicalDevice, release: work.pendingApprovalRelease,
     externalTargets: work.pendingApprovalExternalTargets, gate: work.pendingApprovalGate,
@@ -484,7 +487,7 @@ function approve(args) {
   const approval = validateApproval(args.record ? readJson(args.record, '审批记录') : generated);
   if (ledger.approvals.some((item) => item.approvalId === approval.approvalId)) fail(`approvalId 已存在：${approval.approvalId}`);
   if (work.pendingApprovalPresentedId !== work.pendingApprovalId || !work.pendingApprovalPresentedAt) fail('当前 pending approval 尚未由 handoff 展示，不能批准');
-  const pendingMatches = approval.promptContextId === work.pendingApprovalId && approval.pendingState === work.pendingApprovalState && approval.pendingContext === work.pendingApprovalContext && approval.explicitObject === work.pendingApprovalObject && approval.stageId === work.pendingApprovalStage && approval.actionLevel === work.pendingApprovalActionLevel && approval.gate === work.pendingApprovalGate && approval.gate === work.nextGate && approval.actionType === work.pendingApprovalActionType && JSON.stringify(approval.fileScope) === JSON.stringify(work.pendingApprovalFileScope) && JSON.stringify(approval.services) === JSON.stringify(work.pendingApprovalServices) && JSON.stringify(approval.externalTargets ?? []) === JSON.stringify(work.pendingApprovalExternalTargets) && approval.allowServiceStart === work.pendingApprovalAllowServiceStart && approval.allowDelete === work.pendingApprovalAllowDelete && approval.externalWrite === work.pendingApprovalExternalWrite && approval.destructive === work.pendingApprovalDestructive && approval.physicalDevice === work.pendingApprovalPhysicalDevice && approval.release === work.pendingApprovalRelease && work.globalState === work.pendingApprovalState;
+  const pendingMatches = approval.promptContextId === work.pendingApprovalId && approval.pendingState === work.pendingApprovalState && approval.pendingContext === work.pendingApprovalContext && approval.explicitObject === work.pendingApprovalObject && approval.stageId === work.pendingApprovalStage && approval.actionLevel === work.pendingApprovalActionLevel && approval.gate === work.pendingApprovalGate && approval.gate === work.nextGate && approval.actionType === work.pendingApprovalActionType && JSON.stringify(approval.impactSummary) === JSON.stringify(work.pendingApprovalImpactSummary) && JSON.stringify(approval.fileScope) === JSON.stringify(work.pendingApprovalFileScope) && JSON.stringify(approval.services) === JSON.stringify(work.pendingApprovalServices) && JSON.stringify(approval.externalTargets ?? []) === JSON.stringify(work.pendingApprovalExternalTargets) && approval.allowServiceStart === work.pendingApprovalAllowServiceStart && approval.allowDelete === work.pendingApprovalAllowDelete && approval.externalWrite === work.pendingApprovalExternalWrite && approval.destructive === work.pendingApprovalDestructive && approval.physicalDevice === work.pendingApprovalPhysicalDevice && approval.release === work.pendingApprovalRelease && work.globalState === work.pendingApprovalState;
   if (!pendingMatches) fail('审批只能绑定当前已展示 pending approval，不得扩写对象、等级、阶段或下一门');
   if (approval.workItemId !== work.workItemId || approval.moduleId !== work.moduleId || approval.baselineVersion !== work.baselineVersion || approval.baselineHash !== work.baselineHash) fail('审批记录未精确绑定当前工作项、模块与基线');
   if (SHORT_APPROVAL.test(approval.userOriginalText.trim()) && approval.promptContextId !== work.pendingApprovalPresentedId) fail('短回复只能确认当前最近展示的 pending approval');
@@ -501,6 +504,7 @@ function approve(args) {
 /** 验证委派包继承工作项授权、禁止范围和文件所有权。 */
 function delegateCheck(args) {
   const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
+  requireResolvedUserInput(work);
   const delegation = validateDelegation(readJson(args.delegation, 'Delegation Package'));
   if (delegation.workItemId !== work.workItemId || delegation.stageId !== work.stageId) fail('委派包工作项或阶段不匹配');
   if (!workAllowsLevel(work, delegation.actionLevel) || delegation.allowedActions.some((action) => !work.allowedActions.includes(action))) fail('委派动作不是 Work Item 授权动作子集');
@@ -510,7 +514,7 @@ function delegateCheck(args) {
   const repo = resolve(String(args.repo ?? process.cwd()));
   checkPaths(delegation.ownership, work.allowedPaths, work.forbiddenPaths, repo);
   checkPaths(delegation.allowedPaths, work.allowedPaths, work.forbiddenPaths, repo);
-  if (requiresExplicitApproval(delegation.actionLevel, { decisionRequired: work.substantiveTradeoffRequired || work.visualDecisionRequired })) {
+  if (requiresExplicitApproval(delegation.actionLevel)) {
     const ledger = readLedger(args.ledger);
     const approval = ledger.approvals.find((item) => item.approvalId === delegation.authorizationId && !item.invalidatedAt && !item.legacyReadOnly);
     if (!approval || approval.workItemId !== work.workItemId || approval.moduleId !== work.moduleId || approval.baselineHash !== work.baselineHash || LEVELS.indexOf(delegation.actionLevel) > LEVELS.indexOf(approval.actionLevel)) fail('委派缺少当前精确审批或 A 等级过高');
@@ -589,11 +593,12 @@ function artifactFingerprint(artifacts) {
 function diffAudit(args) {
   const workPath = resolve(String(args['work-item']));
   const work = validateWorkItem(readJson(workPath, 'Work Item'));
+  requireResolvedUserInput(work);
   const repo = resolve(String(args.repo ?? process.cwd()));
   const baseline = String(args.baseline ?? work.baselineId);
   if (baseline !== work.baselineId || String(args['baseline-hash'] ?? '') !== work.baselineHash) fail('diff-audit 基线漂移');
   const level = String(args['action-level'] ?? work.pendingApprovalActionLevel);
-  const explicitRequired = requiresExplicitApproval(level, { decisionRequired: work.substantiveTradeoffRequired || work.visualDecisionRequired, external: ['A5', 'A6'].includes(level), destructive: args.destructive === true, allowDelete: args.delete === true });
+  const explicitRequired = requiresExplicitApproval(level, { external: ['A5', 'A6'].includes(level), destructive: args.destructive === true, allowDelete: args.delete === true });
   const ledger = explicitRequired ? readLedger(args.ledger) : null;
   const pkg = ['A3', 'A4'].includes(level) ? validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work) : null;
   const entries = changedEntries(repo, baseline).filter((entry) => !pathMatches(entry.file, '.workflow-control'));
@@ -648,7 +653,7 @@ function verifyDiffAudit(work, repo, path) {
     if (!work.diffAuditLedgerRecord) fail('显式审批审计缺少 Approval Ledger 绑定');
     const approval = readLedger(resolve(repo, work.diffAuditLedgerRecord)).approvals.find((item) => item.approvalId === record.authorizationId && !item.invalidatedAt && !item.legacyReadOnly);
     if (!approval || approval.workItemId !== work.workItemId || approval.moduleId !== work.moduleId || approval.baselineHash !== work.baselineHash || approval.actionLevel !== record.actionLevel) fail('Diff Audit Record 审批已失效或绑定不一致');
-  } else if (record.authorizationBasis !== 'TASK_AUTHORIZATION' || record.authorizationId !== work.taskAuthorization.authorizationId || requiresExplicitApproval(record.actionLevel, { decisionRequired: work.substantiveTradeoffRequired || work.visualDecisionRequired })) fail('Diff Audit Record 任务授权绑定无效');
+  } else if (record.authorizationBasis !== 'TASK_AUTHORIZATION' || record.authorizationId !== work.taskAuthorization.authorizationId || requiresExplicitApproval(record.actionLevel) || userInputRequired(work)) fail('Diff Audit Record 任务授权绑定无效或存在未决用户选择');
   const entries = changedEntries(repo, work.baselineId).filter((entry) => !pathMatches(entry.file, '.workflow-control'));
   if (!entries.length && record.artifacts.length) {
     const currentArtifacts = artifactRecords(repo, record.artifacts.map((item) => item.file), work, ['A5', 'A6'].includes(record.actionLevel));
@@ -717,24 +722,15 @@ function evidenceCheck(args, silent = false) {
 function transition(args) {
   const workPath = resolve(String(args['work-item']));
   const work = validateWorkItem(readJson(workPath, 'Work Item'));
+  requireResolvedUserInput(work);
   const target = String(args.to ?? '');
   if (!(TRANSITIONS[work.globalState] ?? []).includes(target)) fail(`禁止状态迁移：${work.globalState} → ${target}`);
   const repo = resolve(String(args.repo ?? process.cwd()));
-  if (target === 'APPROVED') {
-    const explicitRequired = requiresExplicitApproval(work.pendingApprovalActionLevel, { decisionRequired: work.substantiveTradeoffRequired || work.visualDecisionRequired, external: work.pendingApprovalExternalWrite, device: work.pendingApprovalPhysicalDevice, release: work.pendingApprovalRelease, destructive: work.pendingApprovalDestructive, allowDelete: work.pendingApprovalAllowDelete });
-    if (explicitRequired) {
-      if (work.pendingApprovalState !== 'APPROVAL_REQUIRED') fail('进入 APPROVED 必须使用在 APPROVAL_REQUIRED 准备的新审批点');
-      const approvals = matchingApprovals(work, readLedger(args.ledger), { approvalId: work.approvalRecord, level: work.pendingApprovalActionLevel, gate: work.pendingApprovalGate, object: work.pendingApprovalObject, actionType: String(args['action-type'] ?? ''), paths: [], targets: [] });
-      if (approvals.length !== 1) fail('进入 APPROVED 缺少当前 pending approval');
-    }
-  }
   if (target === 'IMPLEMENTING') {
     const level = work.pendingApprovalActionLevel;
     if (!['A2', 'A3'].includes(level)) fail('进入 IMPLEMENTING 仅允许 A2/A3');
-    if (requiresExplicitApproval(level, { decisionRequired: work.substantiveTradeoffRequired || work.visualDecisionRequired }) && !effectiveApproval(work, readLedger(args.ledger))) fail('进入 IMPLEMENTING 缺少当前实质/视觉取舍显式批准');
     if (level === 'A3') {
       validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work);
-      if (work.moduleGateRequired && work.substantiveTradeoffRequired) validateModuleGate(work, readLedger(args.ledger));
     }
   }
   if (target === 'VALIDATING') verifyDiffAudit(work, repo, work.diffAuditRecord);
@@ -774,18 +770,17 @@ function transition(args) {
 /** 自动推进一个状态；审批边界和外部动作始终停止，不自动准备或批准。 */
 function advance(args) {
   const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
+  requireResolvedUserInput(work);
   const ledger = args.ledger ? readLedger(args.ledger) : { schemaVersion: '1.0', approvals: [] };
   const approval = effectiveApproval(work, ledger);
   const routeResult = deriveRoute(work, approval);
   if (['EXTERNAL(A5)', 'RELEASE(A6)'].includes(routeResult.channel)) fail('A5/A6 只能人工执行精确批准的外部动作，advance 不会执行');
-  if (work.globalState === 'APPROVAL_REQUIRED' && routeResult.explicitApprovalRequired && !approval) fail('已到审批边界；先运行 handoff，再由用户确认并运行 approve');
   let target;
-  if (work.globalState === 'APPROVAL_REQUIRED') target = 'APPROVED';
-  else if (work.globalState === 'APPROVED') target = routeResult.actionLevel === 'A1' ? 'VALIDATING' : ['A2', 'A3'].includes(routeResult.actionLevel) ? 'IMPLEMENTING' : null;
+  if (work.globalState === 'REVIEW') target = routeResult.actionLevel === 'A1' ? 'VALIDATING' : ['A2', 'A3'].includes(routeResult.actionLevel) ? 'IMPLEMENTING' : null;
   else if (work.globalState === 'IMPLEMENTING') target = 'VALIDATING';
   else if (work.globalState === 'VALIDATING') target = 'PASSED';
   else if (work.globalState === 'PASSED' && ['A1', 'A2', 'A3'].includes(routeResult.actionLevel)) target = 'COMPLETE';
-  else if (['INTAKE', 'BASELINE', 'PROPOSAL', 'REVIEW'].includes(work.globalState)) target = (TRANSITIONS[work.globalState] ?? [])[0];
+  else if (['INTAKE', 'BASELINE', 'PROPOSAL'].includes(work.globalState)) target = (TRANSITIONS[work.globalState] ?? [])[0];
   if (!target) fail('当前状态不能自动推进；需要新的审批点、F4 决策或人工外部执行');
   transition({ ...args, to: target, object: work.pendingApprovalObject, 'action-type': work.pendingApprovalActionType, 'external-target': work.pendingApprovalExternalTargets });
 }
@@ -795,7 +790,7 @@ function handoff(args) {
   const workPath = resolve(String(args['work-item']));
   const work = validateWorkItem(readJson(workPath, 'Work Item'));
   const repo = resolve(String(args.repo ?? process.cwd()));
-  if (!requiresExplicitApproval(work.pendingApprovalActionLevel, { decisionRequired: work.substantiveTradeoffRequired || work.visualDecisionRequired, external: work.pendingApprovalExternalWrite, device: work.pendingApprovalPhysicalDevice, release: work.pendingApprovalRelease, destructive: work.pendingApprovalDestructive, allowDelete: work.pendingApprovalAllowDelete })) fail('当前动作由任务授权直接处理，不得制造多余审批');
+  if (!['A4', 'A5', 'A6'].includes(work.pendingApprovalActionLevel) || !requiresExplicitApproval(work.pendingApprovalActionLevel, { external: work.pendingApprovalExternalWrite, device: work.pendingApprovalPhysicalDevice, release: work.pendingApprovalRelease, destructive: work.pendingApprovalDestructive, allowDelete: work.pendingApprovalAllowDelete })) fail('handoff 仅展示 A4-A6 的具体操作及影响；用户选择不得进入审批账本');
   if (work.pendingApprovalState !== work.globalState || work.approvalRecord !== null) fail('handoff 只能针对当前状态新准备且尚未批准的 pending approval');
   const actualEntries = changedEntries(repo, work.baselineId).filter((entry) => !pathMatches(entry.file, '.workflow-control'));
   const audit = work.diffAuditRecord ? verifyDiffAudit(work, repo, work.diffAuditRecord) : null;
@@ -817,7 +812,7 @@ function handoff(args) {
     notExecuted,
     risks: { prohibitedActions: work.prohibitedActions, forbiddenPaths: work.forbiddenPaths, protectedExternalTargets: work.protectedExternalTargets },
     validation: evidence ? { evidenceId: evidence.evidenceId, verdict: evidence.verdict, gateResults: evidence.gateResults } : { verdict: 'NOT_RUN', gateResults: {} },
-    nextStagePermissions: { pendingApprovalId: work.pendingApprovalId, object: work.pendingApprovalObject, stage: work.pendingApprovalStage, actionType: work.pendingApprovalActionType, actionLevel: work.pendingApprovalActionLevel, gate: work.pendingApprovalGate, state: work.pendingApprovalState, context: work.pendingApprovalContext, services: work.pendingApprovalServices, allowServiceStart: work.pendingApprovalAllowServiceStart, allowDelete: work.pendingApprovalAllowDelete, externalWrite: work.pendingApprovalExternalWrite, destructive: work.pendingApprovalDestructive, physicalDevice: work.pendingApprovalPhysicalDevice, release: work.pendingApprovalRelease },
+    operationApproval: { pendingApprovalId: work.pendingApprovalId, object: work.pendingApprovalObject, stage: work.pendingApprovalStage, actionType: work.pendingApprovalActionType, actionLevel: work.pendingApprovalActionLevel, impactSummary: work.pendingApprovalImpactSummary, gate: work.pendingApprovalGate, state: work.pendingApprovalState, context: work.pendingApprovalContext, services: work.pendingApprovalServices, allowServiceStart: work.pendingApprovalAllowServiceStart, allowDelete: work.pendingApprovalAllowDelete, externalWrite: work.pendingApprovalExternalWrite, destructive: work.pendingApprovalDestructive, physicalDevice: work.pendingApprovalPhysicalDevice, release: work.pendingApprovalRelease },
     plannedFiles,
     externalTargets,
     approvalPrompt: '回复「批准」即可确认当前审批点；该回复只确认本次交接展示的唯一 pending，不会授权后续阶段或扩大范围。',
@@ -850,7 +845,7 @@ function init(args) {
   const work = {
     workItemId: record.workItemId, projectId: record.projectId, moduleId: record.moduleId, domain: record.domain, stageId: record.stageId, globalState: 'INTAKE', baselineId: record.baselineId, baselineVersion: record.baselineVersion, baselineHash: record.baselineHash, objective: record.objective,
     taskAuthorization: { authorizationId: `TASK-${record.workItemId}`, userOriginalText: record.userOriginalText, authorizedObjective: record.objective, authorizedScope: [record.explicitObject], authorizedActions: ['document-candidate'], authorizedActionLevels: ['A0', 'A1'], authorizedPaths: record.allowedPaths, authorizedAt: new Date().toISOString() }, inScope: [record.explicitObject], outOfScope: [], approvedRequirements: [], allowedActions: ['document-candidate'], allowedActionLevels: ['A0', 'A1'], explicitApprovalActionLevels: [], prohibitedActions: ['external-write', 'device', 'release', 'destructive'], allowedPaths: record.allowedPaths, forbiddenPaths: ['.git'], allowedExternalTargets: [], protectedExternalTargets: ['production'], requiredGates: ['F0', 'F1', 'F2', 'F3'], approvalRecord: null, assignedAgent: 'orchestrator', delegatedAgents: [], expectedOutputs: [], validationPlan: [], exitCriteria: [], nextGate: 'F0', rollbackPolicy: '不自动回滚共享工作区', evidenceRoot: `.workflow-control/evidence/${record.workItemId}`,
-    pendingApprovalId: record.pendingApprovalId ?? `PENDING-${record.workItemId}-F0`, pendingApprovalObject: record.explicitObject, pendingApprovalStage: record.stageId, pendingApprovalActionLevel: 'A1', pendingApprovalGate: 'F0', pendingApprovalState: 'INTAKE', pendingApprovalContext: 'bootstrap', pendingApprovalActionType: 'document-candidate', pendingApprovalFileScope: record.allowedPaths, pendingApprovalServices: [], pendingApprovalAllowServiceStart: false, pendingApprovalAllowDelete: false, pendingApprovalExternalWrite: false, pendingApprovalDestructive: false, pendingApprovalPhysicalDevice: false, pendingApprovalRelease: false, pendingApprovalExternalTargets: [], pendingApprovalPreparedAt: new Date().toISOString(), pendingApprovalPresentedId: null, pendingApprovalPresentedAt: null, validationBatchId: `BATCH-${record.workItemId}-1`, changeRequestFiles: [], moduleGateRequired: false, releaseWorkItem: false
+    pendingApprovalId: record.pendingApprovalId ?? `PENDING-${record.workItemId}-F0`, pendingApprovalObject: record.explicitObject, pendingApprovalStage: record.stageId, pendingApprovalActionLevel: 'A1', pendingApprovalGate: 'F0', pendingApprovalState: 'INTAKE', pendingApprovalContext: 'bootstrap', pendingApprovalActionType: 'document-candidate', pendingApprovalImpactSummary: [], pendingApprovalFileScope: record.allowedPaths, pendingApprovalServices: [], pendingApprovalAllowServiceStart: false, pendingApprovalAllowDelete: false, pendingApprovalExternalWrite: false, pendingApprovalDestructive: false, pendingApprovalPhysicalDevice: false, pendingApprovalRelease: false, pendingApprovalExternalTargets: [], pendingApprovalPreparedAt: new Date().toISOString(), pendingApprovalPresentedId: null, pendingApprovalPresentedAt: null, validationBatchId: `BATCH-${record.workItemId}-1`, changeRequestFiles: [], moduleGateRequired: false, releaseWorkItem: false
   };
   writeJson(join(controlRoot, 'approvals', 'ledger.json'), { schemaVersion: '1.0', approvals: [] });
   writeJson(join(controlRoot, 'work-items', `${record.workItemId}.json`), work);
@@ -861,13 +856,13 @@ function init(args) {
 function repositoryLint(repo) {
   const skillsRoot = join(repo, 'skills');
   const oldSemantics = [/F0.{0,20}(作者|命令|冻结)/, /F1.{0,20}(分诊|选择.*F2)/, /F3.{0,20}(收敛|聚合|非作者)/, /F4.{0,20}(人工|受保护决策)/];
-  const unconditionalVisualApproval = [/两道.{0,12}确认.{0,12}(强制|必须)/, /只有.{0,20}用户.{0,12}(通过|确认).{0,20}进入\s*V[23]/, /必须同时绑定.{0,40}低保真.{0,40}高保真/];
+  const unconditionalVisualApproval = [/两道.{0,12}确认.{0,12}(强制|必须)/, /只有.{0,20}用户.{0,12}(通过|确认).{0,20}进入\s*V[23]/, /必须同时绑定.{0,40}低保真.{0,40}高保真/, /V[12].{0,40}(Approval Ledger|显式审批)/i, /(视觉|产品|架构).{0,30}(取舍|选择).{0,30}(Approval Ledger|审批点|显式批准)/i, /A[123].{0,40}(取舍|选择).{0,40}(审批|pending|handoff|approve)/i];
   for (const name of readdirSync(skillsRoot)) {
     const skillPath = join(skillsRoot, name, 'SKILL.md');
     if (!existsSync(skillPath) || name === 'phaser4-game-workflow-control') continue;
     const text = readFileSync(skillPath, 'utf8');
     if (!text.includes('phaser4-game-workflow-control')) fail(`${name} 未引用唯一控制面`);
-    if (!/(提议|提出)/.test(text) || !/(审查|审阅)/.test(text) || !/批准.{0,20}(范围|Work Item)/.test(text) || !/(回到|回总控|提交给).*?(控制面|phaser4-game-workflow-control)/s.test(text)) fail(`${name} 未声明提议/审查/批准范围内修改/回审批边界`);
+    if (!/(提议|提出)/.test(text) || !/(审查|审阅)/.test(text) || !/(任务授权|A4-A6.{0,20}批准)/.test(text) || !/(回到|回总控|提交给).*?(控制面|phaser4-game-workflow-control)/s.test(text)) fail(`${name} 未声明提议/审查/任务授权内修改/回控制面边界`);
     if (oldSemantics.some((pattern) => pattern.test(text))) fail(`${name} 保留旧 F0-F4 执行者语义`);
     if (unconditionalVisualApproval.some((pattern) => pattern.test(text))) fail(`${name} 保留无条件 V1/V2 人工确认语义`);
   }

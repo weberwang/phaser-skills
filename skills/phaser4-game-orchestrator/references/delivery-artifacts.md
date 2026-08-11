@@ -4,7 +4,7 @@
 
 首次运行受限 `init`：基于明确 A1 bootstrap 原文一次创建空账本、首个 Work Item 及标准目录。重复 init 拒绝，且 init 不创建领域文档。之后 initializer 使用已存在 Work Item 并通过 A1 任务授权 preflight；A1 不要求 ledger。
 
-只有 A4-A6 或实质取舍由控制 CLI 运行 `prepare-approval`、`handoff` 和 `approve`。A0-A3 安全动作使用 `taskAuthorization`，不得伪造 Approval Ledger。短回复只绑定最近展示的唯一 pending。
+只有 A4-A6 的具体操作由控制 CLI 运行 `prepare-approval`、`handoff` 和 `approve`，并冻结非空影响摘要。A0-A3 安全动作使用 `taskAuthorization`。实质取舍记录为 `USER_DECISION` 并回写任务授权或权威工件，不得写 Approval Ledger。
 
 总控 `route` 自动推导 A1-A6 风险通道、授权依据和缺失工件。A1/A2 直接执行；安全 A3 需要 Implementation Package、真实 diff、独立审查和 F0-F3，随后直接完成。A4-A6 保留精确硬门，外部动作与发布不自动执行。
 
