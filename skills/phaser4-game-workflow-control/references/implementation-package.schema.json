@@ -3,13 +3,13 @@
   "$id": "phaser4-implementation-package.schema.json",
   "title": "实施包",
   "type": "object",
-  "required": ["packageId", "workItemId", "baselineVersion", "baselineHash", "approvalId", "approvedRequirements", "approvedArchitecture", "fileOwnership", "allowedPaths", "forbiddenPaths", "expectedAddedFiles", "expectedDeletedFiles", "testScope", "outOfScope", "compatibilityStrategy", "definitionOfDone", "stopConditions"],
+  "required": ["packageId", "workItemId", "baselineVersion", "baselineHash", "taskAuthorizationId", "approvedRequirements", "approvedArchitecture", "fileOwnership", "allowedPaths", "forbiddenPaths", "expectedAddedFiles", "expectedDeletedFiles", "testScope", "outOfScope", "compatibilityStrategy", "definitionOfDone", "stopConditions"],
   "properties": {
     "packageId": {"type": "string", "minLength": 1},
     "workItemId": {"type": "string", "minLength": 1},
     "baselineVersion": {"type": "string", "minLength": 1},
     "baselineHash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
-    "approvalId": {"type": "string", "minLength": 1},
+    "taskAuthorizationId": {"type": "string", "minLength": 1},
     "approvedRequirements": {"$ref": "#/$defs/nonEmptyStrings"},
     "approvedArchitecture": {"type": "string", "minLength": 1},
     "fileOwnership": {

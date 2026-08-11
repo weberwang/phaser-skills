@@ -4,7 +4,7 @@ G0-G3 是领域 `stageId`，由全局控制面映射到唯一 `globalState`，�
 
 | 门 | 出口 | 全局状态范围 |
 | --- | --- | --- |
-| G0 | 核心循环、最小范围、渠道、模块候选、视觉/布局契约与预算获得当前对象精确批准 | `BASELINE` 至 `APPROVED` |
+| G0 | 核心循环、最小范围、渠道、模块候选、视觉/布局契约与预算已有任务授权；仅实质取舍精确确认 | `BASELINE` 至实施就绪 |
 | G1 | 可玩切片、适用 V 阶段、领域质量与当前候选工程证据完整 | `IMPLEMENTING` 至 `PASSED` |
 | G2 | 范围与系统冻结，完整集成、预算、响应式、性能和回归证据通过 | `VALIDATING` 至 `INTEGRATING` |
 | G3 | 独立发布 Work Item 聚合逐渠道候选、合规、风险和回滚；等待 A5/A6 精确审批 | `RELEASE_APPROVAL_REQUIRED` 至 `COMPLETE` |

@@ -9,7 +9,7 @@ description: Phaser 4 移动端 2D 游戏的技术架构角色。需要划分或
 
 控制面边界：可提议、可审查、可在批准 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审批。
 
-本领域可提议、审查，并仅在批准的 Work Item、Implementation Package、A 等级和路径内修改；任何结果必须回到 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 审批和状态迁移。领域规则只能收紧总控。架构批准不批准实现；首次模块或边界变化必须停止，完成模块门与 grilling。
+本领域可提议、审查，并仅在 Work Item 任务授权或显式批准范围、Implementation Package、A 等级和路径内修改；任何结果必须回到 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 风险门。首次模块或边界变化先关闭事实，只有实质架构取舍才停止并 grilling。
 
 建立可维护、可测试、可构建的边界，并显式处理小游戏、iOS、Google Play 的差异。
 
