@@ -21,7 +21,7 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 
 统一门语义：F0 授权与流程合规、F1 规格一致性、F2 领域质量、F3 工程验证、F4 集成/发布决策。
 
-A0-A6 唯一语义：A0 只读调查；A1 文档和候选；A2 隔离原型/沙盒/验证页/非生产资源；A3 生产实现；A4 正式入口替换、迁移、删除旧实现和跨模块高影响集成；A5 PR、push、消息、第三方、上传构建和云配置等外部状态；A6 数据删除、生产迁移、真机、商店提审、正式发布和线上回滚。A0-A2 直接执行；安全 A3 以用户当前请求形成的任务授权和有效 Implementation Package 为依据，不二次请求批准。普通 A3 在 F0-F3 通过后可直接 `COMPLETE`。
+A0-A6 唯一语义：A0 只读调查；A1 文档和候选；A2 隔离原型/沙盒/验证页/非生产资源；A3 生产实现；A4 正式入口替换、迁移、删除旧实现和跨模块高影响集成；A5 PR、消息、第三方 API、上传构建和云配置等非 Git 外部状态；A6 数据删除、生产迁移、真机、商店提审、正式发布和线上回滚。A0-A2 直接执行；安全 A3 以用户当前请求形成的任务授权和有效 Implementation Package 为依据，不二次请求批准。普通 A3 在 F0-F3 通过后可直接 `COMPLETE`；纯 Git 的远端或破坏性动作属于独立 `VERSION_CONTROL(GIT)` 通道，不按 A5/A6 审批语义解释。
 
 Work Item 的 `taskAuthorization` 保存用户原始请求、目标和范围；它是 A0-A3 本地工作的任务授权，不写入 Approval Ledger。产品、视觉或架构取舍属于 `USER_DECISION`：澄清后更新任务授权、权威工件或决策记录，不生成审批。只有 A4、A5、A6 的具体操作才生成 pending 和操作批准记录；记录精确冻结操作、影响、对象、门、基线、路径、服务、外部目标与副作用，A6 永不自动放行。
 
@@ -38,7 +38,7 @@ node <skill-dir>\scripts\workflow-control.mjs diff-audit --work-item .workflow-c
 # 仅 A4-A6 具体操作使用 prepare-approval、handoff、approve 与 --ledger，并用 --impact 冻结影响。
 ```
 
-命令覆盖受限 `init`、`route`、`advance`、`prepare-approval`、`handoff`、`preflight`、`approve`、`delegate-check`、`diff-audit`、`evidence-check`、`transition`、`status` 与 `lint`。`route` 对 A0-A3 输出 `TASK_AUTHORIZATION`，对未决取舍输出 `USER_INPUT_REQUIRED`，仅对 A4-A6 输出 `EXPLICIT_APPROVAL`。A1/A2 可用 artifact-only 审计，安全 A3 保留实施包、真实 diff、独立审查和 F0-F3；A4-A6 保留硬门。系统不会把任务授权或用户选择伪造成审批，也不会执行 A5/A6 外部动作。
+命令覆盖受限 `init`、`route`、`advance`、`prepare-approval`、`handoff`、`preflight`、`approve`、`delegate-check`、`diff-audit`、`evidence-check`、`transition`、`status` 与 `lint`。`route` 对 A0-A3 输出 `TASK_AUTHORIZATION`，纯 Git 通过只读参数 `route --action-level <A0-A3> --action-type git-<verb>` 输出 `VERSION_CONTROL(GIT)`，不得把 Git 写入任何 `pendingApproval*`；未决取舍输出 `USER_INPUT_REQUIRED`，仅 A4-A6 输出 `EXPLICIT_APPROVAL`。纯 Git 必须精确绑定任务授权、实际子命令/参数、仓库、路径、远端目标、基线和所有权，失败直接阻断且永不写 Approval Ledger；PR、GitHub Release、部署和第三方 API 不属于纯 Git。A1/A2 可用 artifact-only 审计，安全 A3 保留实施包、真实 diff、独立审查和 F0-F3；A4-A6 保留硬门。
 
 ## 领域 Skills
 
@@ -59,4 +59,4 @@ python .\.agents\skills\phaser4-game-orchestrator\scripts\initialize_project_doc
 npm run test:workflow
 ```
 
-启动本地服务前必须检查同项目健康实例并复用；查重后，本项目、非特权、无外部写入的本地验证服务不需要批准。终止归属不明进程仍禁止。真机、商店、生产迁移、外部写入和发布保留精确显式批准；A6 永不自动。不得自动回滚共享工作区。
+启动本地服务前必须检查同项目健康实例并复用；查重后，本项目、非特权、无外部写入的本地验证服务不需要批准。终止归属不明进程仍禁止。真机、商店、生产迁移、非 Git 外部写入和发布保留精确显式批准；A6 永不自动。Git push 等白名单纯 Git 操作只走任务授权；force-push、删除远端 ref、reset --hard、clean 和删除本地引用等破坏性 Git 还必须由原始任务精确授权动作与目标，否则直接阻断。不得自动回滚共享工作区。

@@ -42,8 +42,8 @@ function makeRepo() {
 function makeWork(head, overrides = {}) {
   return {
     workItemId: 'WI-1', projectId: 'P-1', moduleId: 'core', domain: 'code', stageId: 'G1', globalState: 'IMPLEMENTING', baselineId: head, baselineVersion: '1', baselineHash: HASH,
-    objective: '实现明确功能', taskAuthorization: { authorizationId: 'TASK-WI-1', userOriginalText: '实现 core 明确功能', authorizedObjective: '实现明确功能', authorizedScope: ['core'], authorizedActions: ['document-candidate', 'prototype', 'code-change', 'integration', 'external-state', 'release'], authorizedActionLevels: ['A0', 'A1', 'A2', 'A3'], authorizedPaths: ['src', 'docs'], authorizedAt: '2026-08-11T00:00:00.000Z' },
-    inScope: ['core'], outOfScope: ['release'], approvedRequirements: ['REQ-1'], allowedActions: ['document-candidate', 'prototype', 'code-change', 'integration', 'external-state', 'release'], allowedActionLevels: ['A0', 'A1', 'A2', 'A3'], explicitApprovalActionLevels: ['A4', 'A5', 'A6'], prohibitedActions: [], allowedPaths: ['src', 'docs'], forbiddenPaths: ['.git', 'src/secret'], allowedExternalTargets: ['origin/feature', 'store/app'], protectedExternalTargets: ['production'], requiredGates: ['F0', 'F1', 'F2', 'F3'], approvalRecord: null,
+    objective: '实现明确功能', taskAuthorization: { authorizationId: 'TASK-WI-1', userOriginalText: '实现 core 明确功能并执行指定 Git 操作', authorizedObjective: '实现明确功能', authorizedScope: ['core', 'origin/feature', 'HEAD'], authorizedActions: ['document-candidate', 'prototype', 'code-change', 'integration', 'external-state', 'release', 'github-pr', 'git-status', 'git-commit', 'git-push'], authorizedActionLevels: ['A0', 'A1', 'A2', 'A3'], authorizedPaths: ['src', 'docs'], authorizedAt: '2026-08-11T00:00:00.000Z' },
+    inScope: ['core'], outOfScope: ['release'], approvedRequirements: ['REQ-1'], allowedActions: ['document-candidate', 'prototype', 'code-change', 'integration', 'external-state', 'release', 'github-pr', 'git-status', 'git-commit', 'git-push'], allowedActionLevels: ['A0', 'A1', 'A2', 'A3'], explicitApprovalActionLevels: ['A4', 'A5', 'A6'], prohibitedActions: [], allowedPaths: ['src', 'docs'], forbiddenPaths: ['.git', 'src/secret'], allowedExternalTargets: ['origin/feature', 'store/app', 'HEAD'], protectedExternalTargets: ['production', 'production/feature'], requiredGates: ['F0', 'F1', 'F2', 'F3'], approvalRecord: null,
     assignedAgent: 'implementer', delegatedAgents: [], expectedOutputs: ['src/main.js'], validationPlan: ['node --test'], exitCriteria: ['tests pass'], nextGate: 'F0', rollbackPolicy: '不自动回滚共享工作区', evidenceRoot: '.workflow-control/evidence/WI-1',
     pendingApprovalId: 'PENDING-1', pendingApprovalObject: 'core implementation', pendingApprovalStage: 'G1', pendingApprovalActionLevel: 'A3', pendingApprovalGate: 'F0', pendingApprovalState: 'IMPLEMENTING', pendingApprovalContext: 'implementation', pendingApprovalActionType: 'code-change', pendingApprovalImpactSummary: [], pendingApprovalFileScope: ['src'], pendingApprovalServices: [], pendingApprovalAllowServiceStart: false, pendingApprovalAllowDelete: false, pendingApprovalExternalWrite: false, pendingApprovalDestructive: false, pendingApprovalPhysicalDevice: false, pendingApprovalRelease: false, pendingApprovalExternalTargets: [], pendingApprovalPreparedAt: '2026-08-11T00:00:00.000Z', pendingApprovalPresentedId: null, pendingApprovalPresentedAt: null,
     validationBatchId: 'BATCH-1', changeRequestFiles: [], moduleGateRequired: false, substantiveTradeoffRequired: false, visualDecisionRequired: false, releaseWorkItem: false,
@@ -180,6 +180,134 @@ test('本地服务：查重后的本项目安全验证启动不需要批准', ()
   assert.equal(result.status, 0, result.stderr);
   const unsafe = JSON.parse(readFileSync(processPath, 'utf8')); unsafe.projectRoot = tmpdir(); unsafe.privileged = true; writeJson(processPath, unsafe);
   rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'code-change', '--path', 'src/main.js', '--start-process', '--process-evidence', processPath], f.repo), /本项目、非特权/);
+});
+
+test('纯 Git：status、commit 与允许目标 push 只使用任务授权', () => {
+  const f = setup();
+  const status = run('preflight', ['--work-item', f.workPath, '--action-level', 'A0', '--action-type', 'git-status', '--git-command', 'status --short', '--path', 'src', '--baseline-hash', HASH], f.repo);
+  assert.equal(status.status, 0, status.stderr);
+  for (const [action, extra] of [['git-commit', []], ['git-push', ['--external-target', 'origin/feature']]]) {
+    const gitCommand = action === 'git-push' ? 'push origin feature' : 'commit -m change';
+    const result = run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', action, '--git-command', gitCommand, '--path', 'src', '--baseline-hash', HASH, ...extra], f.repo);
+    assert.equal(result.status, 0, result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.channel, 'VERSION_CONTROL(GIT)');
+    assert.equal(output.authorizationBasis, 'TASK_AUTHORIZATION');
+    assert.equal(output.explicitApprovalRequired, false);
+  }
+  assert.deepEqual(JSON.parse(readFileSync(f.ledgerPath, 'utf8')).approvals, []);
+});
+
+test('纯 Git：push 未授权或受保护目标直接拒绝且不进入 handoff', () => {
+  const f = setup();
+  for (const [target, command] of [['origin/unknown', 'push origin unknown'], ['production/feature', 'push production feature']]) {
+    const result = run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'git-push', '--git-command', command, '--path', 'src', '--baseline-hash', HASH, '--external-target', target], f.repo);
+    rejects(result, /受保护|未授权|未被用户原始/);
+    assert.doesNotMatch(result.stderr, /handoff|pending/);
+  }
+});
+
+test('纯 Git：声明目标必须与 push 和 reset 实际目标精确一致', () => {
+  const push = setup();
+  rejects(run('preflight', ['--work-item', push.workPath, '--implementation-package', push.packagePath, '--action-level', 'A3', '--action-type', 'git-push', '--git-command', 'push upstream main', '--path', 'src', '--baseline-hash', HASH, '--external-target', 'origin/feature'], push.repo), /target.*实际子命令目标不一致/);
+  const reset = setup();
+  const work = JSON.parse(readFileSync(reset.workPath, 'utf8'));
+  work.taskAuthorization.authorizedActions.push('git-reset-hard');
+  work.allowedActions.push('git-reset-hard');
+  writeJson(reset.workPath, work);
+  rejects(run('preflight', ['--work-item', reset.workPath, '--implementation-package', reset.packagePath, '--action-level', 'A3', '--action-type', 'git-reset-hard', '--git-command', 'reset --hard HEAD~10', '--path', 'src', '--baseline-hash', HASH, '--external-target', 'HEAD', '--destructive'], reset.repo), /target.*实际子命令目标不一致/);
+});
+
+test('破坏性 Git：缺少原始精确授权时拒绝，明确授权后无需 Ledger', () => {
+  for (const [action, target] of [['git-force-push', 'origin/feature'], ['git-reset-hard', 'HEAD']]) {
+    const f = setup();
+    const gitCommand = action === 'git-force-push' ? 'push --force origin feature' : 'reset --hard HEAD';
+    let result = run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', action, '--git-command', gitCommand, '--path', 'src', '--baseline-hash', HASH, '--external-target', target, '--destructive'], f.repo);
+    rejects(result, /allowedActions|精确授权/);
+    const work = JSON.parse(readFileSync(f.workPath, 'utf8'));
+    work.taskAuthorization.authorizedActions.push(action);
+    work.taskAuthorization.authorizedScope.push(target);
+    work.allowedActions.push(action);
+    writeJson(f.workPath, work);
+    result = run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', action, '--git-command', gitCommand, '--path', 'src', '--baseline-hash', HASH, '--external-target', target, '--destructive'], f.repo);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).authorizationBasis, 'TASK_AUTHORIZATION');
+    assert.deepEqual(JSON.parse(readFileSync(f.ledgerPath, 'utf8')).approvals, []);
+  }
+});
+
+test('纯 Git：force push 伪装成普通 git-push 时拒绝', () => {
+  const f = setup();
+  for (const command of ['push --force-with-lease origin feature', 'push origin +feature:feature']) {
+    const result = run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'git-push', '--git-command', command, '--path', 'src', '--baseline-hash', HASH, '--external-target', 'origin/feature'], f.repo);
+    rejects(result, /应为 git-force-push/);
+  }
+});
+
+test('破坏性 Git：删除远端 ref 不能伪装为普通 push', () => {
+  const f = setup();
+  for (const command of ['push --delete origin feature', 'push -d origin feature', 'push origin :feature']) {
+    const result = run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'git-push', '--git-command', command, '--path', 'src', '--baseline-hash', HASH, '--external-target', 'origin/feature'], f.repo);
+    rejects(result, /应为 git-delete-remote-ref/);
+  }
+});
+
+test('纯 Git：clean 预览为只读动作，实际清理必须精确破坏性授权', () => {
+  const f = setup();
+  const work = JSON.parse(readFileSync(f.workPath, 'utf8'));
+  work.taskAuthorization.authorizedActions.push('git-clean-preview', 'git-clean');
+  work.allowedActions.push('git-clean-preview', 'git-clean');
+  writeJson(f.workPath, work);
+  const preview = run('preflight', ['--work-item', f.workPath, '--action-level', 'A0', '--action-type', 'git-clean-preview', '--git-command', 'clean -n', '--path', 'src', '--baseline-hash', HASH], f.repo);
+  assert.equal(preview.status, 0, preview.stderr);
+  rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'git-clean-preview', '--git-command', 'clean -fd', '--path', 'src', '--baseline-hash', HASH], f.repo), /应为 git-clean/);
+  const clean = run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'git-clean', '--git-command', 'clean -fd', '--path', 'src', '--baseline-hash', HASH, '--destructive'], f.repo);
+  assert.equal(clean.status, 0, clean.stderr);
+  assert.equal(JSON.parse(clean.stdout).explicitApprovalRequired, false);
+  assert.deepEqual(JSON.parse(readFileSync(f.ledgerPath, 'utf8')).approvals, []);
+});
+
+test('Git 通道：route 不生成审批，GitHub PR 与普通外部写入仍保留 A5 门', () => {
+  const git = setup();
+  const before = readFileSync(git.workPath, 'utf8');
+  const route = JSON.parse(run('route', ['--work-item', git.workPath, '--action-level', 'A3', '--action-type', 'git-push', '--external-target', 'origin/feature'], git.repo).stdout);
+  assert.equal(route.channel, 'VERSION_CONTROL(A3)');
+  assert.equal(route.authorizationBasis, 'TASK_AUTHORIZATION');
+  assert.equal(route.explicitApprovalRequired, false);
+  assert.doesNotMatch(route.nextCommand, /handoff|approve/);
+  assert.match(route.nextCommand, /--implementation-package <package>/);
+  assert.match(route.nextCommand, /--path <path>/);
+  assert.match(route.nextCommand, /--git-command "<subcommand and args>"/);
+  assert.match(route.nextCommand, /--external-target origin\/feature/);
+  assert.equal(readFileSync(git.workPath, 'utf8'), before);
+  const missingTarget = JSON.parse(run('route', ['--work-item', git.workPath, '--action-level', 'A3', '--action-type', 'git-push'], git.repo).stdout);
+  assert.match(missingTarget.blockers.join('\n'), /缺少远端 Git --external-target/);
+  assert.match(missingTarget.nextCommand, /--external-target <target>/);
+  rejects(run('route', ['--work-item', git.workPath, '--action-level', 'A3', '--action-type', 'git-fetch'], git.repo), /taskAuthorization.*A0-A3/);
+  rejects(run('route', ['--work-item', git.workPath, '--action-level', 'A3', '--action-type', 'git-operation'], git.repo), /未知纯 Git actionType/);
+  const prepare = setup({ globalState: 'PASSED' });
+  rejects(run('prepare-approval', ['--work-item', prepare.workPath, '--action-type', 'git-push', '--action-level', 'A4'], prepare.repo), /纯 Git.*不得创建/);
+  const forged = setup({ globalState: 'PASSED', pendingApprovalActionLevel: 'A4', pendingApprovalActionType: 'git-push', pendingApprovalImpactSummary: ['伪造 Git 审批'], pendingApprovalState: 'PASSED', pendingApprovalGate: 'F4' });
+  rejects(run('status', ['--work-item', forged.workPath], forged.repo), /纯 Git actionType.*不得写入 Work Item pendingApproval/);
+  rejects(run('route', ['--work-item', forged.workPath], forged.repo), /纯 Git actionType.*不得写入 Work Item pendingApproval/);
+  rejects(run('handoff', ['--work-item', forged.workPath], forged.repo), /纯 Git actionType.*不得写入 Work Item pendingApproval/);
+  rejects(run('approve', ['--work-item', forged.workPath, '--ledger', forged.ledgerPath, '--approval-id', 'AP-GIT', '--user-text', '批准'], forged.repo), /纯 Git actionType.*不得写入 Work Item pendingApproval/);
+  const pr = setup({ globalState: 'INTEGRATING', pendingApprovalActionLevel: 'A5', pendingApprovalActionType: 'github-pr', pendingApprovalImpactSummary: ['创建 GitHub PR'], pendingApprovalExternalWrite: true, pendingApprovalExternalTargets: ['origin/feature'], pendingApprovalFileScope: [] });
+  rejects(run('preflight', ['--work-item', pr.workPath, '--action-level', 'A5', '--action-type', 'github-pr', '--external-target', 'origin/feature'], pr.repo), /Approval Ledger|审批|没有唯一/);
+  const generic = setup();
+  rejects(run('preflight', ['--work-item', generic.workPath, '--action-level', 'A3', '--action-type', 'git-operation', '--path', 'src', '--external-target', 'origin/feature'], generic.repo), /未知纯 Git actionType/);
+});
+
+test('Git 通道：手工伪造的 Git Approval Ledger 记录在读取时拒绝', () => {
+  const overrides = { globalState: 'INTEGRATING', pendingApprovalActionLevel: 'A5', pendingApprovalActionType: 'external-state', pendingApprovalImpactSummary: ['外部写入'], pendingApprovalExternalWrite: true, pendingApprovalExternalTargets: ['origin/feature'], pendingApprovalFileScope: [] };
+  const base = makeWork('HEAD', overrides);
+  const forgedApproval = makeApproval(base, { actionType: 'git-push' });
+  const f = setup(overrides, [forgedApproval]);
+  for (const [command, args] of [
+    ['status', ['--work-item', f.workPath, '--ledger', f.ledgerPath]],
+    ['route', ['--work-item', f.workPath, '--ledger', f.ledgerPath]],
+    ['preflight', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--action-level', 'A5', '--action-type', 'external-state', '--external-target', 'origin/feature']]
+  ]) rejects(run(command, args, f.repo), /纯 Git actionType.*不得写入 Approval Ledger/);
 });
 
 test('A4：高影响集成默认需要 F4 精确显式批准', () => {

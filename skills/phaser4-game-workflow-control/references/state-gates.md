@@ -31,6 +31,7 @@ V0-V5、G0-G3 与领域阶段是 `stageId`，不是另一套状态机。只有�
 - 路径、外部目标、基线或所有权不匹配：停止且报告，不自动回滚。
 - 验证通过但实际 diff 越界：不得进入 `PASSED`。
 - 发布：必须是独立 Work Item；本地构建或测试通过不授权 A5/A6。
+- 纯 Git：只走任务授权与 `VERSION_CONTROL(GIT)`；未授权或危险参数不匹配时直接阻断，不得转入操作批准门。PR、GitHub Release、部署和第三方 API 仍按 A5/A6 处理。
 - 只有 A4-A6 具体操作准备 pending；实质取舍先澄清并更新任务授权/权威工件。未展示 pending、旧 ID、旧状态、影响或范围变化不能驱动操作批准门。
 - `route` 推导风险通道和授权依据；`advance` 一次只推进一个已满足状态。A5/A6 永不自动执行。
 - `COMPLETE` 不是空跳终态：expectedOutputs、exitCriteria 和当前 diff/artifact/evidence 必须仍有效。安全 A3 只要求 F0-F3；A4-A6 才要求当前 F4 集成或发布证据。

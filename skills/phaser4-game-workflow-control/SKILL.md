@@ -23,6 +23,7 @@ description: Phaser 4 游戏仓库的唯一全局工作流控制面。基于任�
 - 产品、视觉、架构、预算、合规或数据边界的未决取舍输出 `USER_INPUT_REQUIRED`；澄清后更新任务授权、权威工件或决策记录，不写 Approval Ledger。
 - 仅 A4、A5、A6 的具体操作创建 pending，并用非空 `impactSummary` 冻结影响。短回复只解释为最近 `handoff` 展示的唯一操作及影响，不能批准后续操作或扩展范围。
 - A4 默认需要 F4 精确批准；A5 必须绑定本次具体外部目标与影响；A6 包括破坏性、生产迁移、真机、商店/正式发布和线上回滚，永不自动。
+- 白名单纯 Git 操作用 `route --action-level <A0-A3> --action-type git-<verb>` 的只读动作描述进入 `VERSION_CONTROL(GIT)`，只使用任务授权，不得写入 `pendingApproval*`、创建 handoff 或 Approval Ledger。`preflight` 必须解析 `--git-command` 并核对精确 actionType；force-push、删除远端 ref、reset --hard、clean、删除本地引用和丢弃工作区等破坏性动作还必须由原始任务精确授权动作与目标并声明 `--destructive`，否则直接阻断。PR、GitHub Release、部署、消息和第三方 API 不是纯 Git。
 - 禁止自动回滚共享工作区，禁止覆盖他人修改。并行写入必须具备互斥文件所有权。
 - 启动进程前先检查同项目、类型、模式、端口、PID 与健康状态并复用。本项目本地验证、非特权、无外部写入时直接执行；不得终止归属不明的进程。
 - 基线、代码/diff 指纹或范围变化后，旧审批和旧证据失效。

@@ -9,7 +9,7 @@ description: Phaser 4 移动端 2D 游戏的发布与合规角色。需要为小
 
 控制面边界：可提议、可审查、可在已建立且任务授权有效的发布 Work Item 范围内准备，且必须回到 `$phaser4-game-workflow-control` 审计和状态迁移；A5/A6 外部、真机与发布操作逐对象请求批准。
 
-发布必须创建独立 Work Item。PR/push/第三方/上传构建/云配置为 A5；真机安装、生产迁移、商店提审和正式发布为 A6。全部先由 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 校验精确外部目标和 F4 审批。
+发布必须创建独立 Work Item。PR、GitHub Release、第三方 API、上传构建和云配置为 A5；真机安装、生产迁移、商店提审和正式发布为 A6，先由 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 校验精确外部目标和 F4 审批。白名单纯 Git（包括 push）只走任务授权与 `VERSION_CONTROL(GIT)`，不得生成审批；未授权远端或破坏性 Git 直接阻断。
 
 准备可提审交付物不等于已经提交或上架。账号、签名密钥、令牌和个人数据只可放在受控外部密钥系统。
 

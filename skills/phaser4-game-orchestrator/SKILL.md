@@ -24,6 +24,7 @@ description: Phaser 4 游戏的领域编排角色。用于在全局控制面已�
 - 实施后用真实 Git diff 执行 `diff-audit`；领域验证生成 Evidence Manifest 并执行 `evidence-check`。越界只报告并停止，不自动回滚共享工作区。
 - 启动服务前检查同项目健康实例并复用。本项目本地验证、非特权且无外部写入时直接执行；不得终止归属不明进程。
 - 发布使用独立 Work Item；A5 外部准备与 A6 真机/商店/正式发布分别逐对象精确审批。本地构建、测试、G3 候选或旧批准都不授权发布。
+- 白名单纯 Git（包括 push）走任务授权与 `VERSION_CONTROL(GIT)`，不得生成 pending 或审批账本；PR、GitHub Release、部署、上传和第三方 API 仍是 A5/A6 操作。
 
 ## 视觉与 UI
 
