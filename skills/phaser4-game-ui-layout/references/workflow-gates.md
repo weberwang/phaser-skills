@@ -12,7 +12,7 @@
 
 ## 阶段映射
 
-- V1/V2 处于 `PROPOSAL`、`REVIEW`、`APPROVAL_REQUIRED`、`APPROVED`。
+- V1/V2 处于 `PROPOSAL`、`REVIEW`；未决取舍以 `USER_INPUT_REQUIRED` 阻断，记录 `USER_DECISION` 后从 `REVIEW` 直接进入适用验证或实施状态。
 - V3/V4/V5 处于 `IMPLEMENTING`、`VALIDATING`、`PASSED`、`INTEGRATING`。
 - G0-G3 保留为 `stageId`，不能改变全局状态。
 

@@ -4,32 +4,38 @@
 
 | 等级 | 语义 | 默认授权 |
 | --- | --- | --- |
-| A0 | 只读调查 | 仅盘点、查询和分析，不产生写入 |
-| A1 | 文档和候选产出 | 规格、计划、设计候选与控制记录，需当前对象和路径审批 |
-| A2 | 隔离原型 | 沙盒代码、验证页和非生产资源；不得触达正式入口 |
-| A3 | 生产实现 | 业务代码、正式 Scene/资源、数据库结构和生产配置；仅 `IMPLEMENTING`，需严格 Implementation Package |
-| A4 | 集成与迁移 | 正式入口、数据迁移、生产路径替换、删除旧实现和跨模块整合；仅 `INTEGRATING` 且需 F4 精确审批 |
-| A5 | 外部状态操作 | PR、push、消息、第三方、上传构建和云配置；必须精确外部目标审批 |
-| A6 | 高风险和发布 | 数据删除、生产迁移、真机安装、商店提审、正式发布和线上回滚；必须独立发布/高风险对象审批 |
+| A0 | Phaser 只读调查 | `phaser-inspect`；只读取项目事实 |
+| A1 | 项目规格和候选 | `phaser-spec-candidate` |
+| A2 | Phaser 隔离原型 | `phaser-prototype`；不得触达正式入口 |
+| A3 | Phaser 生产实现 | `phaser-code-change`、资源/UI/音频/数值变更及 `phaser-qa-build` |
+| A4 | 游戏集成与迁移 | `phaser-integration`；正式入口、迁移、删除旧实现和跨模块整合 |
+| A5 | Phaser 外部状态 | `phaser-build-upload`、`phaser-backend-config`、`phaser-channel-config` |
+| A6 | Phaser 高风险和发布 | 真机、商店、正式发布和线上游戏回滚 |
 
-低等级批准不能授权更高等级。真机、破坏性和发布动作一律为 A6。动作等级描述影响，不表示审批存在。
+动作等级描述 Phaser 生命周期风险，不表示审批存在。每个白名单 actionType 只有一个固定等级；任务授权不能授权 A4-A6，A6 永不自动。
+
+本控制面不是通用操作控制器。Git、Shell、文件管理、包管理、浏览器、消息、GitHub、普通云配置、第三方 API 和通用进程管理全部为 `OUT_OF_SCOPE`，无需 Work Item、F 门或 Approval Ledger。Git diff 仅作为 Phaser 候选证据读取。
 
 ## F0-F4 唯一语义
 
 | 门 | 唯一语义 | 核心问题 |
 | --- | --- | --- |
-| F0 | 授权与流程合规 | 工作项、审批、状态、A 等级、路径、目标、基线、停止门是否允许动作？ |
+| F0 | 授权与流程合规 | 工作项任务授权或必要显式批准、状态、A 等级、路径、目标、基线、停止门是否允许动作？ |
 | F1 | 规格一致性 | 实际候选是否匹配已批准需求、范围、模块契约与冻结包？ |
 | F2 | 领域质量 | 产品、架构、玩法、视觉、资源、音频、数值、QA 等专业质量是否达标？ |
 | F3 | 工程验证 | 构建、测试、性能、迁移演练与可复现证据是否绑定当前候选？ |
-| F4 | 集成/发布决策 | 是否允许集成，或对独立发布工作项执行精确发布动作？ |
+| F4 | 高影响集成/发布决策 | 是否允许 A4 正式集成，或对独立发布工作项执行精确发布动作？普通 A3 不适用。 |
 
 任何领域不得重新定义 F0-F4。测试通过不能覆盖 F0 路径越界，领域通过不能覆盖 F1 规格漂移，F4 不能补签早先未授权动作。
 
-## 审批账本规则
+## 任务授权与显式批准
 
-审批记录必须保存用户原文、时间、明确对象、阶段、模块、基线版本与哈希、动作类型、文件范围、服务、外部写入、破坏、真机和发布字段及失效条件。`handoff` 展示当前唯一 pending 后，用户可仅回复“批准”“同意”“可以”“继续”或“批准然后按流程推进”；机器记录仍须逐字段等于该 pending。短回复只确认当前门，沉默、未绑定 blanket approval、历史批准和相邻模块批准均无效。
+Work Item 的 `taskAuthorization` 保存用户原始请求、目标、范围、动作、A0-A3 等级、路径和时间；Work Item 自动能力不得超出这些集合。它不是 Approval Ledger 条目。Implementation Package 绑定 `taskAuthorizationId`。
 
-`route` 只能依据 Work Item、当前 pending 和有效审批推导 CANDIDATE(A1)、PROTOTYPE(A2)、PRODUCTION(A3)、INTEGRATION(A4)、EXTERNAL(A5) 或 RELEASE(A6)，不得接受手填通道。`advance` 每次只推进一个已满足状态：A1/A2 可使用真实 artifact 哈希与 SELF 审查闭环；A3-A6 必须保持真实生产 diff、独立审查、F4 和精确外部目标硬门。任何通道都不得自动批准，A5/A6 不得自动执行。
+`substantiveTradeoffRequired` 或 `visualDecisionRequired` 为 true 时，即使动作是 A1-A3 也必须进入显式决定门。普通 A1-A3 禁止创建多余 pending。
+
+产品、视觉、架构、预算、合规和数据边界取舍属于 `USER_DECISION`，只更新任务授权、权威工件或决策记录，不进入审批账本。显式批准只用于 A4-A6 具体操作，保存用户原文、时间、明确对象、阶段、模块、基线、动作、非空影响摘要、路径/服务/外部目标、副作用与失效条件。`handoff` 后的短回复只确认当前展示的操作及影响；A6 永不自动执行。
+
+`route` 依据确定性规则输出 INSPECTION(A0) 至 RELEASE(A6)：Phaser A0-A3 标记 `TASK_AUTHORIZATION`，未决用户选择额外标记 `USER_INPUT_REQUIRED`，只有 Phaser A4-A6 标记 `EXPLICIT_APPROVAL`。普通 A3 保持真实 diff、独立 F2 和 F0-F3 证据，完成后无需 F4；A4-A6 保持精确批准硬门。
 
 新审批不得让未授权的既往动作合法化。基线、对象、阶段、模块、文件范围或动作等级改变时，创建新审批。旧记录只读保留。

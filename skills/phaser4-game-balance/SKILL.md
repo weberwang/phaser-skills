@@ -7,9 +7,9 @@ description: Phaser 4 移动端 2D 游戏的数值设计角色。需要设计、
 
 ## 全局控制接入
 
-控制面边界：可提议、可审查、可在批准 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审批。
+控制面边界：可提议、可审查、可在已建立且任务授权有效的 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审计和状态迁移；仅实际 A4-A6 操作请求批准。
 
-本领域可提议、审查，并仅在批准的 Work Item、Implementation Package、A 等级与路径内修改；变更结果必须回到 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 审批和状态迁移。
+本领域可提议、审查，并仅在已建立且任务授权有效的 Work Item、Implementation Package、A 等级与路径内修改；变更结果必须回到 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 审计和状态迁移，仅实际 A4-A6 操作请求批准。
 
 将体验目标转为可解释、可调整、可验证的模型，不以未记录的主观调参替代证据。
 

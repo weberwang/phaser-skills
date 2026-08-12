@@ -7,9 +7,9 @@ description: Phaser 4 移动端 2D 游戏的制作与策划角色。需要把游
 
 ## 全局控制接入
 
-控制面边界：可提议、可审查、可在批准 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审批。
+控制面边界：可提议、可审查、可在已建立且任务授权有效的 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审计和状态迁移；仅实际 A4-A6 操作请求批准。
 
-本领域可提议和审查需求，只能在批准的 Work Item、A 等级和路径内修改规格。需求变化必须创建 Change Request，回到 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 重新基线、审批与迁移；不能用 PRD 批准授权实现。
+本领域可提议和审查需求，只能在已建立且任务授权有效的 Work Item、A 等级和路径内修改规格。需求变化必须创建 Change Request，回到 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 记录用户决定、重新基线并重新判定授权；仅实际 A4-A6 操作请求批准，不能用 PRD 替代实现授权。
 
 将游戏意图拆为可批准、可实现、可验收的范围；不替人工批准产品、商业化、渠道或资源权属。
 

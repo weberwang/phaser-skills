@@ -7,9 +7,9 @@ description: Phaser 4 移动端 2D 游戏的发布与合规角色。需要为小
 
 ## 全局控制接入
 
-控制面边界：可提议、可审查、可在批准 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审批。
+控制面边界：可提议、可审查、可在已建立且任务授权有效的发布 Work Item 范围内准备，且必须回到 `$phaser4-game-workflow-control` 审计和状态迁移；A5/A6 外部、真机与发布操作逐对象请求批准。
 
-发布必须创建独立 Work Item。PR/push/第三方/上传构建/云配置为 A5；真机安装、生产迁移、商店提审和正式发布为 A6。全部先由 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 校验精确外部目标和 F4 审批。
+发布必须创建独立 Work Item。`phaser-build-upload`、`phaser-backend-config`、`phaser-channel-config` 为 A5；`phaser-device-test`、`phaser-store-submit`、`phaser-release`、`phaser-game-rollback` 为 A6，先由 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 校验精确游戏目标和 F4 审批。Git、GitHub Release、消息和通用第三方 API 不属于此生命周期控制面。
 
 准备可提审交付物不等于已经提交或上架。账号、签名密钥、令牌和个人数据只可放在受控外部密钥系统。
 

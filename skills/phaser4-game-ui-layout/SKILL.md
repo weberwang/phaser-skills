@@ -7,9 +7,9 @@ description: 为 Phaser 4 游戏建立可验证的 UI 布局合同、坐标空�
 
 ## 全局控制接入
 
-控制面边界：可提议、可审查、可在批准 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审批。
+控制面边界：可提议、可审查、可在已建立且任务授权有效的 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审计和状态迁移；仅实际 A4-A6 操作请求批准。
 
-本领域可提议、审查，并仅在批准 Work Item、Implementation Package、A 等级与路径内修改布局；所有动作与证据回到 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md)。布局合同和 V 阶段不能旁路审批或全局状态。
+本领域可提议、审查，并仅在已建立且任务授权有效的 Work Item、Implementation Package、A 等级与路径内修改布局；所有动作与证据回到 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 审计和状态迁移。布局合同和 V 阶段不能旁路授权、A4-A6 操作批准或全局状态。
 
 将 UI 布局从页面坐标修补转换为可追踪的布局合同，并把合同、实现、运行时证据接入全局控制面。仅负责布局关系、坐标空间、尺寸策略、响应式重排和布局证据；不拥有全局状态、审批、玩法规则、资源生产、视觉方向或发布放行。
 
