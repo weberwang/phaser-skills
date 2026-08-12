@@ -12,7 +12,7 @@ description: Phaser 4 游戏的领域编排角色。用于在全局控制面已�
 ## 启动
 
 1. 先读取全局 Work Item、Approval Ledger、当前基线与状态；任何写入前运行全局 `preflight`。
-2. 缺项目文档时，先受限 bootstrap，再在已批准 A1 路径内运行 `scripts/initialize_project_docs.py --project-root . --work-item <file> --ledger <file> --object <approved-object>`；默认拒绝覆盖。
+2. 缺项目文档时，先受限 bootstrap，再在已批准 A1 路径内运行 `node scripts/initialize_project_docs.mjs --project-root . --work-item <file> --ledger <file> --object <approved-object>`；默认拒绝覆盖。
 3. 按领域读取 [模块划分](references/module-decomposition.md)、[游戏实现](references/game-implementation.md)、[视觉质量门](references/visual-quality-gate.md)、[服务复用](references/local-service-validation.md)、[交付物](references/delivery-artifacts.md)、[依赖与服务边界](references/dependency-capability-profiles.md)。
 
 ## 编排规则

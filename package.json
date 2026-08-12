@@ -8,12 +8,16 @@
     "phaser-workflow": "./skills/phaser4-game-workflow-control/scripts/workflow-control.mjs"
   },
   "scripts": {
-    "test": "node --test skills/phaser4-game-workflow-control/scripts/workflow-control.test.mjs && node --test skills/phaser4-game-qa-performance/scripts/responsive-visual-validation.test.mjs",
+    "test": "node --test skills/phaser4-game-workflow-control/scripts/workflow-control.test.mjs skills/phaser4-game-qa-performance/scripts/responsive-visual-validation.test.mjs skills/phaser4-game-asset-integration/scripts/validate_visual_manifest.test.mjs skills/phaser4-game-ui-layout/scripts/validate_ui_layout_contract.test.mjs skills/phaser4-spine-generative-reskin/scripts/spine_reskin_progress.test.mjs",
     "test:workflow": "node --test skills/phaser4-game-workflow-control/scripts/workflow-control.test.mjs",
+    "test:copy-install": "node scripts/verify-copy-install.mjs",
     "lint:workflow": "node skills/phaser4-game-workflow-control/scripts/workflow-control.mjs lint --repository ."
   },
   "engines": {
     "node": ">=22.20.0"
+  },
+  "dependencies": {
+    "sharp": "^0.35.3"
   },
   "repository": {
     "type": "git",

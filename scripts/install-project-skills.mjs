@@ -67,8 +67,34 @@ function main() {
   if (result.error) {
     throw result.error;
   }
+  if (result.status !== 0) {
+    process.exitCode = result.status ?? 1;
+    return;
+  }
 
-  process.exitCode = result.status ?? 1;
+  const spineSkillDirectory = resolve(
+    targetDirectory,
+    ".agents",
+    "skills",
+    "phaser4-spine-generative-reskin",
+  );
+  if (!existsSync(resolve(spineSkillDirectory, "package.json"))) {
+    throw new Error("复制安装完成，但找不到 Spine Skill 的依赖清单：" + spineSkillDirectory);
+  }
+  const npmCommand = useWindowsCommandShell ? "npm.cmd" : "npm";
+  console.log("正在安装 Spine Skill 的 Sharp 运行依赖……");
+  const dependencyResult = spawnSync(
+    npmCommand,
+    ["ci", "--omit=dev", "--no-audit", "--no-fund"],
+    {
+      cwd: spineSkillDirectory,
+      // 严格按 Skill 自带锁文件安装；命令和参数均为固定值，且工作目录已解析到目标项目内。
+      shell: useWindowsCommandShell,
+      stdio: "inherit",
+    },
+  );
+  if (dependencyResult.error) throw dependencyResult.error;
+  process.exitCode = dependencyResult.status ?? 1;
 }
 
 try {

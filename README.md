@@ -11,7 +11,7 @@ npx -y github:weberwang/phaser-skills
 node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 ```
 
-安装器固定使用已验证的 `skills@1.5.19` 并以 `--copy` 安装。
+安装器固定使用已验证的 `skills@1.5.19` 并以 `--copy` 安装；复制完成后会在 Spine Skill 自身目录按其锁文件安装 Sharp，不修改目标 Phaser 项目的 `package.json`。
 
 ## 唯一全局控制面
 
@@ -56,8 +56,8 @@ node <skill-dir>\scripts\workflow-control.mjs diff-audit --work-item .workflow-c
 先完成受限 bootstrap 和 A1 审批，再初始化领域文档；initializer 不再负责首次创建控制面：
 
 ```powershell
-python .\.agents\skills\phaser4-game-orchestrator\scripts\initialize_project_docs.py --project-root . --work-item .workflow-control\work-items\WI-1.json --ledger .workflow-control\approvals\ledger.json --object "initialize project docs"
-python .\.agents\skills\phaser4-game-orchestrator\scripts\initialize_project_docs.py --project-root . --work-item .workflow-control\work-items\WI-1.json --ledger .workflow-control\approvals\ledger.json --object "initialize project docs" --include assets,qa
+node .\.agents\skills\phaser4-game-orchestrator\scripts\initialize_project_docs.mjs --project-root . --work-item .workflow-control\work-items\WI-1.json --ledger .workflow-control\approvals\ledger.json --object "initialize project docs"
+node .\.agents\skills\phaser4-game-orchestrator\scripts\initialize_project_docs.mjs --project-root . --work-item .workflow-control\work-items\WI-1.json --ledger .workflow-control\approvals\ledger.json --object "initialize project docs" --include assets,qa
 npm run test:workflow
 ```
 

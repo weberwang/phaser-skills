@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import test from 'node:test';
 
 const CLI = resolve(import.meta.dirname, 'workflow-control.mjs');
-const INITIALIZER = resolve(import.meta.dirname, '..', '..', 'phaser4-game-orchestrator', 'scripts', 'initialize_project_docs.py');
+const INITIALIZER = resolve(import.meta.dirname, '..', '..', 'phaser4-game-orchestrator', 'scripts', 'initialize_project_docs.mjs');
 const HASH_A = `sha256:${'a'.repeat(64)}`;
 const HASH_B = `sha256:${'b'.repeat(64)}`;
 
@@ -633,7 +633,7 @@ test('正向：bootstrap 只创建控制目录，重复执行拒绝', () => {
 
 test('负向：无 Work Item/ledger 不能直接运行领域 initializer', () => {
   const { repo } = makeRepo();
-  const result = spawnSync('python', [INITIALIZER, '--project-root', repo], { cwd: repo, encoding: 'utf8' });
+  const result = spawnSync(process.execPath, [INITIALIZER, '--project-root', repo], { cwd: repo, encoding: 'utf8' });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /work-item|ledger/);
 });
@@ -641,7 +641,7 @@ test('负向：无 Work Item/ledger 不能直接运行领域 initializer', () =>
 test('正向：initializer 必须通过现有 Work Item 的 A1 preflight', () => {
   const approval = makeApproval({ approvalId: 'AP-A1', promptContextId: 'PENDING-A1', explicitObject: 'initialize project docs', actionType: 'document-candidate', actionLevel: 'A1', fileScope: ['docs'] });
   const f = setup({ globalState: 'INTAKE', approvalRecord: 'AP-A1', allowedActionLevels: ['A0', 'A1'], pendingApprovalId: 'PENDING-A1', pendingApprovalObject: 'initialize project docs', pendingApprovalActionLevel: 'A1', pendingApprovalActionType: 'document-candidate', pendingApprovalFileScope: ['docs'] }, [approval]);
-  const result = spawnSync('python', [INITIALIZER, '--project-root', f.repo, '--work-item', f.workPath, '--ledger', f.ledgerPath, '--object', 'initialize project docs'], { cwd: f.repo, encoding: 'utf8' });
+  const result = spawnSync(process.execPath, [INITIALIZER, '--project-root', f.repo, '--work-item', f.workPath, '--ledger', f.ledgerPath, '--object', 'initialize project docs'], { cwd: f.repo, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(exists('docs/GDD.md', f.repo), true);
 });

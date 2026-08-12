@@ -18,7 +18,7 @@ description: 为 Phaser 4 游戏建立可验证的 UI 布局合同、坐标空�
 1. 读取项目的 GDD/TDD、当前候选、总控审核漏斗和适用视觉阶段；确定稳定 UI ID、坐标空间、参照物、状态与平台输入。
 2. 复制 [合同模板](assets/ui-layout-contract-template.yaml)，按 [布局合同](references/layout-contract.md) 补齐目标视口、区域、锚点、尺寸、断点、安全区、滚动、动态内容、覆盖回退和证据矩阵。
 3. 用 [Phaser 适配器](references/phaser-adapter.md) 设计唯一布局入口：把视口、安全区、方向、内容尺寸和状态作为输入，分离资源 origin、布局停靠点和动画偏移，保证重排幂等。
-4. 运行 `scripts/validate_ui_layout_contract.py` 和对应测试。格式或关系错误在候选形成前修复；绝对定位、固定尺寸、固定/悬浮元素在合同依据完整时只标记 `specialized_review`。
+4. 运行 `node scripts/validate_ui_layout_contract.mjs <contract>` 和对应 `node:test` 测试。格式或关系错误在候选形成前修复；绝对定位、固定尺寸、固定/悬浮元素在合同依据完整时只标记 `specialized_review`。
 5. 按 [证据矩阵](references/evidence-matrix.md) 生成同一候选的边界、方向、字号、语言、安全区、动态状态和窄高度证据。
 6. 按 [工作流门禁](references/workflow-gates.md) 接入 V0–V5、F0–F4 和 G0–G3；布局结构或参照关系变化退回 V1，F3 只接受绑定当前候选的工程证据。
 
@@ -28,7 +28,7 @@ description: 为 Phaser 4 游戏建立可验证的 UI 布局合同、坐标空�
 - 需要 Phaser Scale、Camera、Container、DOM Overlay、resize 或重排边界时，读取 [references/phaser-adapter.md](references/phaser-adapter.md)。
 - 需要 V/F/G 门禁、退回和候选绑定规则时，读取 [references/workflow-gates.md](references/workflow-gates.md)。
 - 需要组合测试、等价类削减或冻结 Golden 条件时，读取 [references/evidence-matrix.md](references/evidence-matrix.md)。
-- 合同验证器只接受 JSON-compatible YAML（合法 YAML 1.2 的 JSON 子集），详见合同参考；不要为验证器引入 PyYAML。
+- 合同验证器只接受 JSON-compatible YAML（合法 YAML 1.2 的 JSON 子集），详见合同参考；直接使用 Node.js `JSON.parse`。
 
 ## 所有权与输出
 
