@@ -13,12 +13,12 @@
 | 文件 | 领域权威内容 |
 | --- | --- |
 | `docs/project-profile.yaml` | 项目身份、渠道和约束 |
-| `docs/GDD.md` | 已批准需求、范围、玩法和验收 |
+| `docs/GDD.md` | 已批准需求、完整功能/场景清单、范围、玩法、验收与端到端追踪 |
 | `docs/visual-design.md` | 版本化视觉基线与 V 阶段领域证据 |
-| `docs/TDD.md` | 模块、架构、能力、平台和服务边界 |
+| `docs/TDD.md` | 模块、公共基础、场景依赖/实施序列、分项完成事实、能力、平台和服务边界 |
 | `docs/balance.md` | 数值模型与验证 |
 | `docs/asset-license-register.md` | 资源/音频来源、授权与发布资格 |
-| `docs/visual-assets.json` | 视觉资源机器清单，不驱动全局状态 |
+| `docs/visual-assets.json` | 含场景或 shared 归属的视觉资源机器清单，不驱动全局状态 |
 | `docs/qa-plan.md` | 测试策略，不得自填通过状态 |
 | `docs/platform-matrix.md` | 分层平台证据；不自动触发真机 |
 | `docs/release-checklist.md` | 独立发布工作项的候选清单，不是发布授权 |

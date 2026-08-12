@@ -4,16 +4,17 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { checkManifestFiles, main, validateManifest } from "./validate_visual_manifest.mjs";
+import { CORE_TEMPLATES, OPTIONAL_TEMPLATES } from "../../phaser4-game-orchestrator/scripts/project_doc_templates.mjs";
 
 const EMPTY_DOCUMENT_FINGERPRINT = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
 /** 构造包含一个已验收资源的有效清单。 */
 function validManifest() {
   return {
-    schema_version: "1.1",
+    schema_version: "1.2",
     visual_baseline: { id: "fox-world", version: "1.0.0", style_fingerprint: EMPTY_DOCUMENT_FINGERPRINT, document: "docs/visual-design.md", status: "frozen", anchor_evidence: ["evidence/visual/main-anchor.png"] },
     budgets: { max_texture_size: 4096, texture_memory_mb: 64, package_size_mb: 50, max_atlases: 8, max_frames: 512, animation_sample_fps: 24, max_overdraw: 3, max_draw_calls: 100 },
-    assets: [{ id: "hero-idle", texture_key: "hero-idle", route: "frame-animation", status: "accepted", visual_baseline_id: "fox-world", visual_baseline_version: "1.0.0", style_fingerprint: EMPTY_DOCUMENT_FINGERPRINT, source_file: "art/hero.aseprite", license_record: "docs/license.md", runtime_outputs: ["public/assets/hero.png"], phaser_evidence: "evidence/phaser.png", gameplay_visual_evidence: "evidence/gameplay.mp4", consistency_evidence: ["evidence/visual/hero-consistency.png"] }],
+    assets: [{ id: "hero-idle", texture_key: "hero-idle", scene_id: "main-gameplay", route: "frame-animation", status: "accepted", visual_baseline_id: "fox-world", visual_baseline_version: "1.0.0", style_fingerprint: EMPTY_DOCUMENT_FINGERPRINT, source_file: "art/hero.aseprite", license_record: "docs/license.md", runtime_outputs: ["public/assets/hero.png"], phaser_evidence: "evidence/phaser.png", gameplay_visual_evidence: "evidence/gameplay.mp4", consistency_evidence: ["evidence/visual/hero-consistency.png"] }],
   };
 }
 
@@ -32,6 +33,10 @@ async function createFixtureFiles(root, includeAi = false) {
 }
 
 test("有效清单通过", () => assert.deepEqual(validateManifest(validManifest()), []));
+test("项目模板生成完整场景字段与 1.2 资源清单", () => { assert(CORE_TEMPLATES["GDD.md"].includes("完整场景与功能清单")); assert(CORE_TEMPLATES["GDD.md"].includes("需求到证据追踪")); assert(CORE_TEMPLATES["TDD.md"].includes("functional_status")); assert(CORE_TEMPLATES["TDD.md"].includes("placeholder_cleanup_status")); assert.equal(JSON.parse(OPTIONAL_TEMPLATES.assets["visual-assets.json"]).schema_version, "1.2"); });
+test("所有资源状态都要求场景归属", () => { for (const status of ["planned", "producing", "review", "accepted", "rejected", "replaced"]) { const manifest = validManifest(); manifest.assets[0].status = status; delete manifest.assets[0].scene_id; assert(validateManifest(manifest).some((item) => item.includes("scene_id 或 shared")), status); } });
+test("公共资源要求稳定复用或运行必需", () => { const valid = validManifest(); delete valid.assets[0].scene_id; valid.assets[0].shared = true; valid.assets[0].shared_scene_ids = ["main-gameplay", "result"]; assert.deepEqual(validateManifest(valid), []); const oneScene = validManifest(); delete oneScene.assets[0].scene_id; oneScene.assets[0].shared = true; oneScene.assets[0].shared_scene_ids = ["main-gameplay"]; assert(validateManifest(oneScene).some((item) => item.includes("至少两个"))); const runtime = validManifest(); delete runtime.assets[0].scene_id; runtime.assets[0].shared = true; runtime.assets[0].shared_reason = "runtime-required"; assert.deepEqual(validateManifest(runtime), []); });
+test("场景归属与公共归属不得混用", () => { const manifest = validManifest(); manifest.assets[0].shared = true; manifest.assets[0].shared_scene_ids = ["main-gameplay", "result"]; assert(validateManifest(manifest).some((item) => item.includes("二选一"))); });
 test("重复纹理键和输出路径同时报告", () => { const manifest = validManifest(); manifest.assets.push({ ...manifest.assets[0], id: "hero-run" }); const errors = validateManifest(manifest); assert(errors.some((item) => item.includes("texture_key 重复"))); assert(errors.some((item) => item.includes("路径重复"))); });
 test("已验收资源要求证据", () => { const manifest = validManifest(); delete manifest.assets[0].phaser_evidence; assert(validateManifest(manifest).some((item) => item.includes("phaser_evidence"))); });
 test("视觉基线必须存在且冻结", () => { const missing = validManifest(); delete missing.visual_baseline; assert(validateManifest(missing).includes("visual_baseline 必须是对象")); const draft = validManifest(); draft.visual_baseline.status = "draft"; assert(validateManifest(draft).some((item) => item.includes("status 必须为 frozen"))); });

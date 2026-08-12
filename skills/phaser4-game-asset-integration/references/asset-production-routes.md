@@ -1,6 +1,6 @@
 # 资产生产路线
 
-V3 为每个资源选择一条主路线，并在机器清单记录源文件、运行时输出、关键验收、预算，以及当前冻结全局视觉基线的 ID、版本、风格指纹和适用锚点。所有路线执行 [全局视觉控制约束](global-visual-control.md)。正式资源必须继承当前有效基线并保留可编辑源文件；纯生成资产必须保留足以重现和审计的生成记录。局部资源不得自行创造新材质、光源、描边、角色比例或图标语法。
+V3 为每个资源选择一条主路线，并在机器清单记录场景或 shared 归属、源文件、运行时输出、接入对象/图层、关键验收、预算，以及当前冻结全局视觉基线的 ID、版本、风格指纹和适用锚点。所有路线执行 [全局视觉控制约束](global-visual-control.md)。正式资源必须继承当前有效基线并保留可编辑源文件；纯生成资产必须保留足以重现和审计的生成记录。局部资源不得自行创造新材质、光源、描边、角色比例或图标语法。
 
 | 路线 | 可编辑源文件 | 运行时输出 | 关键验收 | 预算 |
 | --- | --- | --- | --- | --- |
@@ -26,6 +26,6 @@ V3 为每个资源选择一条主路线，并在机器清单记录源文件、�
 
 ## 机器清单最低字段
 
-根节点记录 `schema_version=1.1`、全局预算，以及状态为 `frozen` 的 `visual_baseline`：基线 ID、版本、格式为 `sha256:<64 位小写十六进制>` 且等于基线文档文件哈希的风格指纹、文档和非空锚点证据。处于 `producing`、`review` 或 `accepted` 的每个资源必须记录与根基线完全一致的 `visual_baseline_id`、`visual_baseline_version` 和 `style_fingerprint`，并继续记录唯一 `id`、唯一 `texture_key`、唯一运行时输出路径、路线、状态、可编辑源文件或生成记录、授权、Phaser 与玩法视觉证据。`accepted` 还必须提供非空 `consistency_evidence`。缺少、不匹配或 `--check-files` 计算出的文档哈希不同均不得通过正式校验。
+根节点记录 `schema_version=1.2`、全局预算，以及状态为 `frozen` 的 `visual_baseline`：基线 ID、版本、格式为 `sha256:<64 位小写十六进制>` 且等于基线文档文件哈希的风格指纹、文档和非空锚点证据。每个资源无论处于 `planned`、`producing`、`review`、`accepted`、`rejected` 还是 `replaced`，都必须声明具体 `scene_id`，或声明 `shared: true` 并列出至少两个唯一 `shared_scene_ids`；仅以 `shared_reason: runtime-required` 明确说明的运行必需资源可免除两个场景条件，二者不得混用。处于 `producing`、`review` 或 `accepted` 的资源还必须记录与根基线完全一致的 `visual_baseline_id`、`visual_baseline_version` 和 `style_fingerprint`，并继续记录唯一 `id`、唯一 `texture_key`、唯一运行时输出路径、路线、状态、可编辑源文件或生成记录、授权、Phaser 与玩法视觉证据。`accepted` 还必须提供非空 `consistency_evidence`。缺少、不匹配或 `--check-files` 计算出的文档哈希不同均不得通过正式校验。
 
 方向或全局规则漂移退 V2；生产规格、基线绑定或生成包缺失退 V3；资源执行偏差退 V4；结构根因退 V1。冻结基线变更后标记失效证据，并重验全部受影响资源与同屏组合。

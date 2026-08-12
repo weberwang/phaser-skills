@@ -27,5 +27,16 @@ const templates = {
   }
 };
 
+// GDD 必须在 G0 冻结全部授权场景与端到端追踪，不能只描述首个可玩切片。
+templates.core["GDD.md"] += "\n## 完整场景与功能清单\n\n场景类型仅使用 gameplay 或 supporting。实施顺序先覆盖全部 gameplay，再覆盖 supporting；首个可玩切片仅是 G1 中间里程碑。\n\n| 场景 ID | 类型 | 实施顺序 | 依赖场景/模块 | 授权功能 | 正式资源范围 | 验收条件 | 负责人 |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n\n## 需求到证据追踪\n\n每项授权需求必须完整追踪到当前候选证据；没有正式资源的功能显式填写“不适用”，不得留空。\n\n| 需求 ID | 功能 ID | 模块 ID | 场景 ID/跨场景所有者 | 正式资源 ID | 测试与动态证据 | 状态 |\n| --- | --- | --- | --- | --- | --- | --- |\n";
+
+// TDD 记录 G1 领域完成事实；这些字段不能替代全局状态或驱动状态迁移。
+templates.core["TDD.md"] += "\n## G1 公共基础与场景实施序列\n\n公共代码或公共正式资源仅限至少两个已确认场景稳定复用，或运行必需。Boot/Preload 只提供最小启动加载；禁止无边界 common、utils 和公共素材库。\n\n| 顺序 | 类型 common/gameplay/supporting/cross-scene | 场景/能力 ID | 依赖 | 公开入口 | 资源归属 | 负责人 |\n| --- | --- | --- | --- | --- | --- | --- |\n\n全部 gameplay 必须排在 supporting 前；跨场景功能在全部场景闭环后关闭。场景之间不得直接访问其他 Scene 内部状态。\n\n## 场景分项完成清单\n\n字段只记录领域完成事实。仅当功能、V3/V4 资源、V5 接入、占位清理、联合验证全部关闭时，场景才完成；灰盒或 fallback 仍存在时不得关闭。\n\n| 场景 ID | functional_status | resource_status（V3/V4 accepted） | integration_status（V5） | placeholder_cleanup_status | verification_status（功能/视觉/响应式/性能） | 当前候选证据 |\n| --- | --- | --- | --- | --- | --- | --- |\n";
+
+// 资源清单 1.2 要求每项资源绑定 scene_id，或按受控 shared 规则声明复用范围。
+templates.optional.assets["asset-license-register.md"] = templates.optional.assets["asset-license-register.md"].replace("schema 1.1", "schema 1.2");
+templates.optional.assets["asset-license-register.md"] += "\n## 场景归属\n\n每项资源必须声明具体 scene_id，或声明 shared: true 并列出至少两个稳定复用场景；仅运行必需资源可声明 shared_reason: runtime-required。\n";
+templates.optional.assets["visual-assets.json"] = templates.optional.assets["visual-assets.json"].replace('"schema_version": "1.1"', '"schema_version": "1.2"');
+
 export const CORE_TEMPLATES = templates.core;
 export const OPTIONAL_TEMPLATES = templates.optional;

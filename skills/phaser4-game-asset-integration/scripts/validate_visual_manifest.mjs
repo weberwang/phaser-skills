@@ -9,7 +9,7 @@ import { statSync } from "node:fs";
 export const ALLOWED_ROUTES = new Set(["ui-icon-font", "pixel-art", "frame-animation", "skeletal-animation", "scene-tilemap", "vfx-particle-shader", "decorative-full-bleed", "gameplay-environment", "ai-composite-raster"]);
 export const ALLOWED_STATUSES = new Set(["planned", "producing", "review", "accepted", "rejected", "replaced"]);
 const BASELINE_BOUND_STATUSES = new Set(["producing", "review", "accepted"]);
-const SCHEMA_VERSION = "1.1";
+const SCHEMA_VERSION = "1.2";
 const STYLE_FINGERPRINT_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const AI_REQUIRED_TEXT_FIELDS = ["global_prompt_prefix", "asset_prompt", "state_prompt", "negative_prompt", "model", "model_version"];
 const REQUIRED_BUDGETS = new Set(["max_texture_size", "texture_memory_mb", "package_size_mb", "max_atlases", "max_frames", "animation_sample_fps", "max_overdraw", "max_draw_calls"]);
@@ -68,6 +68,26 @@ function validateAiGenerationRecord(asset, label, errors) {
   if (!Array.isArray(record.postprocess) || record.postprocess.length === 0 || !record.postprocess.every(nonEmptyString)) errors.push(`${label}.generation_record.postprocess 必须是非空字符串列表`);
 }
 
+/** 验证资源只归属一个具体场景，或满足受控公共资源条件。 */
+function validateAssetOwnership(asset, label, errors) {
+  const hasScene = nonEmptyString(asset.scene_id);
+  const isShared = asset.shared === true;
+  if (hasScene === isShared) {
+    errors.push(`${label} 必须二选一声明 scene_id 或 shared: true`);
+    return;
+  }
+  if (hasScene) {
+    if ("shared_scene_ids" in asset || "shared_reason" in asset) errors.push(`${label} 场景资源不得声明 shared_scene_ids 或 shared_reason`);
+    return;
+  }
+  const sceneIds = asset.shared_scene_ids;
+  if (asset.shared_reason === "runtime-required") {
+    if (sceneIds !== undefined && (!Array.isArray(sceneIds) || !sceneIds.every(nonEmptyString) || new Set(sceneIds).size !== sceneIds.length)) errors.push(`${label}.shared_scene_ids 必须是无重复的场景 ID 列表`);
+    return;
+  }
+  if (!Array.isArray(sceneIds) || sceneIds.length < 2 || !sceneIds.every(nonEmptyString) || new Set(sceneIds).size !== sceneIds.length) errors.push(`${label}.shared_scene_ids 必须包含至少两个无重复场景 ID`);
+}
+
 /** 验证已验收资源具备来源、授权、输出及运行证据。 */
 function validateAcceptedAsset(asset, label, errors) {
   if (!nonEmptyString(asset.source_file) && !isObject(asset.generation_record)) errors.push(`${label} accepted 必须提供 source_file 或 generation_record`);
@@ -90,6 +110,7 @@ export function validateManifest(data) {
     const label = `assets[${index}]`;
     if (!isObject(asset)) { errors.push(`${label} 必须是对象`); return; }
     for (const field of ["id", "texture_key", "route", "status"]) if (!nonEmptyString(asset[field])) errors.push(`${label}.${field} 必须是非空字符串`);
+    validateAssetOwnership(asset, label, errors);
     if (nonEmptyString(asset.route) && !ALLOWED_ROUTES.has(asset.route)) errors.push(`${label}.route 不在允许列表中：${asset.route}`);
     if (nonEmptyString(asset.status) && !ALLOWED_STATUSES.has(asset.status)) errors.push(`${label}.status 不在允许列表中：${asset.status}`);
     for (const field of ["id", "texture_key"]) if (nonEmptyString(asset[field])) { if (seen[field].has(asset[field])) errors.push(`${label}.${field} 重复：${asset[field]}`); seen[field].add(asset[field]); }

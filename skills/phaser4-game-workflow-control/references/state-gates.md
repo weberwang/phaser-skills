@@ -11,7 +11,7 @@
 | 领域阶段 | 全局状态落点 |
 | --- | --- |
 | G0 立项门 | `BASELINE` 至任务授权/必要决定完成后进入实现 |
-| G1 可玩切片 | `IMPLEMENTING` 至 `PASSED` |
+| G1 完整场景与功能实施 | `IMPLEMENTING` 至 `PASSED` |
 | G2 制作冻结/完整集成 | `VALIDATING` 至 `INTEGRATING` |
 | G3 发布候选 | `RELEASE_APPROVAL_REQUIRED` 至 `COMPLETE` |
 | V0 分流、V1 低保真、V2 视觉方向 | `PROPOSAL/REVIEW`；新方向或实质视觉取舍进入 `USER_INPUT_REQUIRED` 澄清阻塞 |
