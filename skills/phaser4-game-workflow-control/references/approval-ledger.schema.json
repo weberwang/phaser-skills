@@ -3,6 +3,7 @@
   "$id": "phaser4-approval-ledger.schema.json",
   "title": "操作审批账本",
   "type": "object",
+  "additionalProperties": false,
   "required": [
     "schemaVersion",
     "approvals"
@@ -15,6 +16,7 @@
       "type": "array",
       "items": {
         "type": "object",
+        "additionalProperties": false,
         "required": [
           "approvalId",
           "promptContextId",
@@ -25,7 +27,7 @@
           "approvedAt",
           "explicitObject",
           "stageId",
-          "moduleId",
+          "moduleIds",
           "baselineVersion",
           "baselineHash",
           "actionType",
@@ -92,9 +94,11 @@
             "type": "string",
             "minLength": 1
           },
-          "moduleId": {
-            "type": "string",
-            "minLength": 1
+          "moduleIds": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
           },
           "baselineVersion": {
             "type": "string",

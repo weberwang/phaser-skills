@@ -25,6 +25,8 @@ A0-A6 只描述 Phaser 项目生命周期：A0 项目只读调查；A1 项目规
 
 Work Item 的 `taskAuthorization` 保存用户原始请求、目标和范围；它是 A0-A3 本地工作的任务授权，不写入 Approval Ledger。产品、视觉或架构取舍属于 `USER_DECISION`：澄清后更新任务授权、权威工件或决策记录，不生成审批。只有 A4、A5、A6 的具体操作才生成 pending 和操作批准记录；记录精确冻结操作、影响、对象、门、基线、路径、服务、外部目标与副作用，A6 永不自动放行。
 
+Work Item 使用已排序的 `moduleIds` 精确覆盖多模块/多场景范围。A3 采用静态 Implementation Package、路径级 Execution Unit Result 和原子 Parallel Delegation Batch：依赖单元只有存在当前基线、当前路径 diff 的 PASS Result 才派生为 READY；共享基础和集成单元强制串行，模块/场景安全并行必须一次提交完整批次。
+
 ## CLI
 
 CLI 无第三方依赖，只做校验和记录，不执行外部动作或自动回滚：
@@ -34,6 +36,9 @@ node <skill-dir>\scripts\workflow-control.mjs help
 node <skill-dir>\scripts\workflow-control.mjs init --repo . --work-item-id WI-1 --project-id game --module-id docs --domain product --stage-id G0 --baseline-id <git-sha> --baseline-version 1 --baseline-hash <sha256> --objective "建立控制面" --user-text "为本项目建立首个工作项和审批账本" --object "workflow bootstrap" --allowed-path docs
 node <skill-dir>\scripts\workflow-control.mjs route --work-item .workflow-control\work-items\WI-1.json
 node <skill-dir>\scripts\workflow-control.mjs preflight --work-item .workflow-control\work-items\WI-1.json --implementation-package .workflow-control\implementation-package.json --action-level A3 --action-type phaser-code-change --path src\main.ts
+node <skill-dir>\scripts\workflow-control.mjs unit-check --work-item .workflow-control\work-items\WI-1.json --implementation-package .workflow-control\implementation-package.json --result .workflow-control\evidence\WI-1\units\UNIT-1.json
+node <skill-dir>\scripts\workflow-control.mjs delegate-check --work-item .workflow-control\work-items\WI-1.json --implementation-package .workflow-control\implementation-package.json --delegation .workflow-control\delegations\serial.json
+node <skill-dir>\scripts\workflow-control.mjs parallel-check --work-item .workflow-control\work-items\WI-1.json --implementation-package .workflow-control\implementation-package.json --batch .workflow-control\delegations\batches\PG-1.json
 node <skill-dir>\scripts\workflow-control.mjs diff-audit --work-item .workflow-control\work-items\WI-1.json --implementation-package .workflow-control\implementation-package.json --baseline <git-sha> --baseline-hash <sha256> --action-level A3 --record .workflow-control\evidence\WI-1\diff-audit.json
 # 仅 A4-A6 具体操作使用 prepare-approval、handoff、approve 与 --ledger，并用 --impact 冻结影响。
 ```

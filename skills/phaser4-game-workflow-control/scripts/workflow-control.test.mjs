@@ -7,6 +7,8 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
+import { scopedDiffFingerprint } from './execution-unit-control.mjs';
+import { parallelBatchFingerprint } from './parallel-batch-control.mjs';
 
 const CLI = resolve(import.meta.dirname, 'workflow-control.mjs');
 const INITIALIZER = resolve(import.meta.dirname, '..', '..', 'phaser4-game-orchestrator', 'scripts', 'initialize_project_docs.mjs');
@@ -42,7 +44,7 @@ function makeRepo() {
 /** 构造绑定用户原始请求的 Work Item。 */
 function makeWork(head, overrides = {}) {
   return {
-    workItemId: 'WI-1', projectId: 'P-1', moduleId: 'core', domain: 'code', stageId: 'G1', globalState: 'IMPLEMENTING', baselineId: head, baselineVersion: '1', baselineHash: HASH,
+    workItemId: 'WI-1', projectId: 'P-1', moduleIds: ['core', 'scene'], domain: 'code', stageId: 'G1', globalState: 'IMPLEMENTING', baselineId: head, baselineVersion: '1', baselineHash: HASH,
     objective: '实现明确 Phaser 功能', taskAuthorization: { authorizationId: 'TASK-WI-1', userOriginalText: '实现 core Phaser 功能', authorizedObjective: '实现明确 Phaser 功能', authorizedScope: ['core'], authorizedActions: ['phaser-inspect', 'phaser-spec-candidate', 'phaser-prototype', 'phaser-code-change'], authorizedActionLevels: ['A0', 'A1', 'A2', 'A3'], authorizedPaths: ['src', 'docs'], authorizedAt: '2026-08-11T00:00:00.000Z' },
     inScope: ['core'], outOfScope: ['release'], approvedRequirements: ['REQ-1'], allowedActions: ['phaser-inspect', 'phaser-spec-candidate', 'phaser-prototype', 'phaser-code-change', 'phaser-integration', 'phaser-build-upload', 'phaser-release'], allowedActionLevels: ['A0', 'A1', 'A2', 'A3'], explicitApprovalActionLevels: ['A4', 'A5', 'A6'], prohibitedActions: [], allowedPaths: ['src', 'docs'], forbiddenPaths: ['.git', 'src/secret'], allowedExternalTargets: ['store/app'], protectedExternalTargets: ['production'], requiredGates: ['F0', 'F1', 'F2', 'F3'], approvalRecord: null,
     assignedAgent: 'implementer', delegatedAgents: [], expectedOutputs: ['src/main.js'], validationPlan: ['node --test'], exitCriteria: ['tests pass'], nextGate: 'F0', rollbackPolicy: '不自动回滚共享工作区', evidenceRoot: '.workflow-control/evidence/WI-1',
@@ -54,13 +56,44 @@ function makeWork(head, overrides = {}) {
 
 /** 构造绑定任务授权而非审批记录的 Implementation Package。 */
 function makePackage(overrides = {}) {
-  return { packageId: 'PKG-1', workItemId: 'WI-1', baselineVersion: '1', baselineHash: HASH, taskAuthorizationId: 'TASK-WI-1', approvedRequirements: ['REQ-1'], approvedArchitecture: 'ARCH-FACT', fileOwnership: { src: 'implementer' }, allowedPaths: ['src', 'docs'], forbiddenPaths: ['.git', 'src/secret'], expectedAddedFiles: [], expectedDeletedFiles: [], testScope: ['node --test'], outOfScope: ['release'], compatibilityStrategy: '不保留旧版兼容', definitionOfDone: ['tests pass'], stopConditions: ['scope changes'], ...overrides };
+  return { packageId: 'PKG-1', workItemId: 'WI-1', baselineVersion: '1', baselineHash: HASH, taskAuthorizationId: 'TASK-WI-1', approvedRequirements: ['REQ-1'], approvedArchitecture: 'ARCH-FACT', fileOwnership: { 'src/main.js': 'implementer', 'src/module': 'implementer', 'src/scene': 'implementer' }, executionUnits: [
+    { unitId: 'SHARED-1', unitType: 'SHARED', scopeId: 'runtime-contract', moduleId: 'core', sceneId: null, owner: 'implementer', dependsOn: [], parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: ['src/main.js'], stateOwnership: ['runtime-contract'], acceptanceCommands: ['node --test'], serializationReason: '先冻结共享契约' },
+    { unitId: 'MODULE-1', unitType: 'MODULE', scopeId: 'core-module', moduleId: 'core', sceneId: null, owner: 'implementer', dependsOn: ['SHARED-1'], parallelMode: 'PARALLEL', parallelGroup: 'PG-1', ownedPaths: ['src/module'], stateOwnership: ['core-state'], acceptanceCommands: ['node --test'], serializationReason: null },
+    { unitId: 'SCENE-1', unitType: 'SCENE', scopeId: 'play-scene', moduleId: 'scene', sceneId: 'play', owner: 'implementer', dependsOn: ['SHARED-1'], parallelMode: 'PARALLEL', parallelGroup: 'PG-1', ownedPaths: ['src/scene'], stateOwnership: ['scene-state'], acceptanceCommands: ['node --test'], serializationReason: null }
+  ], allowedPaths: ['src', 'docs'], forbiddenPaths: ['.git', 'src/secret'], expectedAddedFiles: [], expectedDeletedFiles: [], testScope: ['node --test'], outOfScope: ['release'], compatibilityStrategy: '不保留旧版兼容', definitionOfDone: ['tests pass'], stopConditions: ['scope changes'], ...overrides };
+}
+
+/** 构造绑定单个实施单元的 A3 委派。 */
+function makeDelegation(agent, unitId, group, ownership, overrides = {}) {
+  return { workItemId: 'WI-1', stageId: 'G1', authorizationId: 'TASK-WI-1', owner: 'orchestrator', assignedAgent: agent, executionUnitIds: [unitId], parallelGroup: group, ownership: [ownership], allowedActions: ['phaser-code-change'], forbiddenActions: [], actionLevel: 'A3', allowedPaths: [ownership], forbiddenPaths: ['.git', 'src/secret'], acceptanceCommands: ['node --test'], completionBoundary: '完成返回', outOfScopeReturn: '越界返回', preserveOthersChanges: true, ...overrides };
+}
+
+/** 从当前委派文件构造带内容哈希和派生索引的不可变并行批次。 */
+function makeParallelBatch(repo, delegationFiles, overrides = {}) {
+  const files = [...delegationFiles].sort();
+  const delegations = files.map((path) => JSON.parse(readFileSync(resolve(repo, path), 'utf8')));
+  const delegationHashes = Object.fromEntries(files.map((path) => [path, hashFile(resolve(repo, path))]));
+  const executionUnitIds = [...new Set(delegations.flatMap((delegation) => delegation.executionUnitIds ?? []))].sort();
+  const assignedAgents = [...new Set(delegations.map((delegation) => delegation.assignedAgent))].sort();
+  const batch = { batchId: 'PB-1', workItemId: 'WI-1', packageId: 'PKG-1', baselineHash: HASH, parallelGroup: 'PG-1', delegationFiles: files, delegationHashes, executionUnitIds, assignedAgents, createdAt: '2026-08-11T00:03:00.000Z', ...overrides };
+  batch.fingerprint = parallelBatchFingerprint(batch);
+  return batch;
+}
+
+/** 构造所有实施单元均为串行的包，便于验证 READY 门。 */
+function makeSerialPackage() {
+  const pkg = makePackage();
+  for (const unit of pkg.executionUnits) {
+    unit.parallelMode = 'SERIAL'; unit.parallelGroup = null;
+    if (!unit.serializationReason) unit.serializationReason = '等待前置完成证据';
+  }
+  return pkg;
 }
 
 /** 构造精确显式批准记录。 */
 function makeApproval(work, overrides = {}) {
   return {
-    approvalId: 'AP-1', promptContextId: work.pendingApprovalId, pendingState: work.pendingApprovalState, pendingContext: work.pendingApprovalContext, workItemId: work.workItemId, userOriginalText: '批准当前唯一对象', approvedAt: '2026-08-11T00:01:00.000Z', explicitObject: work.pendingApprovalObject, stageId: work.stageId, moduleId: work.moduleId, baselineVersion: work.baselineVersion, baselineHash: work.baselineHash, actionType: work.pendingApprovalActionType, actionLevel: work.pendingApprovalActionLevel, impactSummary: work.pendingApprovalImpactSummary, fileScope: work.pendingApprovalFileScope, services: work.pendingApprovalServices, allowServiceStart: work.pendingApprovalAllowServiceStart, allowDelete: work.pendingApprovalAllowDelete, externalWrite: work.pendingApprovalExternalWrite, destructive: work.pendingApprovalDestructive, physicalDevice: work.pendingApprovalPhysicalDevice, release: work.pendingApprovalRelease, gate: work.pendingApprovalGate, invalidatedWhen: ['baseline changes'], externalTargets: work.pendingApprovalExternalTargets, invalidatedAt: null,
+    approvalId: 'AP-1', promptContextId: work.pendingApprovalId, pendingState: work.pendingApprovalState, pendingContext: work.pendingApprovalContext, workItemId: work.workItemId, userOriginalText: '批准当前唯一对象', approvedAt: '2026-08-11T00:01:00.000Z', explicitObject: work.pendingApprovalObject, stageId: work.stageId, moduleIds: work.moduleIds, baselineVersion: work.baselineVersion, baselineHash: work.baselineHash, actionType: work.pendingApprovalActionType, actionLevel: work.pendingApprovalActionLevel, impactSummary: work.pendingApprovalImpactSummary, fileScope: work.pendingApprovalFileScope, services: work.pendingApprovalServices, allowServiceStart: work.pendingApprovalAllowServiceStart, allowDelete: work.pendingApprovalAllowDelete, externalWrite: work.pendingApprovalExternalWrite, destructive: work.pendingApprovalDestructive, physicalDevice: work.pendingApprovalPhysicalDevice, release: work.pendingApprovalRelease, gate: work.pendingApprovalGate, invalidatedWhen: ['baseline changes'], externalTargets: work.pendingApprovalExternalTargets, invalidatedAt: null,
     ...overrides
   };
 }
@@ -99,13 +132,40 @@ function auditA3(fixture) {
   return { record, audit: JSON.parse(result.stdout) };
 }
 
+/** 为当前默认实施包写入全部单元的有效完成证据。 */
+function writeUnitResults(fixture, overrides = {}) {
+  const pkg = JSON.parse(readFileSync(fixture.packagePath, 'utf8'));
+  const unitsRoot = join(fixture.root, 'evidence', 'WI-1', 'units');
+  mkdirSync(unitsRoot, { recursive: true });
+  const io = { git: (repo, args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }), fileHash: hashFile, hashText: (value) => `sha256:${createHash('sha256').update(value).digest('hex')}`, resolve };
+  for (const unit of pkg.executionUnits) {
+    const output = join(unitsRoot, `${unit.unitId}-output.txt`);
+    writeFileSync(output, `${unit.unitId} passed\n`);
+    const relativeOutput = `.workflow-control/evidence/WI-1/units/${unit.unitId}-output.txt`;
+    const result = { resultId: `RESULT-${unit.unitId}`, workItemId: 'WI-1', packageId: pkg.packageId, unitId: unit.unitId, baselineHash: HASH, codeFingerprint: `git:${fixture.head}`, diffFingerprint: scopedDiffFingerprint(fixture.repo, fixture.head, unit.ownedPaths, io), completedAt: '2026-08-11T00:02:00.000Z', commands: [{ command: 'node --test', exitCode: 0, outputFile: relativeOutput, outputHash: hashFile(output) }], files: [relativeOutput], fileHashes: { [relativeOutput]: hashFile(output) }, verdict: 'PASS', ...(overrides[unit.unitId] ?? {}) };
+    writeJson(join(unitsRoot, `${unit.unitId}.json`), result);
+  }
+}
+
+/** 创建含两个已登记代理、委派文件和不可变批次的并行测试夹具。 */
+function prepareParallelFixture(state = 'IMPLEMENTING') {
+  const f = setup({ globalState: state, delegatedAgents: ['module-agent', 'scene-agent'] });
+  writeJson(f.packagePath, makePackage({ fileOwnership: { 'src/main.js': 'implementer', 'src/module': 'module-agent', 'src/scene': 'scene-agent' }, executionUnits: makePackage().executionUnits.map((unit) => unit.unitId === 'MODULE-1' ? { ...unit, owner: 'module-agent' } : unit.unitId === 'SCENE-1' ? { ...unit, owner: 'scene-agent' } : unit) }));
+  writeJson(join(f.root, 'delegations', 'm.json'), makeDelegation('module-agent', 'MODULE-1', 'PG-1', 'src/module'));
+  writeJson(join(f.root, 'delegations', 's.json'), makeDelegation('scene-agent', 'SCENE-1', 'PG-1', 'src/scene'));
+  const batchPath = join(f.root, 'delegations', 'batches', 'batch.json');
+  writeJson(batchPath, makeParallelBatch(f.repo, ['.workflow-control/delegations/m.json', '.workflow-control/delegations/s.json']));
+  return { f, batchPath };
+}
+
 /** 生成绑定当前 diff 与 F0-F3 的完整证据。 */
 function makeEvidence(fixture, audit) {
+  writeUnitResults(fixture);
   const output = join(fixture.root, 'evidence', 'WI-1', 'test-output.txt');
   writeFileSync(output, 'tests passed\n');
   const rel = '.workflow-control/evidence/WI-1/test-output.txt';
   const common = { status: 'PASS', baselineHash: HASH, diffFingerprint: audit.diffFingerprint };
-  return { evidenceId: 'EV-1', batchId: 'BATCH-1', workItemId: 'WI-1', baselineHash: HASH, codeFingerprint: `git:${fixture.head}`, diffFingerprint: audit.diffFingerprint, recordedAt: new Date(Date.parse(audit.recordedAt) + 1000).toISOString(), commands: [{ command: 'node --test', exitCode: 0, outputFile: rel, outputHash: hashFile(output) }], environment: { node: process.version }, dataSources: ['git diff'], files: [rel], fileHashes: { [rel]: hashFile(output) }, gateResults: { F0: { ...common, authorizationId: 'TASK-WI-1' }, F1: { ...common }, F2: { ...common, reviewer: 'independent-reviewer', reviewMode: 'INDEPENDENT' }, F3: { ...common, evidenceId: 'EV-1' } }, verdict: 'PASS', uncoveredItems: [], completedOutputs: ['src/main.js'], satisfiedExitCriteria: ['tests pass'] };
+  return { evidenceId: 'EV-1', batchId: 'BATCH-1', workItemId: 'WI-1', baselineHash: HASH, codeFingerprint: `git:${fixture.head}`, diffFingerprint: audit.diffFingerprint, recordedAt: new Date(Date.parse(audit.recordedAt) + 1000).toISOString(), commands: [{ command: 'node --test', exitCode: 0, outputFile: rel, outputHash: hashFile(output) }], environment: { node: process.version }, dataSources: ['git diff'], files: [rel], fileHashes: { [rel]: hashFile(output) }, gateResults: { F0: { ...common, authorizationId: 'TASK-WI-1' }, F1: { ...common }, F2: { ...common, reviewer: 'independent-reviewer', reviewMode: 'INDEPENDENT' }, F3: { ...common, evidenceId: 'EV-1' } }, verdict: 'PASS', uncoveredItems: [], completedOutputs: ['src/main.js'], completedUnitIds: ['SHARED-1', 'MODULE-1', 'SCENE-1'], satisfiedExitCriteria: ['tests pass'] };
 }
 
 test('A0-A2：只读、文档和隔离原型依任务授权直接通过', () => {
@@ -166,7 +226,10 @@ test('A3：从 REVIEW 直接进入 IMPLEMENTING，不经过审批状态且不需
 
 test('A3：删除旧实现被拒绝并升级到 A4/A6', () => {
   const f = setup();
-  writeJson(f.packagePath, makePackage({ expectedDeletedFiles: ['src/old.js'] }));
+  const deletionPackage = makePackage({ expectedDeletedFiles: ['src/old.js'] });
+  deletionPackage.fileOwnership['src/old.js'] = 'implementer';
+  deletionPackage.executionUnits.find((unit) => unit.unitId === 'SHARED-1').ownedPaths.push('src/old.js');
+  writeJson(f.packagePath, deletionPackage);
   rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/old.js'], f.repo), /A3.*不得删除|升级/);
   rmSync(join(f.repo, 'src', 'old.js'));
   writeJson(f.packagePath, makePackage());
@@ -302,7 +365,7 @@ test('任务授权与委派：A4-A6 操作不能伪装成任务授权或委派�
 
   work.taskAuthorization.authorizedActions.pop();
   writeJson(f.workPath, work);
-  const delegation = { workItemId: 'WI-1', stageId: 'G1', authorizationId: 'TASK-WI-1', owner: 'orchestrator', assignedAgent: 'worker', ownership: ['src'], allowedActions: ['phaser-integration'], forbiddenActions: [], actionLevel: 'A4', allowedPaths: ['src'], forbiddenPaths: ['.git'], acceptanceCommands: ['node --test'], completionBoundary: '完成返回', outOfScopeReturn: '越界返回', preserveOthersChanges: true };
+  const delegation = { workItemId: 'WI-1', stageId: 'G1', authorizationId: 'TASK-WI-1', owner: 'orchestrator', assignedAgent: 'worker', executionUnitIds: ['MODULE-1'], parallelGroup: 'PG-1', ownership: ['src/module'], allowedActions: ['phaser-integration'], forbiddenActions: [], actionLevel: 'A4', allowedPaths: ['src/module'], forbiddenPaths: ['.git'], acceptanceCommands: ['node --test'], completionBoundary: '完成返回', outOfScopeReturn: '越界返回', preserveOthersChanges: true };
   const path = join(f.root, 'delegations', 'high-risk.json'); writeJson(path, delegation);
   rejects(run('delegate-check', ['--work-item', f.workPath, '--delegation', path, '--implementation-package', f.packagePath], f.repo), /只能委派 A0-A3/);
 });
@@ -397,7 +460,7 @@ test('基线与实施包：旧 hash、范围漂移和所有权缺失均拒绝', 
   rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /范围不一致/);
   writeJson(f.packagePath, makePackage({ fileOwnership: { docs: 'implementer' } }));
   writeFileSync(join(f.repo, 'src', 'main.js'), 'export const value = 9;\n');
-  rejects(run('diff-audit', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--baseline', f.head, '--baseline-hash', HASH, '--action-level', 'A3', '--record', join(f.root, 'bad-owner.json')], f.repo), /未归属/);
+  rejects(run('diff-audit', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--baseline', f.head, '--baseline-hash', HASH, '--action-level', 'A3', '--record', join(f.root, 'bad-owner.json')], f.repo), /未归属|未唯一映射/);
 });
 
 test('路径门：forbiddenPaths、仓库越界和未授权动作不能旁路', () => {
@@ -482,11 +545,150 @@ test('Diff Audit：空 A3、审计后篡改和伪造 owner 均拒绝', () => {
 
 test('委派门：未登记代理、所有权冲突和伪造授权均拒绝', () => {
   const f = setup({ delegatedAgents: ['worker'] });
-  const delegation = { workItemId: 'WI-1', stageId: 'G1', authorizationId: 'FAKE', owner: 'orchestrator', assignedAgent: 'worker', ownership: ['src'], allowedActions: ['phaser-code-change'], forbiddenActions: [], actionLevel: 'A3', allowedPaths: ['src'], forbiddenPaths: ['.git', 'src/secret'], acceptanceCommands: ['node --test'], completionBoundary: '完成返回', outOfScopeReturn: '越界返回', preserveOthersChanges: true };
+  const delegation = { workItemId: 'WI-1', stageId: 'G1', authorizationId: 'FAKE', owner: 'orchestrator', assignedAgent: 'worker', executionUnitIds: ['MODULE-1'], parallelGroup: 'PG-1', ownership: ['src/module'], allowedActions: ['phaser-code-change'], forbiddenActions: [], actionLevel: 'A3', allowedPaths: ['src/module'], forbiddenPaths: ['.git', 'src/secret'], acceptanceCommands: ['node --test'], completionBoundary: '完成返回', outOfScopeReturn: '越界返回', preserveOthersChanges: true };
   const path = join(f.root, 'delegations', 'worker.json'); writeJson(path, delegation);
   rejects(run('delegate-check', ['--work-item', f.workPath, '--delegation', path, '--implementation-package', f.packagePath], f.repo), /任务授权/);
   delegation.authorizationId = 'TASK-WI-1'; delegation.assignedAgent = 'unregistered'; writeJson(path, delegation);
   rejects(run('delegate-check', ['--work-item', f.workPath, '--delegation', path, '--implementation-package', f.packagePath], f.repo), /未登记/);
+});
+
+test('并行计划：模块与场景单元可在同组通过并行委派检查', () => {
+  const f = setup({ delegatedAgents: ['module-agent', 'scene-agent'] });
+  const pkg = makePackage({
+    fileOwnership: { 'src/main.js': 'implementer', 'src/module': 'module-agent', 'src/scene': 'scene-agent' },
+    executionUnits: makePackage().executionUnits.map((unit) => unit.unitId === 'MODULE-1' ? { ...unit, owner: 'module-agent' } : unit.unitId === 'SCENE-1' ? { ...unit, owner: 'scene-agent' } : unit)
+  });
+  writeJson(f.packagePath, pkg);
+  const modulePath = join(f.root, 'delegations', 'module.json');
+  const scenePath = join(f.root, 'delegations', 'scene.json');
+  writeJson(modulePath, makeDelegation('module-agent', 'MODULE-1', 'PG-1', 'src/module'));
+  writeJson(scenePath, makeDelegation('scene-agent', 'SCENE-1', 'PG-1', 'src/scene'));
+  writeUnitResults(f);
+  const batchPath = join(f.root, 'delegations', 'batches', 'valid.json');
+  writeJson(batchPath, makeParallelBatch(f.repo, ['.workflow-control/delegations/module.json', '.workflow-control/delegations/scene.json']));
+  const result = run('parallel-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--batch', batchPath], f.repo);
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test('并行计划：组内依赖、单成员组和所有权或代理不匹配均拒绝', () => {
+  for (const [mutate, pattern] of [
+    [(pkg) => { pkg.executionUnits.find((unit) => unit.unitId === 'SCENE-1').dependsOn.push('MODULE-1'); }, /并行组.*依赖/],
+    [(pkg) => { pkg.executionUnits.find((unit) => unit.unitId === 'MODULE-1').dependsOn = ['UNKNOWN']; }, /未知依赖/],
+    [(pkg) => { pkg.executionUnits.find((unit) => unit.unitId === 'SHARED-1').dependsOn = ['MODULE-1']; }, /依赖图存在环/],
+    [(pkg) => { pkg.executionUnits.find((unit) => unit.unitId === 'SCENE-1').parallelMode = 'SERIAL'; pkg.executionUnits.find((unit) => unit.unitId === 'SCENE-1').parallelGroup = null; pkg.executionUnits.find((unit) => unit.unitId === 'SCENE-1').serializationReason = '等待模块'; }, /至少需要两个/],
+    [(pkg) => { pkg.executionUnits.find((unit) => unit.unitId === 'MODULE-1').owner = 'worker'; }, /唯一映射到同一 owner/],
+    [(pkg) => { pkg.fileOwnership['src/unplanned'] = 'implementer'; }, /fileOwnership 未唯一反向绑定/],
+    [(pkg) => { pkg.expectedAddedFiles = ['src/unplanned/new.js']; }, /预期增删文件未唯一绑定/]
+  ]) {
+    const f = setup({ delegatedAgents: ['worker'] }); const pkg = makePackage(); mutate(pkg); writeJson(f.packagePath, pkg);
+    rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), pattern);
+  }
+  const f = setup({ delegatedAgents: ['scene-agent', 'worker'] });
+  writeJson(join(f.root, 'delegations', 'mismatch.json'), makeDelegation('worker', 'MODULE-1', 'PG-1', 'src/module'));
+  writeJson(join(f.root, 'delegations', 'mismatch-scene.json'), makeDelegation('scene-agent', 'SCENE-1', 'PG-1', 'src/scene'));
+  writeUnitResults(f);
+  const batchPath = join(f.root, 'delegations', 'batches', 'mismatch.json');
+  writeJson(batchPath, makeParallelBatch(f.repo, ['.workflow-control/delegations/mismatch.json', '.workflow-control/delegations/mismatch-scene.json']));
+  rejects(run('parallel-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--batch', batchPath], f.repo), /代理与 execution unit.owner 不一致/);
+});
+
+test('并行委派：并行组不匹配、依赖关系或写范围冲突均拒绝', () => {
+  const cases = [
+    { peer: { parallelGroup: 'PG-OTHER' }, pattern: /同一非空组|parallelGroup.*不一致/ },
+    { peer: { actionLevel: 'A2', allowedActions: ['phaser-prototype'] }, pattern: /不得携带 executionUnitIds|必须全部.*A3|至少两个/ },
+    { packageMutation: (pkg) => { pkg.executionUnits.find((unit) => unit.unitId === 'SCENE-1').dependsOn.push('MODULE-1'); }, pattern: /并行组.*依赖|并行委派单元存在依赖/ },
+    { packageMutation: (pkg) => { pkg.executionUnits.find((unit) => unit.unitId === 'SCENE-1').ownedPaths = ['src/module']; pkg.fileOwnership = { 'src/main.js': 'implementer', 'src/module': 'worker' }; }, peer: { ownership: ['src/module'] }, pattern: /写范围冲突|未唯一反向绑定|未唯一映射/ }
+  ];
+  for (const item of cases) {
+    const f = setup({ delegatedAgents: ['module-agent', 'scene-agent'] }); const pkg = makePackage({ fileOwnership: { 'src/main.js': 'implementer', 'src/module': 'module-agent', 'src/scene': 'scene-agent' }, executionUnits: makePackage().executionUnits.map((unit) => unit.unitId === 'MODULE-1' ? { ...unit, owner: 'module-agent' } : unit.unitId === 'SCENE-1' ? { ...unit, owner: 'scene-agent' } : unit) });
+    item.packageMutation?.(pkg); writeJson(f.packagePath, pkg);
+    const leftPath = join(f.root, 'delegations', 'left.json'); const peerPath = join(f.root, 'delegations', 'peer.json');
+    writeJson(leftPath, makeDelegation('module-agent', 'MODULE-1', 'PG-1', 'src/module'));
+    writeJson(peerPath, makeDelegation('scene-agent', 'SCENE-1', 'PG-1', item.peer?.ownership?.[0] ?? 'src/scene', item.peer ?? {}));
+    writeUnitResults(f);
+    const batchPath = join(f.root, 'delegations', 'batches', 'invalid.json');
+    writeJson(batchPath, makeParallelBatch(f.repo, ['.workflow-control/delegations/left.json', '.workflow-control/delegations/peer.json']));
+    rejects(run('parallel-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--batch', batchPath], f.repo), item.pattern);
+  }
+});
+
+test('单元证据：缺失、旧基线和旧路径 diff 均拒绝 READY，有效 Result 通过', () => {
+  const f = setup({ delegatedAgents: ['implementer'] });
+  writeJson(f.packagePath, makeSerialPackage());
+  const delegationPath = join(f.root, 'delegations', 'serial-module.json');
+  writeJson(delegationPath, makeDelegation('implementer', 'MODULE-1', null, 'src/module'));
+  rejects(run('delegate-check', ['--work-item', f.workPath, '--delegation', delegationPath, '--implementation-package', f.packagePath], f.repo), /尚未 READY|前置证据/);
+  writeUnitResults(f);
+  const sharedResult = join(f.root, 'evidence', 'WI-1', 'units', 'SHARED-1.json');
+  assert.equal(run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', sharedResult], f.repo).status, 0);
+  assert.equal(run('delegate-check', ['--work-item', f.workPath, '--delegation', delegationPath, '--implementation-package', f.packagePath], f.repo).status, 0);
+  const staleBaseline = JSON.parse(readFileSync(sharedResult, 'utf8')); staleBaseline.baselineHash = `sha256:${'b'.repeat(64)}`; writeJson(sharedResult, staleBaseline);
+  rejects(run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', sharedResult], f.repo), /当前工作项.*基线|未绑定当前/);
+  writeUnitResults(f); writeFileSync(join(f.repo, 'src', 'main.js'), 'export const value = 77;\n');
+  rejects(run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', sharedResult], f.repo), /diff 指纹已过期/);
+});
+
+test('委派结构与状态：A0-A2 不携带实施单元，A3 必须携带且仅 IMPLEMENTING', () => {
+  const a1 = setup({ globalState: 'REVIEW', delegatedAgents: ['worker'] });
+  const base = { workItemId: 'WI-1', stageId: 'G1', authorizationId: 'TASK-WI-1', owner: 'orchestrator', assignedAgent: 'worker', ownership: ['docs'], allowedActions: ['phaser-spec-candidate'], forbiddenActions: [], actionLevel: 'A1', allowedPaths: ['docs'], forbiddenPaths: ['.git', 'src/secret'], acceptanceCommands: ['node --test'], completionBoundary: '完成返回', outOfScopeReturn: '越界返回', preserveOthersChanges: true };
+  const path = join(a1.root, 'delegations', 'a1.json'); writeJson(path, base);
+  assert.equal(run('delegate-check', ['--work-item', a1.workPath, '--delegation', path], a1.repo).status, 0);
+  writeJson(path, { ...base, executionUnitIds: ['MODULE-1'], parallelGroup: null });
+  rejects(run('delegate-check', ['--work-item', a1.workPath, '--delegation', path], a1.repo), /A0-A2.*不得携带/);
+  const review = setup({ globalState: 'REVIEW', delegatedAgents: ['worker'] });
+  const a3 = makeDelegation('worker', 'MODULE-1', null, 'src/module'); delete a3.executionUnitIds; delete a3.parallelGroup; writeJson(path, a3);
+  rejects(run('delegate-check', ['--work-item', review.workPath, '--delegation', path, '--implementation-package', review.packagePath], review.repo), /A3 委派必须携带|executionUnitIds 必须为字符串数组/);
+  writeJson(path, makeDelegation('worker', 'MODULE-1', null, 'src/module'));
+  rejects(run('delegate-check', ['--work-item', review.workPath, '--delegation', path, '--implementation-package', review.packagePath], review.repo), /A3.*IMPLEMENTING/);
+});
+
+test('模块与边界：多模块变更阻断，SHARED/INTEGRATION 不得伪装并行，diff 记录精确归属', () => {
+  const changed = setup({ changeRequestFiles: ['.workflow-control/change-requests/CR-SCENE.json'] });
+  writeJson(join(changed.root, 'change-requests', 'CR-SCENE.json'), { changeRequestId: 'CR-SCENE', workItemId: 'WI-1', change: '改变场景', reason: '新需求', affectedModules: ['scene'], affectedBaselineHash: HASH, invalidatedApprovalIds: [], newRisk: '场景变化', newAcceptance: ['scene'], userDecisionRequest: '是否接受', status: 'PENDING' });
+  rejects(run('preflight', ['--work-item', changed.workPath, '--implementation-package', changed.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], changed.repo), /CR-SCENE.*ACCEPTED/);
+  const boundary = setup(); const pkg = makePackage(); const shared = pkg.executionUnits.find((unit) => unit.unitId === 'SHARED-1'); shared.parallelMode = 'PARALLEL'; shared.parallelGroup = 'PG-1'; shared.serializationReason = null; writeJson(boundary.packagePath, pkg);
+  rejects(run('preflight', ['--work-item', boundary.workPath, '--implementation-package', boundary.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], boundary.repo), /SHARED.*只能 SERIAL/);
+  const audited = setup(); const { audit } = auditA3(audited); assert.deepEqual({ unit: audit.entries[0].executionUnitId, module: audit.entries[0].moduleId, scene: audit.entries[0].sceneId }, { unit: 'SHARED-1', module: 'core', scene: null });
+});
+
+test('并行批次：缺 READY、遗漏、重复代理/单元、REVIEW 和历史重复均拒绝', () => {
+  let item = prepareParallelFixture(); rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /尚未 READY/);
+  item = prepareParallelFixture('REVIEW'); writeUnitResults(item.f); rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /仅允许 IMPLEMENTING/);
+  item = prepareParallelFixture(); writeUnitResults(item.f); writeJson(item.batchPath, makeParallelBatch(item.f.repo, ['.workflow-control/delegations/m.json'])); rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /至少两个/);
+  item = prepareParallelFixture(); writeUnitResults(item.f); writeJson(join(item.f.root, 'delegations', 's.json'), makeDelegation('module-agent', 'MODULE-1', 'PG-1', 'src/module')); writeJson(item.batchPath, makeParallelBatch(item.f.repo, ['.workflow-control/delegations/m.json', '.workflow-control/delegations/s.json'])); rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /至少两个|重复分配|代理身份重复/);
+  item = prepareParallelFixture(); writeUnitResults(item.f); const history = join(item.f.root, 'delegations', 'batches', 'history.json'); writeJson(history, makeParallelBatch(item.f.repo, ['.workflow-control/delegations/m.json', '.workflow-control/delegations/s.json'], { batchId: 'PB-HISTORY' })); rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /历史并行批次分配/);
+});
+
+test('并行批次不可变：委派内容、哈希、派生数组和历史批次篡改均拒绝', () => {
+  let item = prepareParallelFixture(); writeUnitResults(item.f);
+  const delegationPath = join(item.f.root, 'delegations', 'm.json'); const changed = JSON.parse(readFileSync(delegationPath, 'utf8')); changed.completionBoundary = '批次后变化'; writeJson(delegationPath, changed);
+  rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /委派文件哈希不匹配/);
+
+  item = prepareParallelFixture(); writeUnitResults(item.f); let batch = JSON.parse(readFileSync(item.batchPath, 'utf8')); batch.delegationHashes[batch.delegationFiles[0]] = `sha256:${'b'.repeat(64)}`; batch.fingerprint = parallelBatchFingerprint(batch); writeJson(item.batchPath, batch);
+  rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /委派文件哈希不匹配/);
+
+  item = prepareParallelFixture(); writeUnitResults(item.f); batch = JSON.parse(readFileSync(item.batchPath, 'utf8')); batch.executionUnitIds = ['MODULE-1', 'UNKNOWN']; batch.assignedAgents = ['fake-agent', 'module-agent']; batch.fingerprint = parallelBatchFingerprint(batch); writeJson(item.batchPath, batch);
+  rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /与委派内容不一致/);
+
+  item = prepareParallelFixture(); writeUnitResults(item.f); const historyPath = join(item.f.root, 'delegations', 'batches', 'history.json'); batch = makeParallelBatch(item.f.repo, ['.workflow-control/delegations/m.json', '.workflow-control/delegations/s.json'], { batchId: 'PB-HISTORY' }); batch.assignedAgents[0] = 'tampered-agent'; writeJson(historyPath, batch);
+  rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /历史并行批次损坏/);
+});
+
+test('单元证据严格映射：files 重复或 fileHashes 多余均拒绝', () => {
+  const f = setup(); writeUnitResults(f); const resultPath = join(f.root, 'evidence', 'WI-1', 'units', 'SHARED-1.json');
+  let result = JSON.parse(readFileSync(resultPath, 'utf8')); result.files.push(result.files[0]); writeJson(resultPath, result);
+  rejects(run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', resultPath], f.repo), /files 不得重复/);
+  writeUnitResults(f); result = JSON.parse(readFileSync(resultPath, 'utf8')); result.fileHashes['.workflow-control/evidence/WI-1/units/extra.txt'] = `sha256:${'c'.repeat(64)}`; writeJson(resultPath, result);
+  rejects(run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', resultPath], f.repo), /fileHashes 必须与 files 精确一致/);
+});
+
+test('A3 COMPLETE：completedUnitIds 或当前 Unit Result 缺失时拒绝', () => {
+  const missingId = setup(); const { audit } = auditA3(missingId); const evidencePath = join(missingId.root, 'evidence', 'WI-1', 'complete.json'); const evidence = makeEvidence(missingId, audit); evidence.completedUnitIds.pop(); writeJson(evidencePath, evidence);
+  assert.equal(run('transition', ['--work-item', missingId.workPath, '--to', 'VALIDATING'], missingId.repo).status, 0);
+  rejects(run('transition', ['--work-item', missingId.workPath, '--to', 'PASSED', '--evidence', evidencePath], missingId.repo), /completedUnitIds/);
+  const missingResult = setup(); const audited = auditA3(missingResult); const secondEvidence = join(missingResult.root, 'evidence', 'WI-1', 'complete.json'); writeJson(secondEvidence, makeEvidence(missingResult, audited.audit)); rmSync(join(missingResult.root, 'evidence', 'WI-1', 'units', 'SCENE-1.json'));
+  assert.equal(run('transition', ['--work-item', missingResult.workPath, '--to', 'VALIDATING'], missingResult.repo).status, 0);
+  rejects(run('transition', ['--work-item', missingResult.workPath, '--to', 'PASSED', '--evidence', secondEvidence], missingResult.repo), /缺少当前有效 Unit Result/);
 });
 
 test('lint：当前仓库策略、Schema 和 Markdown 链接一致', () => {

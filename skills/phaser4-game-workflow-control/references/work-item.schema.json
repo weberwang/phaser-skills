@@ -3,10 +3,11 @@
   "$id": "phaser4-work-item.schema.json",
   "title": "工作项",
   "type": "object",
+  "additionalProperties": false,
   "required": [
     "workItemId",
     "projectId",
-    "moduleId",
+    "moduleIds",
     "domain",
     "stageId",
     "globalState",
@@ -69,9 +70,11 @@
       "type": "string",
       "minLength": 1
     },
-    "moduleId": {
-      "type": "string",
-      "minLength": 1
+    "moduleIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
     },
     "domain": {
       "type": "string",

@@ -3,7 +3,8 @@
   "$id": "phaser4-implementation-package.schema.json",
   "title": "实施包",
   "type": "object",
-  "required": ["packageId", "workItemId", "baselineVersion", "baselineHash", "taskAuthorizationId", "approvedRequirements", "approvedArchitecture", "fileOwnership", "allowedPaths", "forbiddenPaths", "expectedAddedFiles", "expectedDeletedFiles", "testScope", "outOfScope", "compatibilityStrategy", "definitionOfDone", "stopConditions"],
+  "additionalProperties": false,
+  "required": ["packageId", "workItemId", "baselineVersion", "baselineHash", "taskAuthorizationId", "approvedRequirements", "approvedArchitecture", "fileOwnership", "executionUnits", "allowedPaths", "forbiddenPaths", "expectedAddedFiles", "expectedDeletedFiles", "testScope", "outOfScope", "compatibilityStrategy", "definitionOfDone", "stopConditions"],
   "properties": {
     "packageId": {"type": "string", "minLength": 1},
     "workItemId": {"type": "string", "minLength": 1},
@@ -17,6 +18,11 @@
       "minProperties": 1,
       "additionalProperties": {"type": "string", "minLength": 1}
     },
+    "executionUnits": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/executionUnit"}
+    },
     "allowedPaths": {"$ref": "#/$defs/nonEmptyStrings"},
     "forbiddenPaths": {"$ref": "#/$defs/strings"},
     "expectedAddedFiles": {"$ref": "#/$defs/strings"},
@@ -28,6 +34,45 @@
     "stopConditions": {"$ref": "#/$defs/nonEmptyStrings"}
   },
   "$defs": {
+    "executionUnit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unitId", "unitType", "scopeId", "moduleId", "sceneId", "owner", "dependsOn", "parallelMode", "parallelGroup", "ownedPaths", "stateOwnership", "acceptanceCommands", "serializationReason"],
+      "properties": {
+        "unitId": {"type": "string", "minLength": 1},
+        "unitType": {"enum": ["MODULE", "SCENE", "SHARED", "INTEGRATION"]},
+        "scopeId": {"type": "string", "minLength": 1},
+        "moduleId": {"type": "string", "minLength": 1},
+        "sceneId": {"type": ["string", "null"], "minLength": 1},
+        "owner": {"type": "string", "minLength": 1},
+        "dependsOn": {"$ref": "#/$defs/strings"},
+        "parallelMode": {"enum": ["PARALLEL", "SERIAL"]},
+        "parallelGroup": {"type": ["string", "null"], "minLength": 1},
+        "ownedPaths": {"$ref": "#/$defs/nonEmptyStrings"},
+        "stateOwnership": {"$ref": "#/$defs/nonEmptyStrings"},
+        "acceptanceCommands": {"$ref": "#/$defs/nonEmptyStrings"},
+        "serializationReason": {"type": ["string", "null"], "minLength": 1}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"unitType": {"const": "SCENE"}}},
+          "then": {"properties": {"sceneId": {"type": "string", "minLength": 1}}},
+          "else": {"properties": {"sceneId": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"unitType": {"enum": ["SHARED", "INTEGRATION"]}}},
+          "then": {"properties": {"parallelMode": {"const": "SERIAL"}, "parallelGroup": {"type": "null"}, "serializationReason": {"type": "string", "minLength": 1}}}
+        },
+        {
+          "if": {"properties": {"parallelMode": {"const": "PARALLEL"}}},
+          "then": {"properties": {"parallelGroup": {"type": "string", "minLength": 1}, "serializationReason": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"parallelMode": {"const": "SERIAL"}}},
+          "then": {"properties": {"parallelGroup": {"type": "null"}, "serializationReason": {"type": "string", "minLength": 1}}}
+        }
+      ]
+    },
     "strings": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
     "nonEmptyStrings": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
   }
