@@ -6,7 +6,7 @@
 世界空间关卡、Tilemap、可交互物、玩法环境和影响遮挡判断的场景层，使用
 `asset-production-routes.md` 的场景/Tilemap 或世界/玩法环境路线。
 
-背景在 V1/V2 与关键对象联合专业验证。已有明确需求、参考或冻结基线且结构/布局/交互不变时记录 `AUTO`；新方向、裁切焦点或高返工取舍只请求一次选择并记录 `USER_DECISION`。后续绑定当前决策记录。
+背景在 V1/V2 与关键对象联合专业验证。普通背景在已有明确需求或冻结基线且结构、布局、交互不变时记录 `AUTO`；新方向、裁切焦点或高返工取舍只请求一次选择并记录 `USER_DECISION`。Work Item 指定效果图忠实还原时受[视觉还原](visual-reconstruction.md)约束，参考中的背景焦点、构图和可见裁切是冻结视觉事实；只有不存在可见偏差或实质取舍且处于项目预定义容差内才可 `AUTO`，任何可见裁切、焦点或构图偏差必须形成精确 `USER_DECISION` 并绑定已批准例外。后续绑定当前决策记录。
 响应式合同的详细字段和门禁以 [`phaser4-game-ui-layout` 布局合同](../../phaser4-game-ui-layout/references/layout-contract.md) 为准。
 
 ## 生产与适配
