@@ -30,7 +30,7 @@ description: Phaser 4 游戏的领域编排角色。用于在全局控制面已�
 
 ## 视觉与 UI
 
-V0 分流，V1 契约/低保真，V2 方向/高保真，V3 生产规划，V4 正式资源，V5 运行态集成。普通资产在 schema 1.3 声明还原 `not-applicable`。效果图还原冻结后、V3 前完成合同回对与 coverage，生命周期为 `v3-ready`；V3/V4 可暂无 fidelity case，只有 V5 验证完成才标记 `v5-complete` 并要求全部通过。
+V0 分流，V1 契约/低保真，V2 方向/高保真，V3 生产规划，V4 正式资源，V5 运行态集成。普通资产在 schema 1.4 声明还原 `not-applicable`。效果图还原冻结后、V3 前完成合同回对与 coverage，生命周期为 `v3-ready`；先依据 ownership/F2 事实在冻结效果图上为每个 region 写入稳定 `annotation_number` 与 `implementation_plan`，运行 `generate_effect_image_annotation.mjs` 生成内嵌原图的 annotated SVG 并展示给用户，明确本次生成、复用既有资源和程序实现。只有 `bitmap-decomposition` 的 `generate-now` 区域必须先生成绑定冻结目标 SHA/region ID/区域定义 SHA 的编号提案，在 confirmation 中绑定 proposal/decision 文件及 SHA、编号 SVG/版本/SHA、decision_id 和实际消息身份后等待一次精确 USER_DECISION；复用和程序实现区域不触发位图确认但必须可见。`reuse-existing` 必须使用不可变 `asset-reuse-snapshot/1.0`，额外精确绑定 `source_file`、`source_manifest_sha256`、`source_sha256`、`compatibility_evidence_sha256`，并由文件检查确认快照资源为 `accepted`；冻结原图须为与目标画布同尺寸的完整合法 PNG。开始任何拆解生产前必须运行带 `--check-files --project-root .` 的校验且结构和文件证据均通过，确认前不得裁切、抠图、分层、AI 分割/补全或生产派生位图；确认只授权拆解范围，不改变玩法、布局或视觉事实。V3/V4 可暂无 fidelity case，只有 V5 验证完成才标记 `v5-complete` 并要求全部通过。owner_type 是合同/F2 专业事实，验证器不从像素推断。
 
 ## 完成
 

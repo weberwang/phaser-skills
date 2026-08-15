@@ -7,7 +7,7 @@
 - V0 分流原子资源、组件/资源集、场景/整套 UI/视觉系统/参考还原。
 - V1 建立玩法视觉契约、必要低保真、布局合同和早期预算；忠实还原在 V1 前冻结参考身份、目标视口/状态与对比条件，并按[视觉还原](../../phaser4-game-asset-integration/references/visual-reconstruction.md)建立逐状态、逐区域忠实度矩阵。
 - V2 建立并冻结视觉方向、高保真和动态样片；忠实还原仅在候选不改变冻结视觉事实且处于项目预定义容差内时记录 `AUTO`，可见偏差必须绑定一次精确 `USER_DECISION` 和已批准例外。
-- 普通资产在 schema 1.3 使用 `not-applicable`。效果图 V2 冻结后、V3 前通过合同回对与 coverage 并标记 `v3-ready`；V3/V4 可暂无 fidelity case，V5 完成态要求非空且全部通过。
+- 普通资产在 schema 1.4 使用 `not-applicable`。效果图 V2 冻结后、V3 前通过合同回对与 coverage 并标记 `v3-ready`；coverage 每个区域先登记 owner、`annotation_number` 和 `implementation_plan`，再在冻结原图上生成内嵌原图标注 SVG，展示 `generate-now`、`reuse-existing`、`runtime-program` 三类实现。V3/V4 可暂无 fidelity case，V5 完成态要求非空且全部通过。固定区域若为 `bitmap-decomposition`，只有 `generate-now` 区域必须先提交绑定冻结目标 SHA/region ID/区域定义 SHA 的编号拆解提案，记录 proposal/decision 文件及 SHA、编号 SVG 和决定 ID 后等待 USER_DECISION；决定还绑定 `decision_source=user-message`、用户消息 SHA、thread/work item 与时间。复用和程序实现区域不触发位图确认，但必须在同一标注图中可见。`reuse-existing` 必须使用不可变 `asset-reuse-snapshot/1.0` 并记录、文件校验 `source_file`、`source_manifest_sha256`、`source_sha256`、`compatibility_evidence_sha256`；冻结原图必须是与目标画布同尺寸的完整合法 PNG。开始任何拆解生产前必须运行带 `--check-files --project-root .` 的校验且结构和文件证据均通过，确认前不得裁切、抠图、分层、AI 分割/补全或生产派生位图；owner_type 是合同/F2 专业事实，验证器不从像素推断。
 - V4 生产正式资源并由独立美术完成资源与跨资源 F2。
 - V5 结构化集成、动态玩法视觉验证、响应式证据和低保真清理；视觉 `USER_DECISION` 不授权 Scene 或玩法代码操作。
 

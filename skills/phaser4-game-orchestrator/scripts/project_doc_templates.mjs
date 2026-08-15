@@ -35,13 +35,13 @@ templates.core["TDD.md"] += "\n### 模块与场景并行实施计划\n\n模块�
 
 templates.core["TDD.md"] += "\n## G1 公共基础与场景实施序列\n\n公共代码或公共正式资源仅限至少两个已确认场景稳定复用，或运行必需。Boot/Preload 只提供最小启动加载；禁止无边界 common、utils 和公共素材库。\n\n| 顺序 | 类型 common/gameplay/supporting/cross-scene | 场景/能力 ID | 依赖 | 公开入口 | 资源归属 | 负责人 |\n| --- | --- | --- | --- | --- | --- | --- |\n\n全部 gameplay 必须排在 supporting 前；跨场景功能在全部场景闭环后关闭。场景之间不得直接访问其他 Scene 内部状态。\n\n## 场景分项完成清单\n\n字段只记录领域完成事实。仅当功能、V3/V4 资源、V5 接入、占位清理、联合验证全部关闭时，场景才完成；灰盒或 fallback 仍存在时不得关闭。\n\n| 场景 ID | functional_status | resource_status（V3/V4 accepted） | integration_status（V5） | placeholder_cleanup_status | verification_status（功能/视觉/响应式/性能） | 当前候选证据 |\n| --- | --- | --- | --- | --- | --- | --- |\n";
 
-// 资源清单 1.3 将冻结目标、合同回对、覆盖审计和不可变 fidelity case 收敛到单一机器权威。
+// 资源清单 1.4 将冻结目标、合同回对、覆盖审计和不可变 fidelity case 收敛到单一机器权威，并锁定位图拆解确认。
 templates.optional.assets["asset-license-register.md"] = templates.optional.assets["asset-license-register.md"]
-  .replace("schema 1.1", "schema 1.3")
+  .replace("schema 1.1", "schema 1.4")
   .replace("对 `docs/visual-design.md` 计算", "对 `docs/visual-baseline.md` 计算");
-templates.optional.assets["asset-license-register.md"] += "\n## 场景归属与效果图覆盖\n\n每项资源必须声明具体 scene_id，或声明 shared: true 并列出至少两个稳定复用场景；仅运行必需资源可声明 shared_reason: runtime-required。效果图覆盖、编号确认和 fidelity case 只写入 visual-assets.json 1.3，不在本文复制第二份清单。\n";
+templates.optional.assets["asset-license-register.md"] += "\n## 场景归属与效果图覆盖\n\n每项资源必须声明具体 scene_id，或声明 shared: true 并列出至少两个稳定复用场景；仅运行必需资源可声明 shared_reason: runtime-required。效果图覆盖、annotation_number、实现分类、编号确认和 fidelity case 只写入 visual-assets.json 1.4，不在本文复制第二份清单。先在冻结效果图上完成 ownership/F2 分类与框选编号标注，向用户展示并等待 bitmap-decomposition 的精确确认；复用既有资源和程序实现区域也必须在同一标注图中可见。`reuse-existing` 必须使用不可变 `asset-reuse-snapshot/1.0`，精确身份至少包含 `source_file`、`source_manifest_sha256`、`source_sha256`、`compatibility_evidence_sha256`，并由文件检查确认快照 accepted 资源、基线/许可/归属和证据完整。冻结原图必须是与目标画布同尺寸的完整合法 PNG。提案/决定记录、区域定义 SHA 和默认内嵌原图 SVG 必须在生产前通过带 `--check-files --project-root .` 的机器校验。\n";
 templates.optional.assets["visual-assets.json"] = `${JSON.stringify({
-  schema_version: "1.3",
+  schema_version: "1.4",
   visual_baseline: { id: null, version: null, style_fingerprint: null, document: "docs/visual-baseline.md", status: "draft", anchor_evidence: [] },
   effect_image_reconstruction: { applicability: "not-applicable", lifecycle: "not-applicable" },
   budgets: { max_texture_size: null, texture_memory_mb: null, package_size_mb: null, max_atlases: null, max_frames: null, animation_sample_fps: null, max_overdraw: null, max_draw_calls: null },
