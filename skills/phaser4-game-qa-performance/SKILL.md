@@ -17,13 +17,13 @@ description: Phaser 4 移动端 2D 游戏的测试与性能角色。用于功能
 2. 启动服务前检查同一项目、服务类型、模式、端口和健康状态；存在健康实例时复用，不终止归属不明的进程。
 3. 视觉任务核对 V0 分流及 V1/V2 条件门。Work Item 指定效果图为还原目标时，QA 按[视觉还原](../phaser4-game-asset-integration/references/visual-reconstruction.md)核对冻结视觉目标、对比条件、逐状态/逐区域忠实度矩阵和已批准例外；容差内且不改变视觉事实的适配可 `AUTO`，任何可见偏差或实质取舍只请求一次精确确认。专业修复不自动授权改变冻结视觉事实。
 4. 适用 V1 时检查视觉目标、信息层级、草图/灰盒、交互、布局、失败恢复与预算。忠实还原只有在没有可见偏差或实质取舍、且工程适配处于项目预定义容差内时记录 `AUTO` 决策依据并进入 V2；否则请求一次精确选择，记录 `USER_DECISION` 与已批准例外。原子资源绑定当前 `AUTO` 或 `USER_DECISION` 记录。
-5. 适用 V2 以及所有 V5 必须执行动态可玩片段或可复现交互轨迹，验证识别、预警、反馈、遮挡和小屏可读性。QA 核对 V2a/V2b 与独立美术 F2；严格复刻仅免三方向探索，不免动态样片、独立审查、同条件证据或忠实度矩阵。仅有静态图、像素接近和资源齐全不能证明游戏性或忠实还原。
+5. 普通资产/布局允许还原 `not-applicable`。效果图在 `v3-ready` 核对目标、合同回对、带 bounds 的 coverage 和条件编号证据；V3/V4 不强求尚未产生的 fidelity。只有 V5 `complete/verified` 才要求运行测量及全部 fidelity/parity case 通过；任一身份变化拒绝旧证据。
 6. V4 核对机器清单、唯一 ID/纹理键/输出路径、可编辑来源或生成记录、授权、运行时输出、Phaser 与玩法视觉证据，并只验证 V1 已定义或原子资源已引用且在 V3 写入的预算。
 7. 同条件截图记录视口、设备像素比、状态、轨迹、语言、随机种子、ROI、实施前定义的项目容差、动态时间采样/稳定帧与遮罩理由。冻结目标视口/状态以完整 viewport 为主证据，ROI、并排、叠加或像素差只作补充；其他视口按布局合同验证视觉意图和关系不变量，生成式、动画和 VFX 不得只靠像素差。未解释或超容差差异、缺参考/候选同条件证据、缺已批准例外或仅凭主观结论一律判定未通过。
-8. UI 读取 [`phaser4-game-ui-layout`](../phaser4-game-ui-layout/SKILL.md) 合同，并按 [响应式视觉验证](references/responsive-visual-validation.md) 在基准、最窄、最宽视口、断点邻值、同宽窄高度、竖/横屏、默认/大字号、默认/最长文案和零/非零安全区采集稳定帧。每个视口记录 viewportRect、canvasRect、逻辑尺寸、四边空隙、背景覆盖、安全区、关键 UI 边界、CSS/物理缩放和 resize 前后变化，验证动态文本、成员显隐、关键动作状态、滚动所有权和 resize/方向重排。完整 viewport 缺失只能标记“未验证”；普通测试断言关系不变量，Golden 只在冻结视口、DPR、语言、状态和稳定帧验证精确视觉。
+8. UI 读取 [`phaser4-game-ui-layout`](../phaser4-game-ui-layout/SKILL.md) 合同，并按 [响应式视觉验证](references/responsive-visual-validation.md) 在基准、最窄、最宽视口、断点邻值、同宽窄高度、竖/横屏、默认/大字号、默认/最长文案和零/非零安全区采集稳定帧。每个视口记录 viewportRect、canvasRect、逻辑尺寸、四边空隙、背景覆盖、安全区、关键 UI 边界、CSS/物理缩放和 resize 前后变化，验证动态文本、成员显隐、关键动作状态、滚动所有权和 resize/方向重排。正式报告必须绑定候选 SHA、scene/state、布局合同版本和视觉基线版本；效果图还原还绑定目标 SHA，fidelity case 引用该报告。完整 viewport 缺失只能标记“未验证”；普通测试断言关系不变量，Golden 只在冻结视口、DPR、语言、状态和稳定帧验证精确视觉。
 9. V5 检查结构化集成、玩法所有权、低保真零引用、性能峰值和功能契约，并提交动态证据供 F3。修订候选重跑受影响 F0-F3；仅 A4-A6 重跑 F4。模块边界变化仅有实质取舍时进入 grilling。
 10. 共享基础完成后验证代表性 Vite/Phaser 启动、Boot/首场景、资源加载和适用插件；关键玩法流完成后在主目标平台烟测核心循环与失败恢复；只有最终集成/G3/release 执行完整渠道/平台矩阵。局部任务证据不得宣称全平台通过，不得自动发起真机验收。
 
 没有可复现证据时标记“未验证”。V1/V2 条件门必须绑定当前候选；沉默、继续工作或旧决定不能替代所需的 `USER_DECISION`，用户选择记录也不能跳过 V2a/V2b 与独立美术 F2。FIT 只证明等比不溢出，不证明满屏或响应式重排；禁止用构建成功、元素存在或无控制台错误假通过。
 
-可复用自动化脚本位于 `scripts/responsive-visual-validation.mjs`，纯计算测试位于 `scripts/responsive-visual-validation.test.mjs`。脚本通过 Node ESM 动态导入 Playwright，在同一页面调整视口、不刷新页面，输出完整页面截图和结构化 JSON。
+可复用自动化脚本位于 `scripts/responsive-visual-validation.mjs`，纯计算测试位于 `scripts/responsive-visual-validation.test.mjs`。脚本通过 Node ESM 动态导入 Playwright；相同 DPR 在同一页面调整视口，不同 DPR 使用真实独立 context，且跨 context 记录不得冒充 resize 证据。报告输出完整页面截图、运行时实测矩阵和结构化 JSON。

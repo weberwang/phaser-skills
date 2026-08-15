@@ -35,10 +35,25 @@ templates.core["TDD.md"] += "\n### 模块与场景并行实施计划\n\n模块�
 
 templates.core["TDD.md"] += "\n## G1 公共基础与场景实施序列\n\n公共代码或公共正式资源仅限至少两个已确认场景稳定复用，或运行必需。Boot/Preload 只提供最小启动加载；禁止无边界 common、utils 和公共素材库。\n\n| 顺序 | 类型 common/gameplay/supporting/cross-scene | 场景/能力 ID | 依赖 | 公开入口 | 资源归属 | 负责人 |\n| --- | --- | --- | --- | --- | --- | --- |\n\n全部 gameplay 必须排在 supporting 前；跨场景功能在全部场景闭环后关闭。场景之间不得直接访问其他 Scene 内部状态。\n\n## 场景分项完成清单\n\n字段只记录领域完成事实。仅当功能、V3/V4 资源、V5 接入、占位清理、联合验证全部关闭时，场景才完成；灰盒或 fallback 仍存在时不得关闭。\n\n| 场景 ID | functional_status | resource_status（V3/V4 accepted） | integration_status（V5） | placeholder_cleanup_status | verification_status（功能/视觉/响应式/性能） | 当前候选证据 |\n| --- | --- | --- | --- | --- | --- | --- |\n";
 
-// 资源清单 1.2 要求每项资源绑定 scene_id，或按受控 shared 规则声明复用范围。
-templates.optional.assets["asset-license-register.md"] = templates.optional.assets["asset-license-register.md"].replace("schema 1.1", "schema 1.2");
-templates.optional.assets["asset-license-register.md"] += "\n## 场景归属\n\n每项资源必须声明具体 scene_id，或声明 shared: true 并列出至少两个稳定复用场景；仅运行必需资源可声明 shared_reason: runtime-required。\n";
-templates.optional.assets["visual-assets.json"] = templates.optional.assets["visual-assets.json"].replace('"schema_version": "1.1"', '"schema_version": "1.2"');
+// 资源清单 1.3 将冻结目标、合同回对、覆盖审计和不可变 fidelity case 收敛到单一机器权威。
+templates.optional.assets["asset-license-register.md"] = templates.optional.assets["asset-license-register.md"]
+  .replace("schema 1.1", "schema 1.3")
+  .replace("对 `docs/visual-design.md` 计算", "对 `docs/visual-baseline.md` 计算");
+templates.optional.assets["asset-license-register.md"] += "\n## 场景归属与效果图覆盖\n\n每项资源必须声明具体 scene_id，或声明 shared: true 并列出至少两个稳定复用场景；仅运行必需资源可声明 shared_reason: runtime-required。效果图覆盖、编号确认和 fidelity case 只写入 visual-assets.json 1.3，不在本文复制第二份清单。\n";
+templates.optional.assets["visual-assets.json"] = `${JSON.stringify({
+  schema_version: "1.3",
+  visual_baseline: { id: null, version: null, style_fingerprint: null, document: "docs/visual-baseline.md", status: "draft", anchor_evidence: [] },
+  effect_image_reconstruction: { applicability: "not-applicable", lifecycle: "not-applicable" },
+  budgets: { max_texture_size: null, texture_memory_mb: null, package_size_mb: null, max_atlases: null, max_frames: null, animation_sample_fps: null, max_overdraw: null, max_draw_calls: null },
+  assets: [],
+}, null, 2)}\n`;
+
+// 冻结基线正文与可追加阶段证据分离，避免正常留痕改变风格指纹。
+templates.core["visual-baseline.md"] = "# 冻结全局视觉基线\n\n本文件只保存当前冻结版本的全局视觉规则，不追加 V2b、V4、V5 证据。冻结后按完整文件字节计算 SHA-256；规则变化必须生成新版本和新哈希，并使受影响证据失效。\n\n## 基线身份\n\n- 基线 ID：\n- 版本：\n- 状态：draft\n- 冻结日期：\n- 负责人：\n- 独立美术审阅：\n\n## 冻结规则\n\n| 系统 | 不变量 | 允许变量 | 禁止项 |\n| --- | --- | --- | --- |\n";
+templates.core["visual-design.md"] = templates.core["visual-design.md"]
+  .replace("本文件是全局视觉控制的单一事实源。V1 建立候选，V2a 冻结；冻结后不得静默改写。", "本文件是可追加的视觉方向、阶段证据与冻结基线索引；不可变规则正文位于 docs/visual-baseline.md。")
+  .replace("风格指纹不回填本文件。冻结后对本文件完整字节计算 SHA-256，并仅在 `visual-assets.json` 记录 `sha256:<64 位小写十六进制>`；正式文件检查会重新计算并拒绝静默修改。", "风格指纹只计算 docs/visual-baseline.md 完整字节；本文件追加 V2b/V4/V5 留痕不会改变基线哈希。");
+templates.core["visual-design.md"] += "\n## 冻结基线索引与阶段证据\n\n冻结规则正文位于 `docs/visual-baseline.md`，其 SHA-256 写入 `visual-assets.json`。本文件仅追加方向探索、V2b/V4/V5 证据和基线版本索引，不得把阶段留痕写回已哈希基线正文。\n";
 
 export const CORE_TEMPLATES = templates.core;
 export const OPTIONAL_TEMPLATES = templates.optional;

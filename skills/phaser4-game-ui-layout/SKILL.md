@@ -20,10 +20,10 @@ UI 设计与实现优先用符合全局视觉基线且含义清晰、熟悉的�
 ## 核心流程
 
 1. 读取项目的 GDD/TDD、当前候选、总控审核漏斗和适用视觉阶段；确定稳定 UI ID、坐标空间、参照物、状态与平台输入。
-2. 复制 [合同模板](assets/ui-layout-contract-template.yaml)，按 [布局合同](references/layout-contract.md) 补齐目标视口、区域、锚点、尺寸、断点、安全区、滚动、动态内容、覆盖回退和证据矩阵。
+2. 复制 schema 1.1.0 [合同模板](assets/ui-layout-contract-template.yaml)。普通布局使用 `not-applicable`；冻结视觉目标先用 `frozen-target/specified` 定义关键对齐合同，允许尚无运行测量/parity；实际验收后改为 `verified`，要求运行测量、测试通过和全部 parity 通过。
 3. 用 [Phaser 适配器](references/phaser-adapter.md) 设计唯一布局入口：把视口、安全区、方向、内容尺寸和状态作为输入，分离资源 origin、布局停靠点和动画偏移，保证重排幂等。
-4. 运行 `node scripts/validate_ui_layout_contract.mjs <contract>` 和对应 `node:test` 测试。格式或关系错误在候选形成前修复；绝对定位、固定尺寸、固定/悬浮元素在合同依据完整时只标记 `specialized_review`。
-5. 按 [证据矩阵](references/evidence-matrix.md) 生成同一候选的边界、方向、字号、语言、安全区、动态状态和窄高度证据。
+4. specified 阶段运行结构检查 `node scripts/validate_ui_layout_contract.mjs <contract>`；verified 正式验收必须运行 `node scripts/validate_ui_layout_contract.mjs <contract> --check-files --project-root .`，复算冻结原图 SHA 并检查目标/运行/parity 证据文件。
+5. 按 [证据矩阵](references/evidence-matrix.md) 生成同一目标 SHA 与代码候选 SHA 的边界、方向、字号、语言、安全区、动态状态和窄高度证据；关键 UI/HUD 记录稳定 element/reference ID、双轴关系、目标/运行测量、实际测试 ID/状态、视觉证据和项目定义容差。
 6. 按 [工作流门禁](references/workflow-gates.md) 接入 V0–V5、F0–F4 和 G0–G3；布局结构或参照关系变化退回 V1，F3 只接受绑定当前候选的工程证据。
 
 ## 资源导航

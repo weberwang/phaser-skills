@@ -29,10 +29,22 @@
 
 ## 契约输入
 
-脚本接受 JSON 文件或内联 JSON。建议使用下列最小结构；额外字段由项目自行扩展：
+脚本接受原始 UI 布局合同 JSON 文件或内联 JSON，并从同一工件读取响应式测量配置。建议使用下列最小结构；额外字段由项目自行扩展：
 
 ```json
 {
+  "schema_version": "1.1.0",
+  "contract_version": "1.1.0",
+  "scope": {
+    "scenes": ["MainScene"],
+    "states": ["default"],
+    "bindings": {
+      "code_candidate": "sha256:<64 位小写十六进制>",
+      "visual_baseline": "1.0.0"
+    }
+  },
+  "fidelity": { "applicability": "not-applicable", "status": "not-applicable" },
+  "frozen_visual_target": null,
   "applicability": "scene",
   "viewport": {
     "mode": "full-viewport",
@@ -120,6 +132,12 @@ Canvas 为 `[0,80,360,640]` 时必须失败（上/下空隙 80），即使底色
 DPR、状态、轨迹、语言、稳定帧和 resize 记录关联。缺任一完整 viewport 证据只能写
 `unverified`，不能写“通过”。
 
+当契约要求 Hook 时，快照必须带有效版本、至少一个正尺寸 `keyUiRects` 和完整页面截图；
+`safeArea` 只有在包含正尺寸 `rect` 时才算存在。矩阵通过不仅比较名称，还只使用运行时
+`viewportRect` 和 `scaling.physical.dpr` 逐项比较实际 width、height 和 DPR；命令行声明值
+不能覆盖实测值，任一不符均失败。`resize.required` 还必须在同一 page/context 中观测到
+viewport 变化以及 Canvas 或关键 UI 的布局变化；刷新、跨 context 或只有声明变化均失败。
+
 ## 根因分类
 
 报告使用以下互斥优先级；多因时标注主因/次因：
@@ -139,13 +157,30 @@ node skills/phaser4-game-qa-performance/scripts/responsive-visual-validation.mjs
   --url http://localhost:5173 `
   --viewports .\qa-viewports.json `
   --canvas-selector canvas `
-  --contract .\responsive-contract.json `
+  --contract .\ui-layout-contract.json `
+  --identity .\responsive-evidence-identity.json `
   --output .\artifacts\responsive
 ```
 
 `--viewports` 可传 JSON 文件、内联 JSON 数组或逗号分隔的 `宽x高`；`--contract` 可传
-JSON 文件或内联 JSON；`--output` 写入每个视口的完整页面 PNG 和 `responsive-report.json`。
-脚本只导航一次，随后在同一页面调用 `setViewportSize` 完成动态轨迹；Playwright 未
+JSON 文件或内联 JSON；`--identity` 必须传 JSON 文件或内联 JSON，至少包含
+`candidate_sha256`、`scene_id`、`state_id`、`layout_contract_version` 和
+`visual_baseline_version`；效果图还原在契约声明
+`effect_image_reconstruction.applicability: effect-image`（或身份声明
+`reconstruction_applicability: effect-image`）并另含 `target_sha256`。SHA 使用
+`sha256:<64 位小写十六进制>`。`--output` 写入每个视口的完整页面 PNG 和
+`responsive-report.json`，报告原样写入并校验该不可变身份；同时与输入的原始 UI 合同
+交叉核对 scope scene/state、根合同版本、代码候选、视觉基线以及适用的冻结目标 SHA。
+身份只从原始 schema 1.1.0 UI 合同的上述权威字段派生，并直接复用 UI layout validator
+完成全部根字段、结构与关系校验；只有完整合同校验通过才建立身份绑定。调用方自带的
+`identityContract`、少量仿造根字段或其他摘要字段不受信任，也不能用来为报告自证。
+普通 `not-applicable` 合同的 `visual_baseline_version` 与其可用的
+`scope.bindings.visual_baseline` 直接绑定；冻结目标合同则与
+`frozen_visual_target.visual_baseline_version` 绑定。
+缺失、漂移或无效身份只能形成决策缺口。布局 parity/fidelity case 必须引用这份报告，
+身份变化后旧报告失效。相同 DPR 在同一 context/page 调用 `setViewportSize` 完成动态轨迹；
+混合 DPR 为保证真实设备像素比而创建独立 context/page，并明确标记边界，绝不把跨 context
+记录计为同页 resize。Playwright 未
 安装时只报告安装/运行缺口，不改变纯计算结论。
 
 纯计算函数导出自同一脚本，可用 `node --test` 在无浏览器环境运行代表性测试：

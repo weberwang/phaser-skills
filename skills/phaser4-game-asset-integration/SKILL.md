@@ -16,10 +16,10 @@ description: 为 Phaser 4 游戏规划、生产、登记、验证并集成 UI、
 1. 读取项目配置、GDD、visual-design、TDD、控制面和资源登记；执行 [V0-V5 视觉生产管线](references/visual-production-pipeline.md)。
 2. V0 先判断任务属于原子资源、组件/资源集，还是场景/整套 UI/视觉系统/参考还原。原子资源只有在结构、布局、交互和视口行为不变，且已有适用视觉契约、`AUTO` 或 `USER_DECISION` 记录、视觉可交付结论与预算基线时才能跳过 V1/V2。
 3. V1 建立玩法视觉契约、必要低保真/灰盒与预算，V2 执行方向基准、整体视觉审阅、动态样片和独立美术 F2。Work Item 指定效果图为还原目标时按[视觉还原](references/visual-reconstruction.md)启用忠实还原模式，将参考身份、对比条件和可观察视觉事实冻结为视觉目标；容差内且不改变视觉事实的适配可 `AUTO`，任何可见偏差或实质取舍必须记录一次精确 `USER_DECISION` 和已批准例外。不得以专业修复或提升游戏感为由自动改变冻结视觉目标。
-4. V3 按 [资产生产路线](references/asset-production-routes.md) 选择可编辑源文件、运行时输出和机器清单，每个资源绑定当前基线 ID、版本、风格指纹、锚点，以及具体 `scene_id` 或合规 `shared` 归属。只有选择 AI 合成栅格路线时才读取 [效果图拆分](references/effect-image-splitting.md)。
-5. V4 生产正式资源并逐项验证来源、授权、预算、基线绑定、跨资源联系表、同屏一致性、Phaser 加载和玩法视觉证据。运行 `node scripts/validate_visual_manifest.mjs docs/visual-assets.json` 检查清单。
+4. schema 1.3 `visual-assets.json` 先声明 `effect_image_reconstruction`：普通资产为 `not-applicable`，不要求还原工件；效果图还原为 `effect-image`。后者冻结目标后、进入 V3 前以 `v3-ready` 完成合同回对和 coverage，V3/V4 可暂无 fidelity case；只有 V5 验证完成才改为 `v5-complete` 并要求全部 case 通过。V3 再按 [资产生产路线](references/asset-production-routes.md) 选择路线。
+5. V3 可先运行结构检查 `node scripts/validate_visual_manifest.mjs docs/visual-assets.json`。V4/V5 正式验收必须运行 `node scripts/validate_visual_manifest.mjs docs/visual-assets.json --check-files --project-root .`，逐项验证真实文件、授权、预算、冻结基线、coverage 和双方证据。
 6. 按 G1 场景序列先完成全部 gameplay 场景的 V3-V5 闭环，再完成 supporting 场景；公共正式资源只允许至少两个场景稳定复用或运行必需。只将 V4 `accepted` 资源接入 V5，并在当前场景联合验收前清除灰盒、占位和 fallback。
-7. V5 与玩法协作完成结构化集成、运行态全局一致性、动态玩法视觉验收和低保真清理。玩法独占规则、状态、碰撞和交互代码；美术可维护纯表现资源配置、布局/表现预制数据和视觉集成调整，但不得改变玩法规则、碰撞语义或状态所有权。忠实还原在冻结目标视口/状态逐项更新忠实度矩阵，在其他视口验证布局关系不变量；V4/V5 由非作者完成 F2 独立领域质量审查，F3 只验证当前候选工程证据，完整 viewport 为主证据，Canvas ROI 只能补充。
+7. V1 灰盒、V2 可玩视觉切片和 V5 正式场景沿用同一生产 Scene 入口/骨架逐步重构；禁止一次性截图 Scene、整屏铺图、隐藏覆盖层和绝对叠层凑像素。V5 与玩法协作完成结构化集成、动态验收和低保真清理，fidelity case 任一目标、代码、布局或基线身份变化都必须失效重采。
 
 ## 条件参考
 

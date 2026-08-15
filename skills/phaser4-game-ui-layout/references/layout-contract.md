@@ -4,7 +4,7 @@
 
 ## 合同身份与范围
 
-根对象必须包含 `schema_version`、`contract_id`、`contract_version`、`scope`、`targets`、`coordinate_spaces`、`regions`、`content`、`platform_insets`、`scrolling`、`dynamic_content`、`overlay_rules`、`breakpoints`、`invariants` 和 `evidence_matrix`。`scope` 必须声明非空 `owner`、`reviewer`、场景、状态、稳定 UI ID 及 `bindings.gdd/tdd/low_fidelity_candidate/visual_baseline/code_candidate`；`ui_ids` 与 `regions[].id` 必须完全相等。修订合同必须产生新版本并重新绑定候选；代码候选使用 Git 候选标识，不伪装为工件哈希。
+schema 1.1.0 根对象包含 `fidelity`、`frozen_visual_target`、`critical_alignments` 和 `parity_cases`。普通布局使用 `not-applicable/not-applicable`，后三者为 null/空数组；冻结目标使用 `specified` 或 `verified`。冻结目标还记录 `visual_baseline_version`。verified parity 的 scene/state 必须属于 scope，合同版本和视觉基线版本必须分别等于根合同与冻结目标；`actual_test_id` 必须等于 `planned_test_id`。
 
 `regions` 是声明式布局节点。每个节点至少包含：
 
@@ -24,20 +24,26 @@
 
 ## 断点与结构
 
-每个断点必须有非空 `when` 触发条件和 `structure_changes`；条件键和值、结构变化项必须是非空字符串或有效数值。条件可以基于宽度、高度、宽高比、方向、安全区或内容容量。必须明确变化的区域/列/导航/操作区，以及仍保持的关系。每个断点必须进入证据矩阵的临界三点：`breakpoint - 1`、`breakpoint`、`breakpoint + 1`。
+普通静态布局允许 `breakpoints: []`；一旦声明断点，每个断点必须有非空 `when` 触发条件和 `structure_changes`。条件键和值、结构变化项必须是非空字符串或有效数值。条件可以基于宽度、高度、宽高比、方向、安全区或内容容量。必须明确变化的区域/列/导航/操作区，以及仍保持的关系。每个已声明断点必须进入证据矩阵的临界三点：`breakpoint - 1`、`breakpoint`、`breakpoint + 1`。
 
 ## 安全区、滚动与覆盖
 
 `platform_insets` 记录系统栏、圆角、刘海、Home Indicator、键盘、折叠和分屏输入，并覆盖零安全区与非零安全区。固定、悬浮或停靠元素在 `overlay_rules` 中记录遮挡检测、回退和输入优先级；区域的 `layout_participation` 为 `fixed-overlay`、`floating-overlay` 或 `docked-overlay` 时，必须存在相同元素和模式的覆盖规则。
 
-`scrolling.axes` 为每个轴声明唯一且非空的 `axis`、`owner_id`、内容区域、边界和手势优先级；禁止多个所有者争抢同一轴。`narrow_height_degradation` 必须声明 `trigger`、`strategy` 和 `fallback`，说明窄高度时折叠、重排或滚动的条件及关键动作可达性。
+无滚动的静态 HUD 允许 `scrolling.axes: []`；一旦声明滚动轴，每个轴必须有唯一且非空的 `axis`、`owner_id`、内容区域、边界和手势优先级，禁止多个所有者争抢同一轴。`narrow_height_degradation` 必须声明 `trigger`、`strategy` 和 `fallback`，说明窄高度时折叠、重排或滚动的条件及关键动作可达性。
 
 ## 动态内容与文字
 
-`dynamic_content.localization` 记录默认语言、最长文案、换行、增长和禁止截断策略；`text_scaling` 记录默认和最大字号及 `strategy`；`key_actions` 的 ID 必须引用区域，状态至少包含 `default`、`disabled`、`submitting` 和 `completed`，并声明 `text_truncation`。关键动作不能使用不可恢复的单行省略。`reflow_events` 至少覆盖 `text-change`、`state-change`、`resize` 和 `safe-area-change`；合同还应覆盖动态数字、成员数量、创建/隐藏/销毁后的重排，以及按下、错误等扩展状态。
+`dynamic_content.localization` 记录默认语言、最长文案、换行、增长和禁止截断策略；`text_scaling` 记录默认和最大字号及 `strategy`。无关键动作的静态 HUD 允许 `key_actions: []`；一旦声明关键动作，其 ID 必须引用区域，状态至少包含 `default`、`disabled`、`submitting` 和 `completed`，并声明 `text_truncation`。关键动作不能使用不可恢复的单行省略。`reflow_events` 至少覆盖 `text-change`、`state-change`、`resize` 和 `safe-area-change`；合同还应覆盖动态数字、成员数量、创建/隐藏/销毁后的重排，以及按下、错误等扩展状态。
 
 可见文字应承担图标无法可靠表达的语义，不与含义明显的图标永久并列重复说明。图标存在歧义、首次学习成本高、操作高风险或不可逆，或状态与数值需要精确表达时，应保留可见文字；所有仅图标控件仍须提供无障碍可访问名称，该名称可不进入可见布局。证据应覆盖界面是否存在图标与文字重复、通用图标堆叠，以及视觉层级、位置、颜色、形状和动效能否使功能自解释。
 
 ## 不变量与证据
 
 `invariants` 的每一项都包含稳定 ID、非空描述/表达式、非空且全部有效的适用区域、非负容差和 `evidence.automation`/`evidence.visual` 字符串项。关系表达优先描述相对中心、边界距离、间距、遮挡和断点结构，而非一个孤立屏幕坐标。`evidence_matrix` 必须绑定同一候选、合同版本和冻结视口条件，并覆盖断点邻值、宽高、方向、字号、本地化、安全区、动作态、DPR、动态值、Scene 生命周期和覆盖层/键盘/滚动组合；Golden 只在冻结目标视口验证精确视觉，普通测试验证关系不变量。
+
+`critical_alignments` 用于冻结目标中的关键 UI/HUD：specified 要求唯一 ID、稳定 element/reference、双轴关系、正尺寸目标测量、`planned_test_id`、目标证据、双方 SHA 和项目容差；verified 才要求 `actual_test_id`、正尺寸运行测量、运行证据和 `passed`。不得全局硬编码 1 logical px。
+
+`parity_cases` 不可变绑定 scene/state、viewport、DPR、语言、随机种子、输入轨迹、稳定帧/动画采样、合同/基线版本、双方证据、容差、例外 ID 与结论。目标或候选 SHA 不匹配时旧证据不得复用。
+
+specified 可只做结构检查；verified 必须追加 `--check-files --project-root .`，验证冻结原图存在且 SHA 匹配，并拒绝缺失或逃逸项目根目录的目标、运行及 parity 证据路径。

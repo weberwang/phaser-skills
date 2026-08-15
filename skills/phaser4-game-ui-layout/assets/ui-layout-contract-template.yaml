@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "contract_id": "main-menu-layout",
   "contract_version": "1.0.0",
   "scope": {
@@ -11,11 +11,13 @@
       "tdd": "docs/TDD.md",
       "low_fidelity_candidate": "candidate:v1-main-menu",
       "visual_baseline": "baseline:ui-v1",
-      "code_candidate": "git:0000000000000000000000000000000000000000"
+      "code_candidate": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
     },
     "owner": "ui-layout",
     "reviewer": "qa"
   },
+  "fidelity": {"applicability": "not-applicable", "status": "not-applicable"},
+  "frozen_visual_target": null,
   "targets": {
     "min": {"width": 320, "height": 480, "orientation": "portrait"},
     "preferred": {"width": 390, "height": 844, "orientation": "portrait"},
@@ -197,6 +199,8 @@
     {"id": "action-safe-bottom", "description": "关键动作保持安全区底部距离且不遮挡内容", "applies_to": ["primary-action", "safe-area", "content-panel"], "expression": "bottom(safe-area) - bottom(primary-action) >= 24 && !occludes(primary-action,content-panel)", "tolerance": 2, "evidence": {"automation": ["tests/layout/action-safe-bottom"], "visual": ["snapshots/action-safe-bottom"]}},
     {"id": "single-scroll-owner", "description": "垂直滚动轴只有内容面板负责", "applies_to": ["content-panel", "scroll-content"], "expression": "owner(vertical) == content-panel", "tolerance": 0, "evidence": {"automation": ["tests/layout/scroll-owner"], "visual": ["snapshots/scroll-owner"]}}
   ],
+  "critical_alignments": [],
+  "parity_cases": [],
   "evidence_matrix": {
     "candidate_binding": "same-candidate-only",
     "required_axes": ["breakpoint-neighbors", "width", "height", "orientation", "text-scale", "localization", "safe-area", "action-state", "dpr", "dynamic-values", "scene-lifecycle", "overlay-keyboard-scroll"],

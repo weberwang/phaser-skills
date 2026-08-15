@@ -1,6 +1,6 @@
 # 全局视觉控制约束
 
-为每个项目维护一个单一、版本化且处于 `frozen` 状态的全局视觉基线。将 `docs/visual-design.md` 作为人类可读的单一事实源，将 `docs/visual-assets.json` 作为机器绑定与证据索引。未冻结基线时不得进入正式生产；局部资源不得自行发明新的材质、光源、描边、角色比例或图标语法。
+为每个项目维护单一、版本化且处于 `frozen` 状态的全局视觉基线。`docs/visual-baseline.md` 只保存不可变冻结规则正文，`docs/visual-design.md` 保存可追加的方向探索、版本索引及 V2b/V4/V5 证据，`docs/visual-assets.json` 保存机器绑定与证据索引。
 
 ## 基线身份与风格指纹
 
@@ -12,7 +12,7 @@
 - 分系统锚点：角色、场景、UI、图标、动画、VFX、字体等系统各自的代表画面；
 - 基线文档、锚点证据、适用范围、允许变量和已知边界。
 
-基线 ID 表达视觉系统身份，版本表达已批准规则集合，风格指纹以文件哈希绑定规则内容。将指纹写入 `docs/visual-assets.json`，不要把摘要回填进被哈希的基线文档，避免自引用。`--check-files` 必须重新计算基线文档 SHA-256；不一致即判定冻结后发生静默修改。ID、版本或指纹任一变化都视为新基线候选，不得静默覆盖旧版本。不得用“同一关键词”“同一模型”“同一调色板”或作者主观声明证明一致；必须提交跨资源联系表、同屏截图和可观察事实。
+基线 ID 表达视觉系统身份，版本表达已批准规则集合，风格指纹只计算 `docs/visual-baseline.md` 完整文件字节。不得把摘要或 V2b/V4/V5 留痕写回被哈希正文；阶段证据追加到 `visual-design.md`。规则变化生成新版本和新哈希，使全部受影响决定与证据失效并重验。`--check-files` 重新计算冻结正文 SHA-256。
 
 ## 全局视觉冻结表
 
@@ -54,7 +54,7 @@
 
 生成结果仍须以锚点和跨资源证据审阅。相同模型、种子、提示前缀或调色板只能证明生产条件相近，不能证明视觉一致。
 
-上述生成包字段只强制用于路线为 `ai-composite-raster` 且状态为 `producing`、`review` 或 `accepted` 的资源，不泛化到非 AI 生产路线。机器清单中的 `generation_record` 必须是对象，并至少包含非空 `global_prompt_prefix`、`asset_prompt`、`state_prompt`、`negative_prompt`、`model`、`model_version`、`seed`、非空 `reference_inputs` 路径列表和非空 `postprocess` 字符串列表。状态段不适用时也必须显式说明原因；`--check-files` 必须验证每个 `reference_inputs` 文件。
+上述 AI 专用字段只强制用于路线为 `ai-composite-raster` 且状态为 `producing`、`review` 或 `accepted` 的资源，不泛化到非 AI 生产路线。机器清单中的 AI `generation_record` 必须至少包含非空 `global_prompt_prefix`、`asset_prompt`、`state_prompt`、`negative_prompt`、`model`、`model_version`、`seed`、非空 `reference_inputs` 路径列表和非空 `postprocess` 字符串列表。所有路线的 accepted 资源若没有 `source_file/source_files`，仍须满足公共生成身份：record ID、生成器及版本、时间、可执行命令/配方、输入来源和参数。状态段不适用时也必须显式说明原因；`--check-files` 必须验证每个 `reference_inputs` 文件。
 
 ## 多资源一致性证据
 

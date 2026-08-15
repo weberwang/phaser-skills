@@ -20,12 +20,16 @@ V3 为每个资源选择一条主路线，并在机器清单记录场景或 shar
 - UI 不默认从整屏效果图裁切；优先使用矢量、字体工程、九宫格和布局配置。
 - 动画与 VFX 必须按动态时间采样验收，不能只检查某一静态帧。
 - AI 合成栅格路线才读取 `effect-image-splitting.md`；它是可选子路线，不是其他资产类型的前置步骤。
-- 只有状态为 `producing`、`review` 或 `accepted` 的 `ai-composite-raster` 强制完整 `generation_record`：非空全局前缀、资产段、状态段、负向段、模型、模型版本、种子、参考输入路径列表和后处理列表。状态不适用也要显式说明；该约束不得泛化到非 AI 路线。
+- accepted 资源没有 `source_file/source_files` 时，任意路线的 `generation_record` 都必须提供公共可执行身份：`record_id`、生成器及版本、可解析时间、命令/配方、非空输入来源和非空参数对象；任意对象不能冒充来源。状态为 `producing`、`review` 或 `accepted` 的 `ai-composite-raster` 还强制其专用字段：非空全局前缀、资产段、状态段、负向段、模型、模型版本、种子、参考输入路径列表和后处理列表。
 - 场景差异只能使用全局基线声明的允许变量；不得把不同场景做成同一模板或互不相容的美术体系。
 - V4 必须用多资源联系表和同屏截图完成非作者一致性 F2；相同关键词、模型或调色板不能单独证明一致。
 
 ## 机器清单最低字段
 
-根节点记录 `schema_version=1.2`、全局预算，以及状态为 `frozen` 的 `visual_baseline`：基线 ID、版本、格式为 `sha256:<64 位小写十六进制>` 且等于基线文档文件哈希的风格指纹、文档和非空锚点证据。每个资源无论处于 `planned`、`producing`、`review`、`accepted`、`rejected` 还是 `replaced`，都必须声明具体 `scene_id`，或声明 `shared: true` 并列出至少两个唯一 `shared_scene_ids`；仅以 `shared_reason: runtime-required` 明确说明的运行必需资源可免除两个场景条件，二者不得混用。处于 `producing`、`review` 或 `accepted` 的资源还必须记录与根基线完全一致的 `visual_baseline_id`、`visual_baseline_version` 和 `style_fingerprint`，并继续记录唯一 `id`、唯一 `texture_key`、唯一运行时输出路径、路线、状态、可编辑源文件或生成记录、授权、Phaser 与玩法视觉证据。`accepted` 还必须提供非空 `consistency_evidence`。缺少、不匹配或 `--check-files` 计算出的文档哈希不同均不得通过正式校验。
+根节点记录 `schema_version=1.3` 和 `effect_image_reconstruction`。普通资产使用 `not-applicable/not-applicable`，不得伪造目标、回对、coverage 或 fidelity；效果图还原使用 `effect-image/v3-ready`，V3 前要求冻结目标/候选、已通过回对和 coverage，V3/V4 可无 fidelity；V5 完成改为 `v5-complete` 并要求 case 非空且全部通过。
+
+`effect-image` 清单中只有被 fixed coverage 实际引用的资源必须声明 `ownership_type=fixed-production-visual` 并反向完整绑定 `coverage_region_ids`；同一清单中未被效果图引用的 Boot、Loading 或其他场景资产保持普通字段，且禁止伪造这两个还原专用字段。普通 `not-applicable` 清单也禁止还原专用字段。所有资源仍须声明具体 `scene_id` 或受控 `shared` 归属。处于 `producing`、`review` 或 `accepted` 的资源还必须绑定当前基线；`accepted` 必须保留来源或生成记录、授权、唯一输出、Phaser/玩法视觉与一致性证据。
 
 方向或全局规则漂移退 V2；生产规格、基线绑定或生成包缺失退 V3；资源执行偏差退 V4；结构根因退 V1。冻结基线变更后标记失效证据，并重验全部受影响资源与同屏组合。
+
+V3 结构设计可运行无文件开关的校验；V4/V5 正式验收固定运行 `node scripts/validate_visual_manifest.mjs docs/visual-assets.json --check-files --project-root .`，不得只验证 JSON 字段。

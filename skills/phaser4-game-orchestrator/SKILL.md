@@ -12,7 +12,7 @@ description: Phaser 4 游戏的领域编排角色。用于在全局控制面已�
 ## 启动
 
 1. 先读取全局 Work Item、任务授权、当前基线与状态；只有显式批准门才读取 Approval Ledger。任何写入前运行全局 `preflight`。
-2. 缺项目文档时，先受限 bootstrap，再在任务授权的 A1 路径内运行 `node scripts/initialize_project_docs.mjs --project-root . --work-item <file> --object <authorized-object>`；仅 A4-A6 具体操作批准需要传 `--ledger`，默认拒绝覆盖。
+2. 缺项目文档时，先受限 bootstrap，再在任务授权的 A1 路径内运行 `node scripts/initialize_project_docs.mjs --project-root . --work-item <file> --object <authorized-object>`；仅 A4-A6 具体操作批准需要传 `--ledger`，默认拒绝覆盖。视觉或效果图任务随后必须第二次运行同一初始化器并追加 `--include assets,qa`；第二次只生成 optional 文档，不覆盖第一次生成的 core 文档。
 3. 按领域读取 [模块划分](references/module-decomposition.md)、[游戏实现](references/game-implementation.md)、[视觉质量门](references/visual-quality-gate.md)、[服务复用](references/local-service-validation.md)、[交付物](references/delivery-artifacts.md)、[依赖与服务边界](references/dependency-capability-profiles.md)。
 4. 在 G0 冻结完整场景、功能、模块、正式资源和证据追踪；按 [G0-G3 阶段门](references/quality-gates.md) 将首个可玩切片作为 G1 中间里程碑，而非出口。
 
@@ -30,7 +30,7 @@ description: Phaser 4 游戏的领域编排角色。用于在全局控制面已�
 
 ## 视觉与 UI
 
-V0 分流，V1 契约/低保真，V2 方向/高保真，V3 生产规划，V4 正式资源，V5 运行态集成。Work Item 指定效果图为还原目标时，将其登记为冻结视觉目标，并按[视觉质量门](references/visual-quality-gate.md)编排参考身份、同条件证据、忠实度矩阵和已批准例外；只有不改变冻结视觉事实且处于项目预定义容差内的适配可 `AUTO`。专业修复、提升游戏感或工程适配造成可见差异时，必须列出影响与候选方案并请求一次精确 `USER_DECISION`，不得静默偏离。
+V0 分流，V1 契约/低保真，V2 方向/高保真，V3 生产规划，V4 正式资源，V5 运行态集成。普通资产在 schema 1.3 声明还原 `not-applicable`。效果图还原冻结后、V3 前完成合同回对与 coverage，生命周期为 `v3-ready`；V3/V4 可暂无 fidelity case，只有 V5 验证完成才标记 `v5-complete` 并要求全部通过。
 
 ## 完成
 

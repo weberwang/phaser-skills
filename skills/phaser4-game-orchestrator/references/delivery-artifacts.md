@@ -14,7 +14,8 @@
 | --- | --- |
 | `docs/project-profile.yaml` | 项目身份、渠道和约束 |
 | `docs/GDD.md` | 已批准需求、完整功能/场景清单、范围、玩法、验收与端到端追踪 |
-| `docs/visual-design.md` | 版本化视觉基线与 V 阶段领域证据 |
+| `docs/visual-baseline.md` | 不可变冻结全局视觉规则正文；完整文件 SHA-256 形成风格指纹 |
+| `docs/visual-design.md` | 可追加的方向探索、基线索引与 V2b/V4/V5 阶段证据，不参与风格指纹 |
 | `docs/TDD.md` | 模块、公共基础、场景依赖/实施序列、分项完成事实、能力、平台和服务边界 |
 | `docs/balance.md` | 数值模型与验证 |
 | `docs/asset-license-register.md` | 资源/音频来源、授权与发布资格 |

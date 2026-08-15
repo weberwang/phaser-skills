@@ -1,26 +1,45 @@
 import assert from "node:assert/strict";
-import { readFile, writeFile, mkdtemp } from "node:fs/promises";
+import { mkdir, readFile, writeFile, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
-import { main, validateContract } from "./validate_ui_layout_contract.mjs";
+import { checkContractFiles, main, validateContract } from "./validate_ui_layout_contract.mjs";
 
 const templatePath = resolve(dirname(new URL(import.meta.url).pathname.replace(/^\/(.:)/, "$1")), "../assets/ui-layout-contract-template.yaml");
 const base = JSON.parse(await readFile(templatePath, "utf8"));
 
 /** 深拷贝基准合同，避免测试之间共享修改。 */
 function copy() { return structuredClone(base); }
+/** 构造冻结目标的 specified 或 verified 布局合同。 */
+function fidelityContract(status = "verified") {
+  const document = copy(); const targetSha = `sha256:${"1".repeat(64)}`; const candidateSha = document.scope.bindings.code_candidate;
+  document.fidelity = { applicability: "frozen-target", status };
+  document.frozen_visual_target = { candidate_id: "mockup-a", original_file: "evidence/target.png", target_sha256: targetSha, visual_baseline_version: "ui-v1", status: "frozen" };
+  document.critical_alignments = [{ id: "title-center", element_id: "title", reference_id: "safe-area", horizontal: { type: "center-aligned", element_anchor: "center", reference_anchor: "center" }, vertical: { type: "top-offset", element_anchor: "top", reference_anchor: "top" }, target_measurement: { x: 115, y: 32, width: 160, height: 48 }, planned_test_id: "tests/layout/title-center", target_evidence: ["evidence/target-title.png"], target_sha256: targetSha, candidate_sha256: candidateSha, tolerance: { unit: "logical-px", value: 2 } }];
+  if (status === "verified") { Object.assign(document.critical_alignments[0], { actual_test_id: "tests/layout/title-center", runtime_measurement: { x: 115, y: 32, width: 160, height: 48 }, test_status: "passed", runtime_evidence: ["evidence/runtime-title.png"] }); document.parity_cases = [{ id: "main-default", target_sha256: targetSha, candidate_sha256: candidateSha, scene_id: "MainScene", state_id: "default", viewport: { width: 390, height: 844 }, dpr: 2, language: "zh-CN", random_seed: 42, input_trace: "traces/main.json", sample_rule: "stable-frame", layout_contract_version: "1.0.0", visual_baseline_version: "ui-v1", reference_evidence: ["evidence/target.png"], candidate_evidence: ["evidence/candidate.png"], tolerance: { unit: "logical-px", value: 2 }, exception_ids: [], conclusion: "passed" }]; }
+  return document;
+}
 /** 断言指定缺陷稳定地产生失败和可定位诊断。 */
 function assertFailed(document, expected) { const result = validateContract(document); assert.equal(result.status, "failed"); assert(result.errors.some((item) => item.includes(expected)), JSON.stringify(result)); }
 
-test("完整合同通过且保留专项标记", () => { const result = validateContract(copy()); assert.equal(result.status, "passed", JSON.stringify(result)); assert(result.specialized_review.includes("primary-action:docked-overlay")); });
+test("普通布局合同通过且保留专项标记", () => { const result = validateContract(copy()); assert.equal(result.status, "passed", JSON.stringify(result)); assert(result.specialized_review.includes("primary-action:docked-overlay")); });
+test("specified 冻结目标合同允许尚无运行测量和 parity", () => { const result = validateContract(fidelityContract("specified")); assert.equal(result.status, "passed", JSON.stringify(result)); });
+test("actual_test_id 仅在 verified 必需", () => { const document = fidelityContract(); delete document.critical_alignments[0].actual_test_id; assertFailed(document, "actual_test_id 必须"); });
+test("verified 身份必须与 scope、合同和基线一致", () => { const scene = fidelityContract(); scene.parity_cases[0].scene_id = "Unknown"; assertFailed(scene, "scene_id 不在 scope"); const layout = fidelityContract(); layout.parity_cases[0].layout_contract_version = "9"; assertFailed(layout, "根 contract_version 不一致"); const baseline = fidelityContract(); baseline.parity_cases[0].visual_baseline_version = "other"; assertFailed(baseline, "与冻结目标不一致"); const testId = fidelityContract(); testId.critical_alignments[0].actual_test_id = "other-test"; assertFailed(testId, "必须等于 planned_test_id"); });
+test("关键对齐缺关系或 verified 缺运行测量失败", () => { const relation = fidelityContract("specified"); delete relation.critical_alignments[0].horizontal; assertFailed(relation, "horizontal 缺少关系"); const measurement = fidelityContract(); delete measurement.critical_alignments[0].runtime_measurement; assertFailed(measurement, "runtime_measurement 必须包含数值"); });
+test("关键对齐未知 UI ID 与未执行测试失败", () => { const unknown = fidelityContract(); unknown.critical_alignments[0].element_id = "unknown-ui"; assertFailed(unknown, "element_id 引用未知 UI ID"); const untested = fidelityContract(); untested.critical_alignments[0].test_status = "not-run"; assertFailed(untested, "未执行测试不得通过"); });
+test("关键对齐目标和候选 SHA 必须匹配", () => { for (const field of ["target_sha256", "candidate_sha256"]) { const document = fidelityContract(); document.critical_alignments[0][field] = `sha256:${"f".repeat(64)}`; assertFailed(document, field === "target_sha256" ? "与冻结目标不一致" : "与当前代码候选不一致"); } });
+test("目标和代码候选 SHA 格式固定", () => { const code = copy(); code.scope.bindings.code_candidate = "git:abc"; assertFailed(code, "code_candidate 必须是 sha256"); const target = fidelityContract("specified"); target.frozen_visual_target.target_sha256 = "sha256:BAD"; assertFailed(target, "target_sha256 格式无效"); });
+test("verified parity 必须全部通过且身份完整", () => { const target = fidelityContract(); target.parity_cases[0].target_sha256 = `sha256:${"e".repeat(64)}`; assertFailed(target, "与冻结目标不一致"); const failed = fidelityContract(); failed.parity_cases[0].conclusion = "failed"; assertFailed(failed, "必须全部 passed"); const evidence = fidelityContract(); evidence.parity_cases[0].candidate_evidence = []; assertFailed(evidence, "candidate_evidence 必须是非空字符串数组"); });
+test("关键对齐与 parity ID 必须唯一", () => { const alignment = fidelityContract(); alignment.critical_alignments.push(structuredClone(alignment.critical_alignments[0])); assertFailed(alignment, "id 重复"); const parity = fidelityContract(); parity.parity_cases.push(structuredClone(parity.parity_cases[0])); assertFailed(parity, "id 重复"); });
 test("缺少坐标空间失败", () => { const document = copy(); document.coordinate_spaces = []; assertFailed(document, "coordinate_spaces 必须是非空数组"); });
 test("坐标空间循环失败", () => { const document = copy(); document.coordinate_spaces[0].parent = "ui-space"; document.coordinate_spaces[1].parent = "screen-space"; assertFailed(document, "坐标空间存在循环"); });
 test("范围区域 ID 必须一致", () => { const document = copy(); document.scope.ui_ids.splice(document.scope.ui_ids.indexOf("title"), 1); assertFailed(document, "scope.ui_ids 缺少 regions ID"); });
 test("水平和垂直锚点均必需", () => { for (const axis of ["horizontal", "vertical"]) { const document = copy(); delete document.regions[0].anchors[axis]; assertFailed(document, `anchors.${axis} 缺失`); } });
 test("不存在的参照失败", () => { const document = copy(); document.regions[1].reference_id = "not-found"; assertFailed(document, "不存在的 reference_id"); });
 test("区域参照循环失败", () => { const document = copy(); document.regions[2].reference_id = "content-panel"; document.regions[3].reference_id = "title"; assertFailed(document, "区域参照存在循环"); });
-test("缺少和重复滚动所有者失败", () => { const missing = copy(); delete missing.scrolling.axes; assertFailed(missing, "scrolling.axes 必须声明至少一个滚动轴所有者"); const duplicate = copy(); duplicate.scrolling.axes.push(structuredClone(duplicate.scrolling.axes[0])); assertFailed(duplicate, "滚动轴存在多个所有者"); });
+test("缺少和重复滚动所有者失败", () => { const missing = copy(); delete missing.scrolling.axes; assertFailed(missing, "scrolling.axes 必须是数组"); const duplicate = copy(); duplicate.scrolling.axes.push(structuredClone(duplicate.scrolling.axes[0])); assertFailed(duplicate, "滚动轴存在多个所有者"); });
+test("普通静态 HUD 允许无断点、滚动轴和关键动作", () => { const document = copy(); document.breakpoints = []; document.scrolling.axes = []; document.dynamic_content.key_actions = []; assert.equal(validateContract(document).status, "passed"); });
 test("关键动作禁止截断", () => { const document = copy(); document.dynamic_content.key_actions[0].text_truncation = "allow"; assertFailed(document, "关键动作禁止文本截断"); });
 test("覆盖层缺少回退失败", () => { const document = copy(); delete document.overlay_rules[0].fallback; assertFailed(document, "fallback 必须声明回退规则"); });
 test("特殊布局缺少覆盖规则失败", () => { const document = copy(); document.regions[5].layout_participation = "fixed-overlay"; assertFailed(document, "fixed-overlay 缺少对应 overlay_rules"); });
@@ -30,3 +49,4 @@ test("证据矩阵缺少必需轴失败", () => { const document = copy(); docum
 test("无效断点条件失败", () => { const document = copy(); document.breakpoints[0].when = { width_lt: null }; assertFailed(document, "when 必须包含非空键和有效值"); });
 test("绝对和固定布局触发专项审查", () => { const document = copy(); document.regions[2].positioning = "absolute"; document.regions[2].size.strategy = "fixed"; const result = validateContract(document); assert.equal(result.status, "passed", JSON.stringify(result)); assert(result.specialized_review.includes("title:absolute-positioning")); assert(result.specialized_review.includes("title:fixed-size")); });
 test("CLI 对无效合同返回非零", async () => { const document = copy(); delete document.regions[0].anchors.horizontal; const directory = await mkdtemp(join(tmpdir(), "layout-contract-")); const path = join(directory, "contract.yaml"); await writeFile(path, JSON.stringify(document)); assert.notEqual(await main([path]), 0); });
+test("布局文件检查覆盖缺文件、哈希和路径逃逸", async () => { const root = await mkdtemp(join(tmpdir(), "layout-files-")); const document = fidelityContract(); assert((await checkContractFiles(document, root)).some((item) => item.includes("文件不存在"))); const files = ["evidence/target.png", "evidence/target-title.png", "evidence/runtime-title.png", "evidence/candidate.png"]; for (const value of files) { const path = join(root, value); await mkdir(dirname(path), { recursive: true }); await writeFile(path, ""); } document.frozen_visual_target.target_sha256 = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"; assert.deepEqual(await checkContractFiles(document, root), []); await writeFile(join(root, "evidence/target.png"), "changed"); assert((await checkContractFiles(document, root)).some((item) => item.includes("SHA-256 不一致"))); document.critical_alignments[0].target_evidence = ["../escape.png"]; assert((await checkContractFiles(document, root)).some((item) => item.includes("路径逃逸"))); });
