@@ -28,6 +28,8 @@ description: Phaser 4 游戏仓库的唯一全局工作流控制面。基于任�
 - 启动进程前先检查同项目、类型、模式、端口、PID 与健康状态并复用。本项目本地验证、非特权、无外部写入时直接执行；不得终止归属不明的进程。
 - 基线、代码/diff 指纹或范围变化后，旧审批和旧证据失效。
 
+视觉生产合同硬门：V3 的 `visual-assets` 必须逐 annotation/region 显式声明 `production_origin`、`production_method`、`delivery_kind`、`image_generation_required`、`generation_record_required`、`substitution_policy` 和 `expected_assets`，不得从 `independent-production`、`generate-now` 或视觉相似度推断 ImageGen。`image_generation_required=true` 只能由 ImageGen + 独立 raster-image、完整生成/提示词记录和运行时实际消费满足；SVG、Graphics、CanvasTexture、runtime drawing 或替代资源均不等价。V4 需要 `production_contract_audit`，F2 需要视觉与生产合同双审，V5 还需 F3 runtime replay、非空 freshness-bound fidelity cases、运行时消费和无未批准替换。方法变更只接受绑定完整上下文的 `ACCEPTED` Change Request。
+
 ## 命令
 
 首次使用先运行 `node <skill-dir>/scripts/workflow-control.mjs init ...`，它只在控制目录不存在时创建空账本、标准目录和首个 Work Item。`<skill-dir>` 必须解析为本 Skill 的实际根目录，不能按游戏项目当前工作目录猜测。之后运行 `node <skill-dir>/scripts/workflow-control.mjs <route|advance|prepare-approval|handoff|preflight|approve|delegate-check|parallel-check|unit-check|diff-audit|evidence-check|transition|status|lint> --help`。`approve --approval-id <id> --user-text "批准"` 会从当前已展示 pending 自动生成完整记录；否定或无关文本拒绝。命令只使用 Node.js 标准库，且绝不自动回滚、发布或执行外部动作。

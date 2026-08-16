@@ -6,7 +6,8 @@ export const PLAN_COLORS = { "generate-now": "#ef4444", "reuse-existing": "#22c5
 export const PLAN_LABELS = { "generate-now": "本次生成", "reuse-existing": "复用既有资源", "runtime-program": "程序实现" };
 /** 固定三类图例的高度，不随区域数量变化。 */
 export const LEGEND_HEIGHT = 82;
-const REGION_DEFINITION_FIELDS = ["scene_id", "state_id", "layer", "bounds", "owner_type", "owner_id", "asset_id", "production_origin", "ownership_evidence", "annotation_number", "implementation_plan"];
+// 确认哈希覆盖所有会改变生产合同或拆解粒度的字段；自声明 production_method_changed 不能替代此不可变身份。
+const REGION_DEFINITION_FIELDS = ["scene_id", "state_id", "layer", "bounds", "owner_type", "owner_id", "asset_id", "production_origin", "production_method", "delivery_kind", "image_generation_required", "generation_record_required", "substitution_policy", "runtime_implementation", "state_analysis", "component_inventory", "expected_assets", "interaction_hotspots", "ownership_evidence", "annotation_number", "implementation_plan"];
 
 /** 判断值是否为普通 JSON 对象。 */
 function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
@@ -19,9 +20,156 @@ function canonicalize(value) {
   return encoded === undefined ? "null" : encoded;
 }
 
+const REGION_FIELD_ALIASES = Object.freeze({
+  scene_id: ["scene_id", "sceneId"], state_id: ["state_id", "stateId"], layer: ["layer"],
+  owner_type: ["owner_type", "ownerType"], owner_id: ["owner_id", "ownerId"], asset_id: ["asset_id", "assetId"],
+  production_origin: ["production_origin", "productionOrigin"], production_method: ["production_method", "productionMethod"],
+  delivery_kind: ["delivery_kind", "deliveryKind"], image_generation_required: ["image_generation_required", "imageGenerationRequired"],
+  generation_record_required: ["generation_record_required", "generationRecordRequired"], substitution_policy: ["substitution_policy", "substitutionPolicy"],
+  runtime_implementation: ["runtime_implementation", "runtimeImplementation"], state_analysis: ["state_analysis", "stateAnalysis"],
+  component_inventory: ["component_inventory", "componentInventory"], expected_assets: ["expected_assets", "expectedAssets"],
+  interaction_hotspots: ["interaction_hotspots", "interactionHotspots"], ownership_evidence: ["ownership_evidence", "ownershipEvidence"],
+  annotation_number: ["annotation_number", "annotationNumber"], implementation_plan: ["implementation_plan", "implementationPlan"], bounds: ["bounds"],
+});
+const NESTED_CONTRACT_FIELDS = new Set(["production_origin", "production_method", "delivery_kind", "image_generation_required", "generation_record_required", "substitution_policy", "runtime_implementation", "state_analysis", "component_inventory", "expected_assets", "interaction_hotspots"]);
+const STATE_ALIASES = new Map([["default", "default"], ["normal", "default"], ["idle", "default"], ["selected", "selected"], ["select", "selected"], ["active", "active"], ["activated", "active"], ["disabled", "disabled"], ["disable", "disabled"], ["pressed", "pressed"], ["down", "pressed"], ["hover", "hover"], ["hovered", "hover"], ["over", "hover"], ["victory", "victory"], ["win", "victory"], ["won", "victory"], ["success", "victory"], ["defeat", "defeat"], ["lose", "defeat"], ["lost", "defeat"], ["failure", "defeat"], ["fail", "defeat"], ["paused", "paused"], ["pause", "paused"]]);
+
+/** 将路径归一化为合同身份；非法路径保留原值，交给执行校验报告安全错误。 */
+function normalizePathForDefinition(value) {
+  if (typeof value !== "string") return value;
+  const raw = value.trim().replaceAll("\\", "/");
+  if (raw.startsWith("/") || raw.startsWith("//") || /^[a-z]:\//i.test(raw)) return raw.toLowerCase();
+  const parts = [];
+  for (const part of raw.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") { if (parts.length === 0) return raw.toLowerCase(); parts.pop(); } else parts.push(part.toLowerCase());
+  }
+  return parts.length ? parts.join("/") : raw.toLowerCase();
+}
+
+/** 统一状态别名，保证 stateAnalysis 与 state_analysis 计算同一份合同身份。 */
+function canonicalStateForDefinition(value) {
+  if (typeof value !== "string") return value;
+  const normalized = value.trim().toLowerCase().replaceAll("_", "-");
+  return STATE_ALIASES.get(normalized) ?? normalized;
+}
+
+function firstDefined(value, aliases, fallback = null) {
+  if (!isObject(value)) return fallback;
+  for (const alias of aliases) if (Object.hasOwn(value, alias)) return value[alias];
+  return fallback;
+}
+
+function normalizeStateAnalysisDefinition(value) {
+  if (!isObject(value)) return value ?? null;
+  const states = Array.isArray(value.states) ? value.states.map((state) => ({
+    state_id: canonicalStateForDefinition(firstDefined(state, ["state_id", "stateId"], "")),
+    requirement: firstDefined(state, ["requirement", "applicability"], ""),
+    reason: firstDefined(state, ["reason", "rationale"], ""),
+  })).sort((left, right) => String(left.state_id).localeCompare(String(right.state_id))) : [];
+  return {
+    status: firstDefined(value, ["status", "analysis_status"], ""), phase: firstDefined(value, ["phase", "analysis_phase"], ""),
+    evidence: firstDefined(value, ["evidence", "analysis_evidence"], ""),
+    evidence_sha256: firstDefined(value, ["evidence_sha256", "evidenceSha256"], ""),
+    reference_target_sha256: firstDefined(value, ["reference_target_sha256", "referenceTargetSha256"], ""),
+    analysis_id: firstDefined(value, ["analysis_id", "analysisId"], ""), completed_at: firstDefined(value, ["completed_at", "completedAt"], ""), states,
+  };
+}
+
+function normalizeComponentInventoryDefinition(value) {
+  if (!isObject(value)) return value ?? null;
+  const components = Array.isArray(value.components) ? value.components.map((component) => ({
+    component_id: firstDefined(component, ["component_id", "componentId"], ""), role: firstDefined(component, ["role", "component_role"], ""),
+    reusable: component?.reusable, interaction_required: firstDefined(component, ["interaction_required", "interactionRequired"]),
+    state_coverage: (Array.isArray(component?.state_coverage) ? component.state_coverage : (Array.isArray(component?.stateCoverage) ? component.stateCoverage : [])).map((state) => ({
+      state_id: canonicalStateForDefinition(firstDefined(state, ["state_id", "stateId"], "")), requirement: firstDefined(state, ["requirement", "applicability"], ""), reason: firstDefined(state, ["reason", "rationale"], ""),
+    })).sort((left, right) => String(left.state_id).localeCompare(String(right.state_id))),
+  })).sort((left, right) => String(left.component_id).localeCompare(String(right.component_id))) : [];
+  return {
+    granularity: firstDefined(value, ["granularity", "asset_granularity"], ""), component_count: firstDefined(value, ["component_count", "componentCount"]),
+    delivery_mode: firstDefined(value, ["delivery_mode", "deliveryMode", "asset_delivery_mode"], ""), atlas_allowed: firstDefined(value, ["atlas_allowed", "atlasAllowed"]),
+    created_at: firstDefined(value, ["created_at", "createdAt"], ""), components,
+  };
+}
+
+function normalizeAtlasSliceDefinition(value) {
+  if (!isObject(value)) return value ?? null;
+  const rect = isObject(value.rect) ? value.rect : value;
+  const size = isObject(value.atlas_size ?? value.atlasSize) ? (value.atlas_size ?? value.atlasSize) : {};
+  return { atlas_asset_id: firstDefined(value, ["atlas_asset_id", "atlasAssetId"], ""), slice_id: firstDefined(value, ["slice_id", "sliceId"], ""), atlas_size: { width: size.width, height: size.height }, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } };
+}
+
+function normalizeExpectedAssetDefinition(value) {
+  if (typeof value === "string") return { asset_id: value };
+  if (!isObject(value)) return { asset_id: "" };
+  const source = firstDefined(value, ["source_file", "sourceFile", "file"], "");
+  const runtime = firstDefined(value, ["runtime_file", "runtimeFile", "runtime_output_file", "runtimeOutputFile"], "");
+  return {
+    asset_id: firstDefined(value, ["asset_id", "id", "name", "file", "path"], ""), component_id: firstDefined(value, ["component_id", "componentId"], ""),
+    state_id: canonicalStateForDefinition(firstDefined(value, ["state_id", "stateId"], "")), asset_kind: firstDefined(value, ["asset_kind", "assetKind", "kind"], "visual"),
+    source_file: normalizePathForDefinition(source), runtime_file: normalizePathForDefinition(runtime), mime_type: firstDefined(value, ["mime_type", "mimeType"]),
+    width: value.width, height: value.height, alpha: value.alpha, sha256: firstDefined(value, ["sha256", "file_sha256"]),
+    share_id: firstDefined(value, ["share_id", "shareId"]), atlas_slice: normalizeAtlasSliceDefinition(value.atlas_slice ?? value.atlasSlice),
+  };
+}
+
+function normalizeHotspotDefinition(value) {
+  if (!isObject(value)) return { hotspot_id: "", component_id: "", bounds: null };
+  const bounds = isObject(value.bounds) ? value.bounds : {};
+  return { hotspot_id: firstDefined(value, ["hotspot_id", "hotspotId"], ""), component_id: firstDefined(value, ["component_id", "componentId"], ""), bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } };
+}
+
+function normalizeRuntimeImplementationDefinition(value) {
+  if (!isObject(value)) return value ?? null;
+  const integrationFiles = Array.isArray(value.integration_files) ? value.integration_files : (Array.isArray(value.integrationFiles) ? value.integrationFiles : []);
+  return { kind: value.kind ?? "", integration_files: integrationFiles.map(normalizePathForDefinition).sort(), description: value.description ?? "" };
+}
+
+function semanticDefinitionValue(field, value) {
+  if (["state_analysis"].includes(field)) return normalizeStateAnalysisDefinition(value);
+  if (["component_inventory"].includes(field)) return normalizeComponentInventoryDefinition(value);
+  if (["expected_assets"].includes(field)) return (Array.isArray(value) ? value.map(normalizeExpectedAssetDefinition) : []).sort((left, right) => `${left.component_id}\0${left.state_id}\0${left.asset_id}`.localeCompare(`${right.component_id}\0${right.state_id}\0${right.asset_id}`));
+  if (["interaction_hotspots"].includes(field)) return (Array.isArray(value) ? value.map(normalizeHotspotDefinition) : []).sort((left, right) => `${left.component_id}\0${left.hotspot_id}`.localeCompare(`${right.component_id}\0${right.hotspot_id}`));
+  if (["runtime_implementation"].includes(field)) return normalizeRuntimeImplementationDefinition(value);
+  return value;
+}
+
+function regionFieldSources(region, field) {
+  const sources = [];
+  const aliases = REGION_FIELD_ALIASES[field] ?? [field];
+  for (const alias of aliases) if (isObject(region) && Object.hasOwn(region, alias)) sources.push({ source: alias, value: region[alias] });
+  if (NESTED_CONTRACT_FIELDS.has(field)) {
+    for (const nestedName of ["production_contract", "productionContract"]) {
+      const nested = isObject(region?.[nestedName]) ? region[nestedName] : null;
+      for (const alias of aliases) if (nested && Object.hasOwn(nested, alias)) sources.push({ source: `${nestedName}.${alias}`, value: nested[alias] });
+    }
+  }
+  return sources;
+}
+
+/** 返回验证器实际使用的规范化区域合同，哈希和执行门共用此语义。 */
+export function normalizeVisualRegionDefinition(region = {}) {
+  return Object.fromEntries(REGION_DEFINITION_FIELDS.map((field) => {
+    const source = regionFieldSources(region, field)[0];
+    return [field, semanticDefinitionValue(field, source?.value ?? null)];
+  }));
+}
+
+/** 检测 snake/camel/nested 三种写法是否同时出现且取值冲突。 */
+export function getVisualRegionDefinitionAliasConflicts(region = {}) {
+  const conflicts = [];
+  for (const field of REGION_DEFINITION_FIELDS) {
+    const sources = regionFieldSources(region, field);
+    if (sources.length < 2) continue;
+    const first = canonicalize(semanticDefinitionValue(field, sources[0].value));
+    if (sources.slice(1).some((entry) => canonicalize(semanticDefinitionValue(field, entry.value)) !== first)) conflicts.push({ field, sources: sources.map((entry) => entry.source) });
+  }
+  return conflicts;
+}
+
 /** 计算覆盖区域的稳定身份哈希；确认不参与哈希，避免确认内容自引用。 */
 export function computeRegionDefinitionSha256(region) {
-  const definition = Object.fromEntries(REGION_DEFINITION_FIELDS.map((field) => [field, region?.[field] ?? null]));
+  const definition = normalizeVisualRegionDefinition(region);
   return `sha256:${createHash("sha256").update(canonicalize(definition)).digest("hex")}`;
 }
 

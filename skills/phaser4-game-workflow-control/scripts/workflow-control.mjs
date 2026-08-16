@@ -10,7 +10,7 @@ import { assertCompletedUnits, assertUnitReady, validateUnitResult } from './exe
 import { validateParallelBatch } from './parallel-batch-control.mjs';
 import { validateDelegationBinding, validateExecutionPlan } from './parallel-plan.mjs';
 import { repositoryLint } from './repository-lint.mjs';
-
+import { isVisualProductionWork, loadVisualManifestSnapshot, validateVisualChangeRequest, validateVisualDelegationBinding, validateVisualEvidence, validateVisualImplementationPackage, validateVisualImplementationPackageBinding } from './visual-production-contract.mjs';
 const STATES = ['INTAKE', 'BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING', 'VALIDATING', 'PASSED', 'INTEGRATING', 'RELEASE_APPROVAL_REQUIRED', 'RELEASING', 'COMPLETE', 'RETURN', 'BLOCKED'];
 const LEVELS = ['A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6'];
 const GATES = ['F0', 'F1', 'F2', 'F3', 'F4'];
@@ -35,34 +35,24 @@ const TRANSITIONS = {
 const SHORT_APPROVAL = /^(批准|同意|可以|继续|就这个|选\s*[a-zA-Z]|按流程推进|你看着办|做完它|批准然后按(?:照)?工作流推进)[。！!\s]*$/i;
 const AFFIRMATIVE_APPROVAL = /^(批准|同意|确认|接受|通过)(?:$|[\s，,：:。！!].*)/;
 const NEGATIVE_APPROVAL = /(不同意|不批准|拒绝|取消|停止)/;
-
-/** 输出中文错误并使用稳定的非零退出码终止。 */
-function fail(message, code = 2) {
+/** 输出中文错误并使用稳定的非零退出码终止。 */ function fail(message, code = 2) {
   process.stderr.write(`拒绝：${message}\n`);
   process.exit(code);
 }
-
-/** 校验 Phaser 生命周期动作白名单及其唯一等级，未知 phaser-* 也不得旁路。 */
-function validatePhaserAction(actionType, level = null, label = 'actionType') {
+/** 校验 Phaser 生命周期动作白名单及其唯一等级，未知 phaser-* 也不得旁路。 */ function validatePhaserAction(actionType, level = null, label = 'actionType') {
   if (!PHASER_ACTIONS.has(actionType)) fail(`${label} 不是受控 Phaser 动作白名单成员：${actionType}`);
   if (level && PHASER_ACTION_LEVEL.get(actionType) !== level) fail(`${label} 与动作等级不一致：${actionType} 只能使用 ${PHASER_ACTION_LEVEL.get(actionType)}`);
 }
-
-/** 非 Phaser 操作完全退出本控制面，不读取或修改任何工作流工件。 */
-function returnOutOfScope(actionType) {
+/** 非 Phaser 操作完全退出本控制面，不读取或修改任何工作流工件。 */ function returnOutOfScope(actionType) {
   process.stdout.write(JSON.stringify({ controlled: false, channel: 'OUT_OF_SCOPE', authorizationBasis: 'OUTSIDE_PHASER_WORKFLOW', explicitApprovalRequired: false }));
   return true;
 }
-
-/** 在读取 Work Item 前判定显式 actionType 是否属于本控制面。 */
-function bypassOutsidePhaser(args) {
+/** 在读取 Work Item 前判定显式 actionType 是否属于本控制面。 */ function bypassOutsidePhaser(args) {
   const actionType = String(args['action-type'] ?? '');
   if (!actionType || actionType.startsWith('phaser-')) return false;
   return returnOutOfScope(actionType);
 }
-
-/** 将命令行解析为支持重复选项的键值对象。 */
-function parseArgs(argv) {
+/** 将命令行解析为支持重复选项的键值对象。 */ function parseArgs(argv) {
   const result = { _: [] };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
@@ -74,46 +64,32 @@ function parseArgs(argv) {
   }
   return result;
 }
-
-/** 将单值或重复参数统一为字符串数组。 */
-function list(value) {
+/** 将单值或重复参数统一为字符串数组。 */ function list(value) {
   if (value === undefined || value === true) return [];
   return (Array.isArray(value) ? value : [value]).flatMap((item) => String(item).split(',')).map((item) => item.trim()).filter(Boolean);
 }
-
-/** 读取 JSON 并把语法错误转成控制面错误。 */
-function readJson(path, label) {
+/** 读取 JSON 并把语法错误转成控制面错误。 */ function readJson(path, label) {
   if (!path || path === true) fail(`缺少 ${label} 路径`);
   try { return JSON.parse(readFileSync(resolve(String(path)), 'utf8')); }
   catch (error) { fail(`无法读取 ${label}：${error.message}`); }
 }
-
-/** 写入稳定格式 JSON，并确保控制目录存在。 */
-function writeJson(path, value) {
+/** 写入稳定格式 JSON，并确保控制目录存在。 */ function writeJson(path, value) {
   const target = resolve(String(path));
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
 }
-
-/** 校验必填字段存在。 */
-function requireFields(value, fields, label) {
+/** 校验必填字段存在。 */ function requireFields(value, fields, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) fail(`${label} 必须为对象`);
   const missing = fields.filter((field) => value[field] === undefined);
   if (missing.length) fail(`${label} 缺少字段：${missing.join('、')}`);
 }
-
-/** 校验字符串数组。 */
-function requireStringArray(value, label) {
+/** 校验字符串数组。 */ function requireStringArray(value, label) {
   if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) fail(`${label} 必须为字符串数组`);
 }
-
-/** 校验 SHA-256 标识格式。 */
-function requireHash(value, label) {
+/** 校验 SHA-256 标识格式。 */ function requireHash(value, label) {
   if (!/^sha256:[a-f0-9]{64}$/.test(value ?? '')) fail(`${label} 必须为 sha256:<64 位小写十六进制>`);
 }
-
-/** 计算文件字节 SHA-256。 */
-function fileHash(path) {
+/** 计算文件字节 SHA-256。 */ function fileHash(path) {
   return `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`;
 }
 
@@ -216,20 +192,26 @@ function validateEvidence(evidence) {
 /** 校验 Implementation Package 独立结构。 */
 function validateImplementationPackageShape(pkg) {
   requireFields(pkg, PACKAGE_REQUIRED, 'Implementation Package');
-  const extra = Object.keys(pkg).filter((field) => !PACKAGE_REQUIRED.includes(field));
+  const extra = Object.keys(pkg).filter((field) => !PACKAGE_REQUIRED.includes(field) && !['visualProductionUnits', 'visualManifestFile', 'visualManifestSha256', 'visualContractVersion', 'candidateVersion'].includes(field));
   if (extra.length) fail(`Implementation Package 包含 Schema 禁止字段：${extra.join('、')}`);
   requireHash(pkg.baselineHash, 'Implementation Package baselineHash');
   for (const field of ['approvedRequirements', 'allowedPaths', 'forbiddenPaths', 'expectedAddedFiles', 'expectedDeletedFiles', 'testScope', 'outOfScope', 'definitionOfDone', 'stopConditions']) requireStringArray(pkg[field], `Implementation Package.${field}`);
   if (!pkg.approvedRequirements.length || !pkg.allowedPaths.length || !pkg.testScope.length || !pkg.definitionOfDone.length || !pkg.stopConditions.length) fail('Implementation Package 的需求、路径、测试、完成定义和停止条件不能为空');
   if (!pkg.fileOwnership || typeof pkg.fileOwnership !== 'object' || Array.isArray(pkg.fileOwnership) || !Object.keys(pkg.fileOwnership).length || Object.entries(pkg.fileOwnership).some(([path, owner]) => !path || typeof owner !== 'string' || !owner)) fail('Implementation Package.fileOwnership 必须为非空路径到所有者映射');
   validateExecutionPlan(pkg, pathMatches, fail);
+  const visualErrors = validateVisualImplementationPackage(pkg, { allowedPaths: pkg.allowedPaths, pathMatches });
+  if (visualErrors.length) fail(visualErrors[0]);
+  const visualFields = ['visualContractVersion', 'candidateVersion', 'visualManifestFile', 'visualManifestSha256', 'visualProductionUnits'];
+  if (visualFields.some((field) => Object.hasOwn(pkg, field)) && visualFields.some((field) => pkg[field] === undefined)) fail('视觉 Implementation Package 必须同时绑定 visualContractVersion、visualManifestFile、visualManifestSha256、visualProductionUnits');
   if (!pkg.packageId || !pkg.workItemId || !pkg.baselineVersion || !pkg.taskAuthorizationId || !pkg.compatibilityStrategy || !pkg.approvedArchitecture) fail('Implementation Package 标识、版本、任务授权、兼容策略或架构结论不能为空');
   return pkg;
 }
 
 /** 校验 Implementation Package 与 Work Item/审批/基线一致。 */
-function validateImplementationPackage(pkg, work) {
+function validateImplementationPackage(pkg, work, repo = process.cwd()) {
   validateImplementationPackageShape(pkg);
+  const visualBindingErrors = validateVisualImplementationPackageBinding(pkg, { projectRoot: repo, allowedPaths: work.allowedPaths, pathMatches, requireVisual: isVisualProductionWork(work) });
+  if (visualBindingErrors.length) fail(visualBindingErrors[0]);
   if (pkg.workItemId !== work.workItemId || pkg.baselineVersion !== work.baselineVersion || pkg.baselineHash !== work.baselineHash) fail('Implementation Package 未绑定当前工作项与基线');
   if (JSON.stringify(pkg.approvedRequirements) !== JSON.stringify(work.approvedRequirements) || JSON.stringify(pkg.allowedPaths) !== JSON.stringify(work.allowedPaths) || JSON.stringify(pkg.forbiddenPaths) !== JSON.stringify(work.forbiddenPaths) || JSON.stringify(pkg.outOfScope) !== JSON.stringify(work.outOfScope)) fail('Implementation Package 与工作项范围不一致');
   if (pkg.taskAuthorizationId !== work.taskAuthorization.authorizationId) fail('Implementation Package 未绑定当前任务授权');
@@ -249,6 +231,8 @@ function validateChangeRequestShape(change) {
   requireHash(change.affectedBaselineHash, 'Change Request.affectedBaselineHash');
   if (!change.changeRequestId || !change.workItemId || !change.change || !change.reason || !change.newRisk || !change.userDecisionRequest || !change.affectedModules.length || !change.newAcceptance.length) fail('Change Request 标识、内容、原因、模块、风险、验收与决策请求不能为空');
   if (!['PENDING', 'ACCEPTED', 'REJECTED'].includes(change.status)) fail('Change Request 状态只能为 PENDING/ACCEPTED/REJECTED；它记录用户决定而非审批');
+  const productionErrors = validateVisualChangeRequest(change, { workItemId: change.workItemId, candidateVersion: change.candidateVersion });
+  if (productionErrors.length) fail(productionErrors[0]);
   return change;
 }
 
@@ -459,7 +443,7 @@ function preflight(args) {
   const ledger = explicitRequired ? readLedger(args.ledger) : null;
   let pkg = null;
   if (['A3', 'A4'].includes(level)) {
-    pkg = validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work);
+    pkg = validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work, repo);
     if (level === 'A3' && pkg.expectedDeletedFiles.length) fail('A3 不得删除旧实现；删除或正式替换必须升级到 A4/A6');
   }
   validateChangeRequests(work, repo, level, ledger, pkg);
@@ -609,9 +593,11 @@ function delegateCheck(args) {
   const repo = resolve(String(args.repo ?? process.cwd()));
   validateDelegationForWork(delegation, work, repo);
   if (delegation.actionLevel === 'A3') {
-    const pkg = validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work);
+    const pkg = validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work, repo);
     if (delegation.parallelGroup !== null) fail('并行 A3 委派不得单独 delegate-check；请使用 parallel-check 原子校验完整批次');
     const binding = validateDelegationBinding(delegation, pkg, pathMatches, fail);
+    const visualErrors = validateVisualDelegationBinding(delegation, pkg);
+    if (visualErrors.length) fail(visualErrors[0]);
     for (const unit of binding.units) {
       try { assertUnitReady(unit, work, pkg, repo, unitIo()); } catch (error) { fail(error.message); }
     }
@@ -622,7 +608,7 @@ function delegateCheck(args) {
 /** 校验一个实施单元的当前完成证据。 */
 function unitCheck(args) {
   const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
-  const pkg = validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work);
+  const pkg = validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work, resolve(String(args.repo ?? process.cwd())));
   const resultPath = resolve(String(args.result));
   const result = readJson(resultPath, 'Execution Unit Result');
   const unit = pkg.executionUnits.find((item) => item.unitId === result.unitId);
@@ -635,7 +621,7 @@ function unitCheck(args) {
 function parallelCheck(args) {
   const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
   requireResolvedUserInput(work);
-  const pkg = validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work);
+  const pkg = validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work, resolve(String(args.repo ?? process.cwd())));
   const repo = resolve(String(args.repo ?? process.cwd()));
   const batchPath = resolve(String(args.batch));
   const io = { readJson, resolve, normalizeRepoPath, existsSync, readdirSync, readFileSync, validateDelegation, validateDelegationForWork, validateDelegationBinding: (delegation, value) => validateDelegationBinding(delegation, value, pathMatches, fail), assertUnitReady: (unit, currentWork, value, currentRepo) => assertUnitReady(unit, currentWork, value, currentRepo, unitIo()) };
@@ -709,7 +695,7 @@ function diffAudit(args) {
   if (actionType !== work.pendingApprovalActionType) fail('diff-audit actionType 与 Work Item 当前动作不一致');
   const explicitRequired = requiresExplicitApproval(level, { external: ['A5', 'A6'].includes(level), destructive: args.destructive === true, allowDelete: args.delete === true });
   const ledger = explicitRequired ? readLedger(args.ledger) : null;
-  const pkg = ['A3', 'A4'].includes(level) ? validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work) : null;
+  const pkg = ['A3', 'A4'].includes(level) ? validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work, repo) : null;
   const entries = changedEntries(repo, baseline).filter((entry) => !pathMatches(entry.file, '.workflow-control'));
   const artifacts = entries.length ? [] : artifactRecords(repo, list(args.artifact), work, ['A5', 'A6'].includes(level));
   if (!entries.length && ['A3', 'A4'].includes(level)) fail('A3/A4 生产或集成审计禁止空 diff');
@@ -811,9 +797,15 @@ function evidenceCheck(args, silent = false) {
   }
   if (evidence.verdict !== 'PASS' || evidence.uncoveredItems.length) fail('证据不是完整 PASS，或仍有未覆盖项');
   const audit = verifyDiffAudit(work, repo, work.diffAuditRecord);
+  let visualPackage = null;
+  const packagePath = work.implementationPackageRecord ?? args['implementation-package'];
   if (audit.actionLevel === 'A3') {
-    const pkg = validateImplementationPackage(readJson(resolve(repo, work.implementationPackageRecord), 'Implementation Package'), work);
-    try { assertCompletedUnits(evidence, work, pkg, repo, unitIo()); } catch (error) { fail(error.message); }
+    const implementationPackage = validateImplementationPackage(readJson(resolve(repo, packagePath), 'Implementation Package'), work, repo);
+    if (isVisualProductionWork(work)) visualPackage = implementationPackage;
+    try { assertCompletedUnits(evidence, work, implementationPackage, repo, unitIo()); } catch (error) { fail(error.message); }
+  } else if (isVisualProductionWork(work)) {
+    if (!packagePath) fail('V4/V5 视觉 Evidence 必须绑定 Implementation Package');
+    visualPackage = validateImplementationPackage(readJson(resolve(repo, packagePath), 'Implementation Package'), work, repo);
   }
   if (audit.diffFingerprint !== evidence.diffFingerprint) fail('旧证据不能验证当前 diff');
   if (Date.parse(evidence.recordedAt) < Date.parse(audit.recordedAt)) fail('Evidence.recordedAt 早于当前 Diff Audit Record');
@@ -828,6 +820,10 @@ function evidenceCheck(args, silent = false) {
   const reviewMode = evidence.gateResults.F2.reviewMode;
   const f0Authorization = evidence.gateResults.F0.authorizationId ?? evidence.gateResults.F0.approvalId;
   if (f0Authorization !== audit.authorizationId || evidence.gateResults.F3.evidenceId !== evidence.evidenceId || !reviewer) fail('F0 授权、F2 审查或 F3 证据绑定不完整');
+  let visualManifest = null;
+  if (visualPackage) { const snapshot = loadVisualManifestSnapshot(visualPackage, repo); if (snapshot.errors.length) fail(snapshot.errors[0]); visualManifest = snapshot.manifest; }
+  const visualEvidenceErrors = validateVisualEvidence(evidence, visualPackage, { manifest: visualManifest, projectRoot: repo, diffFingerprint: evidence.diffFingerprint });
+  if (visualEvidenceErrors.length) fail(visualEvidenceErrors[0]);
   if (['A1', 'A2'].includes(audit.actionLevel)) {
     if (!['SELF', 'INDEPENDENT'].includes(reviewMode)) fail('A1/A2 F2 必须声明 SELF 或 INDEPENDENT reviewMode');
     if (reviewMode === 'SELF' && reviewer !== work.assignedAgent) fail('SELF reviewer 必须是 Work Item.assignedAgent');
@@ -848,7 +844,7 @@ function transition(args) {
     const level = work.pendingApprovalActionLevel;
     if (!['A2', 'A3'].includes(level)) fail('进入 IMPLEMENTING 仅允许 A2/A3');
     if (level === 'A3') {
-      validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work);
+      validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work, repo);
     }
   }
   if (target === 'VALIDATING') verifyDiffAudit(work, repo, work.diffAuditRecord);

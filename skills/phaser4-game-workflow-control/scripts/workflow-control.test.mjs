@@ -710,3 +710,30 @@ test('正向：initializer 使用 A1 任务授权且不强制读取 Ledger', () 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(readFileSync(join(f.repo, 'docs', 'GDD.md'), 'utf8').startsWith('# 游戏设计文档'), true);
 });
+
+test('V3 视觉 Work Item 缺失 visualProductionUnits 时 CLI 拒绝绕过 coverage', () => {
+  const f = setup({ domain: 'visual-assets', stageId: 'V3' });
+  rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /visualManifestFile|visualProductionUnits/);
+});
+
+test('V4 视觉门不允许 domain=code 通过自由文本绕过', () => {
+  const f = setup({ domain: 'code', stageId: 'V4' });
+  rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /visualManifestFile|visualProductionUnits/);
+});
+
+test('V3 视觉 Implementation Package 的 ImageGen 编号未映射 coverage 时 CLI 拒绝', () => {
+  const f = setup({ domain: 'visual-assets', stageId: 'V3' });
+  const manifestPath = join(f.repo, 'docs', 'visual-assets.json');
+  writeJson(manifestPath, {
+    schema_version: '1.5',
+    effect_image_reconstruction: { applicability: 'effect-image', lifecycle: 'v3-ready' },
+    coverage_audit: { regions: [{ id: 'hero', annotation_number: 1, owner_type: 'fixed-production-visual', production_origin: 'independent-production', production_method: 'authored-raster', delivery_kind: 'raster-image', image_generation_required: false, generation_record_required: false, substitution_policy: 'forbid', expected_assets: ['hero'], asset_id: 'hero' }] },
+    assets: [{ id: 'hero', production_origin: 'independent-production', production_method: 'authored-raster', delivery_kind: 'raster-image', image_generation_required: false, generation_record_required: false, substitution_policy: 'forbid', expected_assets: ['hero'] }],
+  });
+  const pkg = makePackage({
+    visualManifestFile: 'docs/visual-assets.json', visualManifestSha256: hashFile(manifestPath),
+    visualProductionUnits: [{ unitId: 'VIS-2', annotation_number: 2, region_id: 'other', production_origin: 'independent-production', production_method: 'authored-raster', delivery_kind: 'raster-image', image_generation_required: false, generation_record_required: false, substitution_policy: 'forbid', expected_assets: ['other'], owner: 'implementer', ownedPaths: ['src'], outputPaths: ['docs/other.png'] }],
+  });
+  writeJson(f.packagePath, pkg);
+  rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /未映射|visualProductionUnits|annotation_number/);
+});

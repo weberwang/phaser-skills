@@ -56,17 +56,25 @@ node <skill-dir>\scripts\workflow-control.mjs diff-audit --work-item .workflow-c
 
 ## 效果图还原与位图拆解
 
-效果图还原使用 schema 1.4 的 `visual-assets.json`。先冻结原始效果图，再直接在其上叠加生成 annotated SVG：逐区域绘制框选、稳定编号和简要说明，并明确三类实现计划：`generate-now`（本次生成）、`reuse-existing`（复用既有资源）和 `runtime-program`（程序实现）。标注图必须同时显示三类区域；PNG 目标图须为与场景画布一致的完整合法图像，标注编号和图例不得越出画布边缘。
+效果图还原使用 schema 1.5 的 `visual-assets.json`。先冻结原始效果图，再直接在其上叠加生成 annotated SVG：逐区域绘制框选、稳定编号和简要说明，并明确三类实现计划：`generate-now`（本次生成）、`reuse-existing`（复用既有资源）和 `runtime-program`（程序实现）。标注图必须同时显示三类区域；PNG 目标图须为与场景画布一致的完整合法图像，标注编号和图例不得越出画布边缘。
 
 只有 `bitmap-decomposition` 下的 `generate-now` 区域需要在生产前等待用户精确确认。确认前禁止裁切、抠图、分层、AI 分割或补全；`reuse-existing` 与 `runtime-program` 区域仍须在同一标注图中可见，但不触发位图拆解确认。校验器会用确定性渲染器重建 annotated SVG 并逐字节复验，防止隐藏、覆盖或篡改标注。
 
 `reuse-existing` 必须引用独立且不可变的 `asset-reuse-snapshot/1.0`，并校验资源为 `accepted`、基线、许可、scene/state 适用性、源文件 SHA 和兼容证据 SHA；不得把当前 `visual-assets.json` 自引用为复用快照。
 
+效果图清单根节点必须使用单一 camelCase 的 `workItemId`、`candidateVersion`，并与 `candidate_identity.sha256/diff_fingerprint` 及当前实施包绑定；不读取旧 snake_case 根字段。
+
+ImageGen 位图生产还需逐区域显式声明 `production_origin`、`production_method`、`delivery_kind`、`image_generation_required`、`generation_record_required`、`substitution_policy` 和 `expected_assets`；`production_method` 仅允许 `imagegen`、`authored-raster`、`authored-svg`、`phaser-graphics`、`runtime-program`、`reuse`，`delivery_kind` 仅允许 `raster-image`、`vector-image`、`runtime-drawing`、`runtime-program`、`existing-asset`。`independent-production`、`generate-now` 不推断 ImageGen。只有 `image_generation_required=true` 才强制 `imagegen` + `raster-image`、独立源/运行时位图、生成与提示词记录、MIME/宽高/alpha/SHA 及运行时实际消费；SVG、Graphics、CanvasTexture 或 runtime drawing 不等价。V4 使用 `production_contract_audit`，F2 同时通过视觉与生产合同复核，V5 还需 F3 replay、非空 freshness-bound fidelity cases 和无未批准替换。方法变更仅接受绑定区域、工作项、候选版本、用户原文与时间的 `ACCEPTED` Change Request。独立生产不等于图片生成；视觉相似不等于生产合同完成。
+
+拆解必须先完成状态分析，再建立 `component_inventory`：逐项覆盖 `default`、`selected`、`active`、`disabled`、`pressed`、`hover`、`victory`、`defeat`、`paused`，并先绑定状态证据 SHA、冻结目标 SHA 和 `completed_at`。编号不是资产数量单位；② 的 6 个顶部按钮、⑧ 的 3 个底部表面、⑨ 的 3 个动作图标，必须按每个可复用 `component × required state` 交付独立位图。ImageGen 强制 `delivery_mode=individual`、`atlas_allowed=false`，禁止横向组图和图集；交互热区必须与部件一一独立绑定且不计入视觉资产。
+
 最小命令示例：
 
 ```powershell
 node <skill-dir>\scripts\generate_effect_image_annotation.mjs docs\visual-assets.json --project-root . --scene-id <scene> --state-id <state> --output evidence\coverage\<scene>-<state>-annotation.svg --proposal evidence\coverage\<scene>-<state>-proposal.json
-node <skill-dir>\scripts\validate_visual_manifest.mjs docs\visual-assets.json --check-files --project-root .
+node <skill-dir>\scripts\validate_visual_manifest.mjs docs\visual-assets.json --stage V3 --check-files --project-root .
+node <skill-dir>\scripts\validate_visual_manifest.mjs docs\visual-assets.json --stage V4 --check-files --project-root .
+node <skill-dir>\scripts\validate_visual_manifest.mjs docs\visual-assets.json --stage V5 --check-files --project-root .
 ```
 
 ## 初始化与验证

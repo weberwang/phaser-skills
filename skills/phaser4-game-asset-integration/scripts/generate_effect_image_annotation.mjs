@@ -96,7 +96,7 @@ function buildProposal(args, manifest, outputRelative, annotationSha, regions) {
   const targetSha = manifest.reference_target.target_sha256; const proposalId = args.proposalId ?? `annotation-${args.sceneId}-${args.stateId}-${targetSha.slice(-12)}`;
   const createdAt = args.createdAt ?? manifest.reference_target.frozen_at;
   if (!nonEmptyString(createdAt) || Number.isNaN(Date.parse(createdAt))) throw new Error("proposal created_at 必须通过 --created-at 提供可解析时间，或使用可解析冻结时间");
-  return { schema_version: "1.4", proposal_id: proposalId, created_at: createdAt, target_sha256: targetSha, scene_id: args.sceneId, state_id: args.stateId, numbered_image_file: outputRelative, numbered_image_sha256: annotationSha, region_ids: regions.map((region) => region.id), regions: regions.map((region) => ({ region_id: region.id, annotation_number: region.annotation_number, mode: region.implementation_plan.mode, summary: region.implementation_plan.summary, ownership_evidence: region.ownership_evidence, region_definition_sha256: computeRegionDefinitionSha256(region) })) };
+  return { schema_version: "1.5", proposal_id: proposalId, created_at: createdAt, target_sha256: targetSha, scene_id: args.sceneId, state_id: args.stateId, numbered_image_file: outputRelative, numbered_image_sha256: annotationSha, region_ids: regions.map((region) => region.id), regions: regions.map((region) => ({ region_id: region.id, annotation_number: region.annotation_number, mode: region.implementation_plan.mode, summary: region.implementation_plan.summary, ownership_evidence: region.ownership_evidence, region_definition_sha256: computeRegionDefinitionSha256(region) })) };
 }
 
 /** 运行标注图生成流程。 */

@@ -6,13 +6,15 @@ import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { realpathSync, statSync } from "node:fs";
 import { inflateSync } from "node:zlib";
-import { computeRegionDefinitionSha256, PLAN_COLORS, PLAN_LABELS, renderEffectImageAnnotation } from "./effect_image_annotation_core.mjs";
+import { computeRegionDefinitionSha256, getVisualRegionDefinitionAliasConflicts, normalizeVisualRegionDefinition, PLAN_COLORS, PLAN_LABELS, renderEffectImageAnnotation } from "./effect_image_annotation_core.mjs";
+import { auditProductionContract, isSha256, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateComponentReviewCoverage, validateEvidenceIdentity, validateF2ProductionReviews, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
 export { computeRegionDefinitionSha256 } from "./effect_image_annotation_core.mjs";
+export { auditProductionContract, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateComponentReviewCoverage, validateEvidenceIdentity, validateF2ProductionReviews, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
 
 export const ALLOWED_ROUTES = new Set(["ui-icon-font", "pixel-art", "frame-animation", "skeletal-animation", "scene-tilemap", "vfx-particle-shader", "decorative-full-bleed", "gameplay-environment", "ai-composite-raster"]);
 export const ALLOWED_STATUSES = new Set(["planned", "producing", "review", "accepted", "rejected", "replaced"]);
 const BASELINE_BOUND_STATUSES = new Set(["producing", "review", "accepted"]);
-const SCHEMA_VERSION = "1.4";
+const SCHEMA_VERSION = "1.5";
 const STYLE_FINGERPRINT_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const COVERAGE_OWNER_TYPES = new Set(["runtime-data", "runtime-rendered", "fixed-production-visual"]);
@@ -151,6 +153,8 @@ function validateCoverageAudit(audit, target, assetIds, errors, assetById = new 
   audit.regions.forEach((region, index) => {
     const label = `coverage_audit.regions[${index}]`;
     if (!isObject(region)) { errors.push(`${label} 必须是对象`); return; }
+    const canonicalRegion = normalizeVisualRegionDefinition(region);
+    for (const conflict of getVisualRegionDefinitionAliasConflicts(region)) errors.push(`${label} 区域合同别名取值冲突：${conflict.field}（${conflict.sources.join("/")}）`);
     for (const field of ["id", "scene_id", "state_id", "layer", "owner_id"]) if (!nonEmptyString(region[field])) errors.push(`${label}.${field} 必须是非空字符串`);
     if (!nonEmptyString(region.ownership_evidence)) errors.push(`${label}.ownership_evidence 必须绑定已有 coverage/ownership 审阅证据`);
     const pair = `${region.scene_id}\0${region.state_id}`;
@@ -167,16 +171,18 @@ function validateCoverageAudit(audit, target, assetIds, errors, assetById = new 
       rectangles.push(region.bounds);
       coveredRects.set(key, rectangles);
     }
-    if (!COVERAGE_OWNER_TYPES.has(region.owner_type)) errors.push(`${label}.owner_type 必须为 runtime-data、runtime-rendered 或 fixed-production-visual`);
-    if (region.owner_type === "fixed-production-visual") {
-      if (!PRODUCTION_ORIGINS.has(region.production_origin)) errors.push(`${label}.production_origin 必须为 bitmap-decomposition 或 independent-production`);
-      if (!nonEmptyString(region.asset_id) || !assetIds.has(region.asset_id)) errors.push(`${label}.asset_id 必须映射已声明正式资源`);
-      else { const items = fixedMappings.get(region.asset_id) ?? []; items.push(region.id); fixedMappings.set(region.asset_id, items); }
+    if (!COVERAGE_OWNER_TYPES.has(canonicalRegion.owner_type)) errors.push(`${label}.owner_type 必须为 runtime-data、runtime-rendered 或 fixed-production-visual`);
+    if (canonicalRegion.owner_type === "fixed-production-visual") {
+      if (!PRODUCTION_ORIGINS.has(canonicalRegion.production_origin)) errors.push(`${label}.production_origin 必须为 bitmap-decomposition 或 independent-production`);
+      if (!nonEmptyString(canonicalRegion.asset_id) || !assetIds.has(canonicalRegion.asset_id)) errors.push(`${label}.asset_id 必须映射已声明正式资源`);
+      else { const items = fixedMappings.get(canonicalRegion.asset_id) ?? []; items.push(region.id); fixedMappings.set(canonicalRegion.asset_id, items); }
     } else {
       if ("asset_id" in region) errors.push(`${label} 运行数据/运行渲染禁止映射生产位图 asset_id`);
       if ("production_origin" in region) errors.push(`${label} 运行数据/运行渲染禁止声明 production_origin`);
     }
     const planMode = validateImplementationPlan(region.implementation_plan, region, assetById, baseline, label, errors);
+    // 区域先完成状态分析，再按可复用部件建立资产清单；编号本身不代表资产数量。
+    errors.push(...validateVisualComponentContract(region, { stage: "V3", annotation_number: region.annotation_number, region_id: region.id }, { requireImageAssets: true, referenceTargetSha: target?.target_sha256 }));
     const confirmation = region.confirmation;
     if (!isObject(confirmation) || !["AUTO", "USER_DECISION"].includes(confirmation.mode)) errors.push(`${label}.confirmation.mode 必须为 AUTO 或 USER_DECISION`);
     else if (confirmation.mode === "AUTO") {
@@ -187,12 +193,17 @@ function validateCoverageAudit(audit, target, assetIds, errors, assetById = new 
       for (const field of ["numbered_image_file", "numbered_image_version", "numbered_image_sha256", "decision_id"]) if (!nonEmptyString(confirmation[field])) errors.push(`${label}.confirmation.${field} 必须是非空字符串`);
       if (nonEmptyString(confirmation.numbered_image_sha256) && !SHA_PATTERN.test(confirmation.numbered_image_sha256)) errors.push(`${label}.confirmation.numbered_image_sha256 格式无效`);
     }
-    if (region.owner_type === "fixed-production-visual" && region.production_origin === "bitmap-decomposition" && planMode !== "reuse-existing") {
+    if (canonicalRegion.owner_type === "fixed-production-visual") {
+      if (!nonEmptyString(confirmation?.region_definition_sha256)) errors.push(`${label}.confirmation.region_definition_sha256 必须绑定当前区域合同`);
+      else if (!SHA_PATTERN.test(confirmation.region_definition_sha256)) errors.push(`${label}.confirmation.region_definition_sha256 格式无效`);
+      else if (confirmation.region_definition_sha256 !== computeRegionDefinitionSha256(region)) errors.push(`${label}.confirmation.region_definition_sha256 与当前区域合同不一致，必须重新确认`);
+    }
+    if (canonicalRegion.owner_type === "fixed-production-visual" && canonicalRegion.production_origin === "bitmap-decomposition" && planMode !== "reuse-existing") {
       if (confirmation?.mode !== "USER_DECISION") errors.push(`${label} bitmap-decomposition 必须等待 USER_DECISION 确认，不得使用 AUTO`);
       if (!Array.isArray(confirmation?.reasons) || !confirmation.reasons.includes("effect-image-extraction")) errors.push(`${label} bitmap-decomposition 的 confirmation.reasons 必须包含 effect-image-extraction`);
       if (nonEmptyString(confirmation?.numbered_image_file) && !confirmation.numbered_image_file.toLowerCase().endsWith(".svg")) errors.push(`${label}.confirmation.numbered_image_file 必须是生成器 annotated SVG，bitmap-decomposition 不接受 PNG`);
       // 将确认绑定到当前冻结目标和具体覆盖区域，目标或区域定义变化时旧确认立即失效。
-      for (const field of ["proposal_id", "reference_target_sha256", "region_id", "proposal_file", "proposal_sha256", "decision_record_file", "decision_record_sha256", "region_definition_sha256", "decision_source", "user_message_sha256", "thread_id", "work_item_id"]) if (!nonEmptyString(confirmation?.[field])) errors.push(`${label}.confirmation.${field} 必须绑定编号拆解提案和决定记录`);
+      for (const field of ["proposal_id", "reference_target_sha256", "region_id", "proposal_file", "proposal_sha256", "decision_record_file", "decision_record_sha256", "decision_source", "user_message_sha256", "thread_id", "work_item_id"]) if (!nonEmptyString(confirmation?.[field])) errors.push(`${label}.confirmation.${field} 必须绑定编号拆解提案和决定记录`);
       if (nonEmptyString(confirmation?.reference_target_sha256) && confirmation.reference_target_sha256 !== target?.target_sha256) errors.push(`${label}.confirmation.reference_target_sha256 与冻结目标 SHA 不一致，必须重新确认`);
       if (nonEmptyString(confirmation?.region_id) && confirmation.region_id !== region.id) errors.push(`${label}.confirmation.region_id 与覆盖区域不一致，必须重新确认`);
       if (confirmation?.decision_source !== "user-message") errors.push(`${label}.confirmation.decision_source 必须为 user-message`);
@@ -200,7 +211,7 @@ function validateCoverageAudit(audit, target, assetIds, errors, assetById = new 
       if (nonEmptyString(confirmation?.region_definition_sha256) && confirmation.region_definition_sha256 !== computeRegionDefinitionSha256(region)) errors.push(`${label}.confirmation.region_definition_sha256 与当前区域定义不一致，必须重新确认`);
     }
     if (planMode === "reuse-existing" && confirmation?.reasons?.includes("effect-image-extraction")) errors.push(`${label} reuse-existing 不得伪装为新的 effect-image-extraction`);
-    if (region.owner_type === "fixed-production-visual" && region.production_origin === "independent-production" && confirmation?.reasons?.includes("effect-image-extraction")) errors.push(`${label} independent-production 不得伪装为 effect-image-extraction`);
+    if (canonicalRegion.owner_type === "fixed-production-visual" && canonicalRegion.production_origin === "independent-production" && confirmation?.reasons?.includes("effect-image-extraction")) errors.push(`${label} independent-production 不得伪装为 effect-image-extraction`);
   });
   for (const [key, canvas] of canvases) if (rectangleUnionArea(coveredRects.get(key) ?? []) < canvas.width * canvas.height) errors.push(`coverage_audit ${key.replace("\0", "/")} 的矩形并集面积不足以证明完整覆盖`);
   return fixedMappings;
@@ -352,19 +363,28 @@ function validateAcceptedAsset(asset, label, errors) {
 }
 
 /** 返回清单中的全部结构与业务校验错误。 */
-export function validateManifest(data) {
+export function validateManifest(data, options = {}) {
   const errors = [];
   if (!isObject(data)) return ["清单根节点必须是对象"];
+  const requestedStage = options.stage === undefined ? null : String(options.stage).toUpperCase();
+  if (requestedStage && !["V3", "V4", "V5"].includes(requestedStage)) errors.push("--stage 只能是 V3、V4 或 V5");
   if (data.schema_version !== SCHEMA_VERSION) errors.push(`schema_version 必须为 ${SCHEMA_VERSION}`);
   const baseline = validateVisualBaseline(data.visual_baseline, errors);
   const reconstruction = validateReconstructionLifecycle(data, errors);
   let target = null; let candidate = null;
   if (reconstruction?.applicability === "effect-image") {
+    // 效果图清单必须把当前工作项和候选版本写在根节点；旧 snake_case 字段不再参与解析。
+    for (const field of ["workItemId", "candidateVersion"]) {
+      if (!nonEmptyString(data[field])) errors.push(`effect-image 清单根字段 ${field} 必须是非空字符串`);
+    }
+    for (const legacyField of ["work_item_id", "candidate_version"]) {
+      if (Object.hasOwn(data, legacyField)) errors.push(`effect-image 清单禁止使用旧根字段 ${legacyField}，请改为 camelCase`);
+    }
     target = validateReferenceTarget(data.reference_target, errors);
     candidate = data.candidate_identity;
     if (!isObject(candidate)) errors.push("candidate_identity 必须是对象");
     else {
-      for (const field of ["kind", "sha256"]) if (!nonEmptyString(candidate[field])) errors.push(`candidate_identity.${field} 必须是非空字符串`);
+      for (const field of ["kind", "sha256", "diff_fingerprint"]) if (!nonEmptyString(candidate[field])) errors.push(`candidate_identity.${field} 必须是非空字符串`);
       if (nonEmptyString(candidate.sha256) && !SHA_PATTERN.test(candidate.sha256)) errors.push("candidate_identity.sha256 格式无效");
     }
     validateContractReconciliation(data.contract_reconciliation, target, candidate, errors);
@@ -382,6 +402,34 @@ export function validateManifest(data) {
     validateFidelityCases(data.fidelity_cases, target, candidate, baseline, errors, { requireCompleteCoverage: true });
     if (Array.isArray(data.fidelity_cases) && data.fidelity_cases.some((item) => item?.conclusion !== "passed")) errors.push("V5 complete 的 fidelity_cases 必须全部 passed");
   } else if (Array.isArray(data.fidelity_cases) && data.fidelity_cases.length > 0) validateFidelityCases(data.fidelity_cases, target, candidate, baseline, errors);
+  // schema 1.5 对效果图清单统一启用显式生产合同；不再根据字段出现与否兼容旧语义。
+  const strictProductionContract = reconstruction?.applicability === "effect-image";
+  if (strictProductionContract) {
+    const stage = requestedStage ?? (reconstruction.lifecycle === "v5-complete" ? "V5" : "V3");
+    errors.push(...validateVisualProductionCoverage(data, { stage: "V3" }));
+    const requireAudit = stage === "V4" || stage === "V5" || reconstruction.lifecycle === "v5-complete";
+    const requireV5 = stage === "V5" || reconstruction.lifecycle === "v5-complete";
+    if (requireV5) {
+      // V5 是不可绕过的总门：即使对象缺失也必须产出缺失错误，不能靠“没有对象”跳过审计。
+      errors.push(...validateProductionAuditShape(data));
+      errors.push(...validateF2ProductionReviews(data.f2_review ?? data.f2_reviews, { stage: "F2" }, { requireEvidenceIdentity: true, identity: manifestEvidenceIdentity(data) }));
+      errors.push(...validateComponentReviewCoverage(data, data.f2_review ?? data.f2_reviews, "F2"));
+      errors.push(...validateV5ProductionGate(data, { requireEvidenceIdentity: true }));
+    } else if (requireAudit) {
+      // V3-ready 清单进入 V4 文件验收时，production_contract_audit 也必须先存在。
+      errors.push(...validateProductionAuditShape(data));
+    } else {
+      if (isObject(data.production_contract_audit)) errors.push(...validateProductionAuditShape(data));
+      if (isObject(data.v5_production_gate) || isObject(data.production_v5_gate)) errors.push(...validateV5ProductionGate(data));
+      if (isObject(data.f2_review) || isObject(data.f2_reviews)) {
+        errors.push(...validateF2ProductionReviews(data.f2_review ?? data.f2_reviews, { stage: "F2" }));
+        errors.push(...validateComponentReviewCoverage(data, data.f2_review ?? data.f2_reviews, "F2"));
+      }
+    }
+    const changeContext = { workItemId: data.workItemId, candidateVersion: data.candidateVersion };
+    if (isObject(data.production_method_change_request)) errors.push(...validateProductionMethodChangeRequest(data.production_method_change_request, changeContext));
+    if (Array.isArray(data.change_requests)) for (const request of data.change_requests) errors.push(...validateProductionMethodChangeRequest(request, changeContext));
+  }
   const seen = { id: new Set(), texture_key: new Set(), output: new Set() };
   data.assets.forEach((asset, index) => {
     const label = `assets[${index}]`;
@@ -391,7 +439,9 @@ export function validateManifest(data) {
       const mapped = new Set(fixedMappings.get(asset.id) ?? []);
       const declaresReconstruction = "ownership_type" in asset || "coverage_region_ids" in asset;
       if (mapped.size > 0 && asset.ownership_type !== "fixed-production-visual") errors.push(`${label}.ownership_type 必须为 fixed-production-visual`);
-      if (mapped.size > 0 && bitmapAssetIds.has(asset.id) && asset.route !== "ai-composite-raster") errors.push(`${label} 被 bitmap-decomposition 覆盖引用时 route 必须为 ai-composite-raster`);
+      // bitmap-decomposition 只有在合同显式要求 ImageGen 时才绑定 AI 栅格路线。
+      const assetContract = strictProductionContract ? resolveProductionContract(asset) : null;
+      if (mapped.size > 0 && bitmapAssetIds.has(asset.id) && assetContract?.image_generation_required === true && asset.route !== "ai-composite-raster") errors.push(`${label} 被 bitmap-decomposition 覆盖引用时 route 必须为 ai-composite-raster`);
       if (mapped.size > 0 && (!Array.isArray(asset.coverage_region_ids) || asset.coverage_region_ids.length === 0 || !asset.coverage_region_ids.every(nonEmptyString))) errors.push(`${label}.coverage_region_ids 必须是非空字符串列表`);
       if (mapped.size === 0 && declaresReconstruction) errors.push(`${label} 声明了还原字段但未被 fixed coverage 引用`);
       if (Array.isArray(asset.coverage_region_ids) && new Set(asset.coverage_region_ids).size !== asset.coverage_region_ids.length) errors.push(`${label}.coverage_region_ids 不得重复`);
@@ -404,12 +454,18 @@ export function validateManifest(data) {
         if (sourcePaths.some((sourcePath) => sourcePath === target.original_file || resolve(sourcePath) === resolve(target.original_file))) errors.push(`${label} independent-production 不得直接把冻结效果图 original_file 作为 source_file/source_files`);
       }
     } else if ("ownership_type" in asset || "coverage_region_ids" in asset) errors.push(`${label} 非效果图项目不得声明 ownership_type 或 coverage_region_ids`);
+    const assetContract = strictProductionContract ? resolveProductionContract(asset) : {};
+    if (Object.keys(assetContract).length > 0) {
+      const assetContext = { stage: "V3", annotation_number: asset.coverage_annotation_number ?? "?", region_id: asset.coverage_region_id ?? asset.id, observedMethod: assetContract.production_method ?? "unspecified" };
+      errors.push(...validateProductionContract(asset, assetContext, { requireComplete: true }));
+      if (assetContract.image_generation_required === true) errors.push(...validateImageGenerationContract(asset, assetContract, assetContext, { referenceOriginalFile: data.reference_target?.original_file }));
+    }
     validateAssetOwnership(asset, label, errors);
     if (nonEmptyString(asset.route) && !ALLOWED_ROUTES.has(asset.route)) errors.push(`${label}.route 不在允许列表中：${asset.route}`);
     if (nonEmptyString(asset.status) && !ALLOWED_STATUSES.has(asset.status)) errors.push(`${label}.status 不在允许列表中：${asset.status}`);
     for (const field of ["id", "texture_key"]) if (nonEmptyString(asset[field])) { if (seen[field].has(asset[field])) errors.push(`${label}.${field} 重复：${asset[field]}`); seen[field].add(asset[field]); }
-    if (Array.isArray(asset.runtime_outputs)) for (const output of asset.runtime_outputs) if (nonEmptyString(output)) { if (seen.output.has(output)) errors.push(`${label}.runtime_outputs 路径重复：${output}`); seen.output.add(output); }
-    if (BASELINE_BOUND_STATUSES.has(asset.status)) { validateAssetBaselineBinding(asset, baseline, label, errors); if (asset.route === "ai-composite-raster") validateAiGenerationRecord(asset, label, errors); }
+    if (Array.isArray(asset.runtime_outputs)) for (const output of asset.runtime_outputs) if (nonEmptyString(output)) { const normalizedOutput = normalizeProjectRelativePath(output); if (!normalizedOutput) errors.push(`${label}.runtime_outputs 必须是项目内相对路径：${output}`); else { if (seen.output.has(normalizedOutput)) errors.push(`${label}.runtime_outputs 路径重复：${output}`); seen.output.add(normalizedOutput); } }
+    if (BASELINE_BOUND_STATUSES.has(asset.status)) { validateAssetBaselineBinding(asset, baseline, label, errors); if (asset.route === "ai-composite-raster" && resolveProductionContract(asset).image_generation_required === true) validateAiGenerationRecord(asset, label, errors); }
     if (asset.status === "accepted") validateAcceptedAsset(asset, label, errors);
   });
   return errors;
@@ -679,8 +735,13 @@ async function checkBitmapEvidenceFiles(projectRoot, label, region, confirmation
 }
 
 /** 检查全局基线与已验收资源声明的本地文件是否存在。 */
-export async function checkManifestFiles(data, projectRoot) {
+export async function checkManifestFiles(data, projectRoot, options = {}) {
   const errors = [];
+  const requestedStage = options.stage === undefined ? null : String(options.stage).toUpperCase();
+  const lifecycle = data.effect_image_reconstruction?.lifecycle;
+  const stage = requestedStage ?? (lifecycle === "v5-complete" ? "V5" : "V3");
+  const requireAudit = data.effect_image_reconstruction?.applicability === "effect-image" && (stage === "V4" || stage === "V5" || lifecycle === "v5-complete");
+  const requireV5 = data.effect_image_reconstruction?.applicability === "effect-image" && (stage === "V5" || lifecycle === "v5-complete");
   const baseline = data.visual_baseline;
   const paths = [];
   if (isObject(baseline)) {
@@ -709,6 +770,19 @@ export async function checkManifestFiles(data, projectRoot) {
     } catch (error) { errors.push(`reference_target.original_file：${error.message}`); }
   }
   const supplementalPaths = [];
+  if (requireV5) {
+    // 直接调用 checkManifestFiles 也必须执行三类 V5 结构门，不能只依赖外层 validateManifest。
+    errors.push(...validateProductionAuditShape(data));
+    errors.push(...validateF2ProductionReviews(data.f2_review ?? data.f2_reviews, { stage: "F2" }, { requireEvidenceIdentity: true, identity: manifestEvidenceIdentity(data), projectRoot }));
+    errors.push(...validateComponentReviewCoverage(data, data.f2_review ?? data.f2_reviews, "F2"));
+    errors.push(...validateV5ProductionGate(data, { requireEvidenceIdentity: true, projectRoot }));
+  } else if (requireAudit) {
+    errors.push(...validateProductionAuditShape(data));
+  }
+  if (requireAudit) {
+    // V5 check-files 必须无条件复核 V4 审计，缺失对象由审计器直接报告，而不是静默跳过。
+    errors.push(...await auditProductionContract(data, { projectRoot, checkFiles: true }));
+  }
   if (Array.isArray(data.fidelity_cases)) {
     data.fidelity_cases.forEach((item, index) => {
       if (!isObject(item)) return;
@@ -717,7 +791,10 @@ export async function checkManifestFiles(data, projectRoot) {
   }
   if (Array.isArray(data.contract_reconciliation?.checks)) for (const [index, item] of data.contract_reconciliation.checks.entries()) if (nonEmptyString(item?.evidence)) supplementalPaths.push([`contract_reconciliation.checks[${index}].evidence`, item.evidence]);
   if (Array.isArray(data.coverage_audit?.regions)) for (const [index, region] of data.coverage_audit.regions.entries()) {
+    const canonicalRegion = normalizeVisualRegionDefinition(region);
+    for (const conflict of getVisualRegionDefinitionAliasConflicts(region)) errors.push(`coverage_audit.regions[${index}] 区域合同别名取值冲突：${conflict.field}（${conflict.sources.join("/")}）`);
     if (nonEmptyString(region?.ownership_evidence) && region.ownership_evidence !== region?.confirmation?.evidence) supplementalPaths.push([`coverage_audit.regions[${index}].ownership_evidence`, region.ownership_evidence]);
+    if (canonicalRegion.owner_type === "fixed-production-visual" && isObject(canonicalRegion.state_analysis) && nonEmptyString(canonicalRegion.state_analysis.evidence)) await loadEvidenceFile(projectRoot, `coverage_audit.regions[${index}].state_analysis.evidence`, canonicalRegion.state_analysis.evidence, canonicalRegion.state_analysis.evidence_sha256, "file", errors, `coverage_audit.regions[${index}].state_analysis.evidence_sha256`);
     if (region?.implementation_plan?.mode === "reuse-existing" && isObject(region.implementation_plan.reuse_source)) await checkReuseSourceFiles(projectRoot, `coverage_audit.regions[${index}]`, region.implementation_plan.reuse_source, errors);
     const confirmation = region?.confirmation;
     if (confirmation?.mode === "AUTO" && nonEmptyString(confirmation.evidence)) supplementalPaths.push([`coverage_audit.regions[${index}].confirmation.evidence`, confirmation.evidence]);
@@ -748,6 +825,16 @@ export async function checkManifestFiles(data, projectRoot) {
   data.assets.forEach((asset, index) => {
     if (!isObject(asset)) return;
     const assetPaths = [];
+    const contract = resolveProductionContract(asset);
+    if (contract.image_generation_required === true) {
+      errors.push(...validateEvidenceIdentity(asset.runtime_consumption, { stage: "V3", annotation_number: asset.coverage_annotation_number ?? "?", region_id: asset.coverage_region_id ?? asset.id, expectedMethod: "imagegen", observedMethod: contract.production_method ?? "missing" }, manifestEvidenceIdentity(data), { projectRoot }));
+      if (nonEmptyString(asset.source_file)) assetPaths.push(["production_contract.source_file", asset.source_file]);
+      if (Array.isArray(asset.source_files)) for (const value of asset.source_files) if (nonEmptyString(value)) assetPaths.push(["production_contract.source_files", value]);
+      if (nonEmptyString(asset.output_file)) assetPaths.push(["production_contract.output_file", asset.output_file]);
+      if (isObject(asset.output) && nonEmptyString(asset.output.file ?? asset.output.path)) assetPaths.push(["production_contract.output.file", asset.output.file ?? asset.output.path]);
+      if (Array.isArray(asset.runtime_outputs)) for (const value of asset.runtime_outputs) if (nonEmptyString(value)) assetPaths.push(["production_contract.runtime_outputs", value]);
+      if (isObject(asset.generation_record) && Array.isArray(asset.generation_record.reference_inputs)) for (const value of asset.generation_record.reference_inputs) if (nonEmptyString(value)) assetPaths.push(["production_contract.generation_record.reference_inputs", value]);
+    }
     if (asset.status === "accepted") {
       if (nonEmptyString(asset.source_file)) assetPaths.push(["source_file", asset.source_file]);
       if (Array.isArray(asset.source_files)) for (const value of asset.source_files) if (nonEmptyString(value)) assetPaths.push(["source_files", value]);
@@ -757,6 +844,17 @@ export async function checkManifestFiles(data, projectRoot) {
     if (asset.route === "ai-composite-raster" && BASELINE_BOUND_STATUSES.has(asset.status) && isObject(asset.generation_record) && Array.isArray(asset.generation_record.reference_inputs)) for (const value of asset.generation_record.reference_inputs) if (nonEmptyString(value)) assetPaths.push(["generation_record.reference_inputs", value]);
     for (const [field, path] of assetPaths) { try { if (!isFile(projectPath(projectRoot, path))) errors.push(`assets[${index}].${field} 文件不存在：${path}`); } catch (error) { errors.push(`assets[${index}].${field}：${error.message}`); } }
   });
+  for (const [index, asset] of data.assets.entries()) {
+    const contract = isObject(asset) ? resolveProductionContract(asset) : {};
+    if (contract.image_generation_required !== true) continue;
+    const metadata = resolveOutputMetadata(asset);
+    if (!nonEmptyString(metadata.file) || !isSha256(metadata.sha256)) continue;
+    try {
+      const outputPath = projectPath(projectRoot, metadata.file);
+      if (!isFile(outputPath)) errors.push(`assets[${index}].production_contract.output 文件不存在：${metadata.file}`);
+      else if (sha256Bytes(await readFile(outputPath)) !== metadata.sha256) errors.push(`assets[${index}].production_contract.sha256 与输出文件不一致：${metadata.file}`);
+    } catch (error) { errors.push(`assets[${index}].production_contract.output：${error.message}`); }
+  }
   return errors;
 }
 
@@ -773,6 +871,7 @@ function parseArgs(argv) {
     const token = argv[index];
     if (token === "--check-files") args.checkFiles = true;
     else if (token === "--project-root") args.projectRoot = argv[++index];
+    else if (token === "--stage") args.stage = String(argv[++index] ?? "").toUpperCase();
     else if (!args.manifest && !token.startsWith("-")) args.manifest = token;
     else throw new ManifestValidationError(`不支持的参数：${token}`);
   }
@@ -789,9 +888,9 @@ function requiresBitmapFileGate(data) {
 export async function main(argv = process.argv.slice(2)) {
   try {
     const args = parseArgs(argv); const data = await loadManifest(args.manifest);
-    if (!args.checkFiles && requiresBitmapFileGate(data)) { console.error("检测到 bitmap-decomposition：未运行文件证据校验，不予放行。必须使用 --check-files --project-root ."); return 2; }
-    const errors = validateManifest(data);
-    if (args.checkFiles) errors.push(...await checkManifestFiles(data, args.projectRoot ?? resolve(args.manifest, "..", "..")));
+    if (!args.checkFiles && requiresBitmapFileGate(data)) { console.error("检测到 bitmap-decomposition：未运行文件证据校验，不予放行。必须使用 --stage V3 --check-files --project-root ."); return 2; }
+    const errors = validateManifest(data, { stage: args.stage });
+    if (args.checkFiles) errors.push(...await checkManifestFiles(data, args.projectRoot ?? resolve(args.manifest, "..", ".."), { stage: args.stage }));
     if (errors.length) { console.error("视觉资源清单无效："); for (const error of errors) console.error(`- ${error}`); return 1; }
     console.log("视觉资源清单验证通过。"); return 0;
   } catch (error) { console.error(`视觉资源清单无效：${error.message}`); return 1; }

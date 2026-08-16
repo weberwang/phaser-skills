@@ -21,15 +21,17 @@ function minimalPng(width = 1, height = 1) { const chunk = (type, data) => { con
 /** 构造供标注脚本使用的最小冻结效果图清单。 */
 function annotationManifest(targetSha) {
   return {
-    schema_version: "1.4",
+    schema_version: "1.5",
+    workItemId: "work-item-1",
+    candidateVersion: "candidate-1",
     effect_image_reconstruction: { applicability: "effect-image", lifecycle: "v3-ready" },
     reference_target: { candidate_id: "candidate-1", original_file: "reference.png", target_sha256: targetSha, frozen_at: "2026-08-15T00:00:00Z", status: "frozen", scene_ids: ["main"], state_ids: ["default"] },
     coverage_audit: {
       canvases: [{ scene_id: "main", state_id: "default", width: 32, height: 24 }],
       regions: [
         { id: "runtime-background", scene_id: "main", state_id: "default", layer: "background", bounds: { x: 0, y: 0, width: 32, height: 24 }, owner_type: "runtime-rendered", owner_id: "background", ownership_evidence: "evidence/background-review.md", annotation_number: 1, implementation_plan: { mode: "runtime-program", summary: "运行时绘制背景" } },
-        { id: "hero", scene_id: "main", state_id: "default", layer: "actors", bounds: { x: 4, y: 4, width: 8, height: 8 }, owner_type: "fixed-production-visual", production_origin: "independent-production", asset_id: "hero", owner_id: "art", ownership_evidence: "evidence/hero-review.md", annotation_number: 2, implementation_plan: { mode: "generate-now", summary: "本次生成主角" } },
-        { id: "badge", scene_id: "main", state_id: "default", layer: "hud", bounds: { x: 20, y: 2, width: 8, height: 6 }, owner_type: "fixed-production-visual", production_origin: "independent-production", asset_id: "badge", owner_id: "art", ownership_evidence: "evidence/badge-review.md", annotation_number: 3, implementation_plan: { mode: "reuse-existing", summary: "复用既有资源", reuse_source: { source_asset_id: "badge", source_manifest: "docs/reuse-snapshot.json", source_manifest_sha256: targetSha, source_file: "badge.png", source_sha256: targetSha, license_record: "docs/license.md", compatibility_evidence: "evidence/badge.png", compatibility_evidence_sha256: targetSha, visual_baseline_id: "baseline", visual_baseline_version: "1.0.0", applicable_scene_ids: ["main"], applicable_state_ids: ["default"] } } },
+        { id: "hero", scene_id: "main", state_id: "default", layer: "actors", bounds: { x: 4, y: 4, width: 8, height: 8 }, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", expected_assets: ["hero"], asset_id: "hero", owner_id: "art", ownership_evidence: "evidence/hero-review.md", annotation_number: 2, implementation_plan: { mode: "generate-now", summary: "本次生成主角" } },
+        { id: "badge", scene_id: "main", state_id: "default", layer: "hud", bounds: { x: 20, y: 2, width: 8, height: 6 }, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "reuse", delivery_kind: "existing-asset", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", expected_assets: ["badge"], asset_id: "badge", owner_id: "art", ownership_evidence: "evidence/badge-review.md", annotation_number: 3, implementation_plan: { mode: "reuse-existing", summary: "复用既有资源", reuse_source: { source_asset_id: "badge", source_manifest: "docs/reuse-snapshot.json", source_manifest_sha256: targetSha, source_file: "badge.png", source_sha256: targetSha, license_record: "docs/license.md", compatibility_evidence: "evidence/badge.png", compatibility_evidence_sha256: targetSha, visual_baseline_id: "baseline", visual_baseline_version: "1.0.0", applicable_scene_ids: ["main"], applicable_state_ids: ["default"] } } },
       ],
     },
   };

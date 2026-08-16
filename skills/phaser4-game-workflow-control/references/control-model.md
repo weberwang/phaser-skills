@@ -38,4 +38,6 @@ Work Item 的 `taskAuthorization` 保存用户原始请求、目标、范围、�
 
 `route` 依据确定性规则输出 INSPECTION(A0) 至 RELEASE(A6)：Phaser A0-A3 标记 `TASK_AUTHORIZATION`，未决用户选择额外标记 `USER_INPUT_REQUIRED`，只有 Phaser A4-A6 标记 `EXPLICIT_APPROVAL`。普通 A3 保持真实 diff、独立 F2 和 F0-F3 证据，完成后无需 F4；A4-A6 保持精确批准硬门。
 
+视觉生产合同属于 V3-V5 的领域证据，不改变 F0-F4 唯一语义。`visual-assets` 中必须显式区分 `production_origin`、`production_method`、`delivery_kind`、`image_generation_required`、`generation_record_required`、`substitution_policy` 和 `expected_assets`；`independent-production`、`generate-now` 与视觉相似度都不能推断 ImageGen 或替代生产合同。需要 ImageGen 时，V4/F2/V5 必须继续验证独立位图、生成记录、运行时消费和无替换证据。
+
 新审批不得让未授权的既往动作合法化。基线、对象、阶段、模块、文件范围或动作等级改变时，创建新审批。旧记录只读保留。

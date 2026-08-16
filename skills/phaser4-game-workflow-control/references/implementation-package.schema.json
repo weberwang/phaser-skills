@@ -31,8 +31,23 @@
     "outOfScope": {"$ref": "#/$defs/strings"},
     "compatibilityStrategy": {"type": "string", "minLength": 1},
     "definitionOfDone": {"$ref": "#/$defs/nonEmptyStrings"},
-    "stopConditions": {"$ref": "#/$defs/nonEmptyStrings"}
+    "stopConditions": {"$ref": "#/$defs/nonEmptyStrings"},
+    "visualContractVersion": {"type": "string", "minLength": 1},
+    "candidateVersion": {"type": "string", "minLength": 1},
+    "visualManifestFile": {"type": "string", "minLength": 1},
+    "visualManifestSha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "visualProductionUnits": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/visualProductionUnit"}
+    }
   },
+  "allOf": [
+    {
+      "if": {"anyOf": [{"required": ["visualContractVersion"]}, {"required": ["candidateVersion"]}, {"required": ["visualManifestFile"]}, {"required": ["visualManifestSha256"]}, {"required": ["visualProductionUnits"]}]},
+      "then": {"required": ["visualContractVersion", "candidateVersion", "visualManifestFile", "visualManifestSha256", "visualProductionUnits"]}
+    }
+  ],
   "$defs": {
     "executionUnit": {
       "type": "object",
@@ -74,6 +89,265 @@
       ]
     },
     "strings": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
-    "nonEmptyStrings": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+    "nonEmptyStrings": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "visualOutputPaths": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"oneOf": [
+        {"type": "string", "minLength": 1},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "file": {"type": "string", "minLength": 1},
+            "path": {"type": "string", "minLength": 1},
+            "share_id": {"type": "string", "minLength": 1},
+            "shareId": {"type": "string", "minLength": 1}
+          },
+          "allOf": [
+            {"oneOf": [{"required": ["file"], "not": {"required": ["path"]}}, {"required": ["path"], "not": {"required": ["file"]}}]},
+            {"not": {"required": ["share_id", "shareId"]}}
+          ]
+        }
+      ]}
+    },
+    "visualProductionUnit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unitId", "annotation_number", "region_id", "production_origin", "production_method", "delivery_kind", "image_generation_required", "generation_record_required", "substitution_policy", "state_analysis", "component_inventory", "expected_assets", "interaction_hotspots", "owner", "ownedPaths", "outputPaths"],
+      "properties": {
+        "unitId": {"type": "string", "minLength": 1},
+        "annotation_number": {"type": "integer", "minimum": 1},
+        "region_id": {"type": "string", "minLength": 1},
+        "scene_id": {"type": "string", "minLength": 1},
+        "state_id": {"type": "string", "minLength": 1},
+        "production_origin": {"enum": ["bitmap-decomposition", "independent-production"]},
+        "production_method": {"enum": ["imagegen", "authored-raster", "authored-svg", "phaser-graphics", "runtime-program", "reuse"]},
+        "delivery_kind": {"enum": ["raster-image", "vector-image", "runtime-drawing", "runtime-program", "existing-asset"]},
+        "image_generation_required": {"type": "boolean"},
+        "generation_record_required": {"type": "boolean"},
+        "substitution_policy": {"enum": ["forbid", "user-change-request-only"]},
+        "state_analysis": {"$ref": "#/$defs/stateAnalysis"},
+        "component_inventory": {"$ref": "#/$defs/componentInventory"},
+        "owner": {"type": "string", "minLength": 1},
+        "ownedPaths": {"$ref": "#/$defs/nonEmptyStrings"},
+        "outputPaths": {"$ref": "#/$defs/visualOutputPaths"},
+        "expected_assets": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/visualExpectedAsset"}},
+        "interaction_hotspots": {"type": "array", "items": {"$ref": "#/$defs/interactionHotspot"}},
+        "runtime_implementation": {"$ref": "#/$defs/runtimeImplementation"},
+        "format": {"type": "string", "minLength": 1},
+        "output_sharing": {"type": "string", "minLength": 1}
+      },
+      "allOf": [
+        {
+          "if": {"required": ["image_generation_required"], "properties": {"image_generation_required": {"const": true}}},
+          "then": {
+            "required": ["production_method", "delivery_kind", "generation_record_required", "substitution_policy", "component_inventory"],
+            "properties": {
+              "production_method": {"const": "imagegen"},
+              "delivery_kind": {"const": "raster-image"},
+              "generation_record_required": {"const": true},
+              "substitution_policy": {"const": "user-change-request-only"},
+              "component_inventory": {"required": ["delivery_mode", "atlas_allowed"], "properties": {"delivery_mode": {"const": "individual"}, "atlas_allowed": {"const": false}}},
+              "expected_assets": {"items": {"required": ["source_file", "runtime_file"], "not": {"required": ["atlas_slice"]}}}
+            }
+          }
+        },
+        {
+          "if": {"required": ["production_method"], "properties": {"production_method": {"const": "imagegen"}}},
+          "then": {
+            "required": ["component_inventory"],
+            "not": {"required": ["runtime_implementation"]},
+            "properties": {
+              "delivery_kind": {"const": "raster-image"},
+              "image_generation_required": {"const": true},
+              "generation_record_required": {"const": true},
+              "substitution_policy": {"const": "user-change-request-only"},
+              "component_inventory": {"required": ["delivery_mode", "atlas_allowed"], "properties": {"delivery_mode": {"const": "individual"}, "atlas_allowed": {"const": false}}},
+              "expected_assets": {"items": {"required": ["source_file", "runtime_file"], "not": {"required": ["atlas_slice"]}}}
+            }
+          }
+        },
+        {
+          "if": {"required": ["production_method"], "properties": {"production_method": {"const": "authored-raster"}}},
+          "then": {"not": {"required": ["runtime_implementation"]}, "properties": {"delivery_kind": {"const": "raster-image"}, "image_generation_required": {"const": false}, "expected_assets": {"items": {"required": ["source_file", "runtime_file"]}}}}
+        },
+        {
+          "if": {"required": ["production_method"], "properties": {"production_method": {"const": "authored-svg"}}},
+          "then": {"not": {"required": ["runtime_implementation"]}, "properties": {"delivery_kind": {"const": "vector-image"}, "image_generation_required": {"const": false}, "expected_assets": {"items": {"required": ["source_file", "runtime_file"]}}}}
+        },
+        {
+          "if": {"required": ["production_method"], "properties": {"production_method": {"const": "reuse"}}},
+          "then": {"not": {"required": ["runtime_implementation"]}, "properties": {"delivery_kind": {"const": "existing-asset"}, "image_generation_required": {"const": false}, "expected_assets": {"items": {"required": ["source_file", "runtime_file"]}}}}
+        },
+        {
+          "if": {"required": ["production_method"], "properties": {"production_method": {"const": "phaser-graphics"}}},
+          "then": {
+            "required": ["runtime_implementation"],
+            "properties": {
+              "delivery_kind": {"const": "runtime-drawing"},
+              "image_generation_required": {"const": false},
+              "runtime_implementation": {"required": ["kind", "integration_files"], "properties": {"kind": {"const": "phaser-graphics"}}},
+              "expected_assets": {"items": {"not": {"anyOf": [{"required": ["source_file"]}, {"required": ["runtime_file"]}]}}}
+            }
+          }
+        },
+        {
+          "if": {"required": ["production_method"], "properties": {"production_method": {"const": "runtime-program"}}},
+          "then": {
+            "required": ["runtime_implementation"],
+            "properties": {
+              "delivery_kind": {"const": "runtime-program"},
+              "image_generation_required": {"const": false},
+              "runtime_implementation": {"required": ["kind", "integration_files"], "properties": {"kind": {"const": "runtime-program"}}},
+              "expected_assets": {"items": {"not": {"anyOf": [{"required": ["source_file"]}, {"required": ["runtime_file"]}]}}}
+            }
+          }
+        },
+        {
+          "if": {"required": ["delivery_kind"], "properties": {"delivery_kind": {"enum": ["raster-image", "vector-image", "existing-asset"]}}},
+          "then": {"properties": {"expected_assets": {"items": {"required": ["source_file", "runtime_file"]}}}}
+        }
+      ]
+    },
+    "stateAnalysisState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state_id", "requirement", "reason"],
+      "properties": {
+        "state_id": {"type": "string", "minLength": 1},
+        "requirement": {"enum": ["required", "not-applicable"]},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "stateAnalysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "phase", "evidence", "evidence_sha256", "reference_target_sha256", "analysis_id", "completed_at", "states"],
+      "properties": {
+        "status": {"const": "complete"},
+        "phase": {"const": "before-component-splitting"},
+        "evidence": {"type": "string", "minLength": 1},
+        "evidence_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "reference_target_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "analysis_id": {"type": "string", "minLength": 1},
+        "completed_at": {"type": "string", "format": "date-time"},
+        "states": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/stateAnalysisState"}}
+      }
+    },
+    "componentStateCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state_id", "requirement", "reason"],
+      "properties": {
+        "state_id": {"type": "string", "minLength": 1},
+        "requirement": {"enum": ["required", "not-applicable"]},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "componentInventoryItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component_id", "role", "reusable", "interaction_required"],
+      "properties": {
+        "component_id": {"type": "string", "minLength": 1},
+        "role": {"type": "string", "minLength": 1},
+        "reusable": {"type": "boolean"},
+        "interaction_required": {"type": "boolean"},
+        "state_coverage": {"type": "array", "items": {"$ref": "#/$defs/componentStateCoverage"}}
+      }
+    },
+    "componentInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["granularity", "component_count", "delivery_mode", "atlas_allowed", "created_at", "components"],
+      "properties": {
+        "granularity": {"enum": ["reusable-component", "single-component"]},
+        "component_count": {"type": "integer", "minimum": 1},
+        "delivery_mode": {"enum": ["individual", "atlas"]},
+        "atlas_allowed": {"type": "boolean"},
+        "created_at": {"type": "string", "format": "date-time"},
+        "components": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/componentInventoryItem"}}
+      }
+    },
+    "atlasSlice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["atlas_asset_id", "slice_id", "atlas_size", "rect"],
+      "properties": {
+        "atlas_asset_id": {"type": "string", "minLength": 1},
+        "slice_id": {"type": "string", "minLength": 1},
+        "atlas_size": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["width", "height"],
+          "properties": {
+            "width": {"type": "number", "exclusiveMinimum": 0},
+            "height": {"type": "number", "exclusiveMinimum": 0}
+          }
+        },
+        "rect": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "y", "width", "height"],
+          "properties": {
+            "x": {"type": "number", "minimum": 0},
+            "y": {"type": "number", "minimum": 0},
+            "width": {"type": "number", "exclusiveMinimum": 0},
+            "height": {"type": "number", "exclusiveMinimum": 0}
+          }
+        }
+      }
+    },
+    "visualExpectedAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset_id", "component_id", "state_id"],
+      "properties": {
+        "asset_id": {"type": "string", "minLength": 1},
+        "component_id": {"type": "string", "minLength": 1},
+        "state_id": {"type": "string", "minLength": 1},
+        "asset_kind": {"type": "string", "minLength": 1},
+        "source_file": {"type": "string", "minLength": 1},
+        "runtime_file": {"type": "string", "minLength": 1},
+        "mime_type": {"type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$"},
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1},
+        "alpha": {"type": "boolean"},
+        "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "share_id": {"type": "string", "minLength": 1},
+        "atlas_slice": {"$ref": "#/$defs/atlasSlice"}
+      }
+    },
+    "interactionHotspot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hotspot_id", "component_id", "bounds"],
+      "properties": {
+        "hotspot_id": {"type": "string", "minLength": 1},
+        "component_id": {"type": "string", "minLength": 1},
+        "bounds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "y", "width", "height"],
+          "properties": {
+            "x": {"type": "number", "minimum": 0},
+            "y": {"type": "number", "minimum": 0},
+            "width": {"type": "number", "exclusiveMinimum": 0},
+            "height": {"type": "number", "exclusiveMinimum": 0}
+          }
+        }
+      }
+    },
+    "runtimeImplementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "integration_files"],
+      "properties": {
+        "kind": {"enum": ["phaser-graphics", "runtime-program"]},
+        "integration_files": {"$ref": "#/$defs/nonEmptyStrings"},
+        "description": {"type": "string", "minLength": 1}
+      }
+    }
   }
 }
