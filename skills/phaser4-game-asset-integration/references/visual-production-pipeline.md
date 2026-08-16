@@ -73,7 +73,7 @@ V2a/V2b 和独立美术 F2 通过后，明确参考/基线且不存在可见偏�
 
 `docs/visual-assets.json` 使用 schema 1.5。普通资产声明 `not-applicable`；效果图还原进入 V3 前声明 `effect-image/v3-ready`，此时冻结目标、候选、合同回对和 coverage 必需，而 fidelity case 可为空。coverage 必须逐冻结 scene/state 声明目标画布、画布内 region 和完整性摘要，覆盖率为 1、未覆盖列表为空、状态通过且绑定证据；不能用单个微小区域冒充全覆盖。每个固定视觉 region 还要有稳定编号、实现分类和七个生产合同字段；`production_method` 使用 `imagegen`、`authored-raster`、`authored-svg`、`phaser-graphics`、`runtime-program`、`reuse`，`delivery_kind` 使用 `raster-image`、`vector-image`、`runtime-drawing`、`runtime-program`、`existing-asset`。实现分类为 `generate-now`、`reuse-existing`、`runtime-program`，并在冻结效果图标注图中同时呈现。
 
-固定视觉区域区分 `bitmap-decomposition` 与 `independent-production`；实施顺序是 ownership/实现分类 → 生成框选编号 annotated SVG → 展示用户 → 等待 bitmap `generate-now` 精确确认 → 运行完整文件校验 → 生产。拆位图必须先用 `node scripts/generate_effect_image_annotation.mjs ... --output ...svg --proposal ...json` 提交绑定目标 SHA/region ID/区域定义 SHA 的提案，并在 confirmation 记录 proposal/decision 文件及 SHA、编号图版本/SHA、决定 ID、实际消息身份字段后等待精确 USER_DECISION。开始裁切、抠图、分层、AI 分割/补全或派生位图前，必须运行 `node scripts/validate_visual_manifest.mjs docs/visual-assets.json --stage V3 --check-files --project-root .`，结构和文件证据均通过才可执行；默认 SVG 必须是共享确定性渲染器产出的 annotated SVG，内嵌完整合法 PNG 冻结原图，且 PNG IHDR 宽高必须与选定 scene/state 画布一致，文件检查会逐字节重建并比较，再逐项匹配区域数量、编号、分类、摘要、bounds 和 SHA；`reuse-existing` 的 `source_manifest` 必须是不可变 `asset-reuse-snapshot/1.0`，并用 `source_file`、`source_manifest_sha256`、`source_sha256`、`compatibility_evidence_sha256` 完成精确身份复核；bitmap 路线资产使用 `ai-composite-raster`。只有 V5 完成后声明 `v5-complete`，case 必须全部通过，并逐一覆盖冻结目标的每个 scene/state 组合。其余条件确认按既有规则触发，`AUTO` 绑定判定证据；owner_type 属于合同/F2 专业事实，不能由验证器从像素推断。
+固定视觉区域区分 `bitmap-decomposition` 与 `independent-production`；实施顺序是 ownership/实现分类 → 状态分析 → 唯一原子 component/placements 拆解 → 生成左原图+右说明栏 PNG → 展示用户 → 等待 bitmap `generate-now` 精确确认 → 运行完整文件校验 → 生产。拆位图必须先用 `node scripts/generate_effect_image_annotation.mjs ... --output ...png --proposal ...json` 提交绑定目标 SHA/region ID/区域定义 SHA 的提案，并在 confirmation 记录 proposal/decision 文件及 SHA、PNG MIME/版本/SHA、决定 ID、实际消息身份字段后等待精确 USER_DECISION。开始裁切、抠图、分层、AI 分割/补全或派生位图前，必须运行 `node scripts/validate_visual_manifest.mjs docs/visual-assets.json --stage V3 --check-files --project-root .`，结构和文件证据均通过才可执行；PNG 必须由共享无依赖确定性栅格渲染器产出，保留左侧原图尺寸并把摘要、图例和 atomic image requirements 放在右侧说明栏，文件检查会校验 PNG 魔数/MIME/尺寸/元数据并逐字节重建比较；正式流程不生成或接受 SVG 标注。`reuse-existing` 的 `source_manifest` 必须是不可变 `asset-reuse-snapshot/1.0`，并用 `source_file`、`source_manifest_sha256`、`source_sha256`、`compatibility_evidence_sha256` 完成精确身份复核；bitmap 路线资产使用 `ai-composite-raster`。只有 V5 完成后声明 `v5-complete`，case 必须全部通过，并逐一覆盖冻结目标的每个 scene/state 组合。其余条件确认按既有规则触发，`AUTO` 绑定判定证据；owner_type 属于合同/F2 专业事实，不能由验证器从像素推断。
 
 1. 按资产类型选择源文件、运行时输出、生产工具、命名、切片、锚点、图集、帧和压缩策略；保留可编辑源文件或完整生成记录，并继承当前全局基线与适用分系统锚点。
 2. 将资源写入 `docs/visual-assets.json`，声明唯一资源 ID、纹理键、输出路径、路线、状态、证据、项目已定义预算，以及与根节点完全一致的基线 ID、版本和风格指纹。每个资源无论处于 `planned`、`producing`、`review`、`accepted`、`rejected` 还是 `replaced`，都必须二选一声明具体 `scene_id`，或 `shared: true` 及至少两个 `shared_scene_ids`；仅运行必需资源可用 `shared_reason: runtime-required` 免除两个场景条件。拒绝或替换资源仍保留原场景归属，确保审计链可追溯。
@@ -84,6 +84,8 @@ V2a/V2b 和独立美术 F2 通过后，明确参考/基线且不存在可见偏�
 V3 使用仍适用的 V1/V2 `AUTO` 或 `USER_DECISION` 记录、视觉可交付与全局基线；忠实还原还必须绑定冻结视觉目标、忠实度矩阵和已批准例外。
 
 V3 的生产合同字段必须逐 `annotation_number/region_id` 显式记录 `production_origin`、`production_method`、`delivery_kind`、`image_generation_required`、`generation_record_required`、`substitution_policy` 和 `expected_assets`。拆解顺序固定为“先 `state_analysis`，再 `component_inventory`”：所有普通、selected/active、disabled、pressed/hover、victory/defeat/paused 状态必须写 `required` 或 `not-applicable+reason`；`annotation_number` 不是资产数量单位。`component_inventory.component_count` 必须对应可复用部件清单，ImageGen 的 `expected_assets` 必须按 `component_id × required state_id` 一一对应。ImageGen 无条件使用 individual 位图并声明 `atlas_allowed=false`，一张横向组图或图集均不能满足多个部件；仅 authored-raster/authored-svg/reuse 等非 ImageGen 方法可在显式 `atlas_allowed=true` 且每个部件×状态登记完整 `atlas_slice` 时使用图集。交互热区单独登记，不计入视觉资产数量。`independent-production` 与 `generate-now` 不推断 ImageGen；独立生产不等于图片生成，视觉相似不等于生产合同完成。若 `image_generation_required=true`，必须是 `imagegen+raster-image`，并交付独立源/运行时位图、完整提示词与生成记录、MIME/宽高/alpha/SHA、运行时消费证据；SVG、Graphics、CanvasTexture、runtime drawing 和裁切参考图均不合格。实施包的 `visualProductionUnits` 必须与 coverage 一一映射，编号、部件/状态、输出共享、路径、所有权和格式冲突均退回 V3。
+
+ImageGen 的源文件、运行时文件和实际输出仅允许 `image/png` 或 `image/jpeg` 以及 `.png`、`.jpg`、`.jpeg` 后缀；通用 authored-raster 可使用其他位图格式。
 
 ## V4 正式资源生产与资源级验收
 
@@ -111,3 +113,7 @@ V4 以文件、性能、加载、响应式、`production_contract_audit` 和一�
 ## 完成条件
 
 当前场景只有在功能代码、V3 规划、全部正式资源 V4 `accepted`、V5 正式接入、占位清理，以及功能、视觉、响应式和性能联合证据全部有效后才能报告完成。全部授权场景和功能关闭前不得据此宣称 G1 完成。
+
+### 原子视觉拆解补充
+
+拆解顺序固定为“先状态分析，再按可复用部件拆解”：`component_count` 只计算唯一原子视觉部件，`visible_instance_count` 通过多个 `placements` 表达重复实例。② 的六个顶部按钮分别登记六个 component；⑧ 的三个相同表面可登记一个 component 加三个 placements，⑨ 的三个动作图标按实际复用关系登记。ImageGen 每个唯一 `component×required state` 必须独立位图，强制 `individual + atlas_allowed=false`，不能以编号级组合图或图集替代；atlas 仅适用于非 ImageGen 方法的显式切片合同。交互热区绑定 placement 且不计入视觉资产。状态证据 SHA、冻结目标 SHA、分析 ID 和完成时间必须先于 component inventory。

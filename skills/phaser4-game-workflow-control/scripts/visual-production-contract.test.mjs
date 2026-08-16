@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { encodePngRgba } from "../../phaser4-game-asset-integration/scripts/effect_image_raster.mjs";
 import test from "node:test";
 import {
   auditProductionContract,
@@ -15,6 +20,7 @@ import {
   validateVisualEvidence,
   validateVisualProductionCoverage,
   validateVisualProductionUnits,
+  deriveAtomicImageRequirements,
   normalizeProjectRelativePath,
 } from "./visual-production-contract.mjs";
 import { declaredPathEntry, registerCrossUnitPath } from "./visual-package-paths.mjs";
@@ -23,31 +29,50 @@ const HASH = `sha256:${"a".repeat(64)}`;
 
 const IMPLEMENTATION_PACKAGE_SCHEMA = JSON.parse(readFileSync(new URL("../references/implementation-package.schema.json", import.meta.url), "utf8"));
 
+/** 重新从唯一 component×required state 生成稳定的原子生图需求。 */
+function refreshAtomicRequirements(region) {
+  region.atomic_image_requirements = deriveAtomicImageRequirements(region);
+  return region;
+}
+
 /** 构造完整状态分析：单部件默认态需要资源，其余状态明确说明不适用。 */
 function componentContract(componentId, assetId, sourceFile = `art/${assetId}.png`, runtimeFile = `public/${assetId}.png`) {
   const requiredStates = [{ state_id: "default", requirement: "required", reason: "普通可见状态" }];
   const notApplicable = ["selected", "active", "disabled", "pressed", "hover", "victory", "defeat", "paused"].map((state_id) => ({ state_id, requirement: "not-applicable", reason: "当前单图区域没有该状态" }));
-  return {
+  return refreshAtomicRequirements({
+    id: componentId,
+    annotation_number: 1,
+    owner_type: "fixed-production-visual",
+    bounds: { x: 0, y: 0, width: 64, height: 64 },
     state_analysis: { status: "complete", phase: "before-component-splitting", evidence: "evidence/state-analysis.md", evidence_sha256: HASH, reference_target_sha256: HASH, analysis_id: "analysis-1", completed_at: "2026-08-15T00:00:00Z", states: [...requiredStates, ...notApplicable] },
-    component_inventory: { granularity: "single-component", component_count: 1, delivery_mode: "individual", atlas_allowed: false, created_at: "2026-08-15T00:01:00Z", components: [{ component_id: componentId, role: "visual-component", reusable: true, interaction_required: false }] },
-    expected_assets: [{ asset_id: assetId, component_id: componentId, state_id: "default", source_file: sourceFile, runtime_file: runtimeFile }],
+    component_inventory: { granularity: "single-component", component_count: 1, visible_instance_count: 1, delivery_mode: "individual", atlas_allowed: false, created_at: "2026-08-15T00:01:00Z", components: [{ component_id: componentId, atomic_visual_key: `${componentId}-visual`, role: "visual-component", reusable: true, state_coverage: [...requiredStates, ...notApplicable], placements: [{ placement_id: `${componentId}-placement-1`, bounds: { x: 0, y: 0, width: 32, height: 32 }, interaction_required: false }] }] },
+    expected_assets: [{ asset_id: assetId, asset_scope: "atomic-component", atomic_visual_key: `${componentId}-visual`, component_id: componentId, state_id: "default", source_file: sourceFile, runtime_file: runtimeFile }],
     interaction_hotspots: [],
-  };
+  });
 }
 
 /** 构造多部件默认态区域，用于验证组图、独立资源和合法 atlas。 */
 function multiComponentRegion(count, mode = "individual", expectedAssets = null) {
-  const components = Array.from({ length: count }, (_, index) => ({ component_id: `component-${index + 1}`, role: "button", reusable: true }));
-  const defaultAssets = components.map((component, index) => ({ asset_id: `asset-${index + 1}`, component_id: component.component_id, state_id: "default", source_file: `art/${component.component_id}.png`, runtime_file: `public/${component.component_id}.png` }));
-  return {
+  const regionWidth = Math.max(64, count * 32);
+  const states = [{ state_id: "default", requirement: "required", reason: "普通状态" }, ...["selected", "active", "disabled", "pressed", "hover", "victory", "defeat", "paused"].map((state_id) => ({ state_id, requirement: "not-applicable", reason: "当前组件不适用" }))];
+  const components = Array.from({ length: count }, (_, index) => ({ component_id: `component-${index + 1}`, atomic_visual_key: `component-${index + 1}-visual`, role: "button", reusable: true, state_coverage: states, placements: [{ placement_id: `placement-${index + 1}`, bounds: { x: index * 32, y: 0, width: 32, height: 32 }, interaction_required: false }] }));
+  const defaultAssets = components.map((component, index) => ({ asset_id: `asset-${index + 1}`, asset_scope: "atomic-component", atomic_visual_key: component.atomic_visual_key, component_id: component.component_id, state_id: "default", source_file: `art/${component.component_id}.png`, runtime_file: `public/${component.component_id}.png` }));
+  const suppliedAssets = (expectedAssets ?? defaultAssets).map((asset) => ({
+    ...asset,
+    asset_scope: asset.asset_scope ?? "atomic-component",
+    atomic_visual_key: asset.atomic_visual_key ?? components.find((component) => component.component_id === asset.component_id)?.atomic_visual_key ?? "",
+  }));
+  return refreshAtomicRequirements({
     owner_type: "fixed-production-visual",
     annotation_number: 2,
     id: `region-${count}`,
-    state_analysis: { status: "complete", phase: "before-component-splitting", evidence: "evidence/state-analysis.md", evidence_sha256: HASH, reference_target_sha256: HASH, analysis_id: "analysis-1", completed_at: "2026-08-15T00:00:00Z", states: [{ state_id: "default", requirement: "required", reason: "普通状态" }, ...["selected", "active", "disabled", "pressed", "hover", "victory", "defeat", "paused"].map((state_id) => ({ state_id, requirement: "not-applicable", reason: "当前组件不适用" }))] },
-    component_inventory: { granularity: "reusable-component", component_count: count, delivery_mode: mode, atlas_allowed: mode === "atlas", created_at: "2026-08-15T00:01:00Z", components: components.map((component) => ({ ...component, interaction_required: false })) },
-    expected_assets: expectedAssets ?? defaultAssets,
+    bounds: { x: 0, y: 0, width: regionWidth, height: 64 },
+    state_analysis: { status: "complete", phase: "before-component-splitting", evidence: "evidence/state-analysis.md", evidence_sha256: HASH, reference_target_sha256: HASH, analysis_id: "analysis-1", completed_at: "2026-08-15T00:00:00Z", states },
+    component_inventory: { granularity: "reusable-component", component_count: count, visible_instance_count: count, delivery_mode: mode, atlas_allowed: mode === "atlas", created_at: "2026-08-15T00:01:00Z", components },
+    expected_assets: suppliedAssets,
+    asset_ids: [...new Set(suppliedAssets.map((asset) => asset.asset_id))],
     interaction_hotspots: [],
-  };
+  });
 }
 
 /** 构造不需要 ImageGen 的显式独立生产合同。 */
@@ -100,13 +125,14 @@ const IMAGEGEN_REGRESSION_FIXTURES = [
 function v5FixtureManifest(fixture) {
   const componentId = `${fixture.number}-component`;
   const component = componentContract(componentId, fixture.number);
-  const region = { id: fixture.number, annotation_number: fixture.annotation_number, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", ...component, expected_assets: [{ ...component.expected_assets[0], mime_type: fixture.mime_type }], asset_id: fixture.number };
-  const asset = { id: fixture.number, ...imageGenAsset({ mime_type: fixture.mime_type, source_file: `art/${fixture.number}.png`, runtime_outputs: [`public/${fixture.number}.png`], generation_record: { ...imageGenAsset().generation_record, annotation_number: fixture.annotation_number, region_id: fixture.number, component_id: componentId, state_id: "default", asset_id: fixture.number, source_file: `art/${fixture.number}.png`, runtime_file: `public/${fixture.number}.png` } }), production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", ...component, expected_assets: [{ ...component.expected_assets[0], mime_type: fixture.mime_type }] };
+  const region = refreshAtomicRequirements({ ...component, id: fixture.number, annotation_number: fixture.annotation_number, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", expected_assets: [{ ...component.expected_assets[0], mime_type: fixture.mime_type }], asset_id: fixture.number });
+  const asset = { ...imageGenAsset({ mime_type: fixture.mime_type, source_file: `art/${fixture.number}.png`, runtime_outputs: [`public/${fixture.number}.png`], generation_record: { ...imageGenAsset().generation_record, annotation_number: fixture.annotation_number, region_id: fixture.number, component_id: componentId, state_id: "default", asset_id: fixture.number, source_file: `art/${fixture.number}.png`, runtime_file: `public/${fixture.number}.png` } }), ...component, id: fixture.number, production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", expected_assets: [{ ...component.expected_assets[0], mime_type: fixture.mime_type }] };
   const identity = { evidence_sha256: HASH, candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1" };
-  const actualAsset = { asset_id: fixture.number, file: `public/${fixture.number}.png`, component_id: componentId, state_id: "default", mime_type: fixture.mime_type, width: 64, height: 96, alpha: true, sha256: HASH };
-  const runtimeConsumption = { status: "passed", evidence: "runtime.json", ...identity, component_usages: [{ component_id: componentId, state_id: "default", asset_id: fixture.number, runtime_file: `public/${fixture.number}.png`, runtime_sha256: HASH, status: "passed" }] };
-  const audit = { status: "passed", candidate_version: "candidate-1", target_sha256: HASH, reviewed_at: "2026-08-15T00:00:00Z", units: [{ annotation_number: fixture.annotation_number, region_id: fixture.number, observed_method: "imagegen", observed_delivery_kind: fixture.delivery_kind, status: "passed", expected_assets: [component.expected_assets[0]], interaction_hotspots: [], actual_assets: [actualAsset], runtime_consumption: runtimeConsumption }] };
-  const componentReview = [{ annotation_number: fixture.annotation_number, region_id: fixture.number, component_id: componentId, state_id: "default", asset_id: fixture.number, runtime_file: `public/${fixture.number}.png`, runtime_sha256: HASH, status: "passed", runtime_usage_verified: true }];
+  const actualAsset = { asset_id: fixture.number, asset_scope: "atomic-component", atomic_visual_key: `${componentId}-visual`, file: `public/${fixture.number}.png`, component_id: componentId, state_id: "default", mime_type: fixture.mime_type, width: 64, height: 96, alpha: true, sha256: HASH };
+  const placementIds = component.component_inventory.components[0].placements.map((placement) => placement.placement_id);
+  const runtimeConsumption = { status: "passed", evidence: "runtime.json", ...identity, component_usages: [{ component_id: componentId, state_id: "default", asset_id: fixture.number, placement_ids: placementIds, runtime_file: `public/${fixture.number}.png`, runtime_sha256: HASH, status: "passed" }] };
+  const audit = { status: "passed", candidate_version: "candidate-1", target_sha256: HASH, reviewed_at: "2026-08-15T00:00:00Z", units: [{ annotation_number: fixture.annotation_number, region_id: fixture.number, observed_method: "imagegen", observed_delivery_kind: fixture.delivery_kind, status: "passed", expected_assets: region.expected_assets, atomic_image_requirements: region.atomic_image_requirements, interaction_hotspots: [], actual_assets: [actualAsset], runtime_consumption: runtimeConsumption }] };
+  const componentReview = [{ annotation_number: fixture.annotation_number, region_id: fixture.number, component_id: componentId, atomic_visual_key: `${componentId}-visual`, asset_scope: "atomic-component", state_id: "default", asset_id: fixture.number, placement_ids: placementIds, runtime_file: `public/${fixture.number}.png`, runtime_sha256: HASH, status: "passed", runtime_usage_verified: true }];
   return { workItemId: "work-item-1", candidateVersion: "candidate-1", candidate_identity: { sha256: HASH, diff_fingerprint: "diff-1" }, visual_baseline: { style_fingerprint: HASH }, reference_target: { target_sha256: HASH }, coverage_audit: { regions: [region] }, assets: [asset], production_contract_audit: audit, f2_review: { overall_status: "passed", visual_fidelity_review: { status: "passed", review_id: "vf", reviewer: "art", evidence: "vf.md", ...identity }, production_contract_review: { status: "passed", review_id: "pc", reviewer: "qa", evidence: "pc.md", ...identity, component_reviews: componentReview } }, v5_production_gate: { status: "passed", v3_status: "passed", implementation_package_status: "passed", v4_status: "passed", f2_status: "passed", f2_visual_fidelity_status: "passed", f2_production_contract_status: "passed", f3_status: "passed", runtime_replay: { status: "passed", evidence: "replay.json", ...identity }, fidelity_cases: [{ candidate_sha256: HASH, created_at: "2026-08-15T00:00:00Z", freshness_bound: true, evidence: "fidelity.json", ...identity }], candidate_sha256: HASH, target_sha256: HASH, runtime_consumption: runtimeConsumption, unapproved_substitution: false } };
 }
 
@@ -149,6 +175,149 @@ test("ImageGen 禁止裁切参考图", () => {
   const contract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true });
   const asset = imageGenAsset({ generation_record: { ...imageGenAsset().generation_record, crop_reference: true } });
   assert(validateImageGenerationContract(asset, contract, { annotation_number: 5, region_id: "r5" }).some((item) => item.includes("禁止裁切参考图")));
+});
+
+test("ImageGen 只接受 PNG/JPEG，通用 authored-raster 仍不受影响", () => {
+  const makeContract = (mime, extension) => {
+    const contract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", expected_assets: [{ asset_id: "imagegen-asset", mime_type: mime, source_file: `art/imagegen.${extension}`, runtime_file: `public/imagegen.${extension}` }] });
+    delete contract.runtime_implementation;
+    return contract;
+  };
+  const webpErrors = validateProductionContract(makeContract("image/webp", "webp"), { annotation_number: 10, region_id: "imagegen-webp" });
+  assert(webpErrors.some((item) => item.includes("仅允许 image/png 或 image/jpeg")));
+  assert.deepEqual(validateProductionContract(makeContract("image/png", "png")), []);
+  assert.deepEqual(validateProductionContract(makeContract("image/jpeg", "jpg")), []);
+  const authored = independentContract({ production_method: "authored-raster", delivery_kind: "raster-image", expected_assets: [{ asset_id: "authored", mime_type: "image/webp", source_file: "art/authored.webp", runtime_file: "public/authored.webp" }] });
+  delete authored.runtime_implementation;
+  assert.deepEqual(validateProductionContract(authored), []);
+});
+
+test("ImageGen 输出 MIME/源运行时后缀拒绝 WebP，PNG 和 JPEG 通过", () => {
+  const contract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
+  delete contract.runtime_implementation;
+  const webpErrors = validateImageGenerationContract(imageGenAsset({ mime_type: "image/webp", source_file: "art/hero.webp", runtime_outputs: ["public/assets/hero.webp"] }), contract, { annotation_number: 11, region_id: "imagegen-output-webp" });
+  assert(webpErrors.some((item) => item.includes("仅允许 image/png 或 image/jpeg") || item.includes("扩展名仅允许")));
+  const jpg = imageGenAsset({ mime_type: "image/jpeg", source_file: "art/hero.jpg", runtime_outputs: ["public/assets/hero.jpg"], generation_record: { ...imageGenAsset().generation_record, source_file: "art/hero.jpg", runtime_file: "public/assets/hero.jpg", output_file: "public/assets/hero.jpg" } });
+  assert(!validateImageGenerationContract(jpg, contract, { annotation_number: 12, region_id: "imagegen-output-jpg" }).some((item) => item.includes("仅允许") || item.includes("扩展名仅允许")));
+});
+
+test("ImageGen 所有多路径入口逐项拒绝非法格式和重复别名", () => {
+  const contract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
+  delete contract.runtime_implementation;
+  const assetSourceFiles = imageGenAsset({ source_files: ["art/hero.png", "art/hero.webp"] });
+  const assetErrors = validateImageGenerationContract(assetSourceFiles, contract, { stage: "V3", annotation_number: 13, region_id: "asset-source-files" });
+  assert(assetErrors.some((item) => item.includes("扩展名仅允许") && item.includes("source_files")), assetErrors.join("\n"));
+  const generationSourceFiles = imageGenAsset({ generation_record: { ...imageGenAsset().generation_record, source_files: ["art/hero.png", "art/hero.webp"] } });
+  const generationErrors = validateImageGenerationContract(generationSourceFiles, contract, { stage: "V3", annotation_number: 14, region_id: "generation-source-files" });
+  assert(generationErrors.some((item) => item.includes("扩展名仅允许") && item.includes("source_files")), generationErrors.join("\n"));
+  const aliasContract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", expected_assets: [{ asset_id: "alias-asset", source_file: "art/alias.png", sourceFile: "art/alias.webp", runtime_file: "public/alias.png", mime_type: "image/png" }] });
+  delete aliasContract.runtime_implementation;
+  const aliasErrors = validateProductionContract(aliasContract, { stage: "V3", annotation_number: 15, region_id: "expected-asset-alias" });
+  assert(aliasErrors.some((item) => item.includes("别名") || item.includes("snake_case")), aliasErrors.join("\n"));
+
+  const packageRegion = refreshAtomicRequirements({ ...multiComponentRegion(1), id: "package-imagegen-alias", annotation_number: 16, production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
+  packageRegion.expected_assets[0] = { ...packageRegion.expected_assets[0], source_files: ["art/component-1.png", "art/component-1.webp"], mime_type: "image/png" };
+  refreshAtomicRequirements(packageRegion);
+  const packageUnit = { ...structuredClone(packageRegion), unitId: "PACKAGE-IMAGEGEN-ALIAS", region_id: packageRegion.id, owner: "implementer", ownedPaths: ["art"], outputPaths: ["public"], format: "png" };
+  const packageErrors = validateVisualProductionUnits({ visualProductionUnits: [packageUnit] }, { coverage_audit: { regions: [packageRegion] } });
+  assert(packageErrors.some((item) => item.includes("source_files") && item.includes("扩展名仅允许")), packageErrors.join("\n"));
+});
+
+test("ImageGen source_files/sourceFiles 逐项检查，纯 PNG/JPG/JPEG 通过而混入非法格式失败", () => {
+  const contract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
+  delete contract.runtime_implementation;
+  for (const field of ["source_files", "sourceFiles"]) {
+    const valid = imageGenAsset({ [field]: ["art/one.png", "art/two.jpg", "art/three.jpeg"] });
+    const validErrors = validateImageGenerationContract(valid, contract, { stage: "V3", annotation_number: 20, region_id: `${field}-valid` });
+    assert(!validErrors.some((item) => item.includes("扩展名仅允许") || item.includes("source_files/sourceFiles")), validErrors.join("\n"));
+    const validGeneration = imageGenAsset({ generation_record: { ...imageGenAsset().generation_record, [field]: ["art/one.png", "art/two.jpg", "art/three.jpeg"] } });
+    const validGenerationErrors = validateImageGenerationContract(validGeneration, contract, { stage: "V3", annotation_number: 20, region_id: `${field}-generation-valid` });
+    assert(!validGenerationErrors.some((item) => item.includes("扩展名仅允许") || item.includes("source_files/sourceFiles")), validGenerationErrors.join("\n"));
+    const mixed = imageGenAsset({ [field]: ["art/one.png", "art/two.webp", "art/three.jpeg"] });
+    const mixedErrors = validateImageGenerationContract(mixed, contract, { stage: "V3", annotation_number: 21, region_id: `${field}-mixed` });
+    assert(mixedErrors.some((item) => item.includes("扩展名仅允许") && item.includes(field)), mixedErrors.join("\n"));
+    const mixedGeneration = imageGenAsset({ generation_record: { ...imageGenAsset().generation_record, [field]: ["art/one.png", "art/two.webp", "art/three.jpeg"] } });
+    const mixedGenerationErrors = validateImageGenerationContract(mixedGeneration, contract, { stage: "V3", annotation_number: 21, region_id: `${field}-generation-mixed` });
+    assert(mixedGenerationErrors.some((item) => item.includes("扩展名仅允许") && item.includes(field)), mixedGenerationErrors.join("\n"));
+  }
+  const conflict = imageGenAsset({ source_files: ["art/one.png"], sourceFiles: ["art/two.webp"] });
+  const conflictErrors = validateImageGenerationContract(conflict, contract, { stage: "V3", annotation_number: 22, region_id: "source-file-alias-conflict" });
+  assert(conflictErrors.some((item) => item.includes("source_files/sourceFiles") && item.includes("冲突")), conflictErrors.join("\n"));
+});
+
+test("ImageGen 不得被 output/output_metadata 的合法顶层 MIME 掩盖", () => {
+  const contract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
+  delete contract.runtime_implementation;
+  const nestedInvalid = imageGenAsset({
+    output: { mime_type: "image/png", file: "public/hero.png" },
+    output_metadata: { mime_type: "image/webp", path: "public/hero.webp" },
+  });
+  const nestedErrors = validateImageGenerationContract(nestedInvalid, contract, { stage: "V4", annotation_number: 23, region_id: "nested-output-metadata" });
+  assert(nestedErrors.some((item) => item.includes("output_metadata.mime_type") && item.includes("image/png 或 image/jpeg")), nestedErrors.join("\n"));
+  assert(nestedErrors.some((item) => item.includes("output_metadata.path") && item.includes("扩展名仅允许")), nestedErrors.join("\n"));
+
+  const nestedAliasConflict = imageGenAsset({
+    output: { mime_type: "image/png", mimeType: "image/webp", file: "public/hero.png", path: "public/hero.webp" },
+  });
+  const aliasErrors = validateImageGenerationContract(nestedAliasConflict, contract, { stage: "V4", annotation_number: 24, region_id: "nested-output-alias" });
+  assert(aliasErrors.some((item) => item.includes("output.mime_type") && item.includes("冲突")), aliasErrors.join("\n"));
+  assert(aliasErrors.some((item) => item.includes("output.file/path") && item.includes("冲突")), aliasErrors.join("\n"));
+
+  const manifestAssetConflict = imageGenAsset({ mime_type: "image/png", output_file: "public/asset-a.png", output: { mime_type: "image/jpeg", file: "public/asset-b.png" } });
+  const manifestErrors = validateImageGenerationContract(manifestAssetConflict, contract, { stage: "V4", annotation_number: 25, region_id: "manifest-asset-identity" });
+  assert(manifestErrors.some((item) => item.includes("统一输出身份MIME") && item.includes("冲突")), manifestErrors.join("\n"));
+  assert(manifestErrors.some((item) => item.includes("统一输出身份路径") && item.includes("冲突")), manifestErrors.join("\n"));
+
+  const generationRecordConflict = imageGenAsset({ generation_record: { ...imageGenAsset().generation_record, mime_type: "image/png", output_file: "public/generation-a.png", output: { mime_type: "image/jpeg", file: "public/generation-b.png" } } });
+  const generationErrors = validateImageGenerationContract(generationRecordConflict, contract, { stage: "V3", annotation_number: 26, region_id: "generation-record-identity" });
+  assert(generationErrors.some((item) => item.includes("统一输出身份MIME") && item.includes("冲突")), generationErrors.join("\n"));
+  assert(generationErrors.some((item) => item.includes("统一输出身份路径") && item.includes("冲突")), generationErrors.join("\n"));
+
+  const consistent = imageGenAsset({ output: { mime_type: "image/png", file: "public/assets/hero.png" }, output_metadata: { mimeType: "image/png", path: "public/assets/hero.png" } });
+  const consistentErrors = validateImageGenerationContract(consistent, contract, { stage: "V3", annotation_number: 27, region_id: "consistent-output-identity" });
+  assert(!consistentErrors.some((item) => item.includes("统一输出身份")), consistentErrors.join("\n"));
+
+  const authored = independentContract({ production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", expected_assets: [{ asset_id: "authored-nested", source_file: "art/authored.webp", runtime_file: "public/authored.webp", output: { mime_type: "image/webp", file: "public/authored.webp" } }] });
+  delete authored.runtime_implementation;
+  assert.deepEqual(validateProductionContract(authored), []);
+});
+
+test("V4 actual、runtime usage 和 runtime_outputs 的 snake/camel 别名冲突必须失败", () => {
+  const region = refreshAtomicRequirements({ ...multiComponentRegion(1), id: "v4-alias-region", annotation_number: 17, production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
+  region.expected_assets[0] = { ...region.expected_assets[0], mime_type: "image/png", width: 1, height: 1, alpha: true, sha256: HASH };
+  refreshAtomicRequirements(region);
+  const expected = region.expected_assets[0];
+  const placementIds = region.component_inventory.components[0].placements.map((placement) => placement.placement_id);
+  const auditUnit = {
+    actual_assets: [{ ...expected, file: expected.runtime_file, path: "public/component-1.webp", mime_type: "image/png", mimeType: "image/webp", sha256: HASH }],
+    runtime_consumption: {
+      component_usages: [{ component_id: expected.component_id, state_id: expected.state_id, asset_id: expected.asset_id, placement_ids: placementIds, runtime_file: expected.runtime_file, runtimeFile: "public/component-1.webp", runtime_sha256: HASH, status: "passed" }],
+    },
+  };
+  const errors = validateComponentAuditEvidence(region, auditUnit, { stage: "V4", annotation_number: 17, region_id: region.id });
+  assert(errors.some((item) => item.includes("file/path")), errors.join("\n"));
+  assert(errors.some((item) => item.includes("mime_type/mimeType") || item.includes("mimeType")), errors.join("\n"));
+  assert(errors.some((item) => item.includes("runtime_file/runtimeFile") || item.includes("runtimeFile")), errors.join("\n"));
+
+  const contract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
+  delete contract.runtime_implementation;
+  const outputAliasErrors = validateImageGenerationContract(imageGenAsset({ runtime_outputs: ["public/hero.png"], runtimeOutputs: ["public/hero.webp"] }), contract, { stage: "V4", annotation_number: 18, region_id: "runtime-output-alias" });
+  assert(outputAliasErrors.some((item) => item.includes("runtime_outputs/runtimeOutputs") || item.includes("runtimeOutputs")), outputAliasErrors.join("\n"));
+});
+
+test("ImageGen PNG/JPEG 通过且 authored-raster 的 WebP/AVIF/GIF/BMP 不误伤", () => {
+  const imageGenContract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
+  delete imageGenContract.runtime_implementation;
+  for (const extension of ["png", "jpg", "jpeg"]) {
+    const asset = imageGenAsset({ mime_type: extension === "png" ? "image/png" : "image/jpeg", source_file: `art/valid.${extension}`, runtime_outputs: [`public/valid.${extension}`] });
+    const errors = validateImageGenerationContract(asset, imageGenContract, { stage: "V3", annotation_number: 19, region_id: `imagegen-${extension}` });
+    assert(!errors.some((item) => item.includes("仅允许") || item.includes("扩展名仅允许")), errors.join("\n"));
+  }
+  for (const [extension, mime_type] of [["webp", "image/webp"], ["avif", "image/avif"], ["gif", "image/gif"], ["bmp", "image/bmp"]]) {
+    const contract = independentContract({ production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", expected_assets: [{ asset_id: `authored-${extension}`, mime_type, source_file: `art/authored.${extension}`, runtime_file: `public/authored.${extension}` }] });
+    delete contract.runtime_implementation;
+    assert.deepEqual(validateProductionContract(contract), [], extension);
+  }
 });
 
 test("ImageGen 错误包含阶段、annotation number、region ID、期望和观察方法", () => {
@@ -226,6 +395,19 @@ test("正确的六个独立按钮资源通过，单图区域可显式声明不�
   assert.deepEqual(validateVisualComponentContract(multiComponentRegion(1), { stage: "V3", annotation_number: 3, region_id: "single-region" }), []);
 });
 
+test("重复视觉部件只登记一个原子组件并用多个 placements 表达", () => {
+  const region = multiComponentRegion(1);
+  const component = region.component_inventory.components[0];
+  component.placements = [0, 1, 2].map((index) => ({ placement_id: `surface-placement-${index + 1}`, bounds: { x: index * 32, y: 0, width: 32, height: 32 }, interaction_required: false }));
+  region.bounds.width = 96;
+  region.component_inventory.visible_instance_count = 3;
+  region.atomic_image_requirements = deriveAtomicImageRequirements(region);
+  assert.equal(region.component_inventory.component_count, 1);
+  assert.equal(region.expected_assets.length, 1);
+  assert.equal(region.atomic_image_requirements.length, 1);
+  assert.deepEqual(validateVisualComponentContract(region, { stage: "V3", annotation_number: 8, region_id: "bottom-surfaces" }), []);
+});
+
 test("缺少 selected 或 victory/defeat 状态分析时拒绝，不能只写 default", () => {
   const region = multiComponentRegion(1);
   region.state_analysis.states = region.state_analysis.states.filter((state) => !["selected", "victory", "defeat"].includes(state.state_id));
@@ -238,8 +420,8 @@ test("缺少 selected 或 victory/defeat 状态分析时拒绝，不能只写 de
 test("交互热区不计入视觉资产，合法 atlas 必须逐部件有唯一切片", () => {
   const atlasAssets = Array.from({ length: 6 }, (_, index) => ({ asset_id: "top-buttons-atlas", component_id: `component-${index + 1}`, state_id: "default", source_file: "art/top-buttons-atlas.png", runtime_file: "public/top-buttons-atlas.png", atlas_slice: { atlas_asset_id: "top-buttons-atlas", slice_id: `button-${index + 1}-default`, atlas_size: { width: 192, height: 32 }, rect: { x: index * 32, y: 0, width: 32, height: 32 } } }));
   const atlas = multiComponentRegion(6, "atlas", atlasAssets);
-  atlas.component_inventory.components[0].interaction_required = true;
-  atlas.interaction_hotspots = [{ hotspot_id: "button-1-hit", component_id: "component-1", bounds: { x: 0, y: 0, width: 32, height: 32 } }];
+  atlas.component_inventory.components[0].placements[0].interaction_required = true;
+  atlas.interaction_hotspots = [{ hotspot_id: "button-1-hit", component_id: "component-1", placement_id: "placement-1", bounds: { x: 0, y: 0, width: 32, height: 32 } }];
   assert.deepEqual(validateVisualComponentContract(atlas, { stage: "V3", annotation_number: 2, region_id: "top-buttons-atlas" }), []);
   const duplicatedSlice = structuredClone(atlas); duplicatedSlice.expected_assets[1].atlas_slice.slice_id = duplicatedSlice.expected_assets[0].atlas_slice.slice_id;
   assert(validateVisualComponentContract(duplicatedSlice, { stage: "V3", annotation_number: 2, region_id: "top-buttons-atlas" }).some((item) => item.includes("atlas_slice identity")));
@@ -252,7 +434,7 @@ test("V4 atlas actual_assets 必须复核 V3 切片身份", () => {
     { asset_id: "atlas", component_id: "component-1", state_id: "default", source_file: "art/atlas.png", runtime_file: "public/atlas.png", sha256: HASH, atlas_slice: { atlas_asset_id: "atlas", slice_id: "one", atlas_size: { width: 40, height: 20 }, rect: { x: 0, y: 0, width: 20, height: 20 } } },
     { asset_id: "atlas", component_id: "component-2", state_id: "default", source_file: "art/atlas.png", runtime_file: "public/atlas.png", sha256: HASH, atlas_slice: { atlas_asset_id: "atlas", slice_id: "two", atlas_size: { width: 40, height: 20 }, rect: { x: 20, y: 0, width: 20, height: 20 } } },
   ]);
-  const baseUnit = { actual_assets: region.expected_assets.map((asset) => ({ ...asset })), runtime_consumption: { component_usages: [{ component_id: "component-1", state_id: "default", asset_id: "atlas", runtime_file: "public/atlas.png", runtime_sha256: HASH, status: "passed", atlas_slice: region.expected_assets[0].atlas_slice }, { component_id: "component-2", state_id: "default", asset_id: "atlas", runtime_file: "public/atlas.png", runtime_sha256: HASH, status: "passed", atlas_slice: region.expected_assets[1].atlas_slice }] } };
+  const baseUnit = { actual_assets: region.expected_assets.map((asset) => ({ ...asset })), runtime_consumption: { component_usages: [{ component_id: "component-1", state_id: "default", asset_id: "atlas", placement_ids: ["placement-1"], runtime_file: "public/atlas.png", runtime_sha256: HASH, status: "passed", atlas_slice: region.expected_assets[0].atlas_slice }, { component_id: "component-2", state_id: "default", asset_id: "atlas", placement_ids: ["placement-2"], runtime_file: "public/atlas.png", runtime_sha256: HASH, status: "passed", atlas_slice: region.expected_assets[1].atlas_slice }] } };
   assert.deepEqual(validateComponentAuditEvidence(region, baseUnit, { stage: "V4", annotation_number: 2, region_id: "atlas" }), []);
   const stale = structuredClone(baseUnit); stale.actual_assets[1].atlas_slice.slice_id = "wrong";
   assert(validateComponentAuditEvidence(region, stale, { stage: "V4", annotation_number: 2, region_id: "atlas" }).some((item) => item.includes("atlas_slice identity")));
@@ -277,29 +459,20 @@ test("固定回归夹具①–④⑦–⑨只允许①⑦ PNG，错误交付被 
     const v5Errors = validateV5ProductionGate({ v5_production_gate: { status: "failed", v3_status: "passed", implementation_package_status: "passed", v4_status: "failed", f2_status: "failed", f3_status: "failed" } });
     assert(v5Errors.length > 0, `${fixture.number} V5 must reject failed upstream gate`);
     const totalErrors = await validateV5VisualManifest(v5FixtureManifest(fixture));
-    if (["①", "⑦"].includes(fixture.number)) assert.deepEqual(totalErrors, [], `${fixture.number} V5 总门应通过`);
-    else assert(totalErrors.length > 0, `${fixture.number} V5 总门必须拒绝非 PNG`);
+    assert(totalErrors.some((item) => item.includes("checkFiles=true") && item.includes("projectRoot")), `${fixture.number} V5 缺少文件门必须拒绝`);
   }
 });
 
-test("F2/V5 Evidence 必须绑定当前清单身份并传播 V4 文件审计", () => {
+test("F2/V5 Evidence 缺少显式文件门必须拒绝", () => {
   const manifest = v5FixtureManifest(IMAGEGEN_REGRESSION_FIXTURES[0]);
   const pkg = { visualProductionUnits: [{ unitId: "U-1" }] };
   const evidence = { gateResults: { F2: manifest.f2_review, F3: { runtime_replay: manifest.v5_production_gate.runtime_replay } }, v5_production_gate: manifest.v5_production_gate };
-  assert.deepEqual(validateVisualEvidence(evidence, pkg, { manifest, diffFingerprint: "diff-1" }), []);
-  const stale = structuredClone(evidence); stale.v5_production_gate.candidate_sha256 = `sha256:${"b".repeat(64)}`;
-  assert(validateVisualEvidence(stale, pkg, { manifest, diffFingerprint: "diff-1" }).some((item) => item.includes("candidate")));
-  const badV4 = structuredClone(manifest); badV4.production_contract_audit.units[0].actual_assets[0].file = "art/fake.mjs";
-  const propagated = validateVisualEvidence(evidence, pkg, { manifest: badV4, diffFingerprint: "diff-1" });
-  assert(propagated.some((item) => item.includes("未绑定 V3 source/runtime") || item.includes("V4")));
-  const missingComponentReviews = structuredClone(evidence);
-  delete missingComponentReviews.gateResults.F2.production_contract_review.component_reviews;
-  assert(validateVisualEvidence(missingComponentReviews, pkg, { manifest, diffFingerprint: "diff-1" }).some((item) => item.includes("component_reviews")));
+  assert(validateVisualEvidence(evidence, pkg, { manifest, diffFingerprint: "diff-1" }).some((item) => item.includes("checkFiles=true") && item.includes("projectRoot")));
 });
 
 /** 构造带 production contract 的实施包夹具，专门覆盖逐部件路径绑定。 */
 function implementationPackageFixture() {
-  const region = { ...multiComponentRegion(2), id: "package-region", annotation_number: 2, production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", asset_id: "asset-1" };
+  const region = refreshAtomicRequirements({ ...multiComponentRegion(2), id: "package-region", annotation_number: 2, production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid" });
   const unit = { ...structuredClone(region), unitId: "PACKAGE-1", region_id: "package-region", owner: "implementer", ownedPaths: ["art", "public"], outputPaths: ["art", "public"], format: "png" };
   return { region, pkg: { visualProductionUnits: [unit] }, manifest: { coverage_audit: { regions: [region] } } };
 }
@@ -308,8 +481,8 @@ function implementationPackageFixture() {
 function runtimeRegionFixture(annotationNumber = 1, regionId = `runtime-region-${annotationNumber}`, assetId = `runtime-asset-${annotationNumber}`) {
   const region = multiComponentRegion(1);
   Object.assign(region, { id: regionId, annotation_number: annotationNumber, asset_id: assetId, production_origin: "independent-production", production_method: "phaser-graphics", delivery_kind: "runtime-drawing", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", runtime_implementation: { kind: "phaser-graphics", integration_files: ["src/components/main.mjs"] } });
-  region.expected_assets = [{ asset_id: assetId, component_id: "component-1", state_id: "default" }];
-  return region;
+  region.expected_assets = [{ asset_id: assetId, asset_scope: "atomic-component", atomic_visual_key: "component-1-visual", component_id: "component-1", state_id: "default" }];
+  return refreshAtomicRequirements(region);
 }
 
 /** 构造带 ownedPaths/allowedPaths 的运行时实施包，便于区分合法文件与旁路路径。 */
@@ -458,10 +631,13 @@ test("Implementation Package 跨单元按规范化路径拒绝 PUBLIC/SHARED.PNG
   const sharedRegion = structuredClone(shared.region);
   sharedRegion.id = "package-region-shared";
   sharedRegion.annotation_number = 3;
+  refreshAtomicRequirements(sharedRegion);
   const sharedUnit = structuredClone(shared.pkg.visualProductionUnits[0]);
   sharedUnit.unitId = "PACKAGE-SHARED-2";
+  sharedUnit.id = sharedRegion.id;
   sharedUnit.region_id = sharedRegion.id;
   sharedUnit.annotation_number = 3;
+  refreshAtomicRequirements(sharedUnit);
   sharedUnit.owner = shared.pkg.visualProductionUnits[0].owner;
   const shareId = "shared-visual-output";
   for (const asset of sharedRegion.expected_assets) asset.share_id = shareId;
@@ -476,7 +652,7 @@ test("Implementation Package 跨单元按规范化路径拒绝 PUBLIC/SHARED.PNG
 
 /** 构造一个所有 expected asset 均具备独立 ImageGen 记录的多部件区域。 */
 function multiImageGenManifest(count = 6) {
-  const region = { ...multiComponentRegion(count), id: "multi-image-region", annotation_number: 2, production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", asset_id: "asset-1" };
+  const region = refreshAtomicRequirements({ ...multiComponentRegion(count), id: "multi-image-region", annotation_number: 2, production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
   const identity = { evidence_sha256: HASH, candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1" };
   const assets = region.expected_assets.map((expected, index) => {
     const asset = { id: expected.asset_id, source_file: expected.source_file, mime_type: "image/png", width: 32, height: 32, alpha: true, sha256: HASH, runtime_outputs: [expected.runtime_file], runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", ...identity }, generation_record: { ...imageGenAsset().generation_record, record_id: `GEN-${index + 1}`, annotation_number: region.annotation_number, region_id: region.id, component_id: expected.component_id, state_id: expected.state_id, asset_id: expected.asset_id, source_file: expected.source_file, runtime_file: expected.runtime_file } };
@@ -507,6 +683,63 @@ test("F2 component review 和 V4 runtime usage 必须绑定正确 asset_id", () 
   assert(reviewErrors.some((item) => item.includes("asset_id 与 V3 expected_assets 不一致")), reviewErrors.join("\n"));
   const auditErrors = validateComponentAuditEvidence(region, { actual_assets: region.expected_assets.map((asset) => ({ ...asset })), runtime_consumption: { component_usages: [{ component_id: "component-1", state_id: "default", asset_id: "wrong-asset", status: "passed" }] } }, { stage: "V4", annotation_number: 3, region_id: "f2-region" });
   assert(auditErrors.some((item) => item.includes("runtime_consumption.component_usages") && item.includes("asset_id")), auditErrors.join("\n"));
+});
+
+/** 构造同一原子部件覆盖 default/selected/victory/defeat 的多状态夹具。 */
+function fourStateRegion() {
+  const region = multiComponentRegion(1);
+  const stateIds = ["default", "selected", "victory", "defeat"];
+  const states = [
+    ...stateIds.map((state_id) => ({ state_id, requirement: "required", reason: `${state_id} 实际游戏状态` })),
+    ...["active", "disabled", "pressed", "hover", "paused"].map((state_id) => ({ state_id, requirement: "not-applicable", reason: "当前夹具不适用" })),
+  ];
+  Object.assign(region, { id: "four-state-region", annotation_number: 4, production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid" });
+  region.state_analysis.states = states; region.component_inventory.components[0].state_coverage = states;
+  const component = region.component_inventory.components[0];
+  region.expected_assets = stateIds.map((state_id) => ({ asset_id: `four-state-${state_id}`, asset_scope: "atomic-component", atomic_visual_key: component.atomic_visual_key, component_id: component.component_id, state_id, source_file: `art/four-state-${state_id}.png`, runtime_file: `public/four-state-${state_id}.png`, mime_type: "image/png", width: 1, height: 1, alpha: true, sha256: HASH }));
+  region.asset_ids = region.expected_assets.map((asset) => asset.asset_id); region.component_inventory.component_count = 1; region.component_inventory.visible_instance_count = 1;
+  return refreshAtomicRequirements(region);
+}
+
+test("Coverage→Package→V4→F2/V5 逐项覆盖 default/selected/victory/defeat，漏项必须拒绝", () => {
+  const region = fourStateRegion(); const requirements = deriveAtomicImageRequirements(region); assert.deepEqual(requirements.map((item) => item.state_id), ["default", "defeat", "selected", "victory"]);
+  assert.deepEqual(validateVisualComponentContract(region, { stage: "V3", annotation_number: 4, region_id: region.id }), []);
+  const unit = { ...structuredClone(region), unitId: "FOUR-STATE-PACKAGE", region_id: region.id, owner: "implementer", ownedPaths: ["art"], outputPaths: ["public"] };
+  assert.deepEqual(validateVisualProductionUnits({ visualProductionUnits: [unit] }, { coverage_audit: { regions: [region] } }), []);
+  const actualAssets = region.expected_assets.map((asset) => ({ ...asset, file: asset.runtime_file }));
+  const usages = region.expected_assets.map((asset) => ({ component_id: asset.component_id, state_id: asset.state_id, asset_id: asset.asset_id, placement_ids: ["placement-1"], runtime_file: asset.runtime_file, runtime_sha256: HASH, status: "passed" }));
+  const auditUnit = { actual_assets: actualAssets, runtime_consumption: { component_usages: usages } };
+  assert.deepEqual(validateComponentAuditEvidence(region, auditUnit, { stage: "V4", annotation_number: 4, region_id: region.id }), []);
+  const manifest = { coverage_audit: { regions: [region] }, assets: region.expected_assets.map((asset) => ({ id: asset.asset_id, sha256: HASH, runtime_outputs: [asset.runtime_file] })) };
+  const reviews = { production_contract_review: { component_reviews: region.expected_assets.map((asset) => ({ annotation_number: 4, region_id: region.id, component_id: asset.component_id, state_id: asset.state_id, asset_id: asset.asset_id, placement_ids: ["placement-1"], atomic_visual_key: asset.atomic_visual_key, asset_scope: "atomic-component", runtime_file: asset.runtime_file, runtime_sha256: HASH, status: "passed", runtime_usage_verified: true })) } };
+  assert.deepEqual(validateComponentReviewCoverage(manifest, reviews, "F2"), []);
+  const missing = structuredClone(region); missing.expected_assets = missing.expected_assets.filter((asset) => asset.state_id !== "victory"); refreshAtomicRequirements(missing);
+  assert(validateVisualComponentContract(missing, { stage: "V3", annotation_number: 4, region_id: region.id }).some((item) => item.includes("victory") && item.includes("expected_count=1")), "V3 漏 victory 必须失败");
+  const missingV4 = structuredClone(auditUnit); missingV4.actual_assets = missingV4.actual_assets.filter((asset) => asset.state_id !== "defeat"); missingV4.runtime_consumption.component_usages = missingV4.runtime_consumption.component_usages.filter((usage) => usage.state_id !== "defeat");
+  assert(validateComponentAuditEvidence(region, missingV4, { stage: "V4", annotation_number: 4, region_id: region.id }).some((item) => item.includes("state_id=defeat")), "V4 漏 defeat 必须失败");
+  const missingF2 = structuredClone(reviews); missingF2.production_contract_review.component_reviews = missingF2.production_contract_review.component_reviews.filter((review) => review.state_id !== "selected");
+  assert(validateComponentReviewCoverage(manifest, missingF2, "F2").some((item) => item.includes("state_id=selected")), "F2 漏 selected 必须失败");
+  assert(validateV5ProductionGate({ v5_production_gate: { status: "passed", v3_status: "passed", implementation_package_status: "passed", v4_status: "passed", f2_status: "failed", f2_visual_fidelity_status: "passed", f2_production_contract_status: "failed", f3_status: "passed" } }).some((item) => item.includes("F2")), "V5 必须拒绝上游状态漏项");
+});
+
+test("V4/F2 漏掉 component placement 时拒绝，即使 asset_id 和 state 正确", () => {
+  const base = v5FixtureManifest(IMAGEGEN_REGRESSION_FIXTURES[0]); const usageMissing = structuredClone(base); delete usageMissing.production_contract_audit.units[0].runtime_consumption.component_usages[0].placement_ids;
+  const usageErrors = validateComponentAuditEvidence(usageMissing.coverage_audit.regions[0], usageMissing.production_contract_audit.units[0], { stage: "V4", annotation_number: 1, region_id: "①" });
+  assert(usageErrors.some((item) => item.includes("placement_ids") && item.includes("component_id=①-component")), usageErrors.join("\n"));
+  const reviewMissing = structuredClone(base); delete reviewMissing.f2_review.production_contract_review.component_reviews[0].placement_ids;
+  const reviewErrors = validateComponentReviewCoverage(reviewMissing, reviewMissing.f2_review, "F2"); assert(reviewErrors.some((item) => item.includes("placement_ids") && item.includes("component_id=①-component")), reviewErrors.join("\n"));
+});
+
+test("V4 文件门按 RGBA 像素指纹拒绝不同 ID/路径的重复 PNG", async () => {
+  const root = await mkdtemp(join(tmpdir(), "visual-raster-dedupe-")); await mkdir(join(root, "evidence"), { recursive: true }); await writeFile(join(root, "evidence/runtime.json"), "runtime");
+  const png = encodePngRgba(2, 2, Buffer.alloc(16, 128)); const pngSha = `sha256:${createHash("sha256").update(png).digest("hex")}`; const identity = { evidence_sha256: HASH, candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1" };
+  const region = refreshAtomicRequirements({ ...multiComponentRegion(2), id: "duplicate-pixels", annotation_number: 5, production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
+  region.expected_assets = region.expected_assets.map((asset, index) => ({ ...asset, mime_type: "image/png", width: 2, height: 2, alpha: true, sha256: pngSha, source_file: `art/unique-${index + 1}.png`, runtime_file: `public/unique-${index + 1}.png` })); region.asset_ids = region.expected_assets.map((asset) => asset.asset_id); refreshAtomicRequirements(region);
+  const assets = region.expected_assets.map((expected, index) => ({ id: expected.asset_id, texture_key: expected.asset_id, source_file: expected.source_file, production_origin: region.production_origin, production_method: region.production_method, delivery_kind: region.delivery_kind, image_generation_required: true, generation_record_required: true, substitution_policy: region.substitution_policy, expected_assets: [expected], mime_type: "image/png", width: 2, height: 2, alpha: true, sha256: pngSha, runtime_outputs: [expected.runtime_file], runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", ...identity }, generation_record: { ...imageGenAsset().generation_record, record_id: `DEDUP-GEN-${index + 1}`, annotation_number: 5, region_id: region.id, component_id: expected.component_id, state_id: expected.state_id, asset_id: expected.asset_id, source_file: expected.source_file, runtime_file: expected.runtime_file, output_file: expected.runtime_file } }));
+  await mkdir(join(root, "public"), { recursive: true }); for (const expected of region.expected_assets) await writeFile(join(root, expected.runtime_file), png);
+  const actualAssets = region.expected_assets.map((expected) => ({ ...expected, file: expected.runtime_file })); const usages = region.expected_assets.map((expected) => ({ component_id: expected.component_id, state_id: expected.state_id, asset_id: expected.asset_id, placement_ids: [expected.component_id === "component-1" ? "placement-1" : "placement-2"], runtime_file: expected.runtime_file, runtime_sha256: pngSha, status: "passed" }));
+  const manifest = { workItemId: "work-item-1", candidateVersion: "candidate-1", candidate_identity: { sha256: HASH, diff_fingerprint: "diff-1" }, visual_baseline: { style_fingerprint: HASH }, reference_target: { target_sha256: HASH }, coverage_audit: { regions: [region] }, assets, production_contract_audit: { status: "passed", candidate_version: "candidate-1", candidate_sha256: HASH, target_sha256: HASH, reviewed_at: "2026-08-15T00:00:00Z", units: [{ annotation_number: 5, region_id: region.id, observed_method: "imagegen", observed_delivery_kind: "raster-image", status: "passed", expected_assets: region.expected_assets, actual_assets: actualAssets, runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", ...identity, component_usages: usages } }] } };
+  const errors = await auditProductionContract(manifest, { projectRoot: root, checkFiles: true }); assert(errors.some((item) => item.includes("相同位图像素") && item.includes("component_id=component-2")), errors.join("\n"));
 });
 
 test("atlas 禁止同一图集内完全相同或重叠 rect，且热区变体不能伪装资产", () => {
@@ -551,15 +784,15 @@ test("V4 actual_assets 和 runtime usage 必须绑定 runtime_file 与实际 SHA
   const sourceSubstitution = structuredClone(base);
   sourceSubstitution.production_contract_audit.units[0].actual_assets[0].file = "art/①.png";
   const sourceErrors = await auditProductionContract(sourceSubstitution, { checkFiles: false });
-  assert(sourceErrors.some((item) => item.includes("expected runtime_file") && item.includes("不能使用 source_file")), sourceErrors.join("\n"));
+  assert(sourceErrors.some((item) => item.includes("checkFiles=true") && item.includes("projectRoot")), sourceErrors.join("\n"));
   const missingFile = structuredClone(base);
   delete missingFile.production_contract_audit.units[0].runtime_consumption.component_usages[0].runtime_file;
   const missingFileErrors = await auditProductionContract(missingFile, { checkFiles: false });
-  assert(missingFileErrors.some((item) => item.includes("component_usages[0] 缺少 runtime_file")), missingFileErrors.join("\n"));
+  assert(missingFileErrors.some((item) => item.includes("checkFiles=true") && item.includes("projectRoot")), missingFileErrors.join("\n"));
   const wrongSha = structuredClone(base);
   wrongSha.production_contract_audit.units[0].runtime_consumption.component_usages[0].runtime_sha256 = `sha256:${"b".repeat(64)}`;
   const wrongShaErrors = await auditProductionContract(wrongSha, { checkFiles: false });
-  assert(wrongShaErrors.some((item) => item.includes("runtime_sha256") && item.includes("actual_assets SHA")), wrongShaErrors.join("\n"));
+  assert(wrongShaErrors.some((item) => item.includes("checkFiles=true") && item.includes("projectRoot")), wrongShaErrors.join("\n"));
 });
 
 test("F2 component_reviews 必须绑定 V3 runtime_file 与 manifest 正式 SHA", () => {
@@ -587,28 +820,28 @@ test("ImageGen 区域强制 individual，atlas/横向组图不能作为位图交
 
 test("interaction_hotspots 必须与 interaction_required 部件一一对应且不携带资产身份", () => {
   const missing = multiComponentRegion(1);
-  missing.component_inventory.components[0].interaction_required = true;
+  missing.component_inventory.components[0].placements[0].interaction_required = true;
   const missingErrors = validateVisualComponentContract(missing, { stage: "V3", annotation_number: 2, region_id: "hotspot-missing" });
   assert(missingErrors.some((item) => item.includes("component_id=component-1") && item.includes("必须且只能对应一个 hotspot")), missingErrors.join("\n"));
 
   const orphan = structuredClone(missing);
-  orphan.interaction_hotspots = [{ hotspot_id: "hit-1", component_id: "ghost", bounds: { x: 0, y: 0, width: 8, height: 8 }, asset_id: "fake" }];
+  orphan.interaction_hotspots = [{ hotspot_id: "hit-1", component_id: "ghost", placement_id: "ghost-placement", bounds: { x: 0, y: 0, width: 8, height: 8 }, asset_id: "fake" }];
   const orphanErrors = validateVisualComponentContract(orphan, { stage: "V3", annotation_number: 2, region_id: "hotspot-orphan" });
   assert(orphanErrors.some((item) => item.includes("component_id=ghost") && item.includes("悬空")), orphanErrors.join("\n"));
   assert(orphanErrors.some((item) => item.includes("不得声明 asset_id")), orphanErrors.join("\n"));
 
   const duplicate = structuredClone(missing);
   duplicate.interaction_hotspots = [
-    { hotspot_id: "hit-1", component_id: "component-1", bounds: { x: 0, y: 0, width: 8, height: 8 } },
-    { hotspot_id: "hit-1", component_id: "component-1", bounds: { x: 1, y: 1, width: 8, height: 8 } },
+    { hotspot_id: "hit-1", component_id: "component-1", placement_id: "placement-1", bounds: { x: 0, y: 0, width: 8, height: 8 } },
+    { hotspot_id: "hit-1", component_id: "component-1", placement_id: "placement-1", bounds: { x: 1, y: 1, width: 8, height: 8 } },
   ];
   const duplicateErrors = validateVisualComponentContract(duplicate, { stage: "V3", annotation_number: 2, region_id: "hotspot-duplicate" });
   assert(duplicateErrors.some((item) => item.includes("hotspot_id 重复") || item.includes("只能对应一个 hotspot")), duplicateErrors.join("\n"));
 
   const explicitNoHotspot = multiComponentRegion(1);
-  explicitNoHotspot.interaction_hotspots = [{ hotspot_id: "unexpected", component_id: "component-1", bounds: { x: 0, y: 0, width: 8, height: 8 } }];
+  explicitNoHotspot.interaction_hotspots = [{ hotspot_id: "unexpected", component_id: "component-1", placement_id: "placement-1", bounds: { x: 0, y: 0, width: 8, height: 8 } }];
   const explicitNoHotspotErrors = validateVisualComponentContract(explicitNoHotspot, { stage: "V3", annotation_number: 2, region_id: "hotspot-not-required" });
-  assert(explicitNoHotspotErrors.some((item) => item.includes("interaction_required=false")), explicitNoHotspotErrors.join("\n"));
+  assert(explicitNoHotspotErrors.some((item) => item.includes("非 interactive placement")), explicitNoHotspotErrors.join("\n"));
 });
 
 test("Implementation Package 的状态、部件、资产和热区顺序不影响语义比较，但合同漂移必须失败", () => {
@@ -647,8 +880,9 @@ test("Implementation Package schema 与生产合同方法/交付枚举保持一�
   assert.deepEqual(unit.properties.production_method.enum, ["imagegen", "authored-raster", "authored-svg", "phaser-graphics", "runtime-program", "reuse"]);
   assert.deepEqual(unit.properties.delivery_kind.enum, ["raster-image", "vector-image", "runtime-drawing", "runtime-program", "existing-asset"]);
   const conditions = JSON.stringify(unit.allOf);
+  const schemaText = JSON.stringify(IMPLEMENTATION_PACKAGE_SCHEMA);
   for (const pair of [["imagegen", "raster-image"], ["authored-raster", "raster-image"], ["authored-svg", "vector-image"], ["phaser-graphics", "runtime-drawing"], ["runtime-program", "runtime-program"], ["reuse", "existing-asset"]]) {
     assert(conditions.includes(`\"${pair[0]}\"`) && conditions.includes(`\"${pair[1]}\"`), `${pair[0]} delivery constraint missing`);
   }
-  assert(conditions.includes("image_generation_required") && conditions.includes("atlas_allowed") && conditions.includes("atlas_slice") && conditions.includes("runtime_implementation"));
+  assert(schemaText.includes("image_generation_required") && schemaText.includes("atlas_allowed") && schemaText.includes("atlas_slice") && schemaText.includes("runtime_implementation"));
 });

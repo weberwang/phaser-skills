@@ -7,9 +7,12 @@ import { pathToFileURL } from "node:url";
 import { realpathSync, statSync } from "node:fs";
 import { inflateSync } from "node:zlib";
 import { computeRegionDefinitionSha256, getVisualRegionDefinitionAliasConflicts, normalizeVisualRegionDefinition, PLAN_COLORS, PLAN_LABELS, renderEffectImageAnnotation } from "./effect_image_annotation_core.mjs";
-import { auditProductionContract, isSha256, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateComponentReviewCoverage, validateEvidenceIdentity, validateF2ProductionReviews, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
+import { decodePngRgba, deriveVisibleAnnotationRows } from "./effect_image_raster.mjs";
+import { normalizeAtomicComponents } from "../../phaser4-game-workflow-control/scripts/visual-atomic-contract.mjs";
+import { productionFileGateError } from "../../phaser4-game-workflow-control/scripts/visual-file-gate.mjs";
+import { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, isSha256, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateComponentReviewCoverage, validateEvidenceIdentity, validateF2ProductionReviews, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
 export { computeRegionDefinitionSha256 } from "./effect_image_annotation_core.mjs";
-export { auditProductionContract, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateComponentReviewCoverage, validateEvidenceIdentity, validateF2ProductionReviews, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
+export { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateComponentReviewCoverage, validateEvidenceIdentity, validateF2ProductionReviews, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
 
 export const ALLOWED_ROUTES = new Set(["ui-icon-font", "pixel-art", "frame-animation", "skeletal-animation", "scene-tilemap", "vfx-particle-shader", "decorative-full-bleed", "gameplay-environment", "ai-composite-raster"]);
 export const ALLOWED_STATUSES = new Set(["planned", "producing", "review", "accepted", "rejected", "replaced"]);
@@ -174,15 +177,21 @@ function validateCoverageAudit(audit, target, assetIds, errors, assetById = new 
     if (!COVERAGE_OWNER_TYPES.has(canonicalRegion.owner_type)) errors.push(`${label}.owner_type 必须为 runtime-data、runtime-rendered 或 fixed-production-visual`);
     if (canonicalRegion.owner_type === "fixed-production-visual") {
       if (!PRODUCTION_ORIGINS.has(canonicalRegion.production_origin)) errors.push(`${label}.production_origin 必须为 bitmap-decomposition 或 independent-production`);
-      if (!nonEmptyString(canonicalRegion.asset_id) || !assetIds.has(canonicalRegion.asset_id)) errors.push(`${label}.asset_id 必须映射已声明正式资源`);
-      else { const items = fixedMappings.get(canonicalRegion.asset_id) ?? []; items.push(region.id); fixedMappings.set(canonicalRegion.asset_id, items); }
+      const declaredAssetIds = Array.isArray(canonicalRegion.asset_ids)
+        ? [...new Set(canonicalRegion.asset_ids.filter(nonEmptyString))]
+        : (nonEmptyString(canonicalRegion.asset_id) ? [canonicalRegion.asset_id] : []);
+      if (declaredAssetIds.length === 0) errors.push(`${label}.asset_ids/asset_id 必须映射已声明正式原子资源`);
+      for (const assetId of declaredAssetIds) {
+        if (!assetIds.has(assetId)) errors.push(`${label}.asset_ids 缺少已声明正式资源：${assetId}`);
+        else { const items = fixedMappings.get(assetId) ?? []; items.push(region.id); fixedMappings.set(assetId, items); }
+      }
     } else {
       if ("asset_id" in region) errors.push(`${label} 运行数据/运行渲染禁止映射生产位图 asset_id`);
       if ("production_origin" in region) errors.push(`${label} 运行数据/运行渲染禁止声明 production_origin`);
     }
     const planMode = validateImplementationPlan(region.implementation_plan, region, assetById, baseline, label, errors);
     // 区域先完成状态分析，再按可复用部件建立资产清单；编号本身不代表资产数量。
-    errors.push(...validateVisualComponentContract(region, { stage: "V3", annotation_number: region.annotation_number, region_id: region.id }, { requireImageAssets: true, referenceTargetSha: target?.target_sha256 }));
+    errors.push(...validateVisualComponentContract(region, { stage: "V3", annotation_number: region.annotation_number, region_id: region.id }, { requireImageAssets: true, referenceTargetSha: target?.target_sha256, canvas: canvases.get(pair) }));
     const confirmation = region.confirmation;
     if (!isObject(confirmation) || !["AUTO", "USER_DECISION"].includes(confirmation.mode)) errors.push(`${label}.confirmation.mode 必须为 AUTO 或 USER_DECISION`);
     else if (confirmation.mode === "AUTO") {
@@ -190,8 +199,9 @@ function validateCoverageAudit(audit, target, assetIds, errors, assetById = new 
       if (!nonEmptyString(confirmation.evidence)) errors.push(`${label}.confirmation.evidence 必须记录 AUTO 自动判定依据`);
     } else {
       if (!Array.isArray(confirmation.reasons) || confirmation.reasons.length === 0 || !confirmation.reasons.every((item) => ["effect-image-extraction", "ambiguous-boundary", "cross-interaction-layer", "high-cost-production"].includes(item))) errors.push(`${label}.confirmation.reasons 必须声明触发编号确认的条件`);
-      for (const field of ["numbered_image_file", "numbered_image_version", "numbered_image_sha256", "decision_id"]) if (!nonEmptyString(confirmation[field])) errors.push(`${label}.confirmation.${field} 必须是非空字符串`);
+      for (const field of ["numbered_image_file", "numbered_image_version", "numbered_image_mime", "numbered_image_sha256", "decision_id"]) if (!nonEmptyString(confirmation[field])) errors.push(`${label}.confirmation.${field} 必须是非空字符串`);
       if (nonEmptyString(confirmation.numbered_image_sha256) && !SHA_PATTERN.test(confirmation.numbered_image_sha256)) errors.push(`${label}.confirmation.numbered_image_sha256 格式无效`);
+      if (nonEmptyString(confirmation.numbered_image_mime) && confirmation.numbered_image_mime !== "image/png") errors.push(`${label}.confirmation.numbered_image_mime 必须为 image/png`);
     }
     if (canonicalRegion.owner_type === "fixed-production-visual") {
       if (!nonEmptyString(confirmation?.region_definition_sha256)) errors.push(`${label}.confirmation.region_definition_sha256 必须绑定当前区域合同`);
@@ -201,7 +211,7 @@ function validateCoverageAudit(audit, target, assetIds, errors, assetById = new 
     if (canonicalRegion.owner_type === "fixed-production-visual" && canonicalRegion.production_origin === "bitmap-decomposition" && planMode !== "reuse-existing") {
       if (confirmation?.mode !== "USER_DECISION") errors.push(`${label} bitmap-decomposition 必须等待 USER_DECISION 确认，不得使用 AUTO`);
       if (!Array.isArray(confirmation?.reasons) || !confirmation.reasons.includes("effect-image-extraction")) errors.push(`${label} bitmap-decomposition 的 confirmation.reasons 必须包含 effect-image-extraction`);
-      if (nonEmptyString(confirmation?.numbered_image_file) && !confirmation.numbered_image_file.toLowerCase().endsWith(".svg")) errors.push(`${label}.confirmation.numbered_image_file 必须是生成器 annotated SVG，bitmap-decomposition 不接受 PNG`);
+      if (nonEmptyString(confirmation?.numbered_image_file) && !confirmation.numbered_image_file.toLowerCase().endsWith(".png")) errors.push(`${label}.confirmation.numbered_image_file 必须是生成器 annotated PNG，正式流程不接受 SVG`);
       // 将确认绑定到当前冻结目标和具体覆盖区域，目标或区域定义变化时旧确认立即失效。
       for (const field of ["proposal_id", "reference_target_sha256", "region_id", "proposal_file", "proposal_sha256", "decision_record_file", "decision_record_sha256", "decision_source", "user_message_sha256", "thread_id", "work_item_id"]) if (!nonEmptyString(confirmation?.[field])) errors.push(`${label}.confirmation.${field} 必须绑定编号拆解提案和决定记录`);
       if (nonEmptyString(confirmation?.reference_target_sha256) && confirmation.reference_target_sha256 !== target?.target_sha256) errors.push(`${label}.confirmation.reference_target_sha256 与冻结目标 SHA 不一致，必须重新确认`);
@@ -395,8 +405,9 @@ export function validateManifest(data, options = {}) {
   const assetById = new Map(data.assets.filter(isObject).filter((item) => nonEmptyString(item.id)).map((item) => [item.id, item]));
   const fixedMappings = reconstruction?.applicability === "effect-image" ? validateCoverageAudit(data.coverage_audit, target, assetIds, errors, assetById, baseline) : new Map();
   const coverageRegions = Array.isArray(data.coverage_audit?.regions) ? data.coverage_audit.regions : [];
-  const bitmapAssetIds = new Set(coverageRegions.filter((region) => isObject(region) && region.owner_type === "fixed-production-visual" && region.production_origin === "bitmap-decomposition").map((region) => region.asset_id).filter(nonEmptyString));
-  const independentAssetIds = new Set(coverageRegions.filter((region) => isObject(region) && region.owner_type === "fixed-production-visual" && region.production_origin === "independent-production").map((region) => region.asset_id).filter(nonEmptyString));
+  const fixedRegionAssetIds = (region) => (Array.isArray(region?.asset_ids) ? region.asset_ids : [region?.asset_id]).filter(nonEmptyString);
+  const bitmapAssetIds = new Set(coverageRegions.filter((region) => isObject(region) && region.owner_type === "fixed-production-visual" && region.production_origin === "bitmap-decomposition").flatMap(fixedRegionAssetIds));
+  const independentAssetIds = new Set(coverageRegions.filter((region) => isObject(region) && region.owner_type === "fixed-production-visual" && region.production_origin === "independent-production").flatMap(fixedRegionAssetIds));
   if (reconstruction?.applicability === "effect-image" && data.fidelity_cases != null && !Array.isArray(data.fidelity_cases)) errors.push("fidelity_cases 必须是数组");
   if (reconstruction?.lifecycle === "v5-complete") {
     validateFidelityCases(data.fidelity_cases, target, candidate, baseline, errors, { requireCompleteCoverage: true });
@@ -406,6 +417,8 @@ export function validateManifest(data, options = {}) {
   const strictProductionContract = reconstruction?.applicability === "effect-image";
   if (strictProductionContract) {
     const stage = requestedStage ?? (reconstruction.lifecycle === "v5-complete" ? "V5" : "V3");
+    const fileGateError = productionFileGateError(data, options, stage);
+    if (fileGateError) errors.push(fileGateError);
     errors.push(...validateVisualProductionCoverage(data, { stage: "V3" }));
     const requireAudit = stage === "V4" || stage === "V5" || reconstruction.lifecycle === "v5-complete";
     const requireV5 = stage === "V5" || reconstruction.lifecycle === "v5-complete";
@@ -545,53 +558,59 @@ export function readPngDimensions(bytes) {
 /** 检查编号图或冻结目标是否为完整 PNG。 */
 function hasMinimalPngStructure(bytes) { return readPngDimensions(bytes) !== null; }
 
-/** 解码 SVG 属性中的基础 XML 实体，保持标注摘要可复核。 */
-function decodeXmlAttribute(value) { return value.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"); }
-
-/** 读取不依赖外部 XML 库的双引号属性。 */
-function parseSvgAttributes(source) {
-  const attributes = {}; const pattern = /([A-Za-z_:][A-Za-z0-9_.:-]*)="([^"]*)"/g; let match;
-  while ((match = pattern.exec(source)) !== null) attributes[match[1]] = decodeXmlAttribute(match[2]);
-  return attributes;
+/** 以稳定键序列化原子需求，和渲染器共享同一 SHA 语义。 */
+function canonicalAnnotationJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalAnnotationJson).join(",")}]`;
+  if (isObject(value)) return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalAnnotationJson(value[key])}`).join(",")}}`;
+  const encoded = JSON.stringify(value);
+  return encoded === undefined ? "null" : encoded;
 }
 
-/** 校验默认标注 SVG 的内嵌原图、区域数量、编号、分类、摘要和区域哈希。 */
-export function validateAnnotatedSvg(bytes, targetBytes, regions, proposal, label, errors) {
-  const text = bytes.toString("utf8");
-  if (!/^\s*<svg\b[\s\S]*<\/svg>\s*$/i.test(text)) { errors.push(`${label} 必须是完整 SVG 文档`); return; }
-  const imageTags = [...text.matchAll(/<image\b[^>]*>/gi)];
-  if (imageTags.length !== 1) errors.push(`${label} 必须恰好包含一个内嵌原图 image`);
-  else {
-    const imageAttributes = parseSvgAttributes(imageTags[0][0]); const href = imageAttributes.href ?? imageAttributes["xlink:href"];
-    const match = typeof href === "string" ? href.match(/^data:image\/[A-Za-z0-9.+-]+;base64,([A-Za-z0-9+/=\r\n]+)$/) : null;
-    if (!match) errors.push(`${label} image 必须使用内嵌 bitmap data URI`);
-    else {
-      try { const embedded = Buffer.from(match[1], "base64"); if (!targetBytes || sha256Bytes(embedded) !== sha256Bytes(targetBytes)) errors.push(`${label} 内嵌原图与冻结效果图 SHA 不一致`); }
-      catch { errors.push(`${label} 内嵌原图 base64 无法解码`); }
-    }
-  }
-  const colors = PLAN_COLORS;
-  const labels = Object.values(PLAN_LABELS);
-  if (!text.includes("data-legend=\"implementation-plan\"") || !Object.entries(colors).every(([mode, color]) => text.includes(`data-plan-mode=\"${mode}\"`) && text.includes(color)) || !labels.every((item) => text.includes(item))) errors.push(`${label} 缺少三类中文实现计划图例或固定颜色`);
-  const expected = regions.slice().sort((left, right) => left.annotation_number - right.annotation_number); const groups = new Map(); const groupPattern = /<g\b([^>]*data-region-id="[^"]+"[^>]*)>([\s\S]*?)<\/g>/gi; let groupMatch;
-  while ((groupMatch = groupPattern.exec(text)) !== null) {
-    const attributes = parseSvgAttributes(groupMatch[1]); if (groups.has(attributes["data-region-id"])) errors.push(`${label} 区域标注 ID 重复：${attributes["data-region-id"]}`); groups.set(attributes["data-region-id"], { attributes, body: groupMatch[2] });
-  }
-  if (groups.size !== expected.length) errors.push(`${label} 标注区域数量与当前 scene/state 不一致`);
+/** 校验确定性 PNG 标注；元数据、像素边界和 proposal 必须同时绑定。 */
+export function validateAnnotatedPng(bytes, targetBytes, regions, proposal, label, errors, canvas = null) {
+  let annotated; let target;
+  try { annotated = decodePngRgba(bytes); } catch (error) { errors.push(`${label} 必须是完整合法 PNG：${error.message}`); return; }
+  try { target = targetBytes ? decodePngRgba(targetBytes) : null; } catch { errors.push(`${label} 冻结原图无法解码为 PNG`); return; }
+  const metadata = annotated.metadata;
+  if (!isObject(metadata) || metadata.schema !== "effect-image-annotation/png/1" || metadata.layout !== "image-plus-right-panel") { errors.push(`${label} 缺少正式 PNG 标注元数据，正式流程不接受 SVG`); return; }
+  const expectedTarget = canvas ?? target;
+  if (!expectedTarget || metadata.original_width !== expectedTarget.width || metadata.original_height !== expectedTarget.height || annotated.width !== metadata.original_width + metadata.panel_width || annotated.height !== metadata.output_height || annotated.height < metadata.original_height || metadata.panel_height !== annotated.height || !(metadata.panel_width > 0)) errors.push(`${label} 必须保留左侧原图尺寸并声明完整右侧说明栏`);
+  if (target && metadata.original_sha256 !== sha256Bytes(targetBytes)) errors.push(`${label} PNG 元数据中的冻结原图 SHA 不一致`);
+  const expected = regions.slice().sort((left, right) => left.annotation_number - right.annotation_number); const actualRegions = Array.isArray(metadata.regions) ? metadata.regions : []; const actualById = new Map();
+  for (const item of actualRegions) { if (!isObject(item) || !nonEmptyString(item.region_id) || actualById.has(item.region_id)) errors.push(`${label} PNG 区域元数据必须包含唯一 region_id`); else actualById.set(item.region_id, item); }
+  if (actualById.size !== expected.length) errors.push(`${label} PNG 标注区域数量与当前 scene/state 不一致`);
   const proposalRegions = Array.isArray(proposal?.regions) ? proposal.regions : (proposal?.region_id ? [proposal] : []); const proposalById = new Map(proposalRegions.map((item) => [item.region_id, item]));
   for (const region of expected) {
-    const item = groups.get(region.id); const plan = region.implementation_plan; const definitionSha = computeRegionDefinitionSha256(region);
+    const item = actualById.get(region.id); const plan = region.implementation_plan ?? {}; const definitionSha = computeRegionDefinitionSha256(region); const requirements = deriveAtomicImageRequirements(region); const requirementSha = `sha256:${createHash("sha256").update(canonicalAnnotationJson(requirements)).digest("hex")}`;
     if (!item) { errors.push(`${label} 缺少区域标注：${region.id}`); continue; }
-    const attributes = item.attributes; const rectMatch = item.body.match(/<rect\b([^>]*)\/>/i); const rect = rectMatch ? parseSvgAttributes(rectMatch[1]) : {};
-    if (attributes["data-scene-id"] !== region.scene_id || attributes["data-state-id"] !== region.state_id) errors.push(`${label}.${region.id} scene/state 不一致`);
-    if (Number(attributes["data-annotation-number"]) !== region.annotation_number) errors.push(`${label}.${region.id} annotation_number 不一致`);
-    if (attributes["data-plan-mode"] !== plan.mode || attributes["data-summary"] !== plan.summary) errors.push(`${label}.${region.id} implementation_plan 分类或摘要不一致`);
-    if (attributes["data-region-definition-sha256"] !== definitionSha) errors.push(`${label}.${region.id} 区域定义 SHA 不一致`);
-    if (Number(rect.x) !== region.bounds.x || Number(rect.y) !== region.bounds.y || Number(rect.width) !== region.bounds.width || Number(rect.height) !== region.bounds.height) errors.push(`${label}.${region.id} 框选 bounds 不一致`);
+    const expectedPlacementIds = normalizeAtomicComponents(region).flatMap((component) => component.placements.map((placement) => placement.placement_id)).sort();
+    if (item.scene_id !== region.scene_id || item.state_id !== region.state_id || item.annotation_number !== region.annotation_number || item.plan_mode !== plan.mode) errors.push(`${label}.${region.id} scene/state/编号/实现计划不一致`);
+    if (item.region_definition_sha256 !== definitionSha) errors.push(`${label}.${region.id} 区域定义 SHA 不一致`);
+    if (item.atomic_requirements_sha256 !== requirementSha || !atomicImageRequirementsEqual(item.atomic_image_requirements, requirements)) errors.push(`${label}.${region.id} atomic_image_requirements 不一致`);
+    if (JSON.stringify([...(item.placement_ids ?? [])].sort()) !== JSON.stringify(expectedPlacementIds)) errors.push(`${label}.${region.id} placement 原子框元数据与 component_inventory 不一致`);
     const proposalRegion = proposalById.get(region.id);
-    if (!proposalRegion || proposalRegion.region_definition_sha256 !== definitionSha || proposalRegion.annotation_number !== region.annotation_number || proposalRegion.mode !== plan.mode || proposalRegion.summary !== plan.summary) errors.push(`${label}.${region.id} 与 proposal 区域摘要不一致`);
+    if (!proposalRegion || proposalRegion.region_definition_sha256 !== definitionSha || proposalRegion.annotation_number !== region.annotation_number || proposalRegion.mode !== plan.mode || proposalRegion.summary !== plan.summary || !atomicImageRequirementsEqual(proposalRegion.atomic_image_requirements, requirements)) errors.push(`${label}.${region.id} 与 proposal 原子需求或区域摘要不一致`);
   }
+  const expectedRows = deriveVisibleAnnotationRows(expected, { regions: actualRegions }); const actualRows = Array.isArray(metadata.visible_rows) ? metadata.visible_rows : [];
+  if (metadata.panel_content_complete !== true || metadata.visible_row_count !== expectedRows.length || actualRows.length !== expectedRows.length) errors.push(`${label} PNG 右栏 visible_row_count/完整性元数据与全部区域、部件、placement、状态需求不一致`);
+  const fontSize = Math.max(1, Math.min(3, Math.floor(expectedTarget.height / 28))); const availableChars = Math.floor((metadata.panel_width - 24) / (6 * fontSize));
+  expectedRows.forEach((row, index) => {
+    const actualRow = actualRows[index];
+    if (!actualRow || actualRow.row_index !== index || actualRow.text !== row.text || actualRow.kind !== row.kind || actualRow.region_id !== row.region_id || actualRow.component_id !== row.component_id || actualRow.placement_id !== row.placement_id || actualRow.state_id !== row.state_id || actualRow.asset_id !== row.asset_id || JSON.stringify([...(actualRow.placement_ids ?? [])].sort()) !== JSON.stringify([...(row.placement_ids ?? [])].sort())) errors.push(`${label} PNG 右栏第 ${index + 1} 行未精确呈现全部原子说明`);
+    if (actualRow && (actualRow.top < 0 || actualRow.bottom > annotated.height || actualRow.baseline < actualRow.top || actualRow.bottom < actualRow.baseline || asciiTextForValidation(actualRow.text).length > availableChars)) errors.push(`${label} PNG 右栏第 ${index + 1} 行边界或宽度越界，禁止静默截断`);
+  });
+  const frameModes = new Map((metadata.region_frame_modes ?? []).map((item) => [item.region_id, item.parent_frame_drawn]));
+  expected.forEach((region) => {
+    const hasPlacements = normalizeAtomicComponents(region).some((component) => component.placements.length > 0);
+    const expectedParentFrame = !(region.owner_type === "fixed-production-visual" && hasPlacements);
+    if (frameModes.get(region.id) !== expectedParentFrame) errors.push(`${label}.${region.id} 父组合框绘制策略与 placement 原子拆解不一致`);
+  });
+  if (!isObject(metadata.panel_content_bounds) || metadata.panel_content_bounds.x !== metadata.original_width || metadata.panel_content_bounds.width !== metadata.panel_width || metadata.panel_content_bounds.height !== annotated.height) errors.push(`${label} PNG 右栏 panel_content_bounds 不完整`);
+  if (!isObject(metadata.plan_labels) || Object.entries(PLAN_LABELS).some(([mode, text]) => metadata.plan_labels[mode] !== text)) errors.push(`${label} PNG 右栏三类实现计划图例元数据不完整`);
 }
+
+/** 与栅格渲染器保持相同 ASCII 可见宽度计算，验证每一行不会被裁掉。 */
+function asciiTextForValidation(value) { return String(value ?? "").replace(/[^\x20-\x7e]/g, "?").toUpperCase(); }
 
 /** 读取绑定证据文件，统一检查项目边界、存在性、SHA 和可选文件格式。 */
 async function loadEvidenceFile(projectRoot, label, relativePath, expectedSha, kind, errors, shaLabel = label) {
@@ -670,15 +689,15 @@ async function checkBitmapEvidenceFiles(projectRoot, label, region, confirmation
   const numbered = await loadEvidenceFile(projectRoot, `${label}.confirmation.numbered_image_file`, confirmation.numbered_image_file, confirmation.numbered_image_sha256, "annotation", errors, `${label}.confirmation.numbered_image_sha256`);
   if (numbered) {
     const pairRegions = allRegions.filter((item) => item.scene_id === region.scene_id && item.state_id === region.state_id);
-    if (!/^\s*<svg\b/i.test(numbered.bytes.toString("utf8"))) errors.push(`${label}.confirmation.numbered_image_file 必须是生成器产出的 annotated SVG，bitmap-decomposition 不接受 PNG`);
+    if (!numbered.bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) errors.push(`${label}.confirmation.numbered_image_file 必须是生成器产出的 PNG，正式流程不接受 SVG`);
     else {
-      validateAnnotatedSvg(numbered.bytes, targetBytes, pairRegions, proposal?.value, `${label}.confirmation.numbered_image_file`, errors);
+      validateAnnotatedPng(numbered.bytes, targetBytes, pairRegions, proposal?.value, `${label}.confirmation.numbered_image_file`, errors, canvas);
       if (targetBytes && canvas) {
         try {
-          const expected = Buffer.from(renderEffectImageAnnotation(targetBytes, target.original_file, canvas, pairRegions));
-          // 文件检查重新渲染标准字节并逐字节比较，防止仅靠 data 属性或隐藏覆盖层伪造可见标注。
-          if (!numbered.bytes.equals(expected)) errors.push(`${label}.confirmation.numbered_image_file 与生成器标准 SVG 不一致`);
-        } catch (error) { errors.push(`${label}.confirmation.numbered_image_file 无法按当前区域重建标准 SVG：${error.message}`); }
+          const expected = renderEffectImageAnnotation(targetBytes, target.original_file, canvas, pairRegions);
+          // 文件检查重新渲染标准字节并逐字节比较，防止仅靠元数据伪造可见标注。
+          if (!numbered.bytes.equals(expected)) errors.push(`${label}.confirmation.numbered_image_file 与生成器标准 PNG 不一致`);
+        } catch (error) { errors.push(`${label}.confirmation.numbered_image_file 无法按当前区域重建标准 PNG：${error.message}`); }
       }
     }
   }
@@ -689,6 +708,7 @@ async function checkBitmapEvidenceFiles(projectRoot, label, region, confirmation
     if (recordTargetSha(proposalValue) !== confirmation.reference_target_sha256) errors.push(`${label}.proposal.target_sha256 与确认目标不一致`);
     if (recordTargetSha(proposalValue) !== target?.target_sha256) errors.push(`${label}.proposal.target_sha256 与冻结目标不一致`);
     if (proposalValue.numbered_image_sha256 !== confirmation.numbered_image_sha256) errors.push(`${label}.proposal.numbered_image_sha256 与编号图确认不一致`);
+    if (proposalValue.numbered_image_file !== confirmation.numbered_image_file || proposalValue.numbered_image_mime !== "image/png") errors.push(`${label}.proposal.numbered_image_file/mime 必须绑定当前 PNG 标注`);
     const expectedRegions = allRegions.filter((item) => item.scene_id === region.scene_id && item.state_id === region.state_id);
     const proposalRegions = Array.isArray(proposalValue.regions) ? proposalValue.regions : (proposalValue.region_id ? [proposalValue] : []);
     const proposalById = new Map();
@@ -702,8 +722,10 @@ async function checkBitmapEvidenceFiles(projectRoot, label, region, confirmation
     if (!proposalRegion || proposalRegion.region_definition_sha256 !== confirmation.region_definition_sha256) errors.push(`${label}.proposal.region_definition_sha256 与当前确认不一致`);
     if (proposalRegion?.region_definition_sha256 !== computeRegionDefinitionSha256(region)) errors.push(`${label}.proposal.region_definition_sha256 与当前区域定义不一致`);
     if (proposalRegion?.ownership_evidence !== region.ownership_evidence) errors.push(`${label}.proposal.ownership_evidence 与当前审阅证据不一致`);
-    // 只有默认的整组标注 SVG 才要求提案覆盖同一 scene/state 的全部区域；传统单区域 PNG 证据保持可复核的局部绑定。
-    if (numbered && /^\s*<svg\b/i.test(numbered.bytes.toString("utf8")) && proposalRegions.length > 0 && expectedRegions.some((item) => !proposalById.has(item.id))) errors.push(`${label}.proposal 必须覆盖当前 scene/state 的全部标注区域`);
+    const derivedAtomicRequirements = deriveAtomicImageRequirements(region);
+    if (!proposalRegion || !atomicImageRequirementsEqual(proposalRegion.atomic_image_requirements, derivedAtomicRequirements)) errors.push(`${label}.proposal.atomic_image_requirements 与状态分析派生需求不一致`);
+    // PNG 标注是整组确定性证据，提案必须覆盖同一 scene/state 的全部区域。
+    if (numbered && numbered.bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE) && proposalRegions.length > 0 && expectedRegions.some((item) => !proposalById.has(item.id))) errors.push(`${label}.proposal 必须覆盖当前 scene/state 的全部标注区域`);
   }
   const decisionValue = decision?.value;
   if (decisionValue) {
@@ -811,7 +833,7 @@ export async function checkManifestFiles(data, projectRoot, options = {}) {
   // 合同与 fidelity 证据在目标身份检查后统一核验存在性，避免只接受路径字符串。
   for (const [field, path] of supplementalPaths) { try { if (!isFile(projectPath(projectRoot, path))) errors.push(`${field} 文件不存在：${path}`); } catch (error) { errors.push(`${field}：${error.message}`); } }
   if (!Array.isArray(data.assets)) return errors;
-  const independentAssetIds = new Set((Array.isArray(data.coverage_audit?.regions) ? data.coverage_audit.regions : []).filter((region) => isObject(region) && region.owner_type === "fixed-production-visual" && region.production_origin === "independent-production").map((region) => region.asset_id).filter(nonEmptyString));
+  const independentAssetIds = new Set((Array.isArray(data.coverage_audit?.regions) ? data.coverage_audit.regions : []).filter((region) => isObject(region) && region.owner_type === "fixed-production-visual" && region.production_origin === "independent-production").flatMap((region) => (Array.isArray(region.asset_ids) ? region.asset_ids : [region.asset_id]).filter(nonEmptyString)));
   if (referenceTargetFile) for (const [index, asset] of data.assets.entries()) {
     if (!isObject(asset) || !independentAssetIds.has(asset.id)) continue;
     const sourcePaths = [asset.source_file, ...(Array.isArray(asset.source_files) ? asset.source_files : [])].filter(nonEmptyString);
@@ -889,7 +911,7 @@ export async function main(argv = process.argv.slice(2)) {
   try {
     const args = parseArgs(argv); const data = await loadManifest(args.manifest);
     if (!args.checkFiles && requiresBitmapFileGate(data)) { console.error("检测到 bitmap-decomposition：未运行文件证据校验，不予放行。必须使用 --stage V3 --check-files --project-root ."); return 2; }
-    const errors = validateManifest(data, { stage: args.stage });
+    const errors = validateManifest(data, { stage: args.stage, checkFiles: args.checkFiles, projectRoot: args.projectRoot });
     if (args.checkFiles) errors.push(...await checkManifestFiles(data, args.projectRoot ?? resolve(args.manifest, "..", ".."), { stage: args.stage }));
     if (errors.length) { console.error("视觉资源清单无效："); for (const error of errors) console.error(`- ${error}`); return 1; }
     console.log("视觉资源清单验证通过。"); return 0;

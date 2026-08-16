@@ -7,6 +7,8 @@ import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { loadManifest, readPngDimensions } from "./validate_visual_manifest.mjs";
 import { computeRegionDefinitionSha256, PLAN_COLORS, renderEffectImageAnnotation } from "./effect_image_annotation_core.mjs";
+import { deriveAtomicImageRequirements } from "../../phaser4-game-workflow-control/scripts/visual-atomic-contract.mjs";
+import { validateVisualComponentContract } from "../../phaser4-game-workflow-control/scripts/visual-component-contract.mjs";
 
 const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
@@ -59,6 +61,7 @@ function parseArgs(argv) {
     else throw new Error(`不支持的参数：${token}`);
   }
   for (const field of ["manifest", "sceneId", "stateId", "output"]) if (!nonEmptyString(args[field])) throw new Error(`缺少参数：${field}`);
+  if (!args.output.toLowerCase().endsWith(".png")) throw new Error("标注输出必须使用 .png；正式流程不生成 SVG/JPG");
   return args;
 }
 
@@ -87,6 +90,10 @@ function selectRegions(manifest, sceneId, stateId) {
       if (basename(source.source_manifest.replace(/\\/g, "/")).toLowerCase() === "visual-assets.json") throw new Error(`区域 ${region.id} 的 reuse_source 必须指向不可变 asset-reuse-snapshot/1.0，不能指向当前 visual-assets.json`);
       for (const field of ["source_sha256", "source_manifest_sha256", "compatibility_evidence_sha256"]) if (!SHA_PATTERN.test(source[field])) throw new Error(`区域 ${region.id} 的 reuse_source.${field} 格式无效`);
     }
+    if (region.owner_type === "fixed-production-visual") {
+      const componentErrors = validateVisualComponentContract(region, { stage: "V3", annotation_number: region.annotation_number, region_id: region.id }, { canvas });
+      if (componentErrors.length) throw new Error(componentErrors[0]);
+    }
   }
   return { canvas, regions };
 }
@@ -96,7 +103,7 @@ function buildProposal(args, manifest, outputRelative, annotationSha, regions) {
   const targetSha = manifest.reference_target.target_sha256; const proposalId = args.proposalId ?? `annotation-${args.sceneId}-${args.stateId}-${targetSha.slice(-12)}`;
   const createdAt = args.createdAt ?? manifest.reference_target.frozen_at;
   if (!nonEmptyString(createdAt) || Number.isNaN(Date.parse(createdAt))) throw new Error("proposal created_at 必须通过 --created-at 提供可解析时间，或使用可解析冻结时间");
-  return { schema_version: "1.5", proposal_id: proposalId, created_at: createdAt, target_sha256: targetSha, scene_id: args.sceneId, state_id: args.stateId, numbered_image_file: outputRelative, numbered_image_sha256: annotationSha, region_ids: regions.map((region) => region.id), regions: regions.map((region) => ({ region_id: region.id, annotation_number: region.annotation_number, mode: region.implementation_plan.mode, summary: region.implementation_plan.summary, ownership_evidence: region.ownership_evidence, region_definition_sha256: computeRegionDefinitionSha256(region) })) };
+  return { schema_version: "1.5", proposal_id: proposalId, created_at: createdAt, target_sha256: targetSha, scene_id: args.sceneId, state_id: args.stateId, numbered_image_file: outputRelative, numbered_image_mime: "image/png", numbered_image_sha256: annotationSha, region_ids: regions.map((region) => region.id), regions: regions.map((region) => ({ region_id: region.id, annotation_number: region.annotation_number, mode: region.implementation_plan.mode, summary: region.implementation_plan.summary, ownership_evidence: region.ownership_evidence, atomic_image_requirements: deriveAtomicImageRequirements(region), region_definition_sha256: computeRegionDefinitionSha256(region) })) };
 }
 
 /** 运行标注图生成流程。 */
@@ -109,8 +116,8 @@ export async function main(argv = process.argv.slice(2)) {
     const dimensions = readPngDimensions(originalBytes);
     if (!dimensions) throw new Error("reference_target.original_file 必须是完整合法 PNG");
     if (dimensions.width !== canvas.width || dimensions.height !== canvas.height) throw new Error("冻结原图 PNG 尺寸必须与选定 scene/state 画布一致");
-    const outputPath = projectPath(projectRoot, args.output); await mkdir(dirname(outputPath), { recursive: true }); const svgBytes = Buffer.from(renderEffectImageAnnotation(originalBytes, manifest.reference_target.original_file, canvas, regions)); await writeFile(outputPath, svgBytes);
-    const outputRelative = relative(projectRoot, outputPath).replace(/\\/g, "/"); const result = { annotation_file: outputRelative, annotation_sha256: sha256Bytes(svgBytes), target_sha256: manifest.reference_target.target_sha256, scene_id: args.sceneId, state_id: args.stateId, regions: regions.map((region) => ({ region_id: region.id, annotation_number: region.annotation_number, mode: region.implementation_plan.mode, summary: region.implementation_plan.summary, ownership_evidence: region.ownership_evidence, region_definition_sha256: computeRegionDefinitionSha256(region) })) };
+    const outputPath = projectPath(projectRoot, args.output); await mkdir(dirname(outputPath), { recursive: true }); const pngBytes = renderEffectImageAnnotation(originalBytes, manifest.reference_target.original_file, canvas, regions); await writeFile(outputPath, pngBytes);
+    const outputRelative = relative(projectRoot, outputPath).replace(/\\/g, "/"); const result = { annotation_file: outputRelative, annotation_mime: "image/png", annotation_sha256: sha256Bytes(pngBytes), target_sha256: manifest.reference_target.target_sha256, scene_id: args.sceneId, state_id: args.stateId, regions: regions.map((region) => ({ region_id: region.id, annotation_number: region.annotation_number, mode: region.implementation_plan.mode, summary: region.implementation_plan.summary, ownership_evidence: region.ownership_evidence, region_definition_sha256: computeRegionDefinitionSha256(region) })) };
     if (args.proposal) { const proposal = buildProposal(args, manifest, outputRelative, result.annotation_sha256, regions); const proposalPath = projectPath(projectRoot, args.proposal); await mkdir(dirname(proposalPath), { recursive: true }); const proposalBytes = Buffer.from(`${JSON.stringify(proposal, null, 2)}\n`); await writeFile(proposalPath, proposalBytes); result.proposal_file = relative(projectRoot, proposalPath).replace(/\\/g, "/"); result.proposal_sha256 = sha256Bytes(proposalBytes); result.proposal_id = proposal.proposal_id; }
     console.log(JSON.stringify(result)); return 0;
   } catch (error) { console.error(`效果图标注生成失败：${error.message}`); return 1; }

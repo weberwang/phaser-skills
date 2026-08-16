@@ -11,10 +11,17 @@ import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { existsSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
-import { canonicalStateId, hasRuntimeImplementationField, normalizeProjectRelativePath, validateComponentAuditEvidence, validateComponentReviewCoverage, validateVisualComponentContract, normalizeComponentExpectedAsset, visualComponentContractDifferences } from "./visual-component-contract.mjs";
+import { atomicImageRequirementsEqual, canonicalStateId, deriveAtomicImageRequirements, hasRuntimeImplementationField, normalizeAtomicImageRequirements, normalizeProjectRelativePath, validateComponentAuditEvidence, validateComponentReviewCoverage, validateVisualComponentContract, normalizeComponentExpectedAsset, visualComponentContractDifferences } from "./visual-component-contract.mjs";
+import { normalizeProductionExpectedAssets as normalizeExpectedAssets } from "./visual-atomic-contract.mjs";
+import { computeRasterFingerprint, isRasterDelivery, registerRasterFingerprint, resolveOutputMetadata } from "./visual-raster-contract.mjs";
+import { collectImageGenerationPathValues, collectImageGenerationRasterViolations } from "./visual-imagegen-format.mjs";
+import { decodePngRgba } from "../../phaser4-game-asset-integration/scripts/effect_image_raster.mjs";
 import { componentAssetKey, declaredPathEntry, hasShareAliasConflict, pathCoveredBy, registerCrossUnitPath, reportExpectedAssetShareAliasConflicts, validateUnitPathDeclarations } from "./visual-package-paths.mjs";
+import { productionFileGateError } from "./visual-file-gate.mjs";
 import { getVisualRegionDefinitionAliasConflicts, normalizeVisualRegionDefinition } from "../../phaser4-game-asset-integration/scripts/effect_image_annotation_core.mjs";
-export { canonicalStateId, hasRuntimeImplementationField, normalizeProjectRelativePath, validateComponentAuditEvidence, validateComponentReviewCoverage, validateVisualComponentContract, normalizeComponentExpectedAsset, visualComponentContractDifferences } from "./visual-component-contract.mjs";
+export { atomicImageRequirementsEqual, canonicalStateId, deriveAtomicImageRequirements, hasRuntimeImplementationField, normalizeAtomicImageRequirements, normalizeProjectRelativePath, validateComponentAuditEvidence, validateComponentReviewCoverage, validateVisualComponentContract, normalizeComponentExpectedAsset, visualComponentContractDifferences } from "./visual-component-contract.mjs";
+export { normalizeProductionExpectedAssets as normalizeExpectedAssets } from "./visual-atomic-contract.mjs";
+export { isRasterDelivery, resolveOutputMetadata } from "./visual-raster-contract.mjs";
 /** 视觉生产合同允许的固定来源。来源不决定生产方法。 */
 export const PRODUCTION_ORIGINS = new Set(["bitmap-decomposition", "independent-production"]);
 /** 视觉生产合同允许的显式生产方式。新增方式必须先更新合同和验收器。 */
@@ -73,50 +80,14 @@ export function contractContext(region = {}, stage = "V3", extra = {}) {
     ...extra,
   };
 }
-/** 规范化 expected_assets，兼容字符串资产 ID和带元数据的资产描述。 */
-export function normalizeExpectedAssets(value) {
-  if (!Array.isArray(value)) return [];
-  return value.map((item) => {
-    if (nonEmptyString(item)) return { asset_id: item };
-    if (!isObject(item)) return { asset_id: "" };
-    return {
-      asset_id: item.asset_id ?? item.id ?? item.name ?? item.file ?? item.path ?? "",
-      file: item.file ?? item.path ?? item.source_file ?? "",
-      delivery_kind: item.delivery_kind ?? item.deliveryKind ?? "",
-      mime_type: item.mime_type ?? item.mimeType ?? "",
-      width: item.width,
-      height: item.height,
-      alpha: item.alpha,
-      sha256: item.sha256 ?? item.file_sha256 ?? "",
-    };
-  });
-}
 /** 取出合同字段，允许区域直接声明或使用 production_contract 对象，但不允许两套值冲突。 */
 export function resolveProductionContract(value = {}) {
   const canonical = normalizeVisualRegionDefinition(value);
-  const fields = ["production_origin", "production_method", "delivery_kind", "image_generation_required", "generation_record_required", "substitution_policy", "expected_assets", "runtime_implementation", "component_inventory"];
+  const fields = ["production_origin", "production_method", "delivery_kind", "image_generation_required", "generation_record_required", "substitution_policy", "asset_id", "asset_ids", "expected_assets", "atomic_image_requirements", "runtime_implementation", "component_inventory"];
   const result = Object.fromEntries(fields.filter((field) => canonical[field] !== null).map((field) => [field, canonical[field]]));
   const conflicts = getVisualRegionDefinitionAliasConflicts(value).filter((item) => fields.includes(item.field));
   if (conflicts.length) result.__conflicts = conflicts.map((item) => item.field);
   return result;
-}
-/** 提取资源或区域的实际输出字段，统一不同阶段工件的命名。 */
-export function resolveOutputMetadata(asset = {}) {
-  const output = isObject(asset.output) ? asset.output : (isObject(asset.output_metadata) ? asset.output_metadata : {});
-  const outputFile = asset.output_file ?? asset.outputFile ?? output.file ?? output.path ?? asset.runtime_output_file ?? asset.runtimeOutputFile;
-  return {
-    mime_type: asset.mime_type ?? asset.mimeType ?? output.mime_type ?? output.mimeType,
-    width: asset.width ?? output.width,
-    height: asset.height ?? output.height,
-    alpha: asset.alpha ?? output.alpha,
-    sha256: asset.sha256 ?? asset.output_sha256 ?? output.sha256 ?? output.file_sha256,
-    file: outputFile ?? asset.source_file,
-  };
-}
-/** 判断交付类型是否为位图，并拒绝把 SVG、Graphics 或运行时绘制冒充位图。 */
-export function isRasterDelivery(deliveryKind, mimeType = "") {
-  if (deliveryKind !== "raster-image") return false;
-  return !nonEmptyString(mimeType) || /^image\/(png|webp|jpeg|jpg|avif|bmp|gif)$/i.test(mimeType);
 }
 /** 读取实际生产方法，禁止通过 route 或 production_origin 隐式推断 ImageGen。 */
 export function observedProductionMethod(value = {}) {
@@ -151,6 +122,8 @@ export function validateProductionContract(contract, context = {}, options = {})
     if (item.sha256 && !isSha256(item.sha256)) error(`expected_assets[${index}].sha256 格式无效`);
   });
   reportExpectedAssetShareAliasConflicts(contract, error);
+  const rawExpectedAssets = Array.isArray(contract?.expected_assets) ? contract.expected_assets : (isObject(contract?.production_contract) ? contract.production_contract.expected_assets : current.expected_assets);
+  if ((current.production_method === "imagegen" || current.image_generation_required === true) && Array.isArray(rawExpectedAssets)) rawExpectedAssets.forEach((rawItem, index) => { const item = normalizeExpectedAssets([rawItem])[0] ?? {}; for (const field of ["source_file", "runtime_file"]) if (!nonEmptyString(item[field])) error(`expected_assets[${index}] 缺少 ImageGen ${field}`, { missing: `expected_assets[${index}].${field}` }); for (const violation of collectImageGenerationRasterViolations(rawItem, { requiredMime: true, requiredFileFields: ["source_file", "runtime_file"], fileFields: ["source_file", "runtime_file"] })) error(`expected_assets[${index}].${violation.field} ${violation.message}`, { missing: `expected_assets[${index}].${violation.field}` }); });
   if (current.image_generation_required === true) {
     if (current.production_method !== "imagegen") error("image_generation_required=true 强制 production_method=imagegen", { expectedMethod: "imagegen", observedMethod: current.production_method ?? "unspecified" });
     if (!isRasterDelivery(current.delivery_kind, contract.mime_type ?? contract.mimeType)) error("image_generation_required=true 强制 delivery_kind=raster-image，SVG/Graphics/CanvasTexture/runtime drawing 不能等价完成", { expectedMethod: "imagegen", observedMethod: current.production_method ?? "unspecified" });
@@ -228,7 +201,7 @@ export function validateImageGenerationContract(asset, contract, context = {}, o
   if (generation.crop_reference === true || generation.reference_crop === true || /crop[-_ ]?reference|裁切参考|裁剪参考/i.test(generationOperation)) error("禁止裁切参考图，ImageGen 只能把参考图作为输入约束");
   const referenceTarget = options.referenceOriginalFile;
   if (nonEmptyString(referenceTarget) && Array.isArray(generation.reference_inputs) && generation.reference_inputs.some((item) => item === referenceTarget || item.endsWith(`/${referenceTarget}`) || item.endsWith(`\\${referenceTarget}`))) error("generation_record.reference_inputs 不得直接把冻结效果图作为可裁切源文件");
-  const sources = [asset?.source_file, ...(Array.isArray(asset?.source_files) ? asset.source_files : []), generation.source_file, ...(Array.isArray(generation.source_files) ? generation.source_files : []), generation.output_file, generation.output?.file].filter(nonEmptyString);
+  const sources = [...collectImageGenerationPathValues(asset), ...collectImageGenerationPathValues(generation)].filter(nonEmptyString);
   if (sources.length === 0) error("缺少独立生成源文件或输出文件", { missing: "source_file" });
   if (expectedComponent) {
     const identityFields = [
@@ -245,23 +218,32 @@ export function validateImageGenerationContract(asset, contract, context = {}, o
       if (!nonEmptyString(String(expectedValue ?? "")) || !nonEmptyString(String(observedValue ?? ""))) error(`generation_record.${field} 缺少当前部件身份`, { missing: `generation_record.${field}` });
       else if (String(observedValue) !== String(expectedValue)) error(`generation_record.${field} 与当前部件合同不一致`);
     }
-    const generationSources = [componentGenerationRecord?.source_file, ...(Array.isArray(componentGenerationRecord?.source_files) ? componentGenerationRecord.source_files : [])].filter(nonEmptyString).map(normalizeProjectRelativePath).filter(Boolean);
-    const assetSources = [asset?.source_file, ...(Array.isArray(asset?.source_files) ? asset.source_files : [])].filter(nonEmptyString).map(normalizeProjectRelativePath).filter(Boolean);
+    const sourceFields = ["source_file", "sourceFile", "source_files", "sourceFiles"];
+    const generationSources = collectImageGenerationPathValues(componentGenerationRecord, sourceFields).filter(nonEmptyString).map(normalizeProjectRelativePath).filter(Boolean);
+    const assetSources = collectImageGenerationPathValues(asset, sourceFields).filter(nonEmptyString).map(normalizeProjectRelativePath).filter(Boolean);
     const expectedSource = normalizeProjectRelativePath(expectedComponent.source_file);
     if (expectedSource && !generationSources.includes(expectedSource)) error("generation_record/source_file 未匹配 expected_assets.source_file", { missing: expectedComponent.source_file });
     if (expectedSource && !assetSources.includes(expectedSource)) error("manifest asset source_file 未匹配 expected_assets.source_file", { missing: expectedComponent.source_file });
-    const runtimeRecord = [componentGenerationRecord?.runtime_file, componentGenerationRecord?.runtime_output_file, componentGenerationRecord?.output_file, componentGenerationRecord?.output?.file, ...(Array.isArray(componentGenerationRecord?.runtime_outputs) ? componentGenerationRecord.runtime_outputs : [])].filter(nonEmptyString);
-    const assetRuntimeOutputs = (Array.isArray(asset?.runtime_outputs) ? asset.runtime_outputs : (Array.isArray(asset?.runtimeOutputs) ? asset.runtimeOutputs : [])).map(normalizeProjectRelativePath).filter(Boolean);
+    const runtimeFields = ["runtime_file", "runtimeFile", "runtime_output_file", "runtimeOutputFile", "runtime_outputs", "runtimeOutputs", "output_file", "outputFile", "file", "path"];
+    const runtimeRecord = collectImageGenerationPathValues(componentGenerationRecord, runtimeFields).filter(nonEmptyString);
+    const assetRuntimeOutputs = collectImageGenerationPathValues(asset, runtimeFields).filter(nonEmptyString).map(normalizeProjectRelativePath).filter(Boolean);
     const expectedRuntime = normalizeProjectRelativePath(expectedComponent.runtime_file);
     if (expectedRuntime && !runtimeRecord.map(normalizeProjectRelativePath).includes(expectedRuntime)) error("generation_record/runtime_file 未匹配 expected_assets.runtime_file", { missing: expectedComponent.runtime_file });
     if (expectedRuntime && !assetRuntimeOutputs.includes(expectedRuntime)) error("manifest asset runtime_outputs 未匹配 expected_assets.runtime_file", { missing: expectedComponent.runtime_file });
   }
   if (!nonEmptyString(metadata.mime_type)) error("缺少输出 MIME", { missing: "mime_type" });
   else if (!isRasterDelivery(contract.delivery_kind, metadata.mime_type)) error("输出 MIME 与 raster-image 不匹配，SVG/Graphics 不得冒充 ImageGen 位图");
+  for (const value of [
+    options.expectedAsset,
+    expectedComponent,
+    { ...asset, mime_type: asset?.mime_type ?? metadata.mime_type },
+    { ...generation, mime_type: generation?.mime_type ?? metadata.mime_type, output_file: generation?.output_file ?? generation?.output?.file },
+    { mime_type: metadata.mime_type, runtime_file: metadata.file },
+  ].filter(isObject)) for (const violation of collectImageGenerationRasterViolations(value, { requiredMime: true, fileFields: ["source_file", "runtime_file", "output_file", "runtime_outputs"] })) error(`${violation.field} ${violation.message}`);
   for (const field of ["width", "height"]) if (!Number.isInteger(metadata[field]) || metadata[field] <= 0) error(`缺少有效输出 ${field}`, { missing: field });
   if (typeof metadata.alpha !== "boolean") error("缺少输出 alpha 声明", { missing: "alpha" });
   if (!isSha256(metadata.sha256)) error("缺少输出 SHA-256", { missing: "sha256" });
-  const runtimeOutputs = asset?.runtime_outputs ?? asset?.runtimeOutputs;
+  const runtimeOutputs = collectImageGenerationPathValues(asset, ["runtime_outputs", "runtimeOutputs", "runtime_file", "runtimeFile", "runtime_output_file", "runtimeOutputFile"]);
   if (!Array.isArray(runtimeOutputs) || runtimeOutputs.length === 0 || !runtimeOutputs.every(nonEmptyString)) error("缺少运行时实际消费输出 runtime_outputs", { missing: "runtime_outputs" });
   // 布尔值和 status 字符串只能表达意图，不能证明当前候选真的被运行时消费。
   const consumption = asset?.runtime_consumption;
@@ -284,7 +266,11 @@ export function validateVisualProductionCoverage(manifest, options = {}) {
   for (const region of regions) {
     if (!isObject(region) || region.owner_type !== "fixed-production-visual") continue;
     const regionContract = resolveProductionContract(region);
-    const asset = assets.get(region.asset_id);
+    // 多组件区域只登记 atomic asset_ids；不能再取一个 region asset_id 作为组合图代表。
+    const regionAssetIds = Array.isArray(regionContract.asset_ids)
+      ? [...new Set(regionContract.asset_ids.filter(nonEmptyString))]
+      : (nonEmptyString(regionContract.asset_id) ? [regionContract.asset_id] : []);
+    const asset = assets.get(regionAssetIds[0]);
     const contract = { ...(asset ?? {}), ...region, ...resolveProductionContract(asset ?? {}), ...regionContract };
     const context = contractContext(region, stage, { observedMethod: contract.production_method ?? "unspecified" });
     errors.push(...validateProductionContract(contract, context, { requireComplete: true }));
@@ -292,12 +278,18 @@ export function validateVisualProductionCoverage(manifest, options = {}) {
     // 组件校验保留 coverage 原对象，确保 camel/nested 别名和热区的越权字段不会在合并合同前被抹掉。
     errors.push(...validateVisualComponentContract(region, context, { requireImageAssets: true }));
     if (contract.production_origin !== regionContract.production_origin) errors.push(productionContractError(context, "production_origin 与 coverage 区域声明不一致"));
-    if (!asset) { errors.push(productionContractError(context, "缺少区域对应正式资源", { missing: `asset:${region.asset_id}` })); continue; }
-    const assetContract = resolveProductionContract(asset);
-    for (const field of ["production_origin", "production_method", "delivery_kind", "image_generation_required", "generation_record_required", "substitution_policy"]) {
-      if (assetContract[field] !== undefined && JSON.stringify(assetContract[field]) !== JSON.stringify(contract[field])) errors.push(productionContractError(context, `资产 ${field} 与区域合同不一致`, { observedMethod: assetContract.production_method ?? "unspecified" }));
+    const contractAssets = regionAssetIds.map((assetId) => assets.get(assetId)).filter(isObject);
+    if (!asset && regionAssetIds.length === 0) errors.push(productionContractError(context, "缺少区域原子资产身份，必须声明 asset_ids 或单组件 asset_id", { missing: "asset_ids" }));
+    for (const registeredAsset of contractAssets) {
+      const assetContract = resolveProductionContract(registeredAsset);
+      for (const field of ["production_origin", "production_method", "delivery_kind", "image_generation_required", "generation_record_required", "substitution_policy"]) {
+        if (assetContract[field] !== undefined && JSON.stringify(assetContract[field]) !== JSON.stringify(contract[field])) errors.push(productionContractError(context, `资产 ${field} 与区域合同不一致`, { observedMethod: assetContract.production_method ?? "unspecified" }));
+      }
+      if (Array.isArray(contract.expected_assets) && Array.isArray(assetContract.expected_assets) && JSON.stringify(normalizeExpectedAssets(contract.expected_assets)) !== JSON.stringify(normalizeExpectedAssets(assetContract.expected_assets))) errors.push(productionContractError(context, "资产 expected_assets 与区域合同不一致"));
     }
-    if (Array.isArray(contract.expected_assets) && Array.isArray(assetContract.expected_assets) && JSON.stringify(normalizeExpectedAssets(contract.expected_assets)) !== JSON.stringify(normalizeExpectedAssets(assetContract.expected_assets))) errors.push(productionContractError(context, "资产 expected_assets 与区域合同不一致"));
+    if (regionAssetIds.length > 0 && contractAssets.length !== regionAssetIds.length) {
+      for (const assetId of regionAssetIds) if (!assets.has(assetId)) errors.push(productionContractError(context, "区域原子资产缺少对应 manifest asset", { missing: `assets.${assetId}` }));
+    }
     if (contract.image_generation_required === true) {
       const expectedComponents = Array.isArray(contract.expected_assets) ? contract.expected_assets.map(normalizeComponentExpectedAsset) : [];
       for (const expectedComponent of expectedComponents) {
@@ -309,7 +301,9 @@ export function validateVisualProductionCoverage(manifest, options = {}) {
         }
         errors.push(...validateImageGenerationContract(componentAsset, { ...contract, expected_assets: [expectedComponent] }, componentContext, { expectedAsset: expectedComponent, recordIdRegistry: generationRecordIds, referenceOriginalFile: manifest?.reference_target?.original_file, identity: manifestEvidenceIdentity(manifest), projectRoot: options.projectRoot }));
       }
-    } else if (contract.generation_record_required === true && !isObject(asset.generation_record)) errors.push(productionContractError(context, "合同要求 generation_record，但资产缺少生成记录", { missing: "generation_record" }));
+    } else if (contract.generation_record_required === true) {
+      for (const registeredAsset of contractAssets) if (!isObject(registeredAsset.generation_record)) errors.push(productionContractError(context, "合同要求 generation_record，但原子资产缺少生成记录", { missing: `assets.${registeredAsset.id}.generation_record` }));
+    }
     const changeRequestId = region.production_method_change_request_id ?? region.productionMethodChangeRequestId ?? region.change_request_id ?? region.changeRequestId;
     const methodChanged = region.production_method_changed === true || region.productionMethodChanged === true || nonEmptyString(changeRequestId);
     if (methodChanged) {
@@ -326,7 +320,7 @@ export function validateVisualProductionCoverage(manifest, options = {}) {
           diffFingerprint: manifestEvidenceIdentity(manifest).diff,
           annotation_number: region.annotation_number,
           region_id: region.id,
-          previousMethod: region.previous_production_method ?? region.previousProductionMethod ?? assetContract.production_method,
+          previousMethod: region.previous_production_method ?? region.previousProductionMethod ?? resolveProductionContract(asset ?? {}).production_method,
           proposedMethod: contract.production_method,
         }));
         const changes = Array.isArray(request.production_method_changes) ? request.production_method_changes : (Array.isArray(request.productionMethodChanges) ? request.productionMethodChanges : []);
@@ -363,28 +357,19 @@ export function loadVisualManifestSnapshot(pkg, projectRoot = process.cwd()) {
   try { return { manifest: JSON.parse(bytes.toString("utf8")), errors: [], path, sha256: actualSha }; }
   catch (caught) { return { manifest: null, errors: [`visualManifestFile 不是合法 JSON：${caught.message}`] }; }
 }
-
 /** 计算文件 SHA-256，文件不存在时返回 null，由上层生成可定位错误。 */
 async function hashFileIfPresent(projectRoot, value) {
   const path = safeProjectPath(projectRoot, value);
   if (!path || !existsSync(path) || !statSync(path).isFile()) return null;
   return `sha256:${createHash("sha256").update(await readFile(path)).digest("hex")}`;
 }
-
 /** 从文件魔数读取位图的 MIME、尺寸和 alpha，拒绝只改扩展名的伪 raster 输出。 */
 function decodeRasterBytes(bytes) {
   if (!Buffer.isBuffer(bytes) || bytes.length < 12) return null;
   const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
   if (bytes.subarray(0, 8).equals(png) && bytes.length >= 26) {
-    let alpha = [4, 6].includes(bytes[25]);
-    let offset = 8;
-    while (offset + 12 <= bytes.length) {
-      const length = bytes.readUInt32BE(offset); const type = bytes.toString("ascii", offset + 4, offset + 8);
-      if (type === "tRNS") alpha = true;
-      offset += 12 + length;
-      if (type === "IEND") break;
-    }
-    return { mime_type: "image/png", width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20), alpha };
+    // V4 魔数与像素指纹必须共享严格 PNG 解码器，不能一边接受残缺 chunk 一边静默跳过指纹。
+    try { const decoded = decodePngRgba(bytes); let alpha = false; for (let index = 3; index < decoded.pixels.length; index += 4) if (decoded.pixels[index] !== 255) { alpha = true; break; } return { mime_type: "image/png", width: decoded.width, height: decoded.height, alpha }; } catch { return null; }
   }
   if (bytes[0] === 0xff && bytes[1] === 0xd8) {
     let offset = 2;
@@ -441,9 +426,10 @@ export function validateEvidenceIdentity(evidence, context, identity = {}, optio
 export function manifestEvidenceIdentity(manifest) {
   return { candidate: manifest?.candidate_identity?.sha256 ?? manifest?.candidate_sha256, target: manifest?.reference_target?.target_sha256, baseline: manifest?.visual_baseline?.style_fingerprint ?? manifest?.visual_baseline?.sha256, diff: manifest?.candidate_identity?.diff_fingerprint ?? manifest?.diff_fingerprint };
 }
-
 /** 校验 V4 production_contract_audit 与逐区域合同、输出和运行消费一致。 */
 export function auditProductionContract(manifest, options = {}) {
+  const fileGateError = productionFileGateError(manifest, options, "V4");
+  if (fileGateError) return [fileGateError];
   const errors = [];
   const audit = manifest?.production_contract_audit;
   if (!isObject(audit)) return ["[V4] production_contract_audit 缺失"];
@@ -452,7 +438,7 @@ export function auditProductionContract(manifest, options = {}) {
   const assets = new Map((Array.isArray(manifest?.assets) ? manifest.assets : []).filter(isObject).map((asset) => [asset.id, asset]));
   const requests = [...(Array.isArray(manifest?.change_requests) ? manifest.change_requests : []), ...(Array.isArray(manifest?.production_method_change_requests) ? manifest.production_method_change_requests : []), ...(isObject(manifest?.production_method_change_request) ? [manifest.production_method_change_request] : [])];
   const requestById = new Map(requests.filter(isObject).map((request) => [request.changeRequestId ?? request.change_request_id ?? request.id, request]));
-  const identity = manifestEvidenceIdentity(manifest); const generationRecordIds = new Map();
+  const identity = manifestEvidenceIdentity(manifest); const generationRecordIds = new Map(); const rasterFingerprints = new Map();
   if (!nonEmptyString(manifest?.workItemId)) errors.push("[V4] effect-image 清单缺少根 workItemId，无法绑定当前 Work Item");
   if (!nonEmptyString(manifest?.candidateVersion)) errors.push("[V4] effect-image 清单缺少根 candidateVersion，无法绑定当前候选版本");
   if (!isSha256(identity.candidate)) errors.push("[V4] production_contract_audit 缺少当前 candidate_identity.sha256");
@@ -515,6 +501,7 @@ export function auditProductionContract(manifest, options = {}) {
       else if (!allowedPaths.length || !allowedPaths.includes(normalizedActualPath)) errors.push(productionContractError(actualContext, `V4 actual_assets[${index}] 未绑定 V3 runtime 输出路径`, { missing: actualPath }));
       const declaredMime = actual.mime_type ?? actual.mimeType;
       if (!nonEmptyString(declaredMime)) errors.push(productionContractError(context, `V4 actual_assets[${index}] 缺少 MIME`, { missing: `actual_assets[${index}].mime_type` }));
+      if (expected.production_method === "imagegen" || expected.image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(actual, { requiredMime: true, fileFields: ["file", "path", "runtime_file", "output_file"] })) errors.push(productionContractError(actualContext, `V4 actual_assets[${index}].${violation.field} ${violation.message}`));
       if (expectedItem.mime_type && declaredMime && expectedItem.mime_type !== declaredMime) errors.push(productionContractError(context, `V4 actual_assets[${index}] MIME 与 V3 不一致`));
       for (const [field, expectedValue] of [["mime_type", expectedItem.mime_type], ["width", expectedItem.width], ["height", expectedItem.height], ["alpha", expectedItem.alpha], ["sha256", expectedItem.sha256]]) {
         if (expectedValue !== undefined && expectedValue !== "" && actual[field] !== undefined && actual[field] !== expectedValue) errors.push(productionContractError(context, `V4 actual_assets[${index}] ${field} 与 V3 expected_assets 不一致`));
@@ -539,6 +526,10 @@ export function auditProductionContract(manifest, options = {}) {
         if (expectedSha && expectedSha !== digest) errors.push(productionContractError(context, `V4 actual_assets[${index}] 未匹配 V3 SHA`, { missing: "expected_assets.sha256" }));
         if (expected.delivery_kind === "raster-image") {
           const decoded = decodeRasterBytes(bytes);
+          let fingerprint = null;
+          try { fingerprint = computeRasterFingerprint(bytes, declaredMime); } catch (caught) { errors.push(productionContractError(context, `V4 actual_assets[${index}] 位图严格解码失败：${caught.message}`, { missing: "raster-fingerprint" })); }
+          const previous = registerRasterFingerprint(rasterFingerprints, region.id, expectedComponent.canonical_state_id || canonicalStateId(expectedComponent.state_id), fingerprint, expectedComponent.component_id, expectedComponent.asset_id);
+          if (previous && previous.component_id !== expectedComponent.component_id) errors.push(productionContractError(actualContext, "V4 同一 region/state 的不同 component 使用了相同位图像素；请折叠为 1 component+placements", { missing: `${previous.component_id}/${previous.asset_id}` }));
           if (!decoded) errors.push(productionContractError(context, `V4 actual_assets[${index}] 不是可解码 PNG/JPEG/WebP 位图`, { missing: "raster-magic" }));
           else {
             if (declaredMime && decoded.mime_type !== declaredMime && !(decoded.mime_type === "image/jpeg" && declaredMime === "image/jpg")) errors.push(productionContractError(context, `V4 actual_assets[${index}] MIME 与文件魔数不一致`));
@@ -556,13 +547,9 @@ export function auditProductionContract(manifest, options = {}) {
       if (!request) errors.push(productionContractError(context, "替换未绑定 ACCEPTED Change Request", { missing: "change_request_id" }));
       else errors.push(...validateProductionMethodChangeRequest(request, { workItemId: manifest.workItemId, candidateVersion: manifest.candidateVersion, candidateSha256: identity.candidate, targetSha256: identity.target, baselineSha256: identity.baseline, diffFingerprint: identity.diff, annotation_number: region.annotation_number, region_id: region.id, previousMethod: region.previous_production_method ?? region.previousProductionMethod ?? assets.get(expectedAssets[0]?.asset_id)?.production_method, proposedMethod: unit.observed_method ?? unit.production_method }));
     }
-    if (options.checkFiles !== false && options.projectRoot) {
-      // actual_assets 的存在性、魔数、尺寸、alpha 和 SHA 已在上方一次性完成，避免两套结论漂移。
-    }
   }
   return errors;
 }
-
 /** 在不读取文件时校验 V4 production_contract_audit 的结构和区域身份。 */
 export function validateProductionAuditShape(manifest, options = {}) {
   const errors = [];
@@ -607,10 +594,15 @@ export function validateProductionAuditShape(manifest, options = {}) {
     const unitExpectedAssets = normalizeExpectedAssets(unit?.expected_assets);
     if (!unitExpectedAssets.length || unitExpectedAssets.length !== expectedAssets.length) error("expected_assets 数量必须与 V3 一致", "expected_assets");
     unitExpectedAssets.forEach((item, itemIndex) => { if (expectedAssets[itemIndex] && item.asset_id !== expectedAssets[itemIndex].asset_id) error(`expected_assets[${itemIndex}] 未绑定 V3 资产`, `expected_assets[${itemIndex}].asset_id`); });
+    const expectedComponentAssets = Array.isArray(resolveProductionContract(region ?? {}).expected_assets) ? resolveProductionContract(region ?? {}).expected_assets.map(normalizeComponentExpectedAsset) : [];
+    const unitComponentAssets = Array.isArray(resolveProductionContract(unit ?? {}).expected_assets) ? resolveProductionContract(unit ?? {}).expected_assets.map(normalizeComponentExpectedAsset) : [];
+    if (JSON.stringify(unitComponentAssets) !== JSON.stringify(expectedComponentAssets)) error("expected_assets 必须逐字段绑定 V3 原子资产（component/state/asset/path）", "expected_assets");
+    if (!atomicImageRequirementsEqual(unit?.atomic_image_requirements, deriveAtomicImageRequirements(region ?? {}))) error("atomic_image_requirements 必须与 V3 派生结果一致", "atomic_image_requirements");
     if (!Array.isArray(unit?.actual_assets) || unit.actual_assets.length === 0) error("缺少 actual_assets", "actual_assets");
     else unit.actual_assets.forEach((item, itemIndex) => {
       if (!isObject(item) || !nonEmptyString(item.file ?? item.path ?? item.output_file)) error(`actual_assets[${itemIndex}] 必须是带 file 的对象`, `actual_assets[${itemIndex}].file`);
       else {
+        if (resolveProductionContract(region ?? {}).production_method === "imagegen" || resolveProductionContract(region ?? {}).image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(item, { requiredMime: true, fileFields: ["file", "path", "runtime_file", "output_file"] })) error(`actual_assets[${itemIndex}].${violation.field} ${violation.message}`, `actual_assets[${itemIndex}].${violation.field}`);
         for (const field of ["mime_type", "sha256"]) if (!nonEmptyString(item[field])) error(`actual_assets[${itemIndex}] 缺少 ${field}`, `actual_assets[${itemIndex}].${field}`);
         if (nonEmptyString(item.sha256) && !isSha256(item.sha256)) error(`actual_assets[${itemIndex}].sha256 格式无效`, `actual_assets[${itemIndex}].sha256`);
         if (resolveProductionContract(region ?? {}).delivery_kind === "raster-image" && (!Number.isInteger(item.width) || !Number.isInteger(item.height) || typeof item.alpha !== "boolean")) error(`actual_assets[${itemIndex}] raster-image 必须记录 width、height、alpha`, `actual_assets[${itemIndex}].metadata`);
@@ -635,7 +627,6 @@ export function validateProductionAuditShape(manifest, options = {}) {
   if (regions.some((region) => !keys.has(`${region.annotation_number}\0${region.id}`))) errors.push("[V4] annotation_number=* region_id=* expected_method=visual-production observed_method=missing 缺失=production_contract_audit.units：未覆盖全部固定视觉区域");
   return errors;
 }
-
 /** 校验 F2 必须同时完成视觉一致性和生产合同双审。 */
 export function validateF2ProductionReviews(f2, context = {}, options = {}) {
   const errors = [];
@@ -657,7 +648,6 @@ export function validateF2ProductionReviews(f2, context = {}, options = {}) {
   if (!["passed", "PASS"].includes(String(f2.overall_status ?? f2.overallStatus))) error("F2 overall_status 必须为 passed，双审不能只靠单一 reviewer");
   return errors;
 }
-
 /** 校验 V5 运行态硬门，要求审计、双审、重放、freshness 和实际消费全部存在。 */
 export function validateV5ProductionGate(manifest, options = {}) {
   const errors = [];
@@ -697,9 +687,10 @@ export function validateV5ProductionGate(manifest, options = {}) {
   else if (currentTarget && gate.target_sha256 !== currentTarget) error("V5 target_sha256 与冻结目标不一致");
   return errors;
 }
-
 /** V5 总入口：把 V3 coverage、V4 审计、F2 双审和 V5 运行态门收敛为一个不可绕过的结果。 */
 export async function validateV5VisualManifest(manifest, options = {}) {
+  const fileGateError = productionFileGateError(manifest, options, "V5");
+  if (fileGateError) return [fileGateError];
   const identity = manifestEvidenceIdentity(manifest);
   const evidenceOptions = { requireEvidenceIdentity: options.requireEvidenceIdentity !== false, identity, projectRoot: options.projectRoot };
   const errors = [
@@ -713,7 +704,6 @@ export async function validateV5VisualManifest(manifest, options = {}) {
   errors.push(...await auditProductionContract(manifest, { projectRoot: options.projectRoot, checkFiles: options.checkFiles === true }));
   return errors;
 }
-
 /** 校验 Change Request 是否是生产方法变更的唯一授权来源。 */
 export function validateProductionMethodChangeRequest(change, context = {}) {
   const errors = [];
@@ -765,15 +755,19 @@ export function validateProductionMethodChangeRequest(change, context = {}) {
   }
   return errors;
 }
-
 /** 校验实施包与 coverage 的部件资产一一绑定，并覆盖每个预期源/运行输出。 */
 function validateVisualUnitAssetBindings(unit, region, context, errors, options = {}) {
   if (!isObject(region)) return;
+  const regionAtomicRequirements = deriveAtomicImageRequirements(region);
+  const unitAtomicRequirements = unit?.atomic_image_requirements ?? unit?.atomicImageRequirements;
+  if (!Array.isArray(unitAtomicRequirements)) errors.push(productionContractError(context, "Implementation Package 缺少 atomic_image_requirements", { missing: "atomic_image_requirements" }));
+  else if (!atomicImageRequirementsEqual(unitAtomicRequirements, regionAtomicRequirements)) errors.push(productionContractError(context, "Implementation Package atomic_image_requirements 与 coverage 派生需求不一致", { missing: "atomic_image_requirements" }));
   const nestedRegion = region.production_contract ?? region.productionContract;
   const rawExpected = region.expected_assets ?? region.expectedAssets ?? nestedRegion?.expected_assets ?? nestedRegion?.expectedAssets;
   const rawObserved = unit?.expected_assets ?? unit?.expectedAssets;
+  const imageGenContract = resolveProductionContract(region).production_method === "imagegen" || resolveProductionContract(region).image_generation_required === true;
   for (const [label, values] of [["coverage.expected_assets", rawExpected], ["Implementation Package expected_assets", rawObserved]]) {
-    if (Array.isArray(values)) values.forEach((value, index) => { if (hasShareAliasConflict(value)) errors.push(productionContractError(context, `${label}[${index}] share_id 与 shareId 不得同时声明`, { missing: `${label}[${index}].share_id` })); });
+    if (Array.isArray(values)) values.forEach((value, index) => { if (hasShareAliasConflict(value)) errors.push(productionContractError(context, `${label}[${index}] share_id 与 shareId 不得同时声明`, { missing: `${label}[${index}].share_id` })); if (imageGenContract) for (const violation of collectImageGenerationRasterViolations(value, { requiredMime: true, requiredFileFields: ["source_file", "runtime_file"], fileFields: ["source_file", "runtime_file"] })) errors.push(productionContractError(context, `${label}[${index}].${violation.field} ${violation.message}`, { missing: `${label}[${index}].${violation.field}` })); });
   }
   const expected = Array.isArray(resolveProductionContract(region).expected_assets) ? resolveProductionContract(region).expected_assets.map(normalizeComponentExpectedAsset) : [];
   const observed = Array.isArray(unit?.expected_assets) ? unit.expected_assets.map(normalizeComponentExpectedAsset) : [];
@@ -801,7 +795,7 @@ function validateVisualUnitAssetBindings(unit, region, context, errors, options 
     } else if (observedSource || observedRuntime) {
       fail("runtime-program/phaser-graphics 不得伪造 source_file/runtime_file 图片输出", "runtime_implementation");
     }
-    if (JSON.stringify(observedAsset.atlas_slice) !== JSON.stringify(expectedAsset.atlas_slice)) fail("Implementation Package atlas_slice 与 coverage 不一致", "atlas_slice"); for (const field of ["asset_kind", "mime_type", "width", "height", "alpha", "sha256", "share_id"]) if (JSON.stringify(observedAsset[field]) !== JSON.stringify(expectedAsset[field])) fail(`Implementation Package ${field} 与 coverage 不一致`, field);
+    if (JSON.stringify(observedAsset.atlas_slice) !== JSON.stringify(expectedAsset.atlas_slice)) fail("Implementation Package atlas_slice 与 coverage 不一致", "atlas_slice"); for (const field of ["asset_kind", "asset_scope", "atomic_visual_key", "mime_type", "width", "height", "alpha", "sha256", "share_id"]) if (JSON.stringify(observedAsset[field]) !== JSON.stringify(expectedAsset[field])) fail(`Implementation Package ${field} 与 coverage 不一致`, field);
   }
   for (const [key, observedAsset] of observedByKey) if (!expectedByKey.has(key)) {
     const local = { ...context, component_id: observedAsset.component_id, state_id: observedAsset.canonical_state_id || canonicalStateId(observedAsset.state_id) };
@@ -823,7 +817,6 @@ function validateVisualUnitAssetBindings(unit, region, context, errors, options 
     if (nonEmptyString(asset.runtime_file) && !pathCoveredBy(asset.runtime_file, normalizedOutputPaths)) errors.push(productionContractError(local, "outputPaths 未覆盖 expected asset runtime_file", { missing: `outputPaths:${asset.runtime_file}` }));
   }
 }
-
 /** 校验 Implementation Package 的视觉实施单元与 coverage 一一映射。 */
 export function validateVisualProductionUnits(pkg, manifest = null, options = {}) {
   const errors = [];
@@ -837,17 +830,17 @@ export function validateVisualProductionUnits(pkg, manifest = null, options = {}
     const context = contractContext(unit ?? {}, "V3", { annotation_number: unit?.annotation_number ?? "?", region_id: unit?.region_id ?? "?", observedMethod: unit?.production_method ?? "missing" });
     const error = (message, details = {}) => errors.push(productionContractError(context, `visualProductionUnits[${index}] ${message}`, details));
     errors.push(...validateProductionContract(unit ?? {}, context, { requireComplete: true }));
+    const key = `${unit?.annotation_number}\0${unit?.region_id}`;
+    const region = regionByKey.get(key);
     // 实施包也必须携带状态分析和原子部件映射，避免只把 annotation 编号交给实现代理。
     // Implementation Package 不携带 owner_type 字段；其 visualProductionUnits 统一按固定视觉部件合同校验状态与热点。
-    errors.push(...validateVisualComponentContract({ ...(unit ?? {}), owner_type: unit?.owner_type ?? "fixed-production-visual" }, context, { requireImageAssets: true }));
+    errors.push(...validateVisualComponentContract({ ...(region ?? {}), ...(unit ?? {}), owner_type: "fixed-production-visual", bounds: region?.bounds ?? unit?.bounds }, context, { requireImageAssets: true }));
     if (!nonEmptyString(unit?.unitId)) error("缺少 unitId", { missing: "unitId" });
     if (!Number.isInteger(unit?.annotation_number) || unit.annotation_number <= 0) error("annotation_number 必须为正整数", { missing: "annotation_number" });
     if (!nonEmptyString(unit?.region_id)) error("缺少 region_id", { missing: "region_id" });
-    const key = `${unit?.annotation_number}\0${unit?.region_id}`;
     if (seen.has(key)) error("annotation_number/region_id 重复"); else seen.add(key);
     const annotationKey = `${unit?.scene_id ?? "*"}\0${unit?.state_id ?? "*"}\0${unit?.annotation_number}`;
     if (seenAnnotations.has(annotationKey)) error("annotation_number 在同一 scene/state 内重复"); else seenAnnotations.add(annotationKey);
-    const region = regionByKey.get(key);
     if (manifest && !region) error("未映射到 coverage_audit 固定视觉区域");
     if (!Array.isArray(unit?.interaction_hotspots ?? unit?.interactionHotspots)) error("Implementation Package 必须显式镜像 interaction_hotspots 数组", { missing: "interaction_hotspots" });
     if (region) {
@@ -855,6 +848,10 @@ export function validateVisualProductionUnits(pkg, manifest = null, options = {}
       const unitContract = resolveProductionContract(unit);
       if (unitContract.production_method !== regionContract.production_method) error("production_method 与 coverage 不一致", { expectedMethod: regionContract.production_method });
       if (unitContract.delivery_kind !== regionContract.delivery_kind) error("delivery_kind 与 coverage 不一致");
+      const normalizedRegionAssetIds = Array.isArray(regionContract.asset_ids) ? regionContract.asset_ids.slice().sort() : null;
+      const normalizedUnitAssetIds = Array.isArray(unitContract.asset_ids) ? unitContract.asset_ids.slice().sort() : null;
+      if (JSON.stringify(unitContract.asset_id ?? null) !== JSON.stringify(regionContract.asset_id ?? null)) error("asset_id 与 coverage 不一致", { missing: "asset_id" });
+      if (JSON.stringify(normalizedUnitAssetIds) !== JSON.stringify(normalizedRegionAssetIds)) error("asset_ids 与 coverage 不一致", { missing: "asset_ids" });
       // 实施包不得只复用方法字段；这些布尔和替换策略决定了后续门禁是否必须产图、留记录和禁止静默替换。
       for (const field of ["production_origin", "image_generation_required", "generation_record_required", "substitution_policy"]) {
         if (JSON.stringify(unitContract[field]) !== JSON.stringify(regionContract[field])) error(`${field} 与 coverage 不一致`, { missing: field });
@@ -901,7 +898,6 @@ export function validateVisualProductionUnits(pkg, manifest = null, options = {}
   if (manifest && regions.some((region) => !seen.has(`${region.annotation_number}\0${region.id}`))) errors.push("[V3] annotation_number=* region_id=* expected_method=visual-production observed_method=missing 缺失=visualProductionUnits：未覆盖全部固定视觉区域");
   return errors;
 }
-
 /** 读取并绑定当前 visual-assets 快照，阻止实施包只凭自身编号伪造 coverage 映射。 */
 export function validateVisualImplementationPackageBinding(pkg, options = {}) {
   const units = pkg?.visualProductionUnits;
@@ -934,7 +930,6 @@ export function validateVisualImplementationPackageBinding(pkg, options = {}) {
   errors.push(...validateVisualProductionUnits(pkg, manifest, options));
   return errors;
 }
-
 /** 校验视觉实施单元被委派给正确的代理，并继承其输出所有权。 */
 export function validateVisualDelegationBinding(delegation, pkg) {
   const errors = [];
@@ -950,7 +945,6 @@ export function validateVisualDelegationBinding(delegation, pkg) {
   }
   return errors;
 }
-
 /** 提供 workflow-control 使用的实施包单入口，避免总控文件堆叠视觉合同分支。 */
 export function validateVisualImplementationPackage(pkg, options = {}) {
   if (options.requireVisual === true && pkg?.visualProductionUnits === undefined) return ["[V3] annotation_number=* region_id=* expected_method=visual-production observed_method=missing 缺失=visualProductionUnits：视觉实施包必须逐区域覆盖"];
@@ -964,14 +958,12 @@ export function validateVisualImplementationPackage(pkg, options = {}) {
   }
   return errors;
 }
-
 /** 提供 workflow-control 使用的 Change Request 单入口。 */
-export function validateVisualChangeRequest(change, context = {}) {
-  return validateProductionMethodChangeRequest(change, context);
-}
-
+export function validateVisualChangeRequest(change, context = {}) { return validateProductionMethodChangeRequest(change, context); }
 /** 校验工作流 Evidence Manifest 中视觉证据，并绑定实施包读取的当前清单。 */
 export function validateVisualEvidence(evidence, pkg, options = {}) {
+  const fileGateError = productionFileGateError(options.manifest, options, "V5");
+  if (fileGateError) return [fileGateError];
   if (pkg?.visualProductionUnits === undefined) return [];
   const errors = [];
   const manifest = options.manifest;
@@ -994,7 +986,4 @@ export function validateVisualEvidence(evidence, pkg, options = {}) {
   return errors;
 }
 /** 把异步 V4 审计错误收敛为稳定的机器门结果。 */
-export async function productionContractAuditResult(manifest, options = {}) {
-  const errors = await auditProductionContract(manifest, options);
-  return { status: errors.length ? "failed" : "passed", errors };
-}
+export async function productionContractAuditResult(manifest, options = {}) { const errors = await auditProductionContract(manifest, options); return { status: errors.length ? "failed" : "passed", errors }; }

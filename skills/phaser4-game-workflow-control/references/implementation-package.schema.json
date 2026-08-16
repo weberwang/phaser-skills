@@ -114,7 +114,7 @@
     "visualProductionUnit": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["unitId", "annotation_number", "region_id", "production_origin", "production_method", "delivery_kind", "image_generation_required", "generation_record_required", "substitution_policy", "state_analysis", "component_inventory", "expected_assets", "interaction_hotspots", "owner", "ownedPaths", "outputPaths"],
+      "required": ["unitId", "annotation_number", "region_id", "production_origin", "production_method", "delivery_kind", "image_generation_required", "generation_record_required", "substitution_policy", "state_analysis", "component_inventory", "expected_assets", "atomic_image_requirements", "interaction_hotspots", "owner", "ownedPaths", "outputPaths"],
       "properties": {
         "unitId": {"type": "string", "minLength": 1},
         "annotation_number": {"type": "integer", "minimum": 1},
@@ -127,12 +127,15 @@
         "image_generation_required": {"type": "boolean"},
         "generation_record_required": {"type": "boolean"},
         "substitution_policy": {"enum": ["forbid", "user-change-request-only"]},
+        "asset_id": {"type": "string", "minLength": 1},
+        "asset_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
         "state_analysis": {"$ref": "#/$defs/stateAnalysis"},
         "component_inventory": {"$ref": "#/$defs/componentInventory"},
         "owner": {"type": "string", "minLength": 1},
         "ownedPaths": {"$ref": "#/$defs/nonEmptyStrings"},
         "outputPaths": {"$ref": "#/$defs/visualOutputPaths"},
         "expected_assets": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/visualExpectedAsset"}},
+        "atomic_image_requirements": {"type": "array", "items": {"$ref": "#/$defs/atomicImageRequirement"}},
         "interaction_hotspots": {"type": "array", "items": {"$ref": "#/$defs/interactionHotspot"}},
         "runtime_implementation": {"$ref": "#/$defs/runtimeImplementation"},
         "format": {"type": "string", "minLength": 1},
@@ -149,7 +152,7 @@
               "generation_record_required": {"const": true},
               "substitution_policy": {"const": "user-change-request-only"},
               "component_inventory": {"required": ["delivery_mode", "atlas_allowed"], "properties": {"delivery_mode": {"const": "individual"}, "atlas_allowed": {"const": false}}},
-              "expected_assets": {"items": {"required": ["source_file", "runtime_file"], "not": {"required": ["atlas_slice"]}}}
+              "expected_assets": {"items": {"$ref": "#/$defs/imageGenerationExpectedAsset"}}
             }
           }
         },
@@ -164,7 +167,7 @@
               "generation_record_required": {"const": true},
               "substitution_policy": {"const": "user-change-request-only"},
               "component_inventory": {"required": ["delivery_mode", "atlas_allowed"], "properties": {"delivery_mode": {"const": "individual"}, "atlas_allowed": {"const": false}}},
-              "expected_assets": {"items": {"required": ["source_file", "runtime_file"], "not": {"required": ["atlas_slice"]}}}
+              "expected_assets": {"items": {"$ref": "#/$defs/imageGenerationExpectedAsset"}}
             }
           }
         },
@@ -248,22 +251,24 @@
     "componentInventoryItem": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["component_id", "role", "reusable", "interaction_required"],
+      "required": ["component_id", "atomic_visual_key", "role", "reusable", "state_coverage", "placements"],
       "properties": {
         "component_id": {"type": "string", "minLength": 1},
+        "atomic_visual_key": {"type": "string", "minLength": 1},
         "role": {"type": "string", "minLength": 1},
         "reusable": {"type": "boolean"},
-        "interaction_required": {"type": "boolean"},
-        "state_coverage": {"type": "array", "items": {"$ref": "#/$defs/componentStateCoverage"}}
+        "state_coverage": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/componentStateCoverage"}},
+        "placements": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/visualPlacement"}}
       }
     },
     "componentInventory": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["granularity", "component_count", "delivery_mode", "atlas_allowed", "created_at", "components"],
+      "required": ["granularity", "component_count", "visible_instance_count", "delivery_mode", "atlas_allowed", "created_at", "components"],
       "properties": {
         "granularity": {"enum": ["reusable-component", "single-component"]},
         "component_count": {"type": "integer", "minimum": 1},
+        "visible_instance_count": {"type": "integer", "minimum": 1},
         "delivery_mode": {"enum": ["individual", "atlas"]},
         "atlas_allowed": {"type": "boolean"},
         "created_at": {"type": "string", "format": "date-time"},
@@ -302,9 +307,11 @@
     "visualExpectedAsset": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["asset_id", "component_id", "state_id"],
+      "required": ["asset_id", "asset_scope", "atomic_visual_key", "component_id", "state_id"],
       "properties": {
         "asset_id": {"type": "string", "minLength": 1},
+        "asset_scope": {"const": "atomic-component"},
+        "atomic_visual_key": {"type": "string", "minLength": 1},
         "component_id": {"type": "string", "minLength": 1},
         "state_id": {"type": "string", "minLength": 1},
         "asset_kind": {"type": "string", "minLength": 1},
@@ -319,13 +326,29 @@
         "atlas_slice": {"$ref": "#/$defs/atlasSlice"}
       }
     },
+    "imageGenerationExpectedAsset": {
+      "allOf": [
+        {"$ref": "#/$defs/visualExpectedAsset"},
+        {
+          "type": "object",
+          "required": ["source_file", "runtime_file", "mime_type"],
+          "properties": {
+            "mime_type": {"enum": ["image/png", "image/jpeg"]},
+            "source_file": {"pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
+            "runtime_file": {"pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}
+          },
+          "not": {"required": ["atlas_slice"]}
+        }
+      ]
+    },
     "interactionHotspot": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["hotspot_id", "component_id", "bounds"],
+      "required": ["hotspot_id", "component_id", "placement_id", "bounds"],
       "properties": {
         "hotspot_id": {"type": "string", "minLength": 1},
         "component_id": {"type": "string", "minLength": 1},
+        "placement_id": {"type": "string", "minLength": 1},
         "bounds": {
           "type": "object",
           "additionalProperties": false,
@@ -337,6 +360,45 @@
             "height": {"type": "number", "exclusiveMinimum": 0}
           }
         }
+      }
+    },
+    "visualPlacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["placement_id", "bounds", "interaction_required"],
+      "properties": {
+        "placement_id": {"type": "string", "minLength": 1},
+        "interaction_required": {"type": "boolean"},
+        "bounds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "y", "width", "height"],
+          "properties": {
+            "x": {"type": "number", "minimum": 0},
+            "y": {"type": "number", "minimum": 0},
+            "width": {"type": "number", "exclusiveMinimum": 0},
+            "height": {"type": "number", "exclusiveMinimum": 0}
+          }
+        }
+      }
+    },
+    "atomicImageRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirement_id", "annotation_number", "region_id", "atomic_visual_key", "component_id", "state_id", "production_method", "delivery_kind", "asset_id", "placement_ids"],
+      "properties": {
+        "requirement_id": {"type": "string", "minLength": 1},
+        "annotation_number": {"type": "integer", "minimum": 1},
+        "region_id": {"type": "string", "minLength": 1},
+        "atomic_visual_key": {"type": "string", "minLength": 1},
+        "component_id": {"type": "string", "minLength": 1},
+        "state_id": {"type": "string", "minLength": 1},
+        "production_method": {"enum": ["imagegen", "authored-raster", "authored-svg", "phaser-graphics", "runtime-program", "reuse"]},
+        "delivery_kind": {"enum": ["raster-image", "vector-image", "runtime-drawing", "runtime-program", "existing-asset"]},
+        "asset_id": {"type": "string", "minLength": 1},
+        "source_file": {"type": "string", "minLength": 1},
+        "runtime_file": {"type": "string", "minLength": 1},
+        "placement_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
       }
     },
     "runtimeImplementation": {

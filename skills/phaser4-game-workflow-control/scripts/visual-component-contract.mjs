@@ -8,6 +8,10 @@
  * 供 V3、Implementation Package、V4、F2 和 V5 共用。
  */
 import { getVisualRegionDefinitionAliasConflicts, normalizeVisualRegionDefinition } from "../../phaser4-game-asset-integration/scripts/effect_image_annotation_core.mjs";
+import { atomicImageRequirementsEqual, deriveAtomicImageRequirements, normalizeAtomicComponents, normalizeAtomicImageRequirements } from "./visual-atomic-contract.mjs";
+import { collectImageGenerationRasterViolations } from "./visual-imagegen-format.mjs";
+
+export { atomicImageRequirementsEqual, deriveAtomicImageRequirements, normalizeAtomicComponents, normalizeAtomicImageRequirements };
 
 /** 需要被显式分析的常见视觉状态；不适用时必须写 reason。 */
 export const STANDARD_VISUAL_STATES = Object.freeze([
@@ -148,17 +152,23 @@ export function normalizeComponentInventory(value = {}) {
   return {
     granularity: value.granularity ?? value.asset_granularity ?? "",
     component_count: value.component_count ?? value.componentCount,
+    visible_instance_count: value.visible_instance_count ?? value.visibleInstanceCount,
     delivery_mode: value.delivery_mode ?? value.deliveryMode ?? value.asset_delivery_mode ?? "",
     atlas_allowed: value.atlas_allowed ?? value.atlasAllowed,
     created_at: value.created_at ?? value.createdAt ?? "",
     components: components.map((component) => ({
       component_id: component?.component_id ?? component?.componentId ?? "",
+      atomic_visual_key: component?.atomic_visual_key ?? component?.atomicVisualKey ?? "",
       role: semanticToken(component?.role ?? component?.component_role ?? ""),
       reusable: component?.reusable,
-      interaction_required: component?.interaction_required ?? component?.interactionRequired,
       state_coverage: Array.isArray(component?.state_coverage)
         ? component.state_coverage
         : (Array.isArray(component?.stateCoverage) ? component.stateCoverage : null),
+      placements: Array.isArray(component?.placements) ? component.placements.map((placement) => ({
+        placement_id: placement?.placement_id ?? placement?.placementId ?? "",
+        bounds: isObject(placement?.bounds) ? { x: placement.bounds.x, y: placement.bounds.y, width: placement.bounds.width, height: placement.bounds.height } : null,
+        interaction_required: placement?.interaction_required ?? placement?.interactionRequired,
+      })) : null,
     })),
   };
 }
@@ -188,6 +198,8 @@ export function normalizeComponentExpectedAsset(value) {
     state_id: value.state_id ?? value.stateId ?? "",
     canonical_state_id: canonicalStateId(value.state_id ?? value.stateId),
     asset_kind: semanticToken(value.asset_kind ?? value.assetKind ?? value.kind ?? "visual"),
+    asset_scope: semanticToken(value.asset_scope ?? value.assetScope ?? ""),
+    atomic_visual_key: value.atomic_visual_key ?? value.atomicVisualKey ?? "",
     mime_type: value.mime_type ?? value.mimeType,
     width: value.width,
     height: value.height,
@@ -203,11 +215,12 @@ export function normalizeComponentExpectedAsset(value) {
 
 /** 规范化交互热区；热区是输入命中合同，不得携带视觉资产身份。 */
 export function normalizeInteractionHotspot(value) {
-  if (!isObject(value)) return { hotspot_id: "", component_id: "", bounds: null };
+  if (!isObject(value)) return { hotspot_id: "", component_id: "", placement_id: "", bounds: null };
   const bounds = isObject(value.bounds) ? value.bounds : {};
   return {
     hotspot_id: value.hotspot_id ?? value.hotspotId ?? "",
     component_id: value.component_id ?? value.componentId ?? "",
+    placement_id: value.placement_id ?? value.placementId ?? "",
     bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
   };
 }
@@ -221,19 +234,24 @@ export function normalizeVisualComponentContract(value = {}) {
   componentInventory.components = componentInventory.components.map((component) => ({
     ...component,
     state_coverage: normalizeComponentStateCoverage(component).sort((left, right) => left.canonical_state_id.localeCompare(right.canonical_state_id)),
+    placements: (Array.isArray(component.placements) ? component.placements : []).slice().sort((left, right) => left.placement_id.localeCompare(right.placement_id)),
   })).sort((left, right) => left.component_id.localeCompare(right.component_id));
   const expectedAssets = (Array.isArray(canonical.expected_assets) ? canonical.expected_assets : [])
     .map(normalizeComponentExpectedAsset)
     .sort((left, right) => `${left.component_id}\0${left.canonical_state_id}\0${left.asset_id}`.localeCompare(`${right.component_id}\0${right.canonical_state_id}\0${right.asset_id}`));
   const interactionHotspots = (Array.isArray(canonical.interaction_hotspots) ? canonical.interaction_hotspots : [])
     .map(normalizeInteractionHotspot)
-    .sort((left, right) => `${left.component_id}\0${left.hotspot_id}`.localeCompare(`${right.component_id}\0${right.hotspot_id}`));
+    .sort((left, right) => `${left.component_id}\0${left.placement_id}\0${left.hotspot_id}`.localeCompare(`${right.component_id}\0${right.placement_id}\0${right.hotspot_id}`));
+  const atomicImageRequirements = normalizeAtomicImageRequirements(canonical.atomic_image_requirements);
   const runtimeImplementation = canonical.runtime_implementation ?? null;
   return {
+    asset_id: canonical.asset_id ?? null,
+    asset_ids: Array.isArray(canonical.asset_ids) ? canonical.asset_ids.slice().sort() : null,
     state_analysis: stateAnalysis,
     component_inventory: componentInventory,
     expected_assets: expectedAssets,
     interaction_hotspots: interactionHotspots,
+    atomic_image_requirements: atomicImageRequirements,
     // runtime_implementation 也属于执行包必须镜像的生产合同，不能只替换实现文件而绕过审计。
     runtime_implementation: runtimeImplementation,
   };
@@ -243,7 +261,7 @@ export function normalizeVisualComponentContract(value = {}) {
 export function visualComponentContractDifferences(left, right) {
   const leftValue = normalizeVisualComponentContract(left);
   const rightValue = normalizeVisualComponentContract(right);
-  return ["state_analysis", "component_inventory", "expected_assets", "interaction_hotspots", "runtime_implementation"]
+  return ["asset_id", "asset_ids", "state_analysis", "component_inventory", "expected_assets", "interaction_hotspots", "atomic_image_requirements", "runtime_implementation"]
     .filter((field) => canonicalJson(leftValue[field]) !== canonicalJson(rightValue[field]));
 }
 
@@ -303,9 +321,22 @@ function validateStateAnalysis(region, context, errors, options = {}) {
   return { analysis, requirements };
 }
 
-/** 校验部件清单、数量、粒度和图集开关。 */
-function validateInventory(region, context, errors) {
-  const raw = region.component_inventory ?? region.componentInventory;
+function validRectangle(bounds) {
+  return isObject(bounds) && ["x", "y", "width", "height"].every((field) => typeof bounds[field] === "number" && Number.isFinite(bounds[field]))
+    && bounds.x >= 0 && bounds.y >= 0 && bounds.width > 0 && bounds.height > 0;
+}
+
+function rectangleContains(parent, child) {
+  return validRectangle(parent) && validRectangle(child)
+    && child.x >= parent.x && child.y >= parent.y
+    && child.x + child.width <= parent.x + parent.width
+    && child.y + child.height <= parent.y + parent.height;
+}
+
+/** 校验唯一原子部件、可见实例 placement、数量和图集开关。 */
+function validateInventory(region, context, errors, options = {}) {
+  const nested = region.production_contract ?? region.productionContract;
+  const raw = region.component_inventory ?? region.componentInventory ?? nested?.component_inventory ?? nested?.componentInventory;
   const inventory = normalizeComponentInventory(raw ?? {});
   const fail = (message, details = {}) => errors.push(componentError(context, `component_inventory ${message}`, details));
   if (!isObject(raw)) {
@@ -314,27 +345,51 @@ function validateInventory(region, context, errors) {
   }
   if (!["reusable-component", "single-component"].includes(inventory.granularity)) fail("granularity 必须为 reusable-component 或 single-component", { missing: "component_inventory.granularity" });
   if (!Number.isInteger(inventory.component_count) || inventory.component_count <= 0) fail("component_count 必须是正整数", { missing: "component_inventory.component_count" });
-  if (!Array.isArray(inventory.components) || inventory.components.length === 0) fail("components 必须是非空部件清单", { missing: "component_inventory.components" });
-  if (Number.isInteger(inventory.component_count) && inventory.components.length !== inventory.component_count) fail("component_count 必须等于 components.length", { expectedCount: inventory.component_count, observedCount: inventory.components.length });
+  if (!Number.isInteger(inventory.visible_instance_count) || inventory.visible_instance_count <= 0) fail("visible_instance_count 必须是正整数", { missing: "component_inventory.visible_instance_count" });
+  if (!Array.isArray(inventory.components) || inventory.components.length === 0) fail("components 必须是非空原子部件清单", { missing: "component_inventory.components" });
+  if (Number.isInteger(inventory.component_count) && inventory.components.length !== inventory.component_count) fail("component_count 必须等于唯一 components.length", { expectedCount: inventory.component_count, observedCount: inventory.components.length });
   if (inventory.granularity === "single-component" && inventory.component_count !== 1) fail("single-component 只能声明一个部件", { expectedCount: 1, observedCount: inventory.component_count });
   if (!DELIVERY_MODES.has(inventory.delivery_mode)) fail("delivery_mode 必须为 individual 或 atlas", { missing: "component_inventory.delivery_mode" });
   if (typeof inventory.atlas_allowed !== "boolean") fail("atlas_allowed 必须显式为布尔值", { missing: "component_inventory.atlas_allowed" });
-  if (!nonEmptyString(inventory.created_at) || Number.isNaN(Date.parse(inventory.created_at)) ) fail("created_at 必须是可解析时间", { missing: "component_inventory.created_at" });
+  if (!nonEmptyString(inventory.created_at) || Number.isNaN(Date.parse(inventory.created_at))) fail("created_at 必须是可解析时间", { missing: "component_inventory.created_at" });
   if (inventory.delivery_mode === "atlas" && inventory.atlas_allowed !== true) fail("atlas delivery 必须显式 atlas_allowed=true");
   if (inventory.delivery_mode === "individual" && inventory.atlas_allowed === true) fail("individual delivery 不得声明 atlas_allowed=true");
-  const seen = new Set();
+  const regionBounds = region.bounds;
+  if (!validRectangle(regionBounds)) fail("region.bounds 必须是合法矩形，placement 不能脱离区域", { missing: "bounds" });
+  const canvas = options.canvas;
+  if (canvas && !validRectangle({ x: 0, y: 0, width: canvas.width, height: canvas.height })) fail("校验画布尺寸无效", { missing: "canvas" });
+  const seenComponents = new Set(); const seenAtomicKeys = new Set(); const seenPlacements = new Set(); let placementCount = 0;
   for (const [index, component] of inventory.components.entries()) {
     const local = { ...context, component_id: component.component_id || "?" };
     const componentFail = (message, details = {}) => errors.push(componentError(local, `component_inventory.components[${index}] ${message}`, details));
     if (!nonEmptyString(component.component_id)) componentFail("缺少 component_id", { missing: `component_inventory.components[${index}].component_id` });
-    if (seen.has(component.component_id)) componentFail("component_id 重复");
-    seen.add(component.component_id);
+    if (seenComponents.has(component.component_id)) componentFail("component_id 重复，重复视觉必须使用 placements", { missing: component.component_id });
+    seenComponents.add(component.component_id);
+    if (!nonEmptyString(component.atomic_visual_key)) componentFail("缺少 atomic_visual_key", { missing: `component_inventory.components[${index}].atomic_visual_key` });
+    if (seenAtomicKeys.has(component.atomic_visual_key)) componentFail("atomic_visual_key 重复，不能复制原子定义");
+    seenAtomicKeys.add(component.atomic_visual_key);
     if (!nonEmptyString(component.role)) componentFail("缺少 role", { missing: `component_inventory.components[${index}].role` });
     if (typeof component.reusable !== "boolean") componentFail("reusable 必须显式为布尔值", { missing: `component_inventory.components[${index}].reusable` });
-    if (typeof component.interaction_required !== "boolean") componentFail("interaction_required 必须显式为布尔值", { missing: `component_inventory.components[${index}].interaction_required` });
-    if (isHitAreaKind(component.role)) componentFail("交互热区不能作为视觉部件资产");
+    const rawComponent = Array.isArray(raw.components) ? raw.components[index] : null;
+    if (isObject(rawComponent) && (Object.hasOwn(rawComponent, "interaction_required") || Object.hasOwn(rawComponent, "interactionRequired"))) componentFail("禁止旧的 component-level interaction_required，必须改为 placement.interaction_required");
+    if (!Array.isArray(component.state_coverage) || component.state_coverage.length === 0) componentFail("state_coverage 必须显式覆盖区域全部状态", { missing: `component_inventory.components[${index}].state_coverage` });
+    if (!Array.isArray(component.placements) || component.placements.length === 0) componentFail("placements 必须是非空可见实例列表", { missing: `component_inventory.components[${index}].placements` });
+    placementCount += Array.isArray(component.placements) ? component.placements.length : 0;
+    for (const [placementIndex, placement] of (component.placements ?? []).entries()) {
+      const placementLocal = { ...local, component_id: component.component_id || "?" };
+      const placementFail = (message, details = {}) => errors.push(componentError(placementLocal, `placements[${placementIndex}] ${message}`, { ...details, missing: details.missing ?? `component_inventory.components[${index}].placements[${placementIndex}]` }));
+      if (!nonEmptyString(placement.placement_id)) placementFail("缺少 placement_id");
+      if (seenPlacements.has(placement.placement_id)) placementFail("placement_id 必须在区域内唯一");
+      seenPlacements.add(placement.placement_id);
+      if (!validRectangle(placement.bounds)) placementFail("bounds 必须是合法非负矩形");
+      else if (!rectangleContains(regionBounds, placement.bounds)) placementFail("bounds 必须位于 region.bounds 内");
+      else if (canvas && !rectangleContains({ x: 0, y: 0, width: canvas.width, height: canvas.height }, placement.bounds)) placementFail("bounds 必须位于画布内");
+      if (typeof placement.interaction_required !== "boolean") placementFail("interaction_required 必须显式为布尔值");
+    }
   }
-  return { inventory, components: inventory.components };
+  if (Number.isInteger(inventory.visible_instance_count) && placementCount !== inventory.visible_instance_count) fail("visible_instance_count 必须等于全部 placement 数量", { expectedCount: inventory.visible_instance_count, observedCount: placementCount });
+  // 结构不完整时也必须返回可继续审计的空 placement 集合，不能让验证器因缺字段抛 TypeError。
+  return { inventory, components: inventory.components, placementById: new Map(inventory.components.flatMap((component) => (component.placements ?? []).map((placement) => [placement.placement_id, { ...placement, component_id: component.component_id }]))), componentById: new Map(inventory.components.map((component) => [component.component_id, component])) };
 }
 
 /** 验证图集切片的最小几何元数据，防止横向组图被无切片声明地复用。 */
@@ -381,9 +436,14 @@ function validateAssetMappings(region, context, errors, stateInfo, inventoryInfo
     if (!nonEmptyString(asset.asset_id)) assetFail("缺少 asset_id", { missing: `expected_assets[${index}].asset_id` });
     if (!nonEmptyString(componentId) || !componentIds.has(componentId)) assetFail("component_id 必须映射 component_inventory", { missing: `expected_assets[${index}].component_id` });
     if (!stateId || !requirementFor.has(stateId)) assetFail("state_id 必须映射 state_analysis", { missing: `expected_assets[${index}].state_id` });
+    const component = inventoryInfo.componentById?.get(componentId);
+    if (asset.asset_scope !== "atomic-component") assetFail("asset_scope 必须为 atomic-component，禁止 region-composite/group/composite 输出", { missing: `expected_assets[${index}].asset_scope` });
+    if (!nonEmptyString(asset.atomic_visual_key)) assetFail("缺少 atomic_visual_key", { missing: `expected_assets[${index}].atomic_visual_key` });
+    else if (component && asset.atomic_visual_key !== component.atomic_visual_key) assetFail("atomic_visual_key 必须匹配唯一 component", { missing: component.atomic_visual_key });
     if (isHitAreaKind(asset.asset_kind)) assetFail("交互热区不能计入视觉资产");
     if (stateId && requirementFor.get(stateId) === "not-applicable") assetFail("not-applicable 状态不得交付视觉资产");
     if (asset.mime_type !== undefined && (!nonEmptyString(asset.mime_type) || !/^[^/\s]+\/[^/\s]+$/.test(asset.mime_type))) assetFail("mime_type 格式无效", { missing: `expected_assets[${index}].mime_type` });
+    if (canonical.production_method === "imagegen" || canonical.image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(rawAsset ?? asset, { requiredMime: true, requiredFileFields: ["source_file", "runtime_file"], fileFields: ["source_file", "runtime_file"] })) assetFail(`${violation.field} ${violation.message}`, { missing: `expected_assets[${index}].${violation.field}` });
     for (const field of ["width", "height"]) if (asset[field] !== undefined && (!Number.isInteger(asset[field]) || asset[field] <= 0)) assetFail(`${field} 必须为正整数`, { missing: `expected_assets[${index}].${field}` });
     if (asset.alpha !== undefined && typeof asset.alpha !== "boolean") assetFail("alpha 必须为布尔值", { missing: `expected_assets[${index}].alpha` });
     if (asset.sha256 !== undefined && !/^sha256:[a-f0-9]{64}$/.test(asset.sha256)) assetFail("sha256 格式无效", { missing: `expected_assets[${index}].sha256` });
@@ -463,7 +523,48 @@ function validateAssetMappings(region, context, errors, stateInfo, inventoryInfo
   }
 }
 
-/** 校验交互热区与 component 的一一对应，热区只承载输入命中而不承载视觉资产。 */
+/** 校验区域资产身份只表达原子资产集合，不允许编号级组合图绕过部件清单。 */
+function validateRegionAssetIdentity(region, context, errors, inventoryInfo, expected) {
+  const componentCount = inventoryInfo.inventory.component_count;
+  const nested = region.production_contract ?? region.productionContract;
+  const assetId = region.asset_id ?? region.assetId ?? nested?.asset_id ?? nested?.assetId;
+  const rawAssetIds = region.asset_ids ?? region.assetIds ?? nested?.asset_ids ?? nested?.assetIds;
+  const expectedIds = [...new Set(expected.map((asset) => asset.asset_id).filter(nonEmptyString))].sort();
+  if (componentCount > 1) {
+    if (nonEmptyString(assetId)) errors.push(componentError(context, "多组件区域禁止使用单一 region asset_id，必须登记 atomic asset_ids", { missing: "asset_ids" }));
+    if (!Array.isArray(rawAssetIds)) errors.push(componentError(context, "多组件区域必须声明 asset_ids 原子资产列表", { missing: "asset_ids" }));
+    else {
+      const observedIds = [...new Set(rawAssetIds.filter(nonEmptyString))].sort();
+      if (observedIds.length !== rawAssetIds.length || JSON.stringify(observedIds) !== JSON.stringify(expectedIds)) errors.push(componentError(context, "asset_ids 必须精确等于 expected_assets 的去重原子 asset_id 集合", { missing: `expected=${expectedIds.join(",")},observed=${observedIds.join(",")}` }));
+    }
+  } else if (componentCount === 1 && nonEmptyString(assetId) && expectedIds.length === 1 && assetId !== expectedIds[0]) {
+    errors.push(componentError(context, "单组件区域 asset_id 必须匹配唯一 atomic expected asset", { missing: expectedIds[0] }));
+  }
+}
+
+/** 校验区域声明的生图需求必须等价于唯一 component×required state 的派生结果。 */
+function validateAtomicImageRequirementContract(region, context, errors) {
+  const nested = region.production_contract ?? region.productionContract;
+  const raw = region.atomic_image_requirements ?? region.atomicImageRequirements
+    ?? nested?.atomic_image_requirements ?? nested?.atomicImageRequirements;
+  const derived = deriveAtomicImageRequirements(region);
+  if (!Array.isArray(raw)) {
+    errors.push(componentError(context, "atomic_image_requirements 必须显式登记，状态分析完成后直接生成", { missing: "atomic_image_requirements" }));
+    return derived;
+  }
+  const normalized = normalizeAtomicImageRequirements(raw);
+  const ids = new Set();
+  for (const [index, requirement] of normalized.entries()) {
+    const local = { ...context, component_id: requirement.component_id || "?", state_id: requirement.state_id || "?" };
+    if (!nonEmptyString(requirement.requirement_id)) errors.push(componentError(local, `atomic_image_requirements[${index}] 缺少 requirement_id`, { missing: "requirement_id" }));
+    if (ids.has(requirement.requirement_id)) errors.push(componentError(local, `atomic_image_requirements[${index}] requirement_id 重复`));
+    ids.add(requirement.requirement_id);
+  }
+  if (!atomicImageRequirementsEqual(raw, derived)) errors.push(componentError(context, "atomic_image_requirements 必须与唯一 component×required state 派生结果精确等价", { missing: "atomic_image_requirements" }));
+  return derived;
+}
+
+/** 校验交互热区与 interactive placement 的一一对应，热区只承载输入命中而不承载视觉资产。 */
 function validateHotspots(region, context, errors, inventoryInfo) {
   const nested = region.production_contract ?? region.productionContract;
   const rawHotspots = region.interaction_hotspots ?? region.interactionHotspots
@@ -475,24 +576,28 @@ function validateHotspots(region, context, errors, inventoryInfo) {
   const hotspots = rawHotspots;
   if (!Array.isArray(hotspots)) { errors.push(componentError(context, "interaction_hotspots 必须是数组，且不计入 expected_assets")); return; }
   const components = inventoryInfo?.components ?? [];
-  const componentById = new Map(components.map((component) => [component.component_id, component]));
-  const ids = new Set(); const componentCounts = new Map();
+  const placementById = inventoryInfo?.placementById ?? new Map();
+  const ids = new Set(); const placementCounts = new Map();
   hotspots.forEach((rawHotspot, index) => {
     const hotspot = normalizeInteractionHotspot(rawHotspot);
     const local = { ...context, component_id: hotspot.component_id || "?" };
     if (!nonEmptyString(hotspot.hotspot_id)) errors.push(componentError(local, `interaction_hotspots[${index}] 缺少 hotspot_id`, { missing: `interaction_hotspots[${index}].hotspot_id` }));
     if (ids.has(hotspot.hotspot_id)) errors.push(componentError(local, `interaction_hotspots[${index}] hotspot_id 重复`));
     ids.add(hotspot.hotspot_id);
-    if (!nonEmptyString(hotspot.component_id) || !componentById.has(hotspot.component_id)) errors.push(componentError(local, `interaction_hotspots[${index}] component_id 悬空或缺失`, { missing: "component_inventory.components.component_id" }));
+    if (!nonEmptyString(hotspot.placement_id)) errors.push(componentError(local, `interaction_hotspots[${index}] 缺少 placement_id`, { missing: "interaction_hotspots.placement_id" }));
+    const placement = placementById.get(hotspot.placement_id);
+    if (!placement || placement.component_id !== hotspot.component_id) errors.push(componentError(local, `interaction_hotspots[${index}] component_id/placement_id 悬空或不匹配`, { missing: "component_inventory.components.placements" }));
     if (isObject(rawHotspot) && (Object.hasOwn(rawHotspot, "asset_id") || Object.hasOwn(rawHotspot, "assetId"))) errors.push(componentError(local, `interaction_hotspots[${index}] 不得声明 asset_id`));
     const bounds = hotspot.bounds;
-    if (!isObject(bounds) || !["x", "y", "width", "height"].every((field) => typeof bounds[field] === "number" && Number.isFinite(bounds[field])) || bounds.x < 0 || bounds.y < 0 || bounds.width <= 0 || bounds.height <= 0) errors.push(componentError(local, `interaction_hotspots[${index}] bounds 必须是合法非负矩形`, { missing: "interaction_hotspots.bounds" }));
-    componentCounts.set(hotspot.component_id, (componentCounts.get(hotspot.component_id) ?? 0) + 1);
+    if (!validRectangle(bounds) || !rectangleContains(region.bounds, bounds) || (placement && !rectangleContains(placement.bounds, bounds))) errors.push(componentError(local, `interaction_hotspots[${index}] bounds 必须位于 placement 和 region.bounds 内`, { missing: "interaction_hotspots.bounds" }));
+    if (placement && placement.interaction_required !== true) errors.push(componentError(local, `interaction_hotspots[${index}] 非 interactive placement 不得绑定热区`));
+    placementCounts.set(`${hotspot.component_id}\0${hotspot.placement_id}`, (placementCounts.get(`${hotspot.component_id}\0${hotspot.placement_id}`) ?? 0) + 1);
   });
-  for (const component of components) {
-    const count = componentCounts.get(component.component_id) ?? 0;
-    if (component.interaction_required === true && count !== 1) errors.push(componentError({ ...context, component_id: component.component_id }, "interaction_required=true 必须且只能对应一个 hotspot", { expectedCount: 1, observedCount: count, missing: count === 0 ? "interaction_hotspots" : undefined }));
-    if (component.interaction_required === false && count > 0) errors.push(componentError({ ...context, component_id: component.component_id }, "interaction_required=false 不得绑定 hotspot", { expectedCount: 0, observedCount: count }));
+  for (const component of components) for (const placement of component.placements ?? []) {
+    const key = `${component.component_id}\0${placement.placement_id}`;
+    const count = placementCounts.get(key) ?? 0;
+    if (placement.interaction_required === true && count !== 1) errors.push(componentError({ ...context, component_id: component.component_id }, "interactive placement 必须且只能对应一个 hotspot", { expectedCount: 1, observedCount: count, missing: count === 0 ? "interaction_hotspots" : undefined }));
+    if (placement.interaction_required === false && count > 0) errors.push(componentError({ ...context, component_id: component.component_id }, "非 interactive placement 不得绑定 hotspot", { expectedCount: 0, observedCount: count }));
   }
 }
 
@@ -503,12 +608,17 @@ export function validateVisualComponentContract(region, context = {}, options = 
   if (!isObject(region) || canonical.owner_type !== "fixed-production-visual") return errors;
   for (const conflict of getVisualRegionDefinitionAliasConflicts(region)) errors.push(componentError(context, `区域合同别名取值冲突：${conflict.field}`, { missing: conflict.sources.join("/") }));
   const stateInfo = validateStateAnalysis(canonical, context, errors, options);
-  const inventoryInfo = validateInventory(canonical, context, errors);
+  const inventoryInfo = validateInventory(region, context, errors, options);
   const analysisCompletedAt = Date.parse(stateInfo.analysis.completed_at);
   const inventoryCreatedAt = Date.parse(inventoryInfo.inventory.created_at);
   // 时间顺序是机器门：状态分析完成后才能建立部件清单，避免事后补写分析掩盖拆解粒度错误。
   if (!Number.isNaN(analysisCompletedAt) && !Number.isNaN(inventoryCreatedAt) && analysisCompletedAt >= inventoryCreatedAt) errors.push(componentError(context, "state_analysis.completed_at 必须早于 component_inventory.created_at，必须先完成状态分析再拆解", { missing: "state_analysis.completed_at<component_inventory.created_at" }));
-  if (inventoryInfo.components.length > 0 && stateInfo.analysis.states.length > 0) validateAssetMappings(region, context, errors, stateInfo, inventoryInfo);
+  if (inventoryInfo.components.length > 0 && stateInfo.analysis.states.length > 0) {
+    validateAssetMappings(region, context, errors, stateInfo, inventoryInfo);
+    const expected = Array.isArray(canonical.expected_assets) ? canonical.expected_assets.map(normalizeComponentExpectedAsset) : [];
+    validateRegionAssetIdentity(region, context, errors, inventoryInfo, expected);
+  }
+  validateAtomicImageRequirementContract(region, context, errors);
   // 热区校验保留原始对象，才能识别 asset_id 等被规范化合同有意丢弃的越权字段。
   validateHotspots(region, context, errors, inventoryInfo);
   const productionMethod = canonical.production_method;
@@ -560,9 +670,12 @@ export function validateComponentAuditEvidence(region, auditUnit, context = {}, 
   const errors = [];
   const canonical = normalizeVisualRegionDefinition(region);
   if (!isObject(region) || canonical.owner_type !== "fixed-production-visual") return errors;
+  const derivedRequirements = deriveAtomicImageRequirements(region);
+  if (!atomicImageRequirementsEqual(canonical.atomic_image_requirements, derivedRequirements)) errors.push(componentError(context, "V4 atomic_image_requirements 与状态分析派生结果不一致", { missing: "atomic_image_requirements" }));
   const inventory = normalizeComponentInventory(canonical.component_inventory ?? {});
   const stateInfo = normalizeStateAnalysis(canonical.state_analysis ?? {});
   const expected = Array.isArray(canonical.expected_assets) ? canonical.expected_assets.map(normalizeComponentExpectedAsset) : [];
+  const placementIdsByComponent = new Map(inventory.components.map((component) => [component.component_id, (component.placements ?? []).map((placement) => placement.placement_id).sort()]));
   const actual = Array.isArray(auditUnit?.actual_assets) ? auditUnit.actual_assets : [];
   const required = [];
   for (const component of inventory.components) {
@@ -577,6 +690,7 @@ export function validateComponentAuditEvidence(region, auditUnit, context = {}, 
     const asset = normalizeComponentExpectedAsset(item);
     const actualFile = item?.file ?? item?.path ?? item?.output_file ?? item?.runtime_file ?? item?.runtimeFile ?? "";
     const local = { ...context, component_id: asset.component_id || "?", state_id: asset.canonical_state_id || "?" };
+    if (canonical.production_method === "imagegen" || canonical.image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(item, { requiredMime: true, fileFields: ["file", "path", "runtime_file", "output_file"] })) errors.push(componentError(local, `actual_assets[${index}].${violation.field} ${violation.message}`));
     if (!nonEmptyString(asset.component_id) || !nonEmptyString(asset.state_id)) errors.push(componentError(local, `actual_assets[${index}] 必须绑定 component_id/state_id，不能只登记区域组图`, { missing: `actual_assets[${index}].component_id/state_id` }));
     const key = `${asset.component_id}\0${asset.canonical_state_id}`;
     actualPairs.set(key, (actualPairs.get(key) ?? 0) + 1);
@@ -584,6 +698,8 @@ export function validateComponentAuditEvidence(region, auditUnit, context = {}, 
     if (asset.asset_kind && isHitAreaKind(asset.asset_kind)) errors.push(componentError(local, `actual_assets[${index}] 交互热区不能作为视觉资产`));
     const expectedAsset = expectedByPair.get(key);
     if (expectedAsset && asset.asset_id !== expectedAsset.asset_id) errors.push(componentError(local, `actual_assets[${index}] asset_id 与 V3 expected_assets 不一致`, { missing: expectedAsset.asset_id }));
+    if (expectedAsset && asset.asset_scope !== expectedAsset.asset_scope) errors.push(componentError(local, `actual_assets[${index}] asset_scope 与 V3 expected_assets 不一致`, { missing: expectedAsset.asset_scope || "atomic-component" }));
+    if (expectedAsset && asset.atomic_visual_key !== expectedAsset.atomic_visual_key) errors.push(componentError(local, `actual_assets[${index}] atomic_visual_key 与 V3 expected_assets 不一致`, { missing: expectedAsset.atomic_visual_key }));
     if (expectedAsset?.runtime_file && !sameProjectPath(actualFile, expectedAsset.runtime_file)) errors.push(componentError(local, `actual_assets[${index}] 必须使用 V3 expected runtime_file，不能使用 source_file`, { missing: expectedAsset.runtime_file }));
     if (expectedAsset?.atlas_slice) {
       if (!asset.atlas_slice) errors.push(componentError(local, `actual_assets[${index}] 缺少与 V3 对应的 atlas_slice`, { missing: "atlas_slice" }));
@@ -619,6 +735,7 @@ export function validateComponentAuditEvidence(region, auditUnit, context = {}, 
       const componentId = usage?.component_id ?? usage?.componentId ?? "";
       const stateId = canonicalStateId(usage?.state_id ?? usage?.stateId);
       const local = { ...context, component_id: componentId || "?", state_id: stateId || "?" };
+      if (canonical.production_method === "imagegen" || canonical.image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(usage, { fileFields: ["runtime_file"] })) errors.push(componentError(local, `runtime_consumption.component_usages[${index}].${violation.field} ${violation.message}`));
       if (usage?.status !== "passed" && usage?.status !== "consumed") errors.push(componentError(local, `runtime_consumption.component_usages[${index}] status 必须为 passed/consumed`));
       const key = `${componentId}\0${stateId}`;
       const expectedAsset = expectedByPair.get(key);
@@ -627,6 +744,9 @@ export function validateComponentAuditEvidence(region, auditUnit, context = {}, 
       else if (expectedAsset && assetId !== expectedAsset.asset_id) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] asset_id 与 V3 expected_assets 不一致`, { missing: expectedAsset.asset_id }));
       const runtimeFile = usage?.runtime_file ?? usage?.runtimeFile ?? "";
       const runtimeSha = usage?.runtime_sha256 ?? usage?.runtimeSha256 ?? "";
+      const expectedPlacementIds = placementIdsByComponent.get(componentId) ?? [];
+      const observedPlacementIds = Array.isArray(usage?.placement_ids) ? usage.placement_ids.slice().sort() : (Array.isArray(usage?.placementIds) ? usage.placementIds.slice().sort() : null);
+      if (!observedPlacementIds || JSON.stringify(observedPlacementIds) !== JSON.stringify(expectedPlacementIds)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] placement_ids 必须精确覆盖该 component 的全部可见 placement`, { missing: expectedPlacementIds.join(",") || "placement_ids" }));
       if (!nonEmptyString(runtimeFile)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] 缺少 runtime_file`, { missing: "runtime_file" }));
       if (!isSha256Token(runtimeSha)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] 缺少合法 runtime_sha256`, { missing: "runtime_sha256" }));
       if (expectedAsset?.runtime_file && !sameProjectPath(runtimeFile, expectedAsset.runtime_file)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] runtime_file 与 V3 expected 不一致`, { missing: expectedAsset.runtime_file }));
@@ -677,6 +797,7 @@ export function validateComponentReviewCoverage(manifest, review, stage = "F2") 
     const key = `${record?.annotation_number}\0${record?.region_id}\0${record?.component_id}\0${canonicalStateId(record?.state_id)}`;
     const recordRegion = regions.find((region) => region.annotation_number === record?.annotation_number && region.id === record?.region_id);
     const recordContext = { stage, annotation_number: record?.annotation_number, region_id: record?.region_id, component_id: record?.component_id, state_id: canonicalStateId(record?.state_id) };
+    if (recordRegion && (normalizeVisualRegionDefinition(recordRegion).production_method === "imagegen" || normalizeVisualRegionDefinition(recordRegion).image_generation_required === true)) for (const violation of collectImageGenerationRasterViolations(record, { fileFields: ["runtime_file"] })) errors.push(componentError(recordContext, `component_review.${violation.field} ${violation.message}`));
     if (!recordRegion) errors.push(componentError(recordContext, "F2 component review 未映射到 coverage 固定视觉区域"));
     if (seen.has(key)) errors.push(componentError(recordContext, "F2 component review 重复"));
     seen.add(key);
@@ -686,6 +807,8 @@ export function validateComponentReviewCoverage(manifest, review, stage = "F2") 
     if (record?.runtime_usage_verified !== true && record?.runtimeUsageVerified !== true) errors.push(componentError(recordContext, "F2 component review 缺少 runtime_usage_verified=true", { missing: "runtime_usage_verified" }));
     if (recordRegion) {
       const canonicalRegion = normalizeVisualRegionDefinition(recordRegion);
+      const derivedRequirements = deriveAtomicImageRequirements(recordRegion);
+      if (!atomicImageRequirementsEqual(canonicalRegion.atomic_image_requirements, derivedRequirements)) errors.push(componentError(recordContext, "F2 component review 绑定的 atomic_image_requirements 已漂移", { missing: "atomic_image_requirements" }));
       const inventory = normalizeComponentInventory(canonicalRegion.component_inventory ?? {});
       const states = normalizeStateAnalysis(canonicalRegion.state_analysis ?? {});
       const component = inventory.components.find((item) => item.component_id === record?.component_id);
@@ -699,7 +822,15 @@ export function validateComponentReviewCoverage(manifest, review, stage = "F2") 
         .find((asset) => asset.component_id === record?.component_id && asset.canonical_state_id === canonicalStateId(record?.state_id));
       if (!expectedAsset) errors.push(componentError(recordContext, "F2 component review 未映射 V3 expected_assets", { missing: "expected_assets.component_id/state_id" }));
       else {
+        const expectedPlacementIds = (component?.placements ?? []).map((placement) => placement.placement_id).sort();
+        const observedPlacementIds = Array.isArray(record?.placement_ids) ? record.placement_ids.slice().sort() : (Array.isArray(record?.placementIds) ? record.placementIds.slice().sort() : null);
+        if (!observedPlacementIds || JSON.stringify(observedPlacementIds) !== JSON.stringify(expectedPlacementIds)) errors.push(componentError(recordContext, "F2 component review placement_ids 必须精确覆盖该 component 的全部 placement", { missing: expectedPlacementIds.join(",") || "placement_ids" }));
         if (recordAssetId !== expectedAsset.asset_id) errors.push(componentError(recordContext, "F2 component review asset_id 与 V3 expected_assets 不一致", { missing: expectedAsset.asset_id }));
+        const expectedAtomicKey = expectedAsset.atomic_visual_key;
+        const recordAtomicKey = record?.atomic_visual_key ?? record?.atomicVisualKey;
+        if (!nonEmptyString(recordAtomicKey)) errors.push(componentError(recordContext, "F2 component review 缺少 atomic_visual_key", { missing: "atomic_visual_key" }));
+        else if (recordAtomicKey !== expectedAtomicKey) errors.push(componentError(recordContext, "F2 component review atomic_visual_key 与 V3 expected_assets 不一致", { missing: expectedAtomicKey }));
+        if (expectedAsset.asset_scope && (record?.asset_scope ?? record?.assetScope) !== expectedAsset.asset_scope) errors.push(componentError(recordContext, "F2 component review asset_scope 与 V3 expected_assets 不一致", { missing: expectedAsset.asset_scope }));
         const runtimeFile = record?.runtime_file ?? record?.runtimeFile ?? "";
         const runtimeSha = record?.runtime_sha256 ?? record?.runtimeSha256 ?? "";
         if (!nonEmptyString(runtimeFile)) errors.push(componentError(recordContext, "F2 component review 缺少 runtime_file", { missing: "runtime_file" }));
