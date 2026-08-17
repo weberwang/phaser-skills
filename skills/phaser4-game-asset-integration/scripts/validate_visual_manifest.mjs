@@ -24,7 +24,7 @@ const COVERAGE_OWNER_TYPES = new Set(["runtime-data", "runtime-rendered", "fixed
 const PRODUCTION_ORIGINS = new Set(["bitmap-decomposition", "independent-production"]);
 const RECONCILIATION_DOMAINS = new Set(["scope", "state-machine", "input", "collision", "module-scene-ownership", "coordinate-space", "layout", "budget"]);
 const AI_REQUIRED_TEXT_FIELDS = ["global_prompt_prefix", "asset_prompt", "state_prompt", "negative_prompt", "model", "model_version"];
-const REQUIRED_BUDGETS = new Set(["max_texture_size", "texture_memory_mb", "package_size_mb", "max_atlases", "max_frames", "animation_sample_fps", "max_overdraw", "max_draw_calls"]);
+const REQUIRED_BUDGETS = new Set(["max_texture_size", "texture_memory_mb", "max_atlases", "max_frames", "animation_sample_fps", "max_overdraw", "max_draw_calls"]);
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const PNG_CRC_TABLE = Array.from({ length: 256 }, (_, value) => {
   let crc = value;
