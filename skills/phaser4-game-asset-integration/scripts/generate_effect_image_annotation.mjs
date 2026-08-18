@@ -83,7 +83,7 @@ function selectRegions(manifest, sceneId, stateId) {
     if (!isObject(plan) || !Object.hasOwn(PLAN_COLORS, plan.mode) || !nonEmptyString(plan.summary)) throw new Error(`区域 implementation_plan 无效：${region.id}`);
     if (plan.mode === "generate-now" && region.owner_type !== "fixed-production-visual") throw new Error(`区域 ${region.id} 的 generate-now 必须由 fixed-production-visual 负责`);
     if (plan.mode === "reuse-existing" && region.owner_type !== "fixed-production-visual") throw new Error(`区域 ${region.id} 的 reuse-existing 必须由 fixed-production-visual 负责`);
-    if (plan.mode === "runtime-program" && (region.owner_type !== "runtime-data" && region.owner_type !== "runtime-rendered" || Object.hasOwn(region, "asset_id"))) throw new Error(`区域 ${region.id} 的 runtime-program 不得映射生产位图`);
+    if (plan.mode === "runtime-program" && (!["runtime-program", "runtime-data", "runtime-rendered"].includes(region.owner_type) || Object.hasOwn(region, "asset_id"))) throw new Error(`区域 ${region.id} 的 runtime-program 不得映射生产位图`);
     if (plan.mode === "reuse-existing") {
       const source = plan.reuse_source;
       if (!isObject(source) || !["source_asset_id", "source_manifest", "source_manifest_sha256", "source_file", "source_sha256", "license_record", "compatibility_evidence", "compatibility_evidence_sha256", "visual_baseline_id", "visual_baseline_version"].every((field) => nonEmptyString(source[field]))) throw new Error(`区域 ${region.id} 的 reuse_source 字段不完整`);

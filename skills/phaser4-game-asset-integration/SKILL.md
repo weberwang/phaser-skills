@@ -13,6 +13,12 @@ description: 为 Phaser 4 游戏规划、生产、登记、验证并集成 UI、
 
 ## 工作流
 
+### 场景还原合同（effect-image 强制）
+
+`effect-image` 表示完整正式 Scene 的忠实还原，不是独立 PNG 生产。进入 V3 前必须有 `scene_reconstruction_contract`：冻结目标条件、整屏构图、逐 coverage region 视觉事实（runtime-data/runtime-rendered/runtime-program 也必须有 `fidelity_obligations`）、目标绑定布局、响应式关系、预声明容差和资源/布局/运行时对象/组合实现计划。合同缺失或 layout contract 未绑定当前 target SHA 时，必须返回 `V1/PROPOSAL`。
+
+V4 需要使用正式 Scene 结构的同屏组合预验收；V5 需要结构化 fidelity case、逐区域测量与差异证据、独立视觉 F2、F3 runtime replay 和正式 Scene 消费证据。资源 loaded/used、missing=0、resize 稳定只属于工程子门，不能单独驱动 COMPLETE。
+
 1. 读取项目配置、GDD、visual-design、TDD、控制面和资源登记；执行 [V0-V5 视觉生产管线](references/visual-production-pipeline.md)。
 2. V0 先判断任务属于原子资源、组件/资源集，还是场景/整套 UI/视觉系统/参考还原。原子资源只有在结构、布局、交互和视口行为不变，且已有适用视觉契约、`AUTO` 或 `USER_DECISION` 记录、视觉可交付结论与预算基线时才能跳过 V1/V2。
 3. V1 建立玩法视觉契约、必要低保真/灰盒与预算，V2 执行方向基准、整体视觉审阅、动态样片和独立美术 F2。Work Item 指定效果图为还原目标时按[视觉还原](references/visual-reconstruction.md)启用忠实还原模式，将参考身份、对比条件和可观察视觉事实冻结为视觉目标；容差内且不改变视觉事实的适配可 `AUTO`，任何可见偏差或实质取舍必须记录一次精确 `USER_DECISION` 和已批准例外。不得以专业修复或提升游戏感为由自动改变冻结视觉目标。
@@ -31,3 +37,7 @@ description: 为 Phaser 4 游戏规划、生产、登记、验证并集成 UI、
 ## 审核与交付
 
 所有候选先通过 F0-F3，F4 只用于 A4-A6。V1/V2 专业检查必须执行；用户选择是条件性的。自动路径记录 `AUTO` 决策依据，实质取舍记录一次 `USER_DECISION` 并回写权威工件。每个交付包记录任务授权或 A4-A6 操作批准、候选身份、基线、来源、预算和证据。
+
+### 视觉人工审阅硬门
+
+视觉生产与效果图还原的每个可见产物都必须写结构化人工审阅：`reviewer_type: human`、非空 `reviewer_id`、`reviewed_at`、非空 `evidence` 和 `status`。`reviewer` 字符串、AI/agent/automation/model 身份不得替代人工身份。V2 完整场景候选、动态样片和结构化审查必须绑定当前 target/candidate/diff 身份；V4 每个 actual asset/component×state 和同屏组合预验收必须逐项覆盖；runtime-program、runtime-rendered、runtime-data 区域也必须在 V5 fidelity case 逐区域人工复核。V5 full viewport、overlay、difference evidence、每个 region result 以及 F2 两位彼此独立的 visual fidelity/production contract reviewer 均必须是 human。`all_visual_artifacts_human_reviewed` 只能作为已通过逐项覆盖推导后的结果标记，不能手写绕过漏项；缺身份、漏资产/区域或候选身份过期时不得 COMPLETE。

@@ -11,8 +11,11 @@ import { decodePngRgba, deriveVisibleAnnotationRows } from "./effect_image_raste
 import { normalizeAtomicComponents } from "../../phaser4-game-workflow-control/scripts/visual-atomic-contract.mjs";
 import { productionFileGateError } from "../../phaser4-game-workflow-control/scripts/visual-file-gate.mjs";
 import { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, isSha256, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateComponentReviewCoverage, validateEvidenceIdentity, validateF2ProductionReviews, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
+import { validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "../../phaser4-game-workflow-control/scripts/scene-reconstruction-contract.mjs";
+import { validateHumanReview, validateVisualHumanReviewCompletion } from "../../phaser4-game-workflow-control/scripts/visual-human-review-contract.mjs";
 export { computeRegionDefinitionSha256 } from "./effect_image_annotation_core.mjs";
 export { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateComponentReviewCoverage, validateEvidenceIdentity, validateF2ProductionReviews, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
+export { validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "../../phaser4-game-workflow-control/scripts/scene-reconstruction-contract.mjs";
 
 export const ALLOWED_ROUTES = new Set(["ui-icon-font", "pixel-art", "frame-animation", "skeletal-animation", "scene-tilemap", "vfx-particle-shader", "decorative-full-bleed", "gameplay-environment", "ai-composite-raster"]);
 export const ALLOWED_STATUSES = new Set(["planned", "producing", "review", "accepted", "rejected", "replaced"]);
@@ -20,7 +23,8 @@ const BASELINE_BOUND_STATUSES = new Set(["producing", "review", "accepted"]);
 const SCHEMA_VERSION = "1.5";
 const STYLE_FINGERPRINT_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
-const COVERAGE_OWNER_TYPES = new Set(["runtime-data", "runtime-rendered", "fixed-production-visual"]);
+// runtime-program 是实现方式，不是免除视觉责任的 owner 类型；它必须继续回填完整场景事实。
+const COVERAGE_OWNER_TYPES = new Set(["runtime-program", "runtime-data", "runtime-rendered", "fixed-production-visual"]);
 const PRODUCTION_ORIGINS = new Set(["bitmap-decomposition", "independent-production"]);
 const RECONCILIATION_DOMAINS = new Set(["scope", "state-machine", "input", "collision", "module-scene-ownership", "coordinate-space", "layout", "budget"]);
 const AI_REQUIRED_TEXT_FIELDS = ["global_prompt_prefix", "asset_prompt", "state_prompt", "negative_prompt", "model", "model_version"];
@@ -98,7 +102,7 @@ function validateImplementationPlan(plan, region, assetById, baseline, label, er
   if (!modes.has(plan.mode)) errors.push(`${label}.implementation_plan.mode 无效`);
   if (!nonEmptyString(plan.summary)) errors.push(`${label}.implementation_plan.summary 必须是非空说明`);
   if (plan.mode === "generate-now" && region.owner_type !== "fixed-production-visual") errors.push(`${label} generate-now 只能用于 fixed-production-visual`);
-  if (plan.mode === "runtime-program" && !["runtime-data", "runtime-rendered"].includes(region.owner_type)) errors.push(`${label} runtime-program 只能用于 runtime-data/runtime-rendered`);
+  if (plan.mode === "runtime-program" && !["runtime-program", "runtime-data", "runtime-rendered"].includes(region.owner_type)) errors.push(`${label} runtime-program 只能用于 runtime-program/runtime-data/runtime-rendered`);
   if (plan.mode === "reuse-existing") {
     if (region.owner_type !== "fixed-production-visual") errors.push(`${label} reuse-existing 只能用于 fixed-production-visual`);
     const source = plan.reuse_source;
@@ -174,7 +178,7 @@ function validateCoverageAudit(audit, target, assetIds, errors, assetById = new 
       rectangles.push(region.bounds);
       coveredRects.set(key, rectangles);
     }
-    if (!COVERAGE_OWNER_TYPES.has(canonicalRegion.owner_type)) errors.push(`${label}.owner_type 必须为 runtime-data、runtime-rendered 或 fixed-production-visual`);
+    if (!COVERAGE_OWNER_TYPES.has(canonicalRegion.owner_type)) errors.push(`${label}.owner_type 必须为 runtime-program、runtime-data、runtime-rendered 或 fixed-production-visual`);
     if (canonicalRegion.owner_type === "fixed-production-visual") {
       if (!PRODUCTION_ORIGINS.has(canonicalRegion.production_origin)) errors.push(`${label}.production_origin 必须为 bitmap-decomposition 或 independent-production`);
       const declaredAssetIds = Array.isArray(canonicalRegion.asset_ids)
@@ -253,6 +257,7 @@ function validateFidelityCases(cases, target, candidate, baseline, errors, { req
   cases.forEach((item, index) => {
     const label = `fidelity_cases[${index}]`;
     if (!isObject(item)) { errors.push(`${label} 必须是对象`); return; }
+    errors.push(...validateHumanReview(item.human_review, { stage: requireCompleteCoverage ? "V5" : "V3", scene_id: item.scene_id, state_id: item.state_id, returnStage: requireCompleteCoverage ? "V4/F2" : "V2/V3", rootCause: "验收问题" }, { requirePassed: requireCompleteCoverage, returnStage: requireCompleteCoverage ? "V4/F2" : "V2/V3", rootCause: "验收问题" }));
     for (const field of ["id", "target_sha256", "candidate_sha256", "scene_id", "state_id", "language", "input_trace", "animation_sample", "layout_contract_version", "visual_baseline_version", "conclusion"]) if (!nonEmptyString(item[field])) errors.push(`${label}.${field} 必须是非空字符串`);
     if (nonEmptyString(item.scene_id) && !target?.scene_ids?.includes(item.scene_id)) errors.push(`${label}.scene_id 不在 reference_target.scene_ids 范围内`);
     if (nonEmptyString(item.state_id) && !target?.state_ids?.includes(item.state_id)) errors.push(`${label}.state_id 不在 reference_target.state_ids 范围内`);
@@ -417,17 +422,21 @@ export function validateManifest(data, options = {}) {
   const strictProductionContract = reconstruction?.applicability === "effect-image";
   if (strictProductionContract) {
     const stage = requestedStage ?? (reconstruction.lifecycle === "v5-complete" ? "V5" : "V3");
+    // effect-image 没有场景合同就不是完整还原工件；即使调用方未传 stage，也必须明确退回 V1。
+    errors.push(...validateSceneReconstructionGate(data, { stage }));
     const fileGateError = productionFileGateError(data, options, stage);
     if (fileGateError) errors.push(fileGateError);
     errors.push(...validateVisualProductionCoverage(data, { stage: "V3" }));
     const requireAudit = stage === "V4" || stage === "V5" || reconstruction.lifecycle === "v5-complete";
     const requireV5 = stage === "V5" || reconstruction.lifecycle === "v5-complete";
+    // V4/V5 视觉硬门从逐资产、逐区域记录推导人工覆盖，不能信任根节点布尔值。
+    if (requireAudit) errors.push(...validateVisualHumanReviewCompletion(data, { stage }));
     if (requireV5) {
       // V5 是不可绕过的总门：即使对象缺失也必须产出缺失错误，不能靠“没有对象”跳过审计。
       errors.push(...validateProductionAuditShape(data));
-      errors.push(...validateF2ProductionReviews(data.f2_review ?? data.f2_reviews, { stage: "F2" }, { requireEvidenceIdentity: true, identity: manifestEvidenceIdentity(data) }));
+      errors.push(...validateF2ProductionReviews(data.f2_review ?? data.f2_reviews, { stage: "F2" }, { requireEvidenceIdentity: true, identity: manifestEvidenceIdentity(data), requireVisualStructure: true }));
       errors.push(...validateComponentReviewCoverage(data, data.f2_review ?? data.f2_reviews, "F2"));
-      errors.push(...validateV5ProductionGate(data, { requireEvidenceIdentity: true }));
+      errors.push(...validateV5ProductionGate(data, { requireEvidenceIdentity: true, requireSceneReconstruction: true }));
     } else if (requireAudit) {
       // V3-ready 清单进入 V4 文件验收时，production_contract_audit 也必须先存在。
       errors.push(...validateProductionAuditShape(data));

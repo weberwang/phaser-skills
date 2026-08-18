@@ -30,6 +30,10 @@ description: Phaser 4 游戏仓库的唯一全局工作流控制面。基于任�
 
 视觉生产合同硬门：V3 的 `visual-assets` 必须逐 annotation/region 显式声明 `production_origin`、`production_method`、`delivery_kind`、`image_generation_required`、`generation_record_required`、`substitution_policy` 和 `expected_assets`，不得从 `independent-production`、`generate-now` 或视觉相似度推断 ImageGen。`image_generation_required=true` 只能由 ImageGen + 独立 raster-image、完整生成/提示词记录和运行时实际消费满足；SVG、Graphics、CanvasTexture、runtime drawing 或替代资源均不等价。V4 需要 `production_contract_audit`，F2 需要视觉与生产合同双审，V5 还需 F3 runtime replay、非空 freshness-bound fidelity cases、运行时消费和无未批准替换。方法变更只接受绑定完整上下文的 `ACCEPTED` Change Request。
 
+效果图还原额外要求 `scene_reconstruction_contract`：它冻结整屏构图、逐区域视觉事实、runtime fidelity obligations、目标绑定布局、响应式不变量、项目容差和完整实现计划。V2→V3 只生产独立资源、复用旧布局或缺少运行时视觉事实时返回 `V1/PROPOSAL`；V4 的同屏组合预验收和 V5 的结构化 fidelity/F2/正式 Scene 消费证据不可被资源工程子门替代。实施包的 `current_stage` 只接受 V3/V4/V5，未知阶段必须显式失败，V5 不得回落 V3。
+
+视觉工件的人工审阅是上述场景硬门的附加约束，不改变通用 A0-A6/F0-F4：每个可见候选、资产、组合和 runtime region 必须有 `reviewer_type: human`、`reviewer_id`、`reviewed_at`、`evidence`、`status`。V2 候选/动态样片/结构化审查、V4 actual asset/component×state/组合预验收、V5 full viewport/overlay/diff/逐区域 fidelity 和 F2 两位独立 reviewer 均需逐项通过；根 PASS、自动 reviewer 或 `all_visual_artifacts_human_reviewed` 手写值不能绕过覆盖校验。
+
 ## 命令
 
 首次使用先运行 `node <skill-dir>/scripts/workflow-control.mjs init ...`，它只在控制目录不存在时创建空账本、标准目录和首个 Work Item。`<skill-dir>` 必须解析为本 Skill 的实际根目录，不能按游戏项目当前工作目录猜测。之后运行 `node <skill-dir>/scripts/workflow-control.mjs <route|advance|prepare-approval|handoff|preflight|approve|delegate-check|parallel-check|unit-check|diff-audit|evidence-check|transition|status|lint> --help`。`approve --approval-id <id> --user-text "批准"` 会从当前已展示 pending 自动生成完整记录；否定或无关文本拒绝。命令只使用 Node.js 标准库，且绝不自动回滚、发布或执行外部动作。

@@ -42,6 +42,8 @@ templates.optional.assets["asset-license-register.md"] = templates.optional.asse
 templates.optional.assets["asset-license-register.md"] += "\n## 场景归属与效果图覆盖\n\n每项资源必须声明具体 scene_id，或声明 shared: true 并列出至少两个稳定复用场景；仅运行必需资源可声明 shared_reason: runtime-required。效果图覆盖、annotation_number、实现分类、编号确认和 fidelity case 只写入 visual-assets.json 1.5，不在本文复制第二份清单。先在冻结效果图上完成 ownership/F2 分类和 PNG 编号标注，向用户展示并等待 bitmap-decomposition 的精确确认；复用既有资源和程序实现区域也必须在同一标注图中可见。`reuse-existing` 必须使用不可变 `asset-reuse-snapshot/1.0`，精确身份至少包含 `source_file`、`source_manifest_sha256`、`source_sha256`、`compatibility_evidence_sha256`，并由文件检查确认快照 accepted 资源、基线/许可/归属和证据完整。冻结原图必须是与目标画布同尺寸的完整合法 PNG。提案/决定记录、区域定义 SHA 和 PNG 标注产物必须在生产前通过带 `--check-files --project-root .` 的机器校验。ImageGen 仅由显式 image_generation_required=true 启用，不能从 independent-production 或 generate-now 推断。\n";
 templates.optional.assets["asset-license-register.md"] += "\n效果图清单根节点固定使用 camelCase 的 `workItemId` 与 `candidateVersion`，并与 candidate identity 和视觉 Implementation Package 绑定；不得写入或读取旧 snake_case 根字段。\n";
 templates.optional.assets["asset-license-register.md"] += "拆解前的 V3 文件校验命令固定为 `node scripts/validate_visual_manifest.mjs docs/visual-assets.json --stage V3 --check-files --project-root .`；V4/V5 验收必须分别显式使用 `--stage V4` / `--stage V5`。\n";
+templates.optional.assets["asset-license-register.md"] += "效果图还原必须额外填写 `scene_reconstruction_contract`：冻结 target 条件、整屏 composition、逐 coverage region 视觉事实（含 runtime fidelity obligations）、目标绑定 layout、responsive 不变量、predeclared tolerances 和完整 implementation plan；V4 还要填同屏组合预验收。\n";
+templates.optional.assets["asset-license-register.md"] += "视觉可见产物必须逐项登记人工审阅：`reviewer_type: human`、`reviewer_id`、`reviewed_at`、`evidence`、`status`；V2 候选/动态样片/结构化审查、V4 actual asset/component×state/组合预验收、V5 full viewport/overlay/diff/逐区域结果和 F2 双审不得使用 AI/agent/automation/model reviewer 或裸 reviewer 字符串，runtime 可见区域不豁免。\n";
 templates.optional.assets["visual-assets.json"] = `${JSON.stringify({
   schema_version: "1.5",
   visual_contract_version: "1.0",
@@ -49,6 +51,7 @@ templates.optional.assets["visual-assets.json"] = `${JSON.stringify({
   candidateVersion: null,
   visual_baseline: { id: null, version: null, style_fingerprint: null, document: "docs/visual-baseline.md", status: "draft", anchor_evidence: [] },
   effect_image_reconstruction: { applicability: "not-applicable", lifecycle: "not-applicable" },
+  scene_reconstruction_contract: null,
   budgets: { max_texture_size: null, texture_memory_mb: null, max_atlases: null, max_frames: null, animation_sample_fps: null, max_overdraw: null, max_draw_calls: null },
   assets: [],
 }, null, 2)}\n`;

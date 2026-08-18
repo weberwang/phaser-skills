@@ -26,6 +26,10 @@ UI 设计与实现优先用符合全局视觉基线且含义清晰、熟悉的�
 5. 按 [证据矩阵](references/evidence-matrix.md) 生成同一目标 SHA 与代码候选 SHA 的边界、方向、字号、语言、安全区、动态状态和窄高度证据；关键 UI/HUD 记录稳定 element/reference ID、双轴关系、目标/运行测量、实际测试 ID/状态、视觉证据和项目定义容差。
 6. 按 [工作流门禁](references/workflow-gates.md) 接入 V0–V5、F0–F4 和 G0–G3；布局结构或参照关系变化退回 V1，F3 只接受绑定当前候选的工程证据。
 
+## effect-image 场景绑定
+
+当 Work Item 的 `effect_image_reconstruction.applicability=effect-image` 时，布局合同必须携带 `scene_reconstruction_binding`：绑定冻结目标 SHA、scene/state、visual baseline、reconstruction contract 版本和精确目标 viewport。该绑定描述正式 Scene 的目标关系，不能用旧通用布局合同、整屏截图、隐藏覆盖层或绝对叠图代替；target SHA、构图关系或响应式不变量漂移时，V2→V3 必须退回 V1/PROPOSAL。其他 viewport 只验证合同声明的不变量，不能把目标 viewport 的精确还原让位给跨项目固定误差阈值。
+
 ## 资源导航
 
 - 需要字段、关系表达或不变量写法时，读取 [references/layout-contract.md](references/layout-contract.md)。

@@ -84,6 +84,46 @@
       "type": "string",
       "minLength": 1
     },
+    "sceneReconstructionContract": {
+      "type": "object",
+      "description": "effect-image V1-V5 场景还原合同；缺失时不得把独立资源工件视为完整还原。",
+      "required": ["contract_version", "reference_technical_conflicts", "target_conditions", "coverage_regions", "composition", "responsive_contract", "predeclared_tolerances", "implementation_plan"],
+      "properties": {
+        "contract_version": {"type": "string", "minLength": 1},
+        "reference_technical_conflicts": {"$ref": "#/$defs/referenceTechnicalConflicts"},
+        "v2_scene_candidate": {"$ref": "#/$defs/v2Artifact"},
+        "v2_dynamic_sample": {"$ref": "#/$defs/v2Artifact"},
+        "v2_structured_review": {"$ref": "#/$defs/v2StructuredReview"},
+        "target_conditions": {"type": "object"},
+        "coverage_regions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/sceneCoverageRegion"}},
+        "composition": {"type": "object"},
+        "responsive_contract": {"type": "object"},
+        "predeclared_tolerances": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "rules"]}},
+        "implementation_plan": {"type": "object"},
+        "combination_preacceptance": {"$ref": "#/$defs/combinationPreacceptance"}
+      },
+      "additionalProperties": true
+    },
+    "scene_reconstruction_contract": {
+      "type": "object",
+      "description": "effect-image V1-V5 场景还原合同；snake_case 入口同样必须显式提供完整合同。",
+      "required": ["contract_version", "reference_technical_conflicts", "target_conditions", "coverage_regions", "composition", "responsive_contract", "predeclared_tolerances", "implementation_plan"],
+      "properties": {
+        "contract_version": {"type": "string", "minLength": 1},
+        "reference_technical_conflicts": {"$ref": "#/$defs/referenceTechnicalConflicts"},
+        "v2_scene_candidate": {"$ref": "#/$defs/v2Artifact"},
+        "v2_dynamic_sample": {"$ref": "#/$defs/v2Artifact"},
+        "v2_structured_review": {"$ref": "#/$defs/v2StructuredReview"},
+        "target_conditions": {"type": "object"},
+        "coverage_regions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/sceneCoverageRegion"}},
+        "composition": {"type": "object"},
+        "responsive_contract": {"type": "object"},
+        "predeclared_tolerances": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "rules"]}},
+        "implementation_plan": {"type": "object"},
+        "combination_preacceptance": {"type": "object"}
+      },
+      "additionalProperties": true
+    },
     "globalState": {
       "enum": [
         "INTAKE",
@@ -446,6 +486,24 @@
   },
   "allOf": [
     {
+      "if": {"required": ["stageId"], "properties": {"stageId": {"enum": ["V2", "V3", "V4", "V5"]}}},
+      "then": {
+        "anyOf": [
+          {"required": ["sceneReconstructionContract"], "properties": {"sceneReconstructionContract": {"required": ["v2_scene_candidate", "v2_dynamic_sample", "v2_structured_review"]}}},
+          {"required": ["scene_reconstruction_contract"], "properties": {"scene_reconstruction_contract": {"required": ["v2_scene_candidate", "v2_dynamic_sample", "v2_structured_review"]}}}
+        ]
+      }
+    },
+    {
+      "if": {"required": ["stageId"], "properties": {"stageId": {"enum": ["V4", "V5"]}}},
+      "then": {
+        "anyOf": [
+          {"required": ["sceneReconstructionContract"], "properties": {"sceneReconstructionContract": {"required": ["combination_preacceptance"]}}},
+          {"required": ["scene_reconstruction_contract"], "properties": {"scene_reconstruction_contract": {"required": ["combination_preacceptance"]}}}
+        ]
+      }
+    },
+    {
       "if": {
         "properties": {
           "pendingApprovalActionLevel": {
@@ -607,6 +665,47 @@
     }
   ],
   "$defs": {
+    "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "referenceTechnicalConflicts": {"type": "array", "items": {"type": "object", "minProperties": 1}},
+    "artifactIdentity": {
+      "type": "object",
+      "required": ["diff_fingerprint"],
+      "properties": {
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "code_sha256": {"$ref": "#/$defs/sha256"},
+        "build_sha256": {"$ref": "#/$defs/sha256"},
+        "candidate_sha256": {"$ref": "#/$defs/sha256"},
+        "diff_fingerprint": {"type": "string", "minLength": 1},
+        "diff_identity": {"type": "string", "minLength": 1}
+      },
+      "anyOf": [{"required": ["sha256"]}, {"required": ["code_sha256"]}, {"required": ["build_sha256"]}, {"required": ["candidate_sha256"]}]
+    },
+    "evidenceValue": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "array", "minItems": 1, "items": {"type": ["string", "object"]}}, {"type": "object", "minProperties": 1}]},
+    "humanReview": {"type": "object", "required": ["reviewer_type", "reviewer_id", "reviewed_at", "evidence", "status"], "properties": {"reviewer_type": {"const": "human"}, "reviewer_id": {"type": "string", "minLength": 1}, "reviewed_at": {"type": "string", "format": "date-time"}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "status": {"enum": ["passed", "PASS", "failed", "FAIL"]}, "target_sha256": {"$ref": "#/$defs/sha256"}, "candidate_sha256": {"$ref": "#/$defs/sha256"}, "code_sha256": {"$ref": "#/$defs/sha256"}, "build_sha256": {"$ref": "#/$defs/sha256"}, "diff_fingerprint": {"type": "string", "minLength": 1}, "diff_identity": {"type": "string", "minLength": 1}}, "additionalProperties": true},
+    "v2Artifact": {
+      "type": "object",
+      "required": ["identity", "evidence", "human_review"],
+      "properties": {"identity": {"$ref": "#/$defs/artifactIdentity"}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "human_review": {"$ref": "#/$defs/humanReview"}},
+      "additionalProperties": true
+    },
+    "v2StructuredReview": {
+      "type": "object",
+      "required": ["reviewer_type", "reviewer_id", "reviewed_at", "evidence", "status", "reviewed_target_identity", "reviewed_candidate_identity", "full_viewport_comparison", "per_region_review", "composition_review", "geometry_review", "color_material_review", "typography_review", "decoration_density_review", "responsive_review"],
+      "properties": {
+        "reviewer_type": {"const": "human"}, "reviewer_id": {"type": "string", "minLength": 1}, "reviewed_at": {"type": "string", "format": "date-time"}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "status": {"enum": ["passed", "PASS", "failed", "FAIL"]},
+        "reviewed_target_identity": {"type": "object", "minProperties": 1}, "reviewed_candidate_identity": {"type": "object", "minProperties": 1}, "full_viewport_comparison": {"$ref": "#/$defs/evidenceValue"}, "per_region_review": {"type": "array", "minItems": 1}, "composition_review": {"type": "object", "minProperties": 1}, "geometry_review": {"type": "object", "minProperties": 1}, "color_material_review": {"type": "object", "minProperties": 1}, "typography_review": {"type": "object", "minProperties": 1}, "decoration_density_review": {"type": "object", "minProperties": 1}, "responsive_review": {"type": "object", "minProperties": 1}
+      }
+    },
+    "sceneCoverageRegion": {
+      "type": "object",
+      "required": ["annotation_number", "region_id", "target_bounds", "coordinate_space", "anchor_reference", "relative_alignment", "z_order", "target_visibility", "size_strategy", "spacing", "typography_facts", "color_facts", "material_texture_facts", "lighting_shadow_facts", "decorative_density_facts", "clipping_cropping_facts", "responsive_behavior", "implementation_owner", "implementation_plan", "applicable_states", "evidence", "tolerance_reference", "approved_exception_ids"],
+      "properties": {
+        "annotation_number": {"type": "integer", "minimum": 1}, "region_id": {"type": "string", "minLength": 1}, "target_bounds": {"type": "object", "required": ["x", "y", "width", "height"]}, "coordinate_space": {"type": "string", "minLength": 1}, "anchor_reference": {"type": "string", "minLength": 1}, "relative_alignment": {"type": "object", "minProperties": 1}, "z_order": {"type": ["string", "number"]}, "target_visibility": {"type": ["string", "boolean"]}, "size_strategy": {"type": "object", "minProperties": 1}, "spacing": {"type": "object", "minProperties": 1}, "typography_facts": {"type": "object", "minProperties": 1}, "color_facts": {"type": "object", "minProperties": 1}, "material_texture_facts": {"type": "object", "minProperties": 1}, "lighting_shadow_facts": {"type": "object", "minProperties": 1}, "decorative_density_facts": {"type": "object", "minProperties": 1}, "clipping_cropping_facts": {"type": "object", "minProperties": 1}, "responsive_behavior": {"type": "object", "minProperties": 1}, "implementation_owner": {"type": "string", "minLength": 1}, "implementation_plan": {"type": "object", "minProperties": 1}, "applicable_states": {"type": "array", "minItems": 1}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "tolerance_reference": {"type": "string", "minLength": 1}, "approved_exception_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}, "scene_asset_usage": {"$ref": "#/$defs/sceneAssetUsage"}
+      },
+      "additionalProperties": true
+    },
+    "combinationPreacceptance": {"type": "object", "required": ["status", "formal_scene_structure", "layout_calculation_identity", "evidence", "target_sha256", "candidate_sha256", "diff_fingerprint", "reviewer_type", "reviewer_id", "reviewed_at"], "properties": {"status": {"enum": ["passed", "PASS"]}, "reviewer_type": {"const": "human"}, "reviewer_id": {"type": "string", "minLength": 1}, "reviewed_at": {"type": "string", "format": "date-time"}, "formal_scene_structure": {"type": "string", "minLength": 1}, "layout_calculation_identity": {"type": "string", "minLength": 1}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "target_sha256": {"$ref": "#/$defs/sha256"}, "candidate_sha256": {"$ref": "#/$defs/sha256"}, "diff_fingerprint": {"type": "string", "minLength": 1}}},
+    "sceneAssetUsage": {"type": "object", "required": ["target_display_size", "intended_scale_range", "origin", "anchor", "nine_slice", "material", "composition_region", "required_neighbors", "typography_ownership", "runtime_foreground_ownership"], "properties": {"target_display_size": {"type": "object"}, "intended_scale_range": {"type": "object"}, "origin": {"type": ["object", "string"]}, "anchor": {"type": ["object", "string"]}, "nine_slice": {"type": ["object", "string"]}, "material": {"type": ["object", "string"]}, "composition_region": {"type": ["object", "string"]}, "required_neighbors": {"type": "array"}, "typography_ownership": {"type": ["object", "string"]}, "runtime_foreground_ownership": {"type": ["object", "string"]}}, "additionalProperties": true},
     "strings": {
       "type": "array",
       "items": {

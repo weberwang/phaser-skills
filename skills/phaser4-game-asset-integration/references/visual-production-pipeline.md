@@ -114,6 +114,30 @@ V4 以文件、性能、加载、响应式、`production_contract_audit` 和一�
 
 当前场景只有在功能代码、V3 规划、全部正式资源 V4 `accepted`、V5 正式接入、占位清理，以及功能、视觉、响应式和性能联合证据全部有效后才能报告完成。全部授权场景和功能关闭前不得据此宣称 G1 完成。
 
+### 人工审阅覆盖（视觉硬门）
+
+所有产生可见内容的视觉阶段都必须绑定结构化人工 reviewer：`reviewer_type=human`、`reviewer_id`、`reviewed_at`、`evidence`、`status`。V2 的完整候选、动态样片和结构化审查、V4 每个 fixed asset/component×state 与同屏组合、V5 full viewport/overlay/diff/逐区域 fidelity 结果及 F2 两位独立 reviewer 均必须逐项人工通过。runtime-program、runtime-rendered、runtime-data 可见区域不豁免。验证器从实际资产和 region 记录交叉推导 COMPLETE 覆盖，不能相信单独的根节点 PASS 或布尔标记。
+
 ### 原子视觉拆解补充
 
 拆解顺序固定为“先状态分析，再按可复用部件拆解”：`component_count` 只计算唯一原子视觉部件，`visible_instance_count` 通过多个 `placements` 表达重复实例。② 的六个顶部按钮分别登记六个 component；⑧ 的三个相同表面可登记一个 component 加三个 placements，⑨ 的三个动作图标按实际复用关系登记。ImageGen 每个唯一 `component×required state` 必须独立位图，强制 `individual + atlas_allowed=false`，不能以编号级组合图或图集替代；atlas 仅适用于非 ImageGen 方法的显式切片合同。交互热区绑定 placement 且不计入视觉资产。状态证据 SHA、冻结目标 SHA、分析 ID 和完成时间必须先于 component inventory。
+# 场景级效果图还原门
+
+效果图路线先建立 `scene_reconstruction_contract`，再执行 V3 资源与正式 Scene 计划。V1 负责冻结视觉事实、整屏构图、目标绑定布局、响应式关系和项目容差；V2 的 F2 审完整场景构图、比例、层级、颜色、材质和装饰密度；V2→V3 检查每个 coverage region（包括 runtime owner）均有 fidelity facts 与实现计划。
+
+V4 除逐资产生产合同外必须完成同屏组合预验收，使用正式 Scene 骨架或相同结构的布局计算。V5 只有在重建合同、layout、V3、V4、F2、F3、逐区域 fidelity、fresh runtime replay 和正式 Scene 消费证据全部通过时才可完成；资源 loaded/used 或 `missing=0` 只能构成工程子门。
+
+### 场景还原硬门与 CLI 回执
+
+效果图路线按 `V1 → V2 → V3 → V4 → V5` 单向推进：V1 冻结 `reference_technical_conflicts`、整屏构图、布局/响应式关系、逐区域事实和项目 tolerance；V2 绑定完整场景候选、动态样片、候选 code/build SHA + diff identity 及结构化 F2；V2→V3 缺字段直接以 `方案缺失` 回 `V1/PROPOSAL`。V3 绑定实施包和正式 Scene 结构；V4 通过 `combination_preacceptance`、`scene_asset_usage` 与资源合同；V5 执行真实文件门、F2 双审、F3 runtime replay 和正式 Scene consumption。
+
+每个 fidelity case 必须带 viewport/DPR/逻辑坐标 `normalization_equivalence` 和非空 `difference_evidence`（不适用时必须附 reason）。每个 region 必须记录 target/candidate、delta、预声明 `tolerance_reference`、result、evidence 和 `exception_ids`；局部临时 tolerance 不具备合同效力。超出数值容差属于验收失败；非数值差异没有精确例外 ID 时也不得 PASS。合同字段缺失是 `方案缺失`，Scene/资源执行偏差是 `执行问题`，证据或错误放行是 `验收问题`，退回最早受影响阶段。
+
+门禁回执示例：
+
+```text
+失败：node scripts/validate_visual_manifest.mjs docs/visual-assets.json --stage V5
+典型输出：V5 必须显式 checkFiles=true；未执行真实文件门，V5 FAIL。
+成功：node scripts/validate_visual_manifest.mjs docs/visual-assets.json --stage V5 --check-files --project-root .
+典型输出：结构合同、组合预验收、F2、fidelity、runtime 和文件证据全部通过，退出码 0。
+```

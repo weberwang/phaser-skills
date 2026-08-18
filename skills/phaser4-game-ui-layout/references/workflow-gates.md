@@ -10,6 +10,8 @@
 - F3：实际运行合同验证器、类型检查、测试、构建与响应式测量，并生成绑定当前 diff 的 Evidence Manifest。
 - F4：只批准当前布局候选集成；不能批准视觉资源、玩法代码、外部或发布动作。
 
+effect-image 例外：V1–V3 必须先验证 `scene_reconstruction_contract` 和 target-bound layout binding；V4 必须有正式 Scene 同屏组合预验收；V5/F2 必须消费逐区域 fidelity matrix。旧通用布局或“资源 loaded/used”工程证据只能作为子门，不能单独产生视觉 PASS 或 COMPLETE。
+
 ## 阶段映射
 
 - V1/V2 处于 `PROPOSAL`、`REVIEW`；未决取舍以 `USER_INPUT_REQUIRED` 阻断，记录 `USER_DECISION` 后从 `REVIEW` 直接进入适用验证或实施状态。

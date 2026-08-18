@@ -54,7 +54,7 @@ function validManifest() {
       checks: ["scope", "state-machine", "input", "collision", "module-scene-ownership", "coordinate-space", "layout", "budget"].map((domain) => ({ domain, status: "passed", evidence: `evidence/reconcile/${domain}.md` })),
     },
 coverage_audit: { version: "1", reference_target_sha256: targetSha, canvases: [{ scene_id: "main-gameplay", state_id: "default", width: 390, height: 844 }], summaries: [{ scene_id: "main-gameplay", state_id: "default", coverage_ratio: 1, uncovered: [], status: "passed", evidence: "evidence/coverage/summary.md" }], regions: [{ id: "region-background", scene_id: "main-gameplay", state_id: "default", layer: "background", bounds: { x: 0, y: 0, width: 390, height: 844 }, owner_type: "runtime-rendered", owner_id: "scene-background", confirmation: { mode: "AUTO", reasons: [], evidence: "evidence/coverage/region-background.md" } }, { id: "region-hero", scene_id: "main-gameplay", state_id: "default", layer: "actors", bounds: { x: 10, y: 20, width: 64, height: 96 }, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", ...visualComponentContract("hero-component", "hero-idle", "art/hero.aseprite", "public/assets/hero.png", targetSha), owner_id: "asset-pipeline", asset_id: "hero-idle", confirmation: { mode: "AUTO", reasons: [], evidence: "evidence/coverage/region-hero.md" } }, { id: "region-score", scene_id: "main-gameplay", state_id: "default", layer: "hud", bounds: { x: 300, y: 10, width: 70, height: 30 }, owner_type: "runtime-data", owner_id: "score-state", confirmation: { mode: "AUTO", reasons: [], evidence: "evidence/coverage/region-score.md" } }] },
-    fidelity_cases: [{ id: "main-default", target_sha256: targetSha, candidate_sha256: candidateSha, scene_id: "main-gameplay", state_id: "default", viewport: { width: 390, height: 844 }, dpr: 2, language: "zh-CN", random_seed: 42, input_trace: "traces/main-default.json", animation_sample: "stable-frame:120", layout_contract_version: "1.1.0", visual_baseline_version: "1.0.0", reference_evidence: ["evidence/visual/reference.png"], candidate_evidence: ["evidence/visual/candidate.png"], tolerance: { unit: "logical-px", value: 2 }, exception_ids: [], conclusion: "passed" }],
+    fidelity_cases: [{ id: "main-default", target_sha256: targetSha, candidate_sha256: candidateSha, scene_id: "main-gameplay", state_id: "default", viewport: { width: 390, height: 844 }, dpr: 2, language: "zh-CN", random_seed: 42, input_trace: "traces/main-default.json", animation_sample: "stable-frame:120", layout_contract_version: "1.1.0", visual_baseline_version: "1.0.0", reference_evidence: ["evidence/visual/reference.png"], candidate_evidence: ["evidence/visual/candidate.png"], tolerance: { unit: "logical-px", value: 2 }, exception_ids: [], conclusion: "passed", human_review: { reviewer_type: "human", reviewer_id: "legacy-fidelity-human", reviewed_at: "2026-08-15T00:16:00Z", evidence: "evidence/f2/legacy-fidelity-human.json", status: "passed", target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: "diff-1" } }],
     budgets: { max_texture_size: 4096, texture_memory_mb: 64, max_atlases: 8, max_frames: 512, animation_sample_fps: 24, max_overdraw: 3, max_draw_calls: 100 },
     assets: [{ id: "hero-idle", texture_key: "hero-idle", ownership_type: "fixed-production-visual", coverage_region_ids: ["region-hero"], scene_id: "main-gameplay", route: "frame-animation", status: "accepted", production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", ...visualComponentContract("hero-component", "hero-idle", "art/hero.aseprite", "public/assets/hero.png", targetSha), visual_baseline_id: "fox-world", visual_baseline_version: "1.0.0", style_fingerprint: EMPTY_DOCUMENT_FINGERPRINT, source_file: "art/hero.aseprite", license_record: "docs/license.md", runtime_outputs: ["public/assets/hero.png"], sha256: heroPngSha, phaser_evidence: "evidence/phaser.png", gameplay_visual_evidence: "evidence/gameplay.mp4", consistency_evidence: ["evidence/visual/hero-consistency.png"] }],
   };
@@ -63,11 +63,164 @@ coverage_audit: { version: "1", reference_target_sha256: targetSha, canvases: [{
   manifest.assets[0].runtime_consumption = { status: "passed", evidence: "evidence/runtime/hero.json", ...evidenceIdentity, component_usages: componentUsage };
   const heroRegion = manifest.coverage_audit.regions[1];
   const heroExpected = heroRegion.expected_assets[0];
-  manifest.production_contract_audit = { status: "passed", candidate_version: manifest.candidateVersion, target_sha256: targetSha, reviewed_at: "2026-08-15T00:30:00Z", units: [{ annotation_number: 2, region_id: "region-hero", observed_method: "authored-raster", observed_delivery_kind: "raster-image", status: "passed", expected_assets: [{ ...heroExpected }], atomic_image_requirements: heroRegion.atomic_image_requirements, actual_assets: [{ asset_id: "hero-idle", file: "public/assets/hero.png", component_id: "hero-component", state_id: "default", asset_scope: "atomic-component", atomic_visual_key: heroExpected.atomic_visual_key, mime_type: "image/png", width: 64, height: 96, alpha: true, sha256: heroPngSha }], runtime_consumption: { status: "passed", evidence: "evidence/runtime/hero.json", ...evidenceIdentity, component_usages: componentUsage } }] };
-  manifest.f2_review = { overall_status: "passed", visual_fidelity_review: { status: "passed", review_id: "vf-1", reviewer: "art", evidence: "evidence/f2/visual.md", ...evidenceIdentity }, production_contract_review: { status: "passed", review_id: "pc-1", reviewer: "qa", evidence: "evidence/f2/production.md", ...evidenceIdentity, component_reviews: [{ annotation_number: 2, region_id: "region-hero", component_id: "hero-component", state_id: "default", asset_id: "hero-idle", placement_ids: ["hero-component-placement-1"], atomic_visual_key: heroExpected.atomic_visual_key, asset_scope: "atomic-component", runtime_file: "public/assets/hero.png", runtime_sha256: heroPngSha, status: "passed", runtime_usage_verified: true }] } };
+  manifest.production_contract_audit = { status: "passed", candidate_version: manifest.candidateVersion, target_sha256: targetSha, reviewed_at: "2026-08-15T00:30:00Z", units: [{ annotation_number: 2, region_id: "region-hero", observed_method: "authored-raster", observed_delivery_kind: "raster-image", status: "passed", expected_assets: [{ ...heroExpected }], atomic_image_requirements: heroRegion.atomic_image_requirements, actual_assets: [{ asset_id: "hero-idle", file: "public/assets/hero.png", component_id: "hero-component", state_id: "default", asset_scope: "atomic-component", atomic_visual_key: heroExpected.atomic_visual_key, mime_type: "image/png", width: 64, height: 96, alpha: true, sha256: heroPngSha, human_review: { reviewer_type: "human", reviewer_id: "asset-hero-human", reviewed_at: "2026-08-15T00:29:00Z", evidence: "evidence/f2/asset-hero-human.json", status: "passed", target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint } }], runtime_consumption: { status: "passed", evidence: "evidence/runtime/hero.json", ...evidenceIdentity, component_usages: componentUsage } }] };
+  manifest.f2_review = { overall_status: "passed", visual_fidelity_review: { status: "passed", review_id: "vf-1", reviewer: "art", reviewer_type: "human", reviewer_id: "f2-visual-human", reviewed_at: "2026-08-15T00:32:00Z", evidence: "evidence/f2/visual.md", ...evidenceIdentity }, production_contract_review: { status: "passed", review_id: "pc-1", reviewer: "qa", reviewer_type: "human", reviewer_id: "f2-production-human", reviewed_at: "2026-08-15T00:33:00Z", evidence: "evidence/f2/production.md", ...evidenceIdentity, component_reviews: [{ annotation_number: 2, region_id: "region-hero", component_id: "hero-component", state_id: "default", asset_id: "hero-idle", placement_ids: ["hero-component-placement-1"], atomic_visual_key: heroExpected.atomic_visual_key, asset_scope: "atomic-component", runtime_file: "public/assets/hero.png", runtime_sha256: heroPngSha, status: "passed", runtime_usage_verified: true, human_review: { reviewer_type: "human", reviewer_id: "component-hero-human", reviewed_at: "2026-08-15T00:34:00Z", evidence: "evidence/f2/component-hero-human.json", status: "passed", target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint } }] } };
   manifest.v5_production_gate = { status: "passed", v3_status: "passed", implementation_package_status: "passed", v4_status: "passed", f2_status: "passed", f2_visual_fidelity_status: "passed", f2_production_contract_status: "passed", f3_status: "passed", runtime_replay: { status: "passed", evidence: "evidence/f3/replay.json", ...evidenceIdentity }, fidelity_cases: [{ candidate_sha256: candidateSha, created_at: "2026-08-15T00:31:00Z", freshness_bound: true, evidence: "evidence/fidelity/main.json", ...evidenceIdentity }], candidate_sha256: candidateSha, target_sha256: targetSha, runtime_consumption: { status: "passed", evidence: "evidence/runtime/hero.json", ...evidenceIdentity, component_usages: componentUsage }, unapproved_substitution: false };
   manifest.coverage_audit.regions.forEach((region, index) => { region.annotation_number = index + 1; region.ownership_evidence = region.confirmation.evidence; region.implementation_plan = region.owner_type === "fixed-production-visual" ? { mode: "generate-now", summary: `生成区域 ${region.id}` } : { mode: "runtime-program", summary: `程序实现区域 ${region.id}` }; });
   manifest.coverage_audit.regions[1].confirmation.region_definition_sha256 = computeRegionDefinitionSha256(manifest.coverage_audit.regions[1]);
+  attachSceneReconstructionContract(manifest);
+  return manifest;
+}
+
+/** 为旧有基础夹具补齐新版场景合同，保证所有 effect-image 回归都走同一套强制门。 */
+function attachSceneReconstructionContract(manifest) {
+  const targetSha = manifest.reference_target.target_sha256;
+  const candidateSha = manifest.candidate_identity.sha256;
+  const regionFacts = manifest.coverage_audit.regions.map((region) => {
+    const runtimeOwner = region.owner_type === "fixed-production-visual" ? region.owner_type : region.owner_type;
+    return {
+      annotation_number: region.annotation_number,
+      region_id: region.id,
+      scene_id: region.scene_id,
+      state_id: region.state_id,
+      target_bounds: { ...region.bounds },
+      coordinate_space: "viewport",
+      anchor_reference: "main-gameplay.viewport",
+      relative_alignment: { horizontal: "target-bound", vertical: "target-bound" },
+      z_order: region.layer,
+      target_visibility: "visible",
+      size_strategy: { width: "target-bound", height: "target-bound", aspect: "preserve" },
+      spacing: { surrounding: "declared-by-composition", whitespace: "declared" },
+      typography_facts: { family: "project-font", ownership: "scene-contract" },
+      color_facts: { family: "visual-baseline-bound", contrast: "declared" },
+      material_texture_facts: { family: "visual-baseline-bound", surface: "declared" },
+      lighting_shadow_facts: { treatment: "visual-baseline-bound" },
+      decorative_density_facts: { density: "visual-baseline-bound" },
+      clipping_cropping_facts: { clipping: "declared", cropping: "forbid" },
+      responsive_behavior: { target: "exact", other: "preserve-relative-anchors" },
+      implementation_owner: runtimeOwner,
+      implementation_plan: region.implementation_plan,
+      applicable_states: [region.state_id],
+      evidence: [region.ownership_evidence],
+      tolerance_reference: "layout-tolerance",
+      approved_exception_ids: [],
+      ...(runtimeOwner !== "fixed-production-visual" ? { fidelity_obligations: { geometry: "target-bound", typography: "target-bound", color: "target-bound", material: "target-bound" } } : {}),
+      ...(runtimeOwner === "fixed-production-visual" ? {
+        scene_asset_usage: {
+          target_display_size: { width: region.bounds.width, height: region.bounds.height },
+          intended_scale_range: { min: 1, max: 1 },
+          origin: { x: 0.5, y: 0.5 },
+          anchor: "target-bound",
+          nine_slice: { policy: "forbid-unless-declared" },
+          material: { family: "visual-baseline-bound" },
+          composition_region: region.id,
+          required_neighbors: [],
+          typography_ownership: "scene-contract",
+          runtime_foreground_ownership: "formal-scene",
+        },
+      } : {}),
+    };
+  });
+  manifest.scene_reconstruction_contract = {
+    contract_version: "1.0",
+    reference_technical_conflicts: [],
+    v2_scene_candidate: {
+      identity: { sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
+      evidence: "evidence/fidelity/main.json",
+      human_review: { reviewer_type: "human", reviewer_id: "v2-scene-human", reviewed_at: "2026-08-15T00:12:00Z", evidence: "evidence/f2/v2-scene-human.json", status: "passed", target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
+    },
+    v2_dynamic_sample: {
+      identity: { sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
+      evidence: "evidence/fidelity/main.json",
+      human_review: { reviewer_type: "human", reviewer_id: "v2-dynamic-human", reviewed_at: "2026-08-15T00:13:00Z", evidence: "evidence/f2/v2-dynamic-human.json", status: "passed", target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
+    },
+    v2_structured_review: {
+      reviewer_type: "human", reviewer_id: "v2-structured-human", reviewed_at: "2026-08-15T00:14:00Z", evidence: "evidence/f2/v2-structured-human.json", status: "passed", target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint,
+      reviewed_target_identity: { sha256: targetSha },
+      reviewed_candidate_identity: { sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
+      full_viewport_comparison: { reference: "evidence/visual/reference.png", candidate: "evidence/visual/candidate.png" },
+      per_region_review: [{ region_id: "region-background", result: "passed", evidence: "evidence/f2/region-background.json" }],
+      composition_review: { status: "passed", evidence: "evidence/f2/composition.json" },
+      geometry_review: { status: "passed", evidence: "evidence/f2/geometry.json" },
+      color_material_review: { status: "passed", evidence: "evidence/f2/color-material.json" },
+      typography_review: { status: "passed", evidence: "evidence/f2/typography.json" },
+      decoration_density_review: { status: "passed", evidence: "evidence/f2/decoration.json" },
+      responsive_review: { status: "passed", evidence: "evidence/f2/responsive.json" },
+    },
+    target_conditions: {
+      target_sha256: targetSha,
+      original_pixel_size: { width: 390, height: 844 },
+      scene_id: "main-gameplay",
+      state_id: "default",
+      viewport: { width: 390, height: 844 },
+      dpr: 2,
+      locale: "zh-CN",
+      random_seed: 42,
+      input_trace: "traces/main-default.json",
+      animation_sample: "stable-frame:120",
+      visual_baseline_version: manifest.visual_baseline.version,
+      layout_contract_version: "1.1.0",
+    },
+    coverage_regions: regionFacts,
+    composition: {
+      vertical_order: ["region-background", "region-hero", "region-score"],
+      inter_region_spacing: { declared: true },
+      relative_sizes: { declared: true },
+      visual_center_of_gravity: { x: 195, y: 422 },
+      whitespace: { declared: true },
+      alignments: [{ from: "region-hero", to: "region-score", axis: "viewport", relation: "target-bound" }],
+      visual_hierarchy: ["background", "actors", "hud"],
+      background_focus_foreground_occlusion: { focus: "region-hero", foreground: ["region-score"] },
+    },
+    responsive_contract: {
+      target_viewport: { width: 390, height: 844 },
+      other_viewports: [{ width: 393, height: 852, expected: "preserve-relative-anchors" }],
+      relationship_invariants: ["scene order remains stable", "target-bound anchors remain stable"],
+      layout_contract_binding: { target_sha256: targetSha, scene_id: "main-gameplay", state_id: "default", visual_baseline_version: manifest.visual_baseline.version, reconstruction_contract_version: "1.0" },
+    },
+    predeclared_tolerances: [{ id: "layout-tolerance", rules: { geometry: { unit: "logical-px", value: 2 } } }],
+    implementation_plan: { resources: ["hero-idle"], layout: ["target-bound-layout"], runtime_objects: ["scene-background", "score-state"], composition: ["main-gameplay-scene"] },
+    combination_preacceptance: { reviewer_type: "human", reviewer_id: "v4-combination-human", reviewed_at: "2026-08-15T00:15:00Z", status: "passed", formal_scene_structure: "MainGameplayScene/ContainerGraph", layout_calculation_identity: "layout:main-gameplay:1", evidence: ["evidence/visual/combined.png"], target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
+  };
+  const fidelity = manifest.fidelity_cases[0];
+  Object.assign(fidelity, {
+    target_identity: { sha256: targetSha },
+    candidate_identity: { sha256: manifest.candidate_identity.sha256, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
+    original_target_size: { width: 390, height: 844 },
+    original_candidate_size: { width: 390, height: 844 },
+    normalization_transform: { type: "identity", scale_x: 1, scale_y: 1 },
+    normalization_equivalence: {
+      viewport: { target: { width: 390, height: 844 }, candidate: { width: 390, height: 844 }, equivalent: true },
+      dpr: { target: 2, candidate: 2, equivalent: true },
+      logical_coordinates: { target: "logical-px", candidate: "logical-px", equivalent: true },
+    },
+    normalized_comparison_canvas: { width: 390, height: 844 },
+    full_viewport_reference: "evidence/visual/reference.png",
+    full_viewport_candidate: "evidence/visual/candidate.png",
+    side_by_side_evidence: "evidence/fidelity/side-by-side.png",
+    overlay_evidence: "evidence/fidelity/overlay.png",
+    difference_evidence: "evidence/fidelity/diff.png",
+    tolerance_set: { id: "layout-tolerance", geometry: { unit: "logical-px", value: 2 } },
+    per_region_results: manifest.coverage_audit.regions.map((region) => ({ region_id: region.id, target_measurement: { bounds: { ...region.bounds } }, candidate_measurement: { bounds: { ...region.bounds } }, delta: 0, tolerance_reference: "layout-tolerance", tolerance: { id: "layout-tolerance", value: 2 }, result: "passed", evidence: [`evidence/fidelity/${region.id}.json`], exception_ids: [], human_review: { reviewer_type: "human", reviewer_id: `fidelity-${region.id}-human`, reviewed_at: "2026-08-15T00:18:00Z", evidence: `evidence/f2/${region.id}-fidelity-human.json`, status: "passed", target_sha256: targetSha, candidate_sha256: manifest.candidate_identity.sha256, diff_fingerprint: manifest.candidate_identity.diff_fingerprint } })),
+    human_review: { reviewer_type: "human", reviewer_id: "fidelity-case-human", reviewed_at: "2026-08-15T00:17:00Z", evidence: "evidence/f2/fidelity-case-human.json", status: "passed", target_sha256: targetSha, candidate_sha256: manifest.candidate_identity.sha256, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
+  });
+  const visual = manifest.f2_review.visual_fidelity_review;
+  Object.assign(visual, {
+    reviewed_target_identity: { sha256: targetSha },
+    reviewed_candidate_identity: { sha256: manifest.candidate_identity.sha256 },
+    full_viewport_comparison: { reference: "evidence/visual/reference.png", candidate: "evidence/visual/candidate.png" },
+    per_region_review: manifest.coverage_audit.regions.map((region) => ({ region_id: region.id, result: "passed", evidence: `evidence/f2/${region.id}.json` })),
+    composition_review: { status: "passed", evidence: "evidence/f2/composition.json" },
+    geometry_review: { status: "passed", evidence: "evidence/f2/geometry.json" },
+    color_material_review: { status: "passed", evidence: "evidence/f2/color-material.json" },
+    typography_review: { status: "passed", evidence: "evidence/f2/typography.json" },
+    decoration_density_review: { status: "passed", evidence: "evidence/f2/decoration.json" },
+    responsive_review: { status: "passed", evidence: "evidence/f2/responsive.json" },
+    unresolved_differences: [],
+    findings: [],
+    severity_counts: { P0: 0, P1: 0, P2: 0, P3: 0 },
+  });
+  manifest.all_visual_artifacts_human_reviewed = true;
   return manifest;
 }
 

@@ -10,6 +10,7 @@
 import { getVisualRegionDefinitionAliasConflicts, normalizeVisualRegionDefinition } from "../../phaser4-game-asset-integration/scripts/effect_image_annotation_core.mjs";
 import { atomicImageRequirementsEqual, deriveAtomicImageRequirements, normalizeAtomicComponents, normalizeAtomicImageRequirements } from "./visual-atomic-contract.mjs";
 import { collectImageGenerationRasterViolations } from "./visual-imagegen-format.mjs";
+import { validateHumanReview } from "./visual-human-review-contract.mjs";
 
 export { atomicImageRequirementsEqual, deriveAtomicImageRequirements, normalizeAtomicComponents, normalizeAtomicImageRequirements };
 
@@ -689,7 +690,9 @@ export function validateComponentAuditEvidence(region, auditUnit, context = {}, 
   for (const [index, item] of actual.entries()) {
     const asset = normalizeComponentExpectedAsset(item);
     const actualFile = item?.file ?? item?.path ?? item?.output_file ?? item?.runtime_file ?? item?.runtimeFile ?? "";
-    const local = { ...context, component_id: asset.component_id || "?", state_id: asset.canonical_state_id || "?" };
+    const local = { ...context, component_id: asset.component_id || "?", state_id: asset.canonical_state_id || "?", asset_id: asset.asset_id || item?.id || "?" };
+    // V4 必须逐实际资产绑定人工生产审阅，根节点 PASS 不能替代漏掉的资产记录。
+    errors.push(...validateHumanReview(item?.human_review, local, { requirePassed: true, returnStage: "V3/V4", rootCause: "验收问题" }));
     if (canonical.production_method === "imagegen" || canonical.image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(item, { requiredMime: true, fileFields: ["file", "path", "runtime_file", "output_file"] })) errors.push(componentError(local, `actual_assets[${index}].${violation.field} ${violation.message}`));
     if (!nonEmptyString(asset.component_id) || !nonEmptyString(asset.state_id)) errors.push(componentError(local, `actual_assets[${index}] 必须绑定 component_id/state_id，不能只登记区域组图`, { missing: `actual_assets[${index}].component_id/state_id` }));
     const key = `${asset.component_id}\0${asset.canonical_state_id}`;
@@ -797,6 +800,7 @@ export function validateComponentReviewCoverage(manifest, review, stage = "F2") 
     const key = `${record?.annotation_number}\0${record?.region_id}\0${record?.component_id}\0${canonicalStateId(record?.state_id)}`;
     const recordRegion = regions.find((region) => region.annotation_number === record?.annotation_number && region.id === record?.region_id);
     const recordContext = { stage, annotation_number: record?.annotation_number, region_id: record?.region_id, component_id: record?.component_id, state_id: canonicalStateId(record?.state_id) };
+    errors.push(...validateHumanReview(record?.human_review, { ...recordContext, asset_id: record?.asset_id ?? record?.assetId }, { requirePassed: true, returnStage: "V4/F2", rootCause: "验收问题" }));
     if (recordRegion && (normalizeVisualRegionDefinition(recordRegion).production_method === "imagegen" || normalizeVisualRegionDefinition(recordRegion).image_generation_required === true)) for (const violation of collectImageGenerationRasterViolations(record, { fileFields: ["runtime_file"] })) errors.push(componentError(recordContext, `component_review.${violation.field} ${violation.message}`));
     if (!recordRegion) errors.push(componentError(recordContext, "F2 component review 未映射到 coverage 固定视觉区域"));
     if (seen.has(key)) errors.push(componentError(recordContext, "F2 component review 重复"));
