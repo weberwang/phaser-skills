@@ -160,21 +160,22 @@
         {
           "if": {"required": ["image_generation_required"], "properties": {"image_generation_required": {"const": true}}},
           "then": {
-            "required": ["production_method", "delivery_kind", "generation_record_required", "substitution_policy", "component_inventory"],
+            "required": ["production_method", "delivery_kind", "generation_record_required", "substitution_policy", "component_inventory", "scene_asset_usage"],
             "properties": {
               "production_method": {"const": "imagegen"},
               "delivery_kind": {"const": "raster-image"},
               "generation_record_required": {"const": true},
               "substitution_policy": {"const": "user-change-request-only"},
               "component_inventory": {"required": ["delivery_mode", "atlas_allowed"], "properties": {"delivery_mode": {"const": "individual"}, "atlas_allowed": {"const": false}}},
-              "expected_assets": {"items": {"$ref": "#/$defs/imageGenerationExpectedAsset"}}
+              "expected_assets": {"items": {"$ref": "#/$defs/imageGenerationExpectedAsset"}},
+              "scene_asset_usage": {"required": ["target_display_size", "intended_scale_range", "max_dpr", "padding_policy"], "properties": {"max_dpr": {"type": "number", "exclusiveMinimum": 0}, "padding_policy": {"const": "none"}}}
             }
           }
         },
         {
           "if": {"required": ["production_method"], "properties": {"production_method": {"const": "imagegen"}}},
           "then": {
-            "required": ["component_inventory"],
+            "required": ["component_inventory", "scene_asset_usage"],
             "not": {"required": ["runtime_implementation"]},
             "properties": {
               "delivery_kind": {"const": "raster-image"},
@@ -182,7 +183,8 @@
               "generation_record_required": {"const": true},
               "substitution_policy": {"const": "user-change-request-only"},
               "component_inventory": {"required": ["delivery_mode", "atlas_allowed"], "properties": {"delivery_mode": {"const": "individual"}, "atlas_allowed": {"const": false}}},
-              "expected_assets": {"items": {"$ref": "#/$defs/imageGenerationExpectedAsset"}}
+              "expected_assets": {"items": {"$ref": "#/$defs/imageGenerationExpectedAsset"}},
+              "scene_asset_usage": {"required": ["target_display_size", "intended_scale_range", "max_dpr", "padding_policy"], "properties": {"max_dpr": {"type": "number", "exclusiveMinimum": 0}, "padding_policy": {"const": "none"}}}
             }
           }
         },
@@ -452,6 +454,8 @@
       "properties": {
         "target_display_size": {"type": "object", "required": ["width", "height"], "properties": {"width": {"type": "number", "exclusiveMinimum": 0}, "height": {"type": "number", "exclusiveMinimum": 0}}},
         "intended_scale_range": {"type": "object", "required": ["min", "max"], "properties": {"min": {"type": "number", "exclusiveMinimum": 0}, "max": {"type": "number", "exclusiveMinimum": 0}}},
+        "max_dpr": {"type": "number", "exclusiveMinimum": 0, "description": "运行时允许的最大设备像素比；ImageGen 单图尺寸计算只使用该机器合同字段。"},
+        "padding_policy": {"type": "string", "description": "ImageGen individual 必须为 none；非 ImageGen 可不声明该字段。"},
         "origin": {"type": "object"},
         "anchor": {"type": ["string", "object"], "minLength": 1},
         "nine_slice": {"type": ["string", "object"]},
@@ -581,7 +585,7 @@
         {"$ref": "#/$defs/visualExpectedAsset"},
         {
           "type": "object",
-          "required": ["source_file", "runtime_file", "mime_type"],
+          "required": ["source_file", "runtime_file", "mime_type", "width", "height"],
           "properties": {
             "mime_type": {"enum": ["image/png", "image/jpeg"]},
             "source_file": {"pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},

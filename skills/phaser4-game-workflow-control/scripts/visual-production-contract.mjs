@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 /**
  * 视觉生产合同共享校验模块。
- *
  * 该模块只负责把视觉清单、实施包和门禁证据中的生产事实收敛为一套
  * 机器可读语义。它不调用 ImageGen，也不根据文件后缀或效果图来源猜测
  * 生产方式；所有生产方式都必须在合同中显式声明。
@@ -20,13 +19,13 @@ import { componentAssetKey, declaredPathEntry, hasShareAliasConflict, pathCovere
 import { productionFileGateError } from "./visual-file-gate.mjs";
 import { getVisualRegionDefinitionAliasConflicts, normalizeVisualRegionDefinition } from "../../phaser4-game-asset-integration/scripts/effect_image_annotation_core.mjs";
 import { validateSceneAssetUsageContract, validateSceneCombinationPreacceptance, validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "./scene-reconstruction-contract.mjs";
+import { validateImageGenerationSizeContract } from "./visual-generation-size-contract.mjs";
 import { validateF2ProductionReviews } from "./visual-f2-contract.mjs";
 export { atomicImageRequirementsEqual, canonicalStateId, deriveAtomicImageRequirements, hasRuntimeImplementationField, normalizeAtomicImageRequirements, normalizeProjectRelativePath, validateComponentAuditEvidence, validateComponentReviewCoverage, validateVisualComponentContract, normalizeComponentExpectedAsset, visualComponentContractDifferences } from "./visual-component-contract.mjs";
 export { normalizeProductionExpectedAssets as normalizeExpectedAssets } from "./visual-atomic-contract.mjs";
 export { isRasterDelivery, resolveOutputMetadata } from "./visual-raster-contract.mjs";
 export { validateSceneAssetUsageContract, validateSceneCombinationPreacceptance, validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "./scene-reconstruction-contract.mjs";
 export { validateF2ProductionReviews } from "./visual-f2-contract.mjs";
-/** 视觉生产合同允许的固定来源。来源不决定生产方法。 */
 export const PRODUCTION_ORIGINS = new Set(["bitmap-decomposition", "independent-production"]);
 /** 视觉生产合同允许的显式生产方式。新增方式必须先更新合同和验收器。 */
 export const PRODUCTION_METHODS = new Set([
@@ -254,6 +253,7 @@ export function validateImageGenerationContract(asset, contract, context = {}, o
   const consumption = asset?.runtime_consumption;
   if (!isObject(consumption) || !["passed", "consumed", "PASS"].includes(String(consumption.status).toLowerCase())) error("缺少带身份绑定的运行时实际消费 evidence", { missing: "runtime_consumption" });
   else errors.push(...validateEvidenceIdentity(consumption, label, options.identity ?? {}, { projectRoot: options.projectRoot }));
+  if (context.region?.scene_asset_usage || context.region?.sceneAssetUsage || contract?.scene_asset_usage || contract?.sceneAssetUsage || options.sceneAssetUsage) errors.push(...validateImageGenerationSizeContract(asset, contract, context, { ...options, expectedAsset: expectedComponent ?? options.expectedAsset, contract }));
   return errors;
 }
 /** 校验效果图 coverage 的逐 annotation_number 生产合同。 */

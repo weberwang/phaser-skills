@@ -27,7 +27,7 @@ function visualComponentContract(componentId, assetId, sourceFile = assetId === 
       states,
     },
     component_inventory: { granularity: "single-component", component_count: 1, visible_instance_count: 1, delivery_mode: "individual", atlas_allowed: false, created_at: "2026-08-15T00:01:00Z", components: [component] },
-    expected_assets: [{ asset_id: assetId, asset_scope: "atomic-component", atomic_visual_key: component.atomic_visual_key, component_id: componentId, state_id: "default", source_file: sourceFile, runtime_file: runtimeFile }],
+    expected_assets: [{ asset_id: assetId, asset_scope: "atomic-component", atomic_visual_key: component.atomic_visual_key, component_id: componentId, state_id: "default", source_file: sourceFile, runtime_file: runtimeFile, width: regionBounds.width, height: regionBounds.height }],
     interaction_hotspots: [],
   };
   contract.atomic_image_requirements = deriveAtomicImageRequirements({ id: "region-hero", annotation_number: 2, production_method: "authored-raster", delivery_kind: "raster-image", ...contract });
@@ -109,6 +109,8 @@ function attachSceneReconstructionContract(manifest) {
         scene_asset_usage: {
           target_display_size: { width: region.bounds.width, height: region.bounds.height },
           intended_scale_range: { min: 1, max: 1 },
+          max_dpr: 1,
+          padding_policy: "none",
           origin: { x: 0.5, y: 0.5 },
           anchor: "target-bound",
           nine_slice: { policy: "forbid-unless-declared" },
