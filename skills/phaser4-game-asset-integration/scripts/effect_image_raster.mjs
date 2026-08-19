@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 import { deflateSync, inflateSync } from "node:zlib";
+import { EFFECT_IMAGE_FONT_CELL_SIZE, EFFECT_IMAGE_FONT_DATA_BASE64, EFFECT_IMAGE_FONT_KEYS } from "./effect_image_font.mjs";
+
+/** 判断值是否为普通对象，用于检查复用计划而不接受数组或空值。 */
+function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 
 /** PNG 文件签名，用于拒绝非栅格标注输入。 */
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -72,6 +76,9 @@ export function encodePngRgba(width, height, pixels, metadata = null) {
   chunks.push(pngChunk("IEND", Buffer.alloc(0))); return Buffer.concat([PNG_SIGNATURE, ...chunks]);
 }
 
+/** 右栏单行的最大显示宽度；超长摘要按稳定的中英文宽度换行。 */
+const MAX_VISIBLE_TEXT_UNITS = 48;
+
 /** 返回右栏需要展示的全部行；先建模再绘制，避免小画布静默丢失状态或部件。 */
 export function deriveVisibleAnnotationRows(regions = [], metadata = {}) {
   const metadataByRegion = new Map((metadata?.regions ?? []).map((item) => [item.region_id, item]));
@@ -82,8 +89,11 @@ export function deriveVisibleAnnotationRows(regions = [], metadata = {}) {
     const placements = components.flatMap((component) => (component.placements ?? []).map((placement) => ({ ...placement, component_id: component.component_id })));
     const requirements = Array.isArray(entry.atomic_image_requirements) ? entry.atomic_image_requirements : [];
     const stateCount = new Set(requirements.map((requirement) => requirement.state_id)).size;
+    const production = annotationProductionContract(region);
+    // 摘要必须是每个编号在右栏的第一可见文本，不能让结构字段挤掉中文说明。
+    rows.push({ kind: "summary", region_id: region.id, annotation_number: region.annotation_number, text: visibleSummaryText(region.implementation_plan?.summary, { annotation_number: region.annotation_number, component_count: components.length, placement_count: placements.length, state_count: stateCount }) });
+    rows.push({ kind: "production", region_id: region.id, annotation_number: region.annotation_number, production_method: production.production_method, production_origin: production.production_origin, delivery_kind: production.delivery_kind, production_label: production.label, text: `${production.label} METHOD ${asciiText(production.production_method)} ORIGIN ${asciiText(production.production_origin)} DELIVERY ${asciiText(production.delivery_kind)}` });
     rows.push({ kind: "region", region_id: region.id, annotation_number: region.annotation_number, text: `REGION N${region.annotation_number} ID ${asciiText(region.id)}` });
-    rows.push({ kind: "summary", region_id: region.id, annotation_number: region.annotation_number, text: visibleSummaryText(region.implementation_plan?.summary, { region_id: region.id, mode: region.implementation_plan?.mode, component_count: components.length, placement_count: placements.length, state_count: stateCount }) });
     rows.push({ kind: "mode", region_id: region.id, annotation_number: region.annotation_number, text: `MODE ${asciiPlanLabel(region.implementation_plan?.mode)} COMPONENTS ${components.length} PLACEMENTS ${placements.length} STATES ${stateCount}` });
     for (const component of components) {
       rows.push({ kind: "component", region_id: region.id, annotation_number: region.annotation_number, component_id: component.component_id, text: `COMPONENT ID ${asciiText(component.component_id)} KEY ${asciiText(component.atomic_visual_key)} ROLE ${asciiText(component.role)} REUSABLE ${component.reusable ? "YES" : "NO"}` });
@@ -91,24 +101,64 @@ export function deriveVisibleAnnotationRows(regions = [], metadata = {}) {
     }
     for (const requirement of requirements) rows.push({ kind: "requirement", region_id: region.id, annotation_number: region.annotation_number, component_id: requirement.component_id, state_id: requirement.state_id, requirement_id: requirement.requirement_id, placement_ids: [...(requirement.placement_ids ?? [])].sort(), asset_id: requirement.asset_id, text: `REQUIREMENT ID ${asciiText(requirement.requirement_id)} COMPONENT ${asciiText(requirement.component_id)} STATE ${asciiText(requirement.state_id)} ASSET ${asciiText(requirement.asset_id)} PLACEMENTS ${asciiText((requirement.placement_ids ?? []).slice().sort().join(","))}` });
   }
-  return rows;
+  // 详细组件行保持“一部件一行”，只对可能出现长中文的首要摘要换行。
+  return rows.flatMap((row) => row.kind === "summary" ? wrapVisibleAnnotationRow(row) : [row]);
 }
 
-/** 将原始摘要替换为可读的结构化英文说明；中文原文只保留在 PNG 元数据和提案中。 */
+/** 将编号、中文摘要和原子资源数量合成为右栏首要说明。 */
 export function visibleSummaryText(value, context = {}) {
-  const regionId = asciiText(context.region_id ?? "UNKNOWN");
-  const mode = asciiPlanLabel(context.mode ?? "unspecified");
   const componentCount = Number.isInteger(context.component_count) ? context.component_count : 0;
   const placementCount = Number.isInteger(context.placement_count) ? context.placement_count : 0;
-  const stateCount = Number.isInteger(context.state_count) ? context.state_count : 0;
-  return `SUMMARY REGION ${regionId} MODE ${mode} COMPONENTS ${componentCount} PLACEMENTS ${placementCount} STATES ${stateCount}`;
+  const annotationNumber = Number.isInteger(context.annotation_number) ? String(context.annotation_number) : "?";
+  const summary = String(value ?? "").trim() || "未提供摘要";
+  const suffix = componentCount > 1
+    ? `（${componentCount} 个原子资源）`
+    : placementCount > 1
+      ? `（1 个原子资源，${placementCount} 个实例）`
+      : "";
+  return `${annotationNumber} ${summary}${suffix}`;
+}
+
+/** 规范右栏生产标识；“新生成/复用”必须由正式生产合同决定，不能由文案自声明。 */
+export function annotationProductionContract(region = {}) {
+  const nested = region.production_contract ?? region.productionContract ?? {};
+  const read = (field, fallback) => nested?.[field] ?? region?.[field] ?? fallback;
+  const production_method = String(read("production_method", region.implementation_plan?.mode === "reuse-existing" ? "reuse" : region.implementation_plan?.mode === "runtime-program" ? "runtime-program" : "") || "");
+  const production_origin = String(read("production_origin", region.implementation_plan?.mode === "reuse-existing" ? "reused-existing" : "") || "");
+  const delivery_kind = String(read("delivery_kind", region.implementation_plan?.mode === "runtime-program" ? "runtime-drawing" : region.implementation_plan?.mode === "reuse-existing" ? "existing-asset" : "raster-image") || "");
+  // 只有明确的 reuse 方法、reuse-existing 计划和完整来源对象同时成立时，右栏才可显示“复用”。
+  const reuseSnapshot = region.reuse_snapshot;
+  const reuseBound = production_method === "reuse" && region.implementation_plan?.mode === "reuse-existing" && isObject(reuseSnapshot) && reuseSnapshot.schema === "asset-reuse-snapshot/1.0" && reuseSnapshot.source_status === "accepted";
+  const label = reuseBound ? "复用" : production_method === "runtime-program" ? "非图片逻辑" : "新生成";
+  return { production_method, production_origin, delivery_kind, label };
+}
+
+/** 按像素近似宽度换行；同一行的元数据保持不变，便于验证器逐行复核。 */
+function wrapVisibleAnnotationRow(row) {
+  const text = String(row.text ?? "");
+  const chunks = [];
+  let current = "";
+  let units = 0;
+  for (const character of [...text]) {
+    const characterUnits = textVisualUnits(character);
+    if (current && units + characterUnits > MAX_VISIBLE_TEXT_UNITS) {
+      chunks.push(current);
+      current = "";
+      units = 0;
+    }
+    current += character;
+    units += characterUnits;
+  }
+  if (current || chunks.length === 0) chunks.push(current);
+  return chunks.map((chunk, index) => ({ ...row, text: chunk, continuation: index > 0 }));
 }
 
 /** 将冻结原图与原子框、编号和完整右侧说明栏合成为确定性 PNG。 */
 export function renderRasterAnnotation(originalBytes, canvas, regions, metadata, planColors, planLabels) {
   const source = decodePngRgba(originalBytes); if (source.width !== canvas.width || source.height !== canvas.height) throw new Error("冻结原图尺寸与目标画布不一致");
-  const rows = deriveVisibleAnnotationRows(regions, metadata); const fontSize = Math.max(1, Math.min(3, Math.floor(canvas.height / 28))); const lineHeight = Math.max(8, fontSize * 9); const headerLines = 3 + Object.keys(planColors).length; const maxChars = Math.max(24, "VISUAL ATOMIC ASSET PLAN".length, ...Object.entries(planColors).map(([mode]) => asciiPlanLabel(mode).length), ...rows.map((row) => asciiText(row.text).length));
-  const panelWidth = Math.max(200, maxChars * 6 * fontSize + 24); const width = canvas.width + panelWidth; const height = Math.max(canvas.height, (headerLines + rows.length + 2) * lineHeight); const pixels = Buffer.alloc(width * height * 4, 255);
+  const rows = deriveVisibleAnnotationRows(regions, metadata); const fontSize = Math.max(1, Math.min(3, Math.floor(canvas.height / 28))); const lineHeight = Math.max(18, fontSize * 18); const headerLines = 3 + Object.keys(planColors).length; const maxTextWidth = Math.max(24 * 6 * fontSize, textVisualWidth("VISUAL ATOMIC ASSET PLAN", fontSize), ...Object.entries(planColors).map(([mode]) => textVisualWidth(asciiPlanLabel(mode), fontSize)), ...rows.map((row) => textVisualWidth(row.text, fontSize)));
+  // 面板尺寸由完整行内容推导，换行后的每一行都能落在 PNG 内，不静默裁掉中文摘要。
+  const panelWidth = Math.max(200, maxTextWidth + 24); const width = canvas.width + panelWidth; const height = Math.max(canvas.height, (headerLines + rows.length + 2) * lineHeight); const pixels = Buffer.alloc(width * height * 4, 255);
   for (let y = 0; y < canvas.height; y += 1) source.pixels.copy(pixels, y * width * 4, y * canvas.width * 4, (y + 1) * canvas.width * 4);
   fillRect(pixels, width, height, canvas.width, 0, panelWidth, height, [255, 255, 255, 255]); strokeRect(pixels, width, height, canvas.width, 0, panelWidth, height, [17, 24, 39, 255], 1);
   let line = 1; drawText(pixels, width, height, canvas.width + 8, line * lineHeight, "VISUAL ATOMIC ASSET PLAN", [17, 24, 39, 255], fontSize); line += 2;
@@ -121,7 +171,7 @@ export function renderRasterAnnotation(originalBytes, canvas, regions, metadata,
     fillCircle(pixels, width, height, markerX, markerY, markerRadius, color); drawTextCentered(pixels, width, height, markerX, markerY, String(region.annotation_number), [255, 255, 255, 255], fontSize);
     for (const placement of placements) { const bounds = placement.bounds ?? region.bounds; strokeRect(pixels, width, height, bounds.x, bounds.y, bounds.width, bounds.height, color, 1); drawText(pixels, width, height, Math.max(0, bounds.x + 2), Math.max(7, bounds.y + 7), asciiText(placement.placement_id), color, fontSize); }
   }
-  rows.forEach((row, index) => { const region = regions.find((item) => item.id === row.region_id); const color = parseColor(planColors[region?.implementation_plan?.mode] ?? "#111827"); drawText(pixels, width, height, canvas.width + 8, (line + index) * lineHeight, row.text, color, fontSize); row.row_index = index; row.baseline = (line + index) * lineHeight; row.top = row.baseline - 7 * fontSize; row.bottom = row.baseline; });
+  rows.forEach((row, index) => { const region = regions.find((item) => item.id === row.region_id); const color = parseColor(planColors[region?.implementation_plan?.mode] ?? "#111827"); drawText(pixels, width, height, canvas.width + 8, (line + index) * lineHeight, row.text, color, fontSize); row.row_index = index; row.baseline = (line + index) * lineHeight; row.top = row.baseline - EFFECT_IMAGE_FONT_CELL_SIZE * fontSize; row.bottom = row.baseline; });
   const regionFrameModes = regions.map((region) => ({ region_id: region.id, parent_frame_drawn: !(region.owner_type === "fixed-production-visual" && (region.component_inventory?.components ?? []).some((component) => (component.placements ?? []).length > 0)) }));
   const outputMetadata = { schema: "effect-image-annotation/png/1", layout: "image-plus-right-panel", original_width: canvas.width, original_height: canvas.height, panel_width: panelWidth, panel_height: height, width, height, output_height: height, original_sha256: `sha256:${createHash("sha256").update(originalBytes).digest("hex")}`, plan_labels: planLabels, panel_content_complete: true, visible_row_count: rows.length, visible_rows: rows, panel_content_bounds: { x: canvas.width, y: 0, width: panelWidth, height }, region_frame_modes: regionFrameModes, regions: metadata?.regions ?? [] };
   return encodePngRgba(width, height, pixels, outputMetadata);
@@ -160,19 +210,55 @@ const STANDARD_ASCII_GLYPHS = {
   S: ["01111", "10000", "10000", "01110", "00001", "00001", "11110"], T: ["11111", "00100", "00100", "00100", "00100", "00100", "00100"], U: ["10001", "10001", "10001", "10001", "10001", "10001", "01110"], V: ["10001", "10001", "10001", "10001", "10001", "01010", "00100"], W: ["10001", "10001", "10101", "10101", "10101", "11011", "10001"], X: ["10001", "01010", "00100", "00100", "00100", "01010", "10001"], Y: ["10001", "01010", "00100", "00100", "00100", "00100", "00100"], Z: ["11111", "00001", "00010", "00100", "01000", "10000", "11111"],
   " ": ["00000", "00000", "00000", "00000", "00000", "00000", "00000"], "?": ["01110", "10001", "00001", "00010", "00100", "00000", "00100"], "-": ["00000", "00000", "00000", "11111", "00000", "00000", "00000"], ".": ["00000", "00000", "00000", "00000", "00000", "01100", "01100"], ":": ["00000", "01100", "01100", "00000", "01100", "01100", "00000"], "/": ["00001", "00010", "00100", "01000", "10000", "00000", "00000"], "_": ["00000", "00000", "00000", "00000", "00000", "00000", "11111"], ",": ["00000", "00000", "00000", "00000", "00000", "01100", "00100"], "=": ["00000", "11111", "00000", "11111", "00000", "00000", "00000"], "+": ["00000", "00100", "00100", "11111", "00100", "00100", "00000"], "[": ["01110", "01000", "01000", "01000", "01000", "01000", "01110"], "]": ["01110", "00010", "00010", "00010", "00010", "00010", "01110"]
 };
-/** 复制标准 ASCII 字模，未知字符统一使用可辨认的问号字形。 */
+/** 复制标准 ASCII 字模；中文则来自随包固定的 OFL 字库。 */
 const FONT = { ...STANDARD_ASCII_GLYPHS };
+/** 解压固定字库一次，避免重复解析并保持运行时不访问系统字体。 */
+const EFFECT_IMAGE_FONT_BYTES = inflateSync(Buffer.from(EFFECT_IMAGE_FONT_DATA_BASE64, "base64"));
+/** 建立字符到 16x16 位图偏移的索引，未知字符不允许回退成方框。 */
+const EFFECT_IMAGE_FONT_INDEX = new Map([...EFFECT_IMAGE_FONT_KEYS].map((character, index) => [character, index]));
+/** 从固定字库读取一个真实 16x16 字形；不支持的字符在生成阶段明确失败。 */
+function effectImageGlyph(character) {
+  const index = EFFECT_IMAGE_FONT_INDEX.get(character);
+  if (index === undefined) throw new Error(`右栏文字包含未收录字符：${character}（U+${character.codePointAt(0).toString(16).toUpperCase()}）`);
+  const rowBytes = EFFECT_IMAGE_FONT_CELL_SIZE / 8;
+  const offset = index * EFFECT_IMAGE_FONT_CELL_SIZE * rowBytes;
+  return Array.from({ length: EFFECT_IMAGE_FONT_CELL_SIZE }, (_, row) => {
+    const value = EFFECT_IMAGE_FONT_BYTES[offset + row * rowBytes] * 256 + EFFECT_IMAGE_FONT_BYTES[offset + row * rowBytes + 1];
+    return value.toString(2).padStart(EFFECT_IMAGE_FONT_CELL_SIZE, "0");
+  });
+}
+/** 暴露固定字库字形快照，测试可验证不同汉字确实对应不同像素。 */
+export function effectImageFontGlyph(character) { return effectImageGlyph(character); }
+
 /** 返回单个字符的标准 5x7 字模，供绘制和像素回归共享。 */
 function charGlyph(char) { return STANDARD_ASCII_GLYPHS[char] ?? STANDARD_ASCII_GLYPHS["?"]; }
 /** 暴露稳定字模快照，测试可证明关键字母不会退化为伪随机线条。 */
 export function asciiGlyph(value) { return [...asciiText(value)].slice(0, 1).map((char) => [...(FONT[char] ?? FONT["?"])]); }
-/** 将任意值规范为可绘制的 ASCII 大写文本。 */
-function asciiText(value) { return String(value ?? "").replace(/[^\x20-\x7e]/g, "?").toUpperCase(); }
+/** 将结构字段规范为可绘制 ASCII；不再把非法字符静默替换成问号。 */
+function asciiText(value) { const text = String(value ?? ""); if (/[^\x20-\x7e]/u.test(text)) throw new Error(`右栏结构字段包含非 ASCII 字符：${text}`); return text.toUpperCase(); }
+/** 判断字符是否应使用随包 OFL 字库；所有非 ASCII 字符均需经过字库索引。 */
+function isCjkCharacter(character) { return /[^\x00-\x7f]/u.test(character); }
+/** 保留中文摘要，同时将英文结构字段规范为大写，确保字模选择稳定。 */
+function mixedText(value) { return [...String(value ?? "")].map((character) => isCjkCharacter(character) ? character : character.toUpperCase()).join(""); }
+/** 返回一字在右栏布局中的稳定宽度单位；全角中文按两个 ASCII 单位计算。 */
+function textVisualUnits(value) { return [...String(value ?? "")].reduce((sum, character) => sum + (isCjkCharacter(character) ? 2 : 1), 0); }
+/** 返回字符的实际绘制步进；完整 ASCII 由固定字库补齐，未知字符直接失败。 */
+function glyphAdvance(character, scale) { if (isCjkCharacter(character) || (!FONT[character] && EFFECT_IMAGE_FONT_INDEX.has(character))) return (EFFECT_IMAGE_FONT_CELL_SIZE + 2) * scale; if (FONT[character]) return 6 * scale; throw new Error(`右栏文字包含未收录字符：${character}`); }
+/** 按当前字号计算混合文本的像素宽度，供面板扩展和居中绘制共用。 */
+function textVisualWidth(value, scale) { return [...mixedText(value)].reduce((sum, character) => sum + glyphAdvance(character, scale), 0); }
 /** 将生产模式转换为右栏可读的稳定标签。 */
 function asciiPlanLabel(mode) { return { "generate-now": "GENERATE", "reuse-existing": "REUSE", "runtime-program": "RUNTIME" }[mode] ?? asciiText(mode); }
 /** 将矩形编码进右栏文本，确保 placement 边界也可追溯。 */
 function asciiBounds(bounds = {}) { return [bounds.x, bounds.y, bounds.width, bounds.height].map((value) => Number.isFinite(value) ? String(value) : "?").join(","); }
-/** 在确定性位图上绘制 ASCII 文本；调用方预先按最长行扩展面板，不允许静默截断。 */
-function drawText(pixels, width, height, x, baseline, value, color, scale) { let cursor = Math.round(x); const glyphs = asciiText(value); for (const char of glyphs) { const glyph = FONT[char] ?? FONT["?"]; for (let y = 0; y < glyph.length; y += 1) for (let xx = 0; xx < glyph[y].length; xx += 1) if (glyph[y][xx] === "1") fillRect(pixels, width, height, cursor + xx * scale, baseline - (glyph.length - y) * scale, scale, scale, color); cursor += 6 * scale; } }
+/** 在确定性位图上绘制中英文混合文本；中文直接落入像素，不能只依赖 iTXt。 */
+function drawText(pixels, width, height, x, baseline, value, color, scale) {
+  let cursor = Math.round(x);
+  for (const character of [...mixedText(value)]) {
+    const cjk = isCjkCharacter(character);
+    const glyph = cjk ? effectImageGlyph(character) : FONT[character] ?? effectImageGlyph(character);
+    for (let y = 0; y < glyph.length; y += 1) for (let xx = 0; xx < glyph[y].length; xx += 1) if (glyph[y][xx] === "1") fillRect(pixels, width, height, cursor + xx * scale, baseline - (glyph.length - y) * scale, scale, scale, color);
+    cursor += glyphAdvance(character, scale);
+  }
+}
 /** 绘制编号圆点中的居中文本。 */
-function drawTextCentered(pixels, width, height, cx, cy, value, color, scale) { const text = asciiText(value); drawText(pixels, width, height, cx - (text.length * 6 * scale) / 2, cy + 3 * scale, text, color, scale); }
+function drawTextCentered(pixels, width, height, cx, cy, value, color, scale) { drawText(pixels, width, height, cx - textVisualWidth(value, scale) / 2, cy + 3 * scale, value, color, scale); }

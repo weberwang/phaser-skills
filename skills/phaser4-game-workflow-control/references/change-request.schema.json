@@ -10,7 +10,7 @@
     "change": {"type": "string", "minLength": 1},
     "reason": {"type": "string", "minLength": 1},
     "affectedModules": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
-    "affectedBaselineHash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "affectedBaselineHash": {"type": "string", "pattern": "^(?:sha256:[a-f0-9]{64}|[a-f0-9]{40}(?:[a-f0-9]{24})?)$"},
     "invalidatedApprovalIds": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
     "newRisk": {"type": "string", "minLength": 1},
     "newAcceptance": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true},

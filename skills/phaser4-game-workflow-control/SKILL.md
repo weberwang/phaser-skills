@@ -28,7 +28,7 @@ description: Phaser 4 游戏仓库的唯一全局工作流控制面。基于任�
 - 启动进程前先检查同项目、类型、模式、端口、PID 与健康状态并复用。本项目本地验证、非特权、无外部写入时直接执行；不得终止归属不明的进程。
 - 基线、代码/diff 指纹或范围变化后，旧审批和旧证据失效。
 
-视觉生产合同硬门：V3 的 `visual-assets` 必须逐 annotation/region 显式声明 `production_origin`、`production_method`、`delivery_kind`、`image_generation_required`、`generation_record_required`、`substitution_policy` 和 `expected_assets`，不得从 `independent-production`、`generate-now` 或视觉相似度推断 ImageGen。`image_generation_required=true` 只能由 ImageGen + 独立 raster-image、完整生成/提示词记录和运行时实际消费满足；SVG、Graphics、CanvasTexture、runtime drawing 或替代资源均不等价。V4 需要 `production_contract_audit`，F2 需要视觉与生产合同双审，V5 还需 F3 runtime replay、非空 freshness-bound fidelity cases、运行时消费和无未批准替换。方法变更只接受绑定完整上下文的 `ACCEPTED` Change Request。
+视觉生产合同硬门：V3 的 `visual-assets` 必须逐 annotation/region 显式声明 `production_origin`、`production_method`、`delivery_kind`、`image_generation_required`、`generation_record_required`、`substitution_policy` 和 `expected_assets`，不得从 `independent-production`、`generate-now` 或视觉相似度推断 ImageGen。效果图拆解分析 PNG、原子组件、状态和资产需求清单必须经过 `visual-decomposition-confirmation/1.0` 的人工 `status=accepted`、`confirmation_mode=manual` 确认后才能进入 Implementation Package；确认集合必须覆盖所有带编号的本次生成、复用既有资源和非图片逻辑，冻结 production_label、组件/状态/资产需求及 proposal/annotation/decision SHA；缺失、AUTO、pending、旧字段、旧 SHA 或漏编号均拒绝。固定视觉图片只允许 `imagegen`、`authored-raster` PNG/JPG 或有证据的 `reuse`；`authored-svg`、Graphics、CanvasTexture、runtime drawing、runtime-program 只能用于非图片逻辑，不能成为图片 component、expected_asset、actual_asset 或 runtime consumption。`image_generation_required=true` 只能由 ImageGen + 独立 raster-image、完整生成/提示词记录和运行时实际消费满足。V4 需要 `production_contract_audit`，F2 需要视觉与生产合同双审，V5 还需 F3 runtime replay、非空 freshness-bound fidelity cases、运行时消费和无未批准替换。方法变更只接受绑定完整上下文的 `ACCEPTED` Change Request。
 
 ## 命令
 

@@ -10,7 +10,7 @@
     "workItemId": {"type": "string", "minLength": 1},
     "packageId": {"type": "string", "minLength": 1},
     "unitId": {"type": "string", "minLength": 1},
-    "baselineHash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "baselineHash": {"type": "string", "pattern": "^(?:sha256:[a-f0-9]{64}|[a-f0-9]{40}(?:[a-f0-9]{24})?)$"},
     "codeFingerprint": {"type": "string", "minLength": 1},
     "diffFingerprint": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
     "completedAt": {"type": "string", "format": "date-time"},

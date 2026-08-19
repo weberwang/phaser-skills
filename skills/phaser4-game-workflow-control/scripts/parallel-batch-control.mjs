@@ -28,7 +28,7 @@ function validateBatchEnvelope(batch, batchPath, work, pkg, repo, io, bindCurren
   const missing = BATCH_FIELDS.filter((field) => batch[field] === undefined);
   const extra = Object.keys(batch).filter((field) => !BATCH_FIELDS.includes(field));
   if (missing.length || extra.length) throw new Error(`Parallel Delegation Batch 字段不严格：缺少 ${missing.join('、') || '无'}；多余 ${extra.join('、') || '无'}`);
-  if (!batch.batchId || !batch.workItemId || !batch.packageId || !/^sha256:[a-f0-9]{64}$/.test(batch.baselineHash) || !batch.parallelGroup || Number.isNaN(Date.parse(batch.createdAt))) throw new Error('Parallel Delegation Batch 工作项、实施包、基线、并行组或时间无效');
+  if (!batch.batchId || !batch.workItemId || !batch.packageId || !/^(?:sha256:[a-f0-9]{64}|[a-f0-9]{40}(?:[a-f0-9]{24})?)$/.test(batch.baselineHash) || !batch.parallelGroup || Number.isNaN(Date.parse(batch.createdAt))) throw new Error('Parallel Delegation Batch 工作项、实施包、基线、并行组或时间无效');
   if (bindCurrent && (batch.workItemId !== work.workItemId || batch.packageId !== pkg.packageId || batch.baselineHash !== work.baselineHash)) throw new Error('Parallel Delegation Batch 未绑定当前工作项、实施包或基线');
   for (const field of ['delegationFiles', 'executionUnitIds', 'assignedAgents']) {
     const values = batch[field];

@@ -10,8 +10,10 @@
 import { getVisualRegionDefinitionAliasConflicts, normalizeVisualRegionDefinition } from "../../phaser4-game-asset-integration/scripts/effect_image_annotation_core.mjs";
 import { atomicImageRequirementsEqual, deriveAtomicImageRequirements, normalizeAtomicComponents, normalizeAtomicImageRequirements } from "./visual-atomic-contract.mjs";
 import { collectImageGenerationRasterViolations } from "./visual-imagegen-format.mjs";
+import { validateFixedVisualProductionMethod } from "./visual-decomposition-confirmation.mjs";
 
 export { atomicImageRequirementsEqual, deriveAtomicImageRequirements, normalizeAtomicComponents, normalizeAtomicImageRequirements };
+export { validateFixedVisualProductionMethod } from "./visual-decomposition-confirmation.mjs";
 
 /** 需要被显式分析的常见视觉状态；不适用时必须写 reason。 */
 export const STANDARD_VISUAL_STATES = Object.freeze([
@@ -605,7 +607,21 @@ function validateHotspots(region, context, errors, inventoryInfo) {
 export function validateVisualComponentContract(region, context = {}, options = {}) {
   const errors = [];
   const canonical = normalizeVisualRegionDefinition(region);
-  if (!isObject(region) || canonical.owner_type !== "fixed-production-visual") return errors;
+  errors.push(...validateFixedVisualProductionMethod(region, context));
+  if (!isObject(region)) return errors;
+  if (canonical.owner_type !== "fixed-production-visual") {
+    if (["runtime-data", "runtime-rendered"].includes(canonical.owner_type)) {
+      const implementation = canonical.runtime_implementation;
+      const files = Array.isArray(implementation?.integration_files) ? implementation.integration_files : [];
+      if (!isObject(implementation) || !["phaser-graphics", "runtime-program"].includes(implementation.kind)) errors.push(componentError(context, "runtime 逻辑必须声明 runtime_implementation，且 kind 必须为 phaser-graphics/runtime-program", { missing: "runtime_implementation" }));
+      if (files.length === 0 || !files.every(nonEmptyString)) errors.push(componentError(context, "runtime_implementation.integration_files 必须是非空路径列表", { missing: "runtime_implementation.integration_files" }));
+      const normalizedFiles = files.map(normalizeProjectRelativePath);
+      if (normalizedFiles.some((file) => !file)) errors.push(componentError(context, "runtime_implementation.integration_files 必须是项目内相对路径", { missing: "runtime_implementation.integration_files" }));
+      if (new Set(normalizedFiles.filter(Boolean)).size !== normalizedFiles.filter(Boolean).length) errors.push(componentError(context, "runtime_implementation.integration_files 不得重复同一物理路径"));
+    }
+    return errors;
+  }
+  // 固定视觉区域必须交付真实图片；程序绘制只负责热区、碰撞和布局等非图片逻辑。
   for (const conflict of getVisualRegionDefinitionAliasConflicts(region)) errors.push(componentError(context, `区域合同别名取值冲突：${conflict.field}`, { missing: conflict.sources.join("/") }));
   const stateInfo = validateStateAnalysis(canonical, context, errors, options);
   const inventoryInfo = validateInventory(region, context, errors, options);
@@ -677,6 +693,8 @@ export function validateComponentAuditEvidence(region, auditUnit, context = {}, 
   const expected = Array.isArray(canonical.expected_assets) ? canonical.expected_assets.map(normalizeComponentExpectedAsset) : [];
   const placementIdsByComponent = new Map(inventory.components.map((component) => [component.component_id, (component.placements ?? []).map((placement) => placement.placement_id).sort()]));
   const actual = Array.isArray(auditUnit?.actual_assets) ? auditUnit.actual_assets : [];
+  // V4 不能只相信区域的 production_method；actual/runtime 记录也必须逐项拒绝程序绘制图片身份。
+  errors.push(...validateFixedVisualProductionMethod({ ...region, actual_assets: actual, runtime_consumption: auditUnit?.runtime_consumption }, context));
   const required = [];
   for (const component of inventory.components) {
     const states = normalizeComponentStateCoverage(component);
@@ -786,6 +804,8 @@ export function validateComponentReviewCoverage(manifest, review, stage = "F2") 
   if (!isObject(review)) return errors;
   const regions = Array.isArray(manifest?.coverage_audit?.regions)
     ? manifest.coverage_audit.regions.filter((region) => isObject(region) && normalizeVisualRegionDefinition(region).owner_type === "fixed-production-visual") : [];
+  // F2 不能只核对截图和组件数量；先复核 V3 图片生产方式，阻断 SVG/Graphics 伪装。
+  for (const region of regions) errors.push(...validateFixedVisualProductionMethod(region, { stage, annotation_number: region.annotation_number, region_id: region.id }));
   const records = review.component_reviews ?? review.componentReviews
     ?? review.production_contract_review?.component_reviews ?? review.production_contract_review?.componentReviews;
   if (!Array.isArray(records)) {
@@ -797,6 +817,13 @@ export function validateComponentReviewCoverage(manifest, review, stage = "F2") 
     const key = `${record?.annotation_number}\0${record?.region_id}\0${record?.component_id}\0${canonicalStateId(record?.state_id)}`;
     const recordRegion = regions.find((region) => region.annotation_number === record?.annotation_number && region.id === record?.region_id);
     const recordContext = { stage, annotation_number: record?.annotation_number, region_id: record?.region_id, component_id: record?.component_id, state_id: canonicalStateId(record?.state_id) };
+    const reviewMethod = record?.observed_method;
+    if (!nonEmptyString(reviewMethod)) errors.push(componentError(recordContext, "F2 component review 必须显式登记 observed_method，不能用 production_method 推断", { missing: "observed_method" }));
+    if (recordRegion && nonEmptyString(reviewMethod)) {
+      const expectedMethod = normalizeVisualRegionDefinition(recordRegion).production_method;
+      if (reviewMethod !== expectedMethod) errors.push(componentError(recordContext, `F2 component review production_method 与 V3 不一致；程序绘制不能替代图片`, { missing: expectedMethod }));
+      if (["phaser-graphics", "runtime-program"].includes(reviewMethod)) errors.push(componentError(recordContext, "F2 component review 不得把 Phaser Graphics/runtime-program 作为游戏图片", { missing: "imagegen/authored-raster/reuse" }));
+    }
     if (recordRegion && (normalizeVisualRegionDefinition(recordRegion).production_method === "imagegen" || normalizeVisualRegionDefinition(recordRegion).image_generation_required === true)) for (const violation of collectImageGenerationRasterViolations(record, { fileFields: ["runtime_file"] })) errors.push(componentError(recordContext, `component_review.${violation.field} ${violation.message}`));
     if (!recordRegion) errors.push(componentError(recordContext, "F2 component review 未映射到 coverage 固定视觉区域"));
     if (seen.has(key)) errors.push(componentError(recordContext, "F2 component review 重复"));

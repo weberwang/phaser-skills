@@ -13,15 +13,19 @@ import { existsSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { atomicImageRequirementsEqual, canonicalStateId, deriveAtomicImageRequirements, hasRuntimeImplementationField, normalizeAtomicImageRequirements, normalizeProjectRelativePath, validateComponentAuditEvidence, validateComponentReviewCoverage, validateVisualComponentContract, normalizeComponentExpectedAsset, visualComponentContractDifferences } from "./visual-component-contract.mjs";
 import { normalizeProductionExpectedAssets as normalizeExpectedAssets } from "./visual-atomic-contract.mjs";
-import { computeRasterFingerprint, isRasterDelivery, registerRasterFingerprint, resolveOutputMetadata } from "./visual-raster-contract.mjs";
+import { computeRasterFingerprint, isPngOrJpegMagic, isRasterDelivery, registerRasterFingerprint, resolveOutputMetadata } from "./visual-raster-contract.mjs";
 import { collectImageGenerationPathValues, collectImageGenerationRasterViolations } from "./visual-imagegen-format.mjs";
 import { decodePngRgba } from "../../phaser4-game-asset-integration/scripts/effect_image_raster.mjs";
 import { componentAssetKey, declaredPathEntry, hasShareAliasConflict, pathCoveredBy, registerCrossUnitPath, reportExpectedAssetShareAliasConflicts, validateUnitPathDeclarations } from "./visual-package-paths.mjs";
 import { productionFileGateError } from "./visual-file-gate.mjs";
+import { validateFixedVisualProductionMethod, validateVisualDecompositionConfirmationBinding, validateVisualProductionUnitConfirmation, manualDecompositionRegions } from "./visual-decomposition-confirmation.mjs";
+import { validateProductionMethodChangeRequest, validateReuseProductionGate, validateVisualConfirmationGate } from "./visual-confirmation-reuse-gates.mjs";
 import { getVisualRegionDefinitionAliasConflicts, normalizeVisualRegionDefinition } from "../../phaser4-game-asset-integration/scripts/effect_image_annotation_core.mjs";
 export { atomicImageRequirementsEqual, canonicalStateId, deriveAtomicImageRequirements, hasRuntimeImplementationField, normalizeAtomicImageRequirements, normalizeProjectRelativePath, validateComponentAuditEvidence, validateComponentReviewCoverage, validateVisualComponentContract, normalizeComponentExpectedAsset, visualComponentContractDifferences } from "./visual-component-contract.mjs";
+export { FIXED_VISUAL_IMAGE_METHODS, PROGRAM_VISUAL_METHODS, manualDecompositionRegions, requiresManualVisualDecomposition, validateFixedVisualProductionMethod, validateVisualDecompositionConfirmationBinding, validateVisualDecompositionConfirmationRecord, validateVisualDecompositionConfirmations, validateVisualProductionUnitConfirmation } from "./visual-decomposition-confirmation.mjs";
+export { REUSE_SCHEMA, validateProductionMethodChangeRequest, validateReuseProductionGate, validateVisualConfirmationGate } from "./visual-confirmation-reuse-gates.mjs";
 export { normalizeProductionExpectedAssets as normalizeExpectedAssets } from "./visual-atomic-contract.mjs";
-export { isRasterDelivery, resolveOutputMetadata } from "./visual-raster-contract.mjs";
+export { isPngOrJpegMagic, isRasterDelivery, resolveOutputMetadata } from "./visual-raster-contract.mjs";
 /** 视觉生产合同允许的固定来源。来源不决定生产方法。 */
 export const PRODUCTION_ORIGINS = new Set(["bitmap-decomposition", "independent-production"]);
 /** 视觉生产合同允许的显式生产方式。新增方式必须先更新合同和验收器。 */
@@ -40,11 +44,9 @@ export const IMAGEGEN_TEXT_FIELDS = ["global_prompt_prefix", "asset_prompt", "st
 export function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-/** 判断是否为去除空白后仍有内容的字符串。 */
 export function nonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
-/** 判断值是否是标准 sha256 标识。 */
 export function isSha256(value) {
   return typeof value === "string" && /^sha256:[a-f0-9]{64}$/.test(value);
 }
@@ -83,13 +85,12 @@ export function contractContext(region = {}, stage = "V3", extra = {}) {
 /** 取出合同字段，允许区域直接声明或使用 production_contract 对象，但不允许两套值冲突。 */
 export function resolveProductionContract(value = {}) {
   const canonical = normalizeVisualRegionDefinition(value);
-  const fields = ["production_origin", "production_method", "delivery_kind", "image_generation_required", "generation_record_required", "substitution_policy", "asset_id", "asset_ids", "expected_assets", "atomic_image_requirements", "runtime_implementation", "component_inventory"];
+  const fields = ["owner_type", "production_origin", "production_method", "delivery_kind", "image_generation_required", "generation_record_required", "substitution_policy", "asset_id", "asset_ids", "expected_assets", "atomic_image_requirements", "runtime_implementation", "component_inventory"];
   const result = Object.fromEntries(fields.filter((field) => canonical[field] !== null).map((field) => [field, canonical[field]]));
   const conflicts = getVisualRegionDefinitionAliasConflicts(value).filter((item) => fields.includes(item.field));
   if (conflicts.length) result.__conflicts = conflicts.map((item) => item.field);
   return result;
 }
-/** 读取实际生产方法，禁止通过 route 或 production_origin 隐式推断 ImageGen。 */
 export function observedProductionMethod(value = {}) {
   const contract = resolveProductionContract(value);
   return contract.production_method ?? value.method ?? "unspecified";
@@ -98,6 +99,9 @@ export function observedProductionMethod(value = {}) {
 export function validateProductionContract(contract, context = {}, options = {}) {
   const errors = [];
   const current = resolveProductionContract(contract);
+  // 先审查区域是否为真实图片交付，再审查通用生产字段，避免程序绘制伪装成视觉资产。
+  errors.push(...validateFixedVisualProductionMethod(contract, context));
+  errors.push(...validateReuseProductionGate(contract, context, options));
   const label = contractContext(contract, context.stage ?? "V3", { ...context, observedMethod: current.production_method ?? "unspecified" });
   const error = (message, details = {}) => errors.push(productionContractError(label, message, {
     expectedMethod: details.expectedMethod ?? current.production_method ?? "explicit-production-method",
@@ -114,7 +118,8 @@ export function validateProductionContract(contract, context = {}, options = {})
   if (nonEmptyString(current.substitution_policy) && !SUBSTITUTION_POLICIES.has(current.substitution_policy)) error(`substitution_policy 无效：${current.substitution_policy}`);
   if (typeof current.image_generation_required !== "boolean") error("image_generation_required 必须显式为布尔值", { missing: "image_generation_required" });
   if (typeof current.generation_record_required !== "boolean") error("generation_record_required 必须显式为布尔值", { missing: "generation_record_required" });
-  if (!Array.isArray(current.expected_assets) || current.expected_assets.length === 0) error("expected_assets 必须是非空数组", { missing: "expected_assets" });
+  const runtimeLogic = ["runtime-data", "runtime-rendered"].includes(current.owner_type);
+  if (!runtimeLogic && (!Array.isArray(current.expected_assets) || current.expected_assets.length === 0)) error("expected_assets 必须是非空数组", { missing: "expected_assets" });
   else normalizeExpectedAssets(current.expected_assets).forEach((item, index) => {
     if (!nonEmptyString(item.asset_id)) error(`expected_assets[${index}] 缺少 asset_id`, { missing: `expected_assets[${index}].asset_id` });
     if (item.delivery_kind && !DELIVERY_KINDS.has(item.delivery_kind)) error(`expected_assets[${index}].delivery_kind 无效：${item.delivery_kind}`);
@@ -256,6 +261,8 @@ export function validateVisualProductionCoverage(manifest, options = {}) {
   const errors = [];
   const stage = options.stage ?? "V3";
   const regions = Array.isArray(manifest?.coverage_audit?.regions) ? manifest.coverage_audit.regions : [];
+  // 默认把人工确认作为 V3 coverage 硬门；只有明确声明结构扫描才允许暂不消费确认。
+  if (options.requireManualConfirmation !== false) errors.push(...validateVisualConfirmationGate(manifest, { ...options, stage, requireManualConfirmation: true }));
   const assets = new Map((Array.isArray(manifest?.assets) ? manifest.assets : []).filter(isObject).map((asset) => [asset.id, asset]));
   const requests = [
     ...(Array.isArray(manifest?.change_requests) ? manifest.change_requests : []),
@@ -264,16 +271,22 @@ export function validateVisualProductionCoverage(manifest, options = {}) {
   ];
   const requestById = new Map(requests.filter(isObject).map((request) => [request.changeRequestId ?? request.change_request_id ?? request.id, request])); const generationRecordIds = new Map();
   for (const region of regions) {
-    if (!isObject(region) || region.owner_type !== "fixed-production-visual") continue;
+    if (!isObject(region)) continue;
     const regionContract = resolveProductionContract(region);
+    const context = contractContext(region, stage, { observedMethod: regionContract.production_method ?? "unspecified" });
+    if (["runtime-data", "runtime-rendered"].includes(regionContract.owner_type)) {
+      // 非图片逻辑仍需经过显式合同和人工确认，但不得进入图片资产/生成记录分支。
+       errors.push(...validateProductionContract(region, context, { ...options, requireComplete: true }));
+      continue;
+    }
+    if (regionContract.owner_type !== "fixed-production-visual") continue;
     // 多组件区域只登记 atomic asset_ids；不能再取一个 region asset_id 作为组合图代表。
     const regionAssetIds = Array.isArray(regionContract.asset_ids)
       ? [...new Set(regionContract.asset_ids.filter(nonEmptyString))]
       : (nonEmptyString(regionContract.asset_id) ? [regionContract.asset_id] : []);
     const asset = assets.get(regionAssetIds[0]);
     const contract = { ...(asset ?? {}), ...region, ...resolveProductionContract(asset ?? {}), ...regionContract };
-    const context = contractContext(region, stage, { observedMethod: contract.production_method ?? "unspecified" });
-    errors.push(...validateProductionContract(contract, context, { requireComplete: true }));
+    errors.push(...validateProductionContract(contract, context, { ...options, requireComplete: true }));
     // 状态分析必须先于组件拆解，且每个 required 状态都要落到原子资产或合法图集切片。
     // 组件校验保留 coverage 原对象，确保 camel/nested 别名和热区的越权字段不会在合并合同前被抹掉。
     errors.push(...validateVisualComponentContract(region, context, { requireImageAssets: true }));
@@ -332,7 +345,6 @@ export function validateVisualProductionCoverage(manifest, options = {}) {
   }
   return errors;
 }
-/** 检查路径是否在项目根目录内，供 V4 文件证据审计使用。 */
 function safeProjectPath(projectRoot, value) {
   if (!nonEmptyString(value)) return null;
   const candidate = resolve(projectRoot, value);
@@ -357,7 +369,6 @@ export function loadVisualManifestSnapshot(pkg, projectRoot = process.cwd()) {
   try { return { manifest: JSON.parse(bytes.toString("utf8")), errors: [], path, sha256: actualSha }; }
   catch (caught) { return { manifest: null, errors: [`visualManifestFile 不是合法 JSON：${caught.message}`] }; }
 }
-/** 计算文件 SHA-256，文件不存在时返回 null，由上层生成可定位错误。 */
 async function hashFileIfPresent(projectRoot, value) {
   const path = safeProjectPath(projectRoot, value);
   if (!path || !existsSync(path) || !statSync(path).isFile()) return null;
@@ -422,7 +433,6 @@ export function validateEvidenceIdentity(evidence, context, identity = {}, optio
   if (identity.diff && evidence.diff_fingerprint !== identity.diff) error("证据 diff_fingerprint 未绑定当前候选 diff", "diff_fingerprint");
   return errors;
 }
-/** 取得清单中所有视觉证据共享的候选、目标、基线和 diff 身份。 */
 export function manifestEvidenceIdentity(manifest) {
   return { candidate: manifest?.candidate_identity?.sha256 ?? manifest?.candidate_sha256, target: manifest?.reference_target?.target_sha256, baseline: manifest?.visual_baseline?.style_fingerprint ?? manifest?.visual_baseline?.sha256, diff: manifest?.candidate_identity?.diff_fingerprint ?? manifest?.diff_fingerprint };
 }
@@ -431,6 +441,7 @@ export function auditProductionContract(manifest, options = {}) {
   const fileGateError = productionFileGateError(manifest, options, "V4");
   if (fileGateError) return [fileGateError];
   const errors = [];
+  errors.push(...validateVisualConfirmationGate(manifest, { ...options, stage: "V4", requireManualConfirmation: true }));
   const audit = manifest?.production_contract_audit;
   if (!isObject(audit)) return ["[V4] production_contract_audit 缺失"];
   const regions = Array.isArray(manifest?.coverage_audit?.regions) ? manifest.coverage_audit.regions.filter((item) => isObject(item) && normalizeVisualRegionDefinition(item).owner_type === "fixed-production-visual") : [];
@@ -458,9 +469,11 @@ export function auditProductionContract(manifest, options = {}) {
   for (const region of regions) {
     const key = `${region.annotation_number}\0${region.id}`;
     const unit = byRegion.get(key);
-    const context = contractContext(region, "V4", { observedMethod: unit?.observed_method ?? unit?.production_method ?? "missing" });
+    const context = contractContext(region, "V4", { observedMethod: unit?.observed_method ?? unit?.production_method ?? "missing" }); const fixedVisual = normalizeVisualRegionDefinition(region).owner_type === "fixed-production-visual";
+    if (fixedVisual && (options.checkFiles !== true || !options.projectRoot)) errors.push(productionContractError(context, "V4 fixed-production-visual actual/runtime 必须通过 check-files/project-root PNG/JPEG 魔数核验", { missing: "checkFiles=true,projectRoot" }));
     if (!unit) { errors.push(productionContractError(context, "production_contract_audit 缺少逐区域记录", { missing: "production_contract_audit.units" })); continue; }
     const expected = resolveProductionContract(region);
+    errors.push(...validateReuseProductionGate(region, context, options));
     errors.push(...validateVisualComponentContract(region, context, { requireImageAssets: true }));
     errors.push(...validateComponentAuditEvidence(region, unit, context, { manifestAssets: assets }));
     if (expected.image_generation_required === true) {
@@ -520,7 +533,7 @@ export function auditProductionContract(manifest, options = {}) {
       if (options.checkFiles !== false && options.projectRoot) {
         const path = safeProjectPath(options.projectRoot, actualPath);
         if (!path || !existsSync(path) || !statSync(path).isFile()) { errors.push(productionContractError(context, `V4 实际输出文件不存在：${actualPath}`, { missing: actualPath })); return; }
-        const bytes = readFileSync(path); const digest = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+        const bytes = readFileSync(path); if (fixedVisual && !isPngOrJpegMagic(bytes)) errors.push(productionContractError(actualContext, `V4 actual_assets[${index}] 固定视觉文件必须是 PNG/JPEG 魔数，不能依赖自报 delivery_kind`, { missing: "raster-magic" })); const digest = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
         if (actualSha && actualSha !== digest) errors.push(productionContractError(context, `V4 actual_assets[${index}] SHA 不匹配`, { missing: "actual_assets.sha256" }));
         const expectedSha = expectedItem.sha256 || metadata.sha256;
         if (expectedSha && expectedSha !== digest) errors.push(productionContractError(context, `V4 actual_assets[${index}] 未匹配 V3 SHA`, { missing: "expected_assets.sha256" }));
@@ -573,7 +586,7 @@ export function validateProductionAuditShape(manifest, options = {}) {
   if (identity.target && audit.target_sha256 !== identity.target) errors.push("[V4] production_contract_audit 未绑定当前冻结 target_sha256");
   if (!nonEmptyString(audit.reviewed_at) || Number.isNaN(Date.parse(audit.reviewed_at))) errors.push("[V4] production_contract_audit.reviewed_at 必须是有效时间");
   if (!units.length) errors.push("[V4] production_contract_audit.units 必须是非空数组");
-  const regions = Array.isArray(manifest?.coverage_audit?.regions) ? manifest.coverage_audit.regions.filter((item) => isObject(item) && item.owner_type === "fixed-production-visual") : [];
+  const regions = Array.isArray(manifest?.coverage_audit?.regions) ? manifest.coverage_audit.regions.filter((item) => isObject(item) && normalizeVisualRegionDefinition(item).owner_type === "fixed-production-visual") : [];
   const keys = new Set();
   for (const [index, unit] of units.entries()) {
     const context = contractContext(unit ?? {}, "V4", { annotation_number: unit?.annotation_number ?? "?", region_id: unit?.region_id ?? "?", observedMethod: unit?.observed_method ?? unit?.production_method ?? "missing" });
@@ -587,6 +600,7 @@ export function validateProductionAuditShape(manifest, options = {}) {
     if (!nonEmptyString(unit?.observed_delivery_kind ?? unit?.delivery_kind)) error("缺少 observed_delivery_kind", "observed_delivery_kind");
     const region = regions.find((item) => item.annotation_number === unit?.annotation_number && item.id === unit?.region_id);
     if (region) {
+      errors.push(...validateReuseProductionGate(region, context, options));
       errors.push(...validateVisualComponentContract(region, context, { requireImageAssets: true }));
       errors.push(...validateComponentAuditEvidence(region, unit, context, { manifestAssets: assets }));
     }
@@ -651,6 +665,7 @@ export function validateF2ProductionReviews(f2, context = {}, options = {}) {
 /** 校验 V5 运行态硬门，要求审计、双审、重放、freshness 和实际消费全部存在。 */
 export function validateV5ProductionGate(manifest, options = {}) {
   const errors = [];
+  errors.push(...validateVisualConfirmationGate(manifest, { ...options, stage: "V5", requireManualConfirmation: true }));
   const gate = manifest?.v5_production_gate ?? manifest?.production_v5_gate;
   const context = { stage: "V5", annotation_number: "*", region_id: "*", expectedMethod: "production-contract", observedMethod: "missing" };
   const error = (message, missing = "") => errors.push(productionContractError(context, message, { missing }));
@@ -692,72 +707,29 @@ export async function validateV5VisualManifest(manifest, options = {}) {
   const fileGateError = productionFileGateError(manifest, options, "V5");
   if (fileGateError) return [fileGateError];
   const identity = manifestEvidenceIdentity(manifest);
-  const evidenceOptions = { requireEvidenceIdentity: options.requireEvidenceIdentity !== false, identity, projectRoot: options.projectRoot };
+  const evidenceOptions = { requireEvidenceIdentity: options.requireEvidenceIdentity !== false, identity, projectRoot: options.projectRoot, checkFiles: options.checkFiles === true, targetFrozenAt: manifest?.reference_target?.frozen_at, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority: options.authority };
   const errors = [
-    ...validateVisualProductionCoverage(manifest, { stage: "V3" }),
-    ...validateProductionAuditShape(manifest),
+    ...validateVisualProductionCoverage(manifest, { stage: "V3", requireManualConfirmation: true, projectRoot: options.projectRoot, checkFiles: options.checkFiles === true, targetSha: identity.target, targetFrozenAt: manifest?.reference_target?.frozen_at, candidateSha: identity.candidate, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority: options.authority }),
+    ...validateProductionAuditShape(manifest, { ...options, authority: options.authority }),
     ...validateF2ProductionReviews(manifest?.f2_review ?? manifest?.f2_reviews, { stage: "F2" }, evidenceOptions),
     ...validateComponentReviewCoverage(manifest, manifest?.f2_review ?? manifest?.f2_reviews, "F2"),
     ...validateV5ProductionGate(manifest, { ...options, ...evidenceOptions }),
   ];
   // 总门始终复核 V4 的方法/交付一致性；只有传入项目根目录时才额外检查实际文件 SHA。
-  errors.push(...await auditProductionContract(manifest, { projectRoot: options.projectRoot, checkFiles: options.checkFiles === true }));
-  return errors;
-}
-/** 校验 Change Request 是否是生产方法变更的唯一授权来源。 */
-export function validateProductionMethodChangeRequest(change, context = {}) {
-  const errors = [];
-  const changes = Array.isArray(change?.production_method_changes) ? change.production_method_changes : (Array.isArray(change?.productionMethodChanges) ? change.productionMethodChanges : []);
-  if (!changes.length) {
-    const prefix = { stage: "CHANGE_REQUEST", annotation_number: context.annotation_number ?? "?", region_id: context.region_id ?? "?", expectedMethod: context.proposedMethod ?? "production-method", observedMethod: "missing" };
-    const errors = [];
-    if (change?.status !== "ACCEPTED" && context.workItemId) errors.push(productionContractError(prefix, `Change Request ${change?.changeRequestId ?? change?.change_request_id ?? change?.id ?? "?"} 必须为 ACCEPTED 用户决定`, { missing: "status=ACCEPTED" }));
-    if (context.annotation_number !== undefined || context.region_id !== undefined || context.previousMethod !== undefined || context.proposedMethod !== undefined) errors.push(productionContractError(prefix, "Change Request 缺少逐区域 production_method_changes", { missing: "production_method_changes" }));
-    return errors;
-  }
-  const requestWorkItem = change.workItemId;
-  const requestCandidateVersion = change.candidateVersion;
-  const requestCandidateSha = change.candidate_sha256 ?? change.candidateSha256;
-  const requestTargetSha = change.target_sha256 ?? change.targetSha256;
-  const requestContext = { stage: "CHANGE_REQUEST", annotation_number: context.annotation_number ?? "*", region_id: context.region_id ?? "*", expectedMethod: context.proposedMethod ?? "production-method", observedMethod: context.previousMethod ?? "missing" };
-  const requestError = (message) => errors.push(productionContractError(requestContext, message));
-  if (context.workItemId && requestWorkItem !== context.workItemId) requestError("workItemId 与当前工作项不一致");
-  if (context.candidateVersion && requestCandidateVersion !== context.candidateVersion) requestError("candidateVersion 与当前候选版本不一致");
-  if (context.candidateSha256 && requestCandidateSha !== context.candidateSha256) requestError("candidate_sha256 与当前候选 SHA 不一致");
-  if (context.targetSha256 && requestTargetSha !== context.targetSha256) requestError("target_sha256 与冻结目标不一致");
-  if (context.baselineSha256 && change.baseline_sha256 !== context.baselineSha256) requestError("baseline_sha256 与当前基线不一致");
-  if (context.diffFingerprint && change.diff_fingerprint !== context.diffFingerprint) requestError("diff_fingerprint 与当前候选不一致");
-  for (const [index, item] of changes.entries()) {
-    const region = { annotation_number: item?.annotation_number, id: item?.region_id };
-    const local = contractContext(region, "CHANGE_REQUEST", { expectedMethod: item?.proposed_method ?? "proposed-method", observedMethod: item?.previous_method ?? "previous-method" });
-    const error = (message, missing = "") => errors.push(productionContractError(local, `production method 变更[${index}] ${message}`, { missing }));
-    if (change.status !== "ACCEPTED") error("只有 ACCEPTED Change Request 才能变更 production_method");
-    if (!nonEmptyString(change.changeRequestId ?? change.change_request_id ?? change.id)) error("缺少 changeRequestId", "changeRequestId");
-    if (!nonEmptyString(requestWorkItem)) error("缺少 workItemId", "workItemId");
-    if (Object.hasOwn(change, "work_item_id")) error("禁止使用旧 work_item_id，必须使用 workItemId", "workItemId");
-    if (Object.hasOwn(change, "candidate_version")) error("禁止使用旧 candidate_version，必须使用 candidateVersion", "candidateVersion");
-    if (!nonEmptyString(requestCandidateVersion)) error("缺少候选版本绑定", "candidateVersion");
-    if (!isSha256(requestCandidateSha)) error("缺少合法候选 SHA 绑定", "candidate_sha256");
-    if (!isSha256(requestTargetSha)) error("缺少合法冻结目标 SHA 绑定", "target_sha256");
-    if (!isSha256(change.baseline_sha256)) error("缺少合法基线 SHA 绑定", "baseline_sha256");
-    if (!nonEmptyString(change.diff_fingerprint)) error("缺少当前候选 diff_fingerprint", "diff_fingerprint");
-    if (!nonEmptyString(change.user_original_text ?? change.userOriginalText ?? change.user_original_request ?? change.userOriginalRequest ?? change.original_user_text ?? change.originalUserText)) error("缺少用户原文绑定", "user_original_text");
-    const decidedAt = change.accepted_at ?? change.acceptedAt ?? change.decided_at ?? change.decidedAt;
-    if (!nonEmptyString(decidedAt) || Number.isNaN(Date.parse(decidedAt))) error("缺少有效决定时间", "accepted_at");
-    for (const field of ["region_id", "previous_method", "proposed_method"]) if (!nonEmptyString(item?.[field])) error(`缺少 ${field}`, field);
-    if (!Number.isInteger(item?.annotation_number) || item.annotation_number <= 0) error("缺少合法 annotation_number", "annotation_number");
-    if (context.annotation_number !== undefined && item.annotation_number !== context.annotation_number) error("annotation_number 与当前区域不一致", "annotation_number");
-    if (context.region_id !== undefined && (item.region_id ?? item.regionId) !== context.region_id) error("region_id 与当前区域不一致", "region_id");
-    if (context.previousMethod !== undefined && item.previous_method !== context.previousMethod) error("previous_method 与当前区域旧方法不一致", "previous_method");
-    if (context.proposedMethod !== undefined && item.proposed_method !== context.proposedMethod) error("proposed_method 与当前区域新方法不一致", "proposed_method");
-    if (item?.previous_method === item?.proposed_method) error("previous_method 与 proposed_method 不得相同");
-    if (nonEmptyString(item?.proposed_method) && !PRODUCTION_METHODS.has(item.proposed_method)) error(`proposed_method 无效：${item.proposed_method}`);
-  }
-  return errors;
+  errors.push(...await auditProductionContract(manifest, { projectRoot: options.projectRoot, checkFiles: options.checkFiles === true, targetSha: identity.target, targetFrozenAt: manifest?.reference_target?.frozen_at, candidateSha: identity.candidate, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority: options.authority }));
+  return [...new Set(errors)];
 }
 /** 校验实施包与 coverage 的部件资产一一绑定，并覆盖每个预期源/运行输出。 */
 function validateVisualUnitAssetBindings(unit, region, context, errors, options = {}) {
   if (!isObject(region)) return;
+  const runtimeLogic = ["runtime-data", "runtime-rendered"].includes(normalizeVisualRegionDefinition(region).owner_type);
+  let expected = [];
+  if (runtimeLogic) {
+    // 运行时逻辑只登记代码集成路径；禁止借空图片数组或伪造 asset 身份进入图片合同。
+    const runtimeImplementation = resolveProductionContract(unit).runtime_implementation;
+    const integrationFiles = isObject(runtimeImplementation) ? runtimeImplementation.integration_files : [];
+    if (!Array.isArray(integrationFiles) || integrationFiles.length === 0) errors.push(productionContractError(context, "runtime 逻辑必须登记 runtime_implementation.integration_files", { missing: "runtime_implementation.integration_files" }));
+  } else {
   const regionAtomicRequirements = deriveAtomicImageRequirements(region);
   const unitAtomicRequirements = unit?.atomic_image_requirements ?? unit?.atomicImageRequirements;
   if (!Array.isArray(unitAtomicRequirements)) errors.push(productionContractError(context, "Implementation Package 缺少 atomic_image_requirements", { missing: "atomic_image_requirements" }));
@@ -769,7 +741,7 @@ function validateVisualUnitAssetBindings(unit, region, context, errors, options 
   for (const [label, values] of [["coverage.expected_assets", rawExpected], ["Implementation Package expected_assets", rawObserved]]) {
     if (Array.isArray(values)) values.forEach((value, index) => { if (hasShareAliasConflict(value)) errors.push(productionContractError(context, `${label}[${index}] share_id 与 shareId 不得同时声明`, { missing: `${label}[${index}].share_id` })); if (imageGenContract) for (const violation of collectImageGenerationRasterViolations(value, { requiredMime: true, requiredFileFields: ["source_file", "runtime_file"], fileFields: ["source_file", "runtime_file"] })) errors.push(productionContractError(context, `${label}[${index}].${violation.field} ${violation.message}`, { missing: `${label}[${index}].${violation.field}` })); });
   }
-  const expected = Array.isArray(resolveProductionContract(region).expected_assets) ? resolveProductionContract(region).expected_assets.map(normalizeComponentExpectedAsset) : [];
+  expected = Array.isArray(resolveProductionContract(region).expected_assets) ? resolveProductionContract(region).expected_assets.map(normalizeComponentExpectedAsset) : [];
   const observed = Array.isArray(unit?.expected_assets) ? unit.expected_assets.map(normalizeComponentExpectedAsset) : [];
   const expectedByKey = new Map(expected.map((asset) => [componentAssetKey(asset), asset]));
   const observedByKey = new Map(observed.map((asset) => [componentAssetKey(asset), asset]));
@@ -801,6 +773,7 @@ function validateVisualUnitAssetBindings(unit, region, context, errors, options 
     const local = { ...context, component_id: observedAsset.component_id, state_id: observedAsset.canonical_state_id || canonicalStateId(observedAsset.state_id) };
     errors.push(productionContractError(local, "Implementation Package 包含 coverage 未声明的部件状态", { missing: "coverage.expected_assets" }));
   }
+  }
   const ownedPaths = unit?.ownedPaths;
   const outputPaths = unit?.outputPaths;
   const reportPathError = (message, details = {}) => errors.push(productionContractError(context, message, details));
@@ -823,26 +796,26 @@ export function validateVisualProductionUnits(pkg, manifest = null, options = {}
   const units = pkg?.visualProductionUnits;
   if (units === undefined) return errors;
   if (!Array.isArray(units) || units.length === 0) return ["[V3] annotation_number=* region_id=* expected_method=visual-production observed_method=missing 缺失=visualProductionUnits：必须是非空数组"];
-  const regions = Array.isArray(manifest?.coverage_audit?.regions) ? manifest.coverage_audit.regions.filter((item) => isObject(item) && item.owner_type === "fixed-production-visual") : [];
+  const regions = manualDecompositionRegions(manifest);
   const regionByKey = new Map(regions.map((region) => [`${region.annotation_number}\0${region.id}`, region]));
   const seen = new Set(); const seenAnnotations = new Set(); const outputs = new Map(); const crossUnitPaths = new Map(); const generationRecordIds = new Map();
   for (const [index, unit] of units.entries()) {
     const context = contractContext(unit ?? {}, "V3", { annotation_number: unit?.annotation_number ?? "?", region_id: unit?.region_id ?? "?", observedMethod: unit?.production_method ?? "missing" });
     const error = (message, details = {}) => errors.push(productionContractError(context, `visualProductionUnits[${index}] ${message}`, details));
-    errors.push(...validateProductionContract(unit ?? {}, context, { requireComplete: true }));
+    errors.push(...validateProductionContract(unit ?? {}, context, { ...options, requireComplete: true }));
     const key = `${unit?.annotation_number}\0${unit?.region_id}`;
     const region = regionByKey.get(key);
-    // 实施包也必须携带状态分析和原子部件映射，避免只把 annotation 编号交给实现代理。
-    // Implementation Package 不携带 owner_type 字段；其 visualProductionUnits 统一按固定视觉部件合同校验状态与热点。
-    errors.push(...validateVisualComponentContract({ ...(region ?? {}), ...(unit ?? {}), owner_type: "fixed-production-visual", bounds: region?.bounds ?? unit?.bounds }, context, { requireImageAssets: true }));
+    // 实施包必须镜像 coverage 的 owner；运行时逻辑不能被强制伪装成固定图片组件。
+    errors.push(...validateVisualComponentContract({ ...(region ?? {}), ...(unit ?? {}), owner_type: unit?.owner_type ?? region?.owner_type ?? "fixed-production-visual", bounds: region?.bounds ?? unit?.bounds }, context, { requireImageAssets: true }));
     if (!nonEmptyString(unit?.unitId)) error("缺少 unitId", { missing: "unitId" });
     if (!Number.isInteger(unit?.annotation_number) || unit.annotation_number <= 0) error("annotation_number 必须为正整数", { missing: "annotation_number" });
     if (!nonEmptyString(unit?.region_id)) error("缺少 region_id", { missing: "region_id" });
     if (seen.has(key)) error("annotation_number/region_id 重复"); else seen.add(key);
     const annotationKey = `${unit?.scene_id ?? "*"}\0${unit?.state_id ?? "*"}\0${unit?.annotation_number}`;
     if (seenAnnotations.has(annotationKey)) error("annotation_number 在同一 scene/state 内重复"); else seenAnnotations.add(annotationKey);
+    errors.push(...validateVisualProductionUnitConfirmation(unit ?? {}, region, pkg, context));
     if (manifest && !region) error("未映射到 coverage_audit 固定视觉区域");
-    if (!Array.isArray(unit?.interaction_hotspots ?? unit?.interactionHotspots)) error("Implementation Package 必须显式镜像 interaction_hotspots 数组", { missing: "interaction_hotspots" });
+    if (unit?.owner_type === "fixed-production-visual" && !Array.isArray(unit?.interaction_hotspots ?? unit?.interactionHotspots)) error("Implementation Package 必须显式镜像 interaction_hotspots 数组", { missing: "interaction_hotspots" });
     if (region) {
       const regionContract = resolveProductionContract(region);
       const unitContract = resolveProductionContract(unit);
@@ -895,7 +868,7 @@ export function validateVisualProductionUnits(pkg, manifest = null, options = {}
     if (!nonEmptyString(unit?.format ?? unit?.delivery_kind)) error("缺少输出格式", { missing: "format" });
     if (unit?.image_generation_required === true && unit?.production_method !== "imagegen") error("ImageGen 单元格式/方法不一致", { expectedMethod: "imagegen" });
   }
-  if (manifest && regions.some((region) => !seen.has(`${region.annotation_number}\0${region.id}`))) errors.push("[V3] annotation_number=* region_id=* expected_method=visual-production observed_method=missing 缺失=visualProductionUnits：未覆盖全部固定视觉区域");
+  if (manifest && regions.some((region) => !seen.has(`${region.annotation_number}\0${region.id}`))) errors.push("[V3] annotation_number=* region_id=* expected_method=visual-production observed_method=missing 缺失=visualProductionUnits：未覆盖全部编号区域");
   return errors;
 }
 /** 读取并绑定当前 visual-assets 快照，阻止实施包只凭自身编号伪造 coverage 映射。 */
@@ -926,64 +899,44 @@ export function validateVisualImplementationPackageBinding(pkg, options = {}) {
   if (!nonEmptyString(pkg?.candidateVersion)) error("视觉 Implementation Package 缺少 candidateVersion", "candidateVersion");
   if (manifest?.workItemId !== pkg?.workItemId) error("visual manifest.workItemId 未绑定当前 Implementation Package workItemId", "workItemId");
   if (manifest?.candidateVersion !== pkg?.candidateVersion) error("visual manifest.candidateVersion 未绑定当前 Implementation Package candidateVersion", "candidateVersion");
-  errors.push(...validateVisualProductionCoverage(manifest, { stage: "V3" }));
+  const authority = options.authority;
+  errors.push(...validateVisualDecompositionConfirmationBinding(pkg, manifest, { stage: "V3", projectRoot, targetSha: manifest?.reference_target?.target_sha256, candidateSha: manifest?.candidate_identity?.sha256, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority }));
+  errors.push(...validateVisualProductionCoverage(manifest, { stage: "V3", requireManualConfirmation: true, checkFiles: true, projectRoot, targetSha: manifest?.reference_target?.target_sha256, targetFrozenAt: manifest?.reference_target?.frozen_at, candidateSha: manifest?.candidate_identity?.sha256, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority }));
   errors.push(...validateVisualProductionUnits(pkg, manifest, options));
   return errors;
 }
 /** 校验视觉实施单元被委派给正确的代理，并继承其输出所有权。 */
 export function validateVisualDelegationBinding(delegation, pkg) {
-  const errors = [];
-  const units = pkg?.visualProductionUnits ?? [];
+  const errors = []; const units = pkg?.visualProductionUnits ?? [];
   if (!Array.isArray(units) || units.length === 0) return errors;
-  const delegatedIds = new Set(delegation?.executionUnitIds ?? []);
-  for (const unit of units.filter((item) => delegatedIds.has(item.unitId))) {
-    const context = contractContext(unit, "V3", { annotation_number: unit.annotation_number, region_id: unit.region_id, observedMethod: unit.production_method ?? "missing" });
-    if (unit.owner !== delegation.assignedAgent) errors.push(productionContractError(context, "视觉实施单元 owner 与委派代理不一致", { missing: "owner" }));
-    const ownedPaths = unit.ownedPaths ?? [];
-    const ownership = delegation.ownership ?? [];
-    for (const path of ownedPaths) if (!ownership.some((pattern) => pattern === path || path.startsWith(`${pattern}/`) || path.startsWith(`${pattern}\\`))) errors.push(productionContractError(context, `视觉实施单元路径未被委派 ownership 覆盖：${path}`, { missing: "ownership" }));
-  }
+  const delegatedIds = new Set(delegation?.executionUnitIds ?? []); const ownership = delegation.ownership ?? [];
+  for (const unit of units.filter((item) => delegatedIds.has(item.unitId))) { const context = contractContext(unit, "V3", { annotation_number: unit.annotation_number, region_id: unit.region_id, observedMethod: unit.production_method ?? "missing" }); if (unit.owner !== delegation.assignedAgent) errors.push(productionContractError(context, "视觉实施单元 owner 与委派代理不一致", { missing: "owner" })); for (const path of unit.ownedPaths ?? []) if (!ownership.some((pattern) => pattern === path || path.startsWith(`${pattern}/`) || path.startsWith(`${pattern}\\`))) errors.push(productionContractError(context, `视觉实施单元路径未被委派 ownership 覆盖：${path}`, { missing: "ownership" })); }
   return errors;
 }
 /** 提供 workflow-control 使用的实施包单入口，避免总控文件堆叠视觉合同分支。 */
 export function validateVisualImplementationPackage(pkg, options = {}) {
   if (options.requireVisual === true && pkg?.visualProductionUnits === undefined) return ["[V3] annotation_number=* region_id=* expected_method=visual-production observed_method=missing 缺失=visualProductionUnits：视觉实施包必须逐区域覆盖"];
-  const errors = validateVisualProductionUnits(pkg, null, options);
-  const units = pkg?.visualProductionUnits;
-  if (units !== undefined) {
-    const context = { stage: "V3", annotation_number: "*", region_id: "*", expectedMethod: "visual-production", observedMethod: "missing" };
-    if (!nonEmptyString(pkg?.candidateVersion)) errors.push(productionContractError(context, "视觉 Implementation Package 缺少 candidateVersion", { missing: "candidateVersion" }));
-    if (!nonEmptyString(pkg?.visualManifestFile)) errors.push(productionContractError(context, "Implementation Package 缺少 visualManifestFile", { missing: "visualManifestFile" }));
-    if (!isSha256(pkg?.visualManifestSha256)) errors.push(productionContractError(context, "Implementation Package 缺少 visualManifestSha256", { missing: "visualManifestSha256" }));
-  }
+  const errors = validateVisualProductionUnits(pkg, null, options); const units = pkg?.visualProductionUnits;
+  if (units !== undefined) { const context = { stage: "V3", annotation_number: "*", region_id: "*", expectedMethod: "visual-production", observedMethod: "missing" }; if (!nonEmptyString(pkg?.candidateVersion)) errors.push(productionContractError(context, "视觉 Implementation Package 缺少 candidateVersion", { missing: "candidateVersion" })); if (!nonEmptyString(pkg?.visualManifestFile)) errors.push(productionContractError(context, "Implementation Package 缺少 visualManifestFile", { missing: "visualManifestFile" })); if (!isSha256(pkg?.visualManifestSha256)) errors.push(productionContractError(context, "Implementation Package 缺少 visualManifestSha256", { missing: "visualManifestSha256" })); if (units.some((unit) => Number.isInteger(unit?.annotation_number)) && (!Array.isArray(pkg?.visualDecompositionConfirmations) || pkg.visualDecompositionConfirmations.length === 0)) errors.push(productionContractError(context, "视觉 Implementation Package 缺少按 scene/state 分组的人工拆解确认身份", { missing: "visualDecompositionConfirmations" })); }
   return errors;
 }
-/** 提供 workflow-control 使用的 Change Request 单入口。 */
 export function validateVisualChangeRequest(change, context = {}) { return validateProductionMethodChangeRequest(change, context); }
 /** 校验工作流 Evidence Manifest 中视觉证据，并绑定实施包读取的当前清单。 */
 export function validateVisualEvidence(evidence, pkg, options = {}) {
   const fileGateError = productionFileGateError(options.manifest, options, "V5");
-  if (fileGateError) return [fileGateError];
-  if (pkg?.visualProductionUnits === undefined) return [];
-  const errors = [];
-  const manifest = options.manifest;
+  if (fileGateError) return [fileGateError]; if (pkg?.visualProductionUnits === undefined) return [];
+  const errors = []; const manifest = options.manifest;
   if (!isObject(manifest)) return ["[V5] annotation_number=* region_id=* expected_method=production-contract observed_method=missing 缺失=visualManifestSnapshot：Evidence 必须绑定实施包对应的当前清单"];
-  const baseIdentity = manifestEvidenceIdentity(manifest);
-  const identity = { ...baseIdentity, diff: options.diffFingerprint ?? baseIdentity.diff };
+  const baseIdentity = manifestEvidenceIdentity(manifest); const identity = { ...baseIdentity, diff: options.diffFingerprint ?? baseIdentity.diff };
   for (const [key, label] of [["candidate", "candidate"], ["target", "target"], ["baseline", "baseline"], ["diff", "diff"]]) if (!nonEmptyString(identity[key])) errors.push(`[V5] annotation_number=* region_id=* expected_method=production-contract observed_method=missing 缺失=${label}_identity：视觉证据缺少当前身份绑定`);
-  errors.push(...validateProductionAuditShape(manifest));
-  errors.push(...auditProductionContract(manifest, { projectRoot: options.projectRoot, checkFiles: Boolean(options.projectRoot) }));
-  const evidenceOptions = { requireEvidenceIdentity: true, identity, projectRoot: options.projectRoot };
-  errors.push(...validateF2ProductionReviews(evidence?.gateResults?.F2, { stage: "F2" }, evidenceOptions));
+  const authority = options.authority;
+  errors.push(...validateProductionAuditShape(manifest, { authority, projectRoot: options.projectRoot, checkFiles: Boolean(options.projectRoot) })); errors.push(...auditProductionContract(manifest, { projectRoot: options.projectRoot, checkFiles: Boolean(options.projectRoot), targetSha: identity.target, targetFrozenAt: manifest?.reference_target?.frozen_at, candidateSha: identity.candidate, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority }));
+  const evidenceOptions = { requireEvidenceIdentity: true, identity, projectRoot: options.projectRoot, checkFiles: Boolean(options.projectRoot), targetFrozenAt: manifest?.reference_target?.frozen_at, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority }; errors.push(...validateF2ProductionReviews(evidence?.gateResults?.F2, { stage: "F2" }, evidenceOptions));
   // Evidence 的 F2 可能独立于 manifest 重新提交；必须再次逐 component×state 绑定 V3 expected_assets，不能只验证双审摘要。
   errors.push(...validateComponentReviewCoverage(manifest, evidence?.gateResults?.F2, "F2"));
   const replay = evidence?.gateResults?.F3?.runtime_replay ?? evidence?.runtime_replay;
-  if (!isObject(replay) || !["passed", "PASS"].includes(String(replay.status)) || !nonEmptyString(replay.evidence)) errors.push("[F3] annotation_number=* region_id=* expected_method=runtime-replay observed_method=missing 缺失=runtime_replay：视觉候选必须绑定通过的 runtime replay");
-  else errors.push(...validateEvidenceIdentity(replay, { stage: "F3", annotation_number: "*", region_id: "runtime-replay" }, identity, evidenceOptions));
-  const gate = evidence?.visual_production_gate ?? evidence?.v5_production_gate;
-  if (!gate) errors.push("[V5] annotation_number=* region_id=* expected_method=production-contract observed_method=missing 缺失=visual_production_gate：视觉候选缺少 V5 生产合同门");
-  else errors.push(...validateV5ProductionGate({ ...manifest, v5_production_gate: gate }, { ...evidenceOptions, candidateSha256: identity.candidate, targetSha256: identity.target }));
+  if (!isObject(replay) || !["passed", "PASS"].includes(String(replay.status)) || !nonEmptyString(replay.evidence)) errors.push("[F3] annotation_number=* region_id=* expected_method=runtime-replay observed_method=missing 缺失=runtime_replay：视觉候选必须绑定通过的 runtime replay"); else errors.push(...validateEvidenceIdentity(replay, { stage: "F3", annotation_number: "*", region_id: "runtime-replay" }, identity, evidenceOptions));
+  const gate = evidence?.visual_production_gate ?? evidence?.v5_production_gate; if (!gate) errors.push("[V5] annotation_number=* region_id=* expected_method=production-contract observed_method=missing 缺失=visual_production_gate：视觉候选缺少 V5 生产合同门"); else errors.push(...validateV5ProductionGate({ ...manifest, v5_production_gate: gate }, { ...evidenceOptions, candidateSha256: identity.candidate, targetSha256: identity.target, targetFrozenAt: manifest?.reference_target?.frozen_at, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion }));
   return errors;
 }
-/** 把异步 V4 审计错误收敛为稳定的机器门结果。 */
 export async function productionContractAuditResult(manifest, options = {}) { const errors = await auditProductionContract(manifest, options); return { status: errors.length ? "failed" : "passed", errors }; }

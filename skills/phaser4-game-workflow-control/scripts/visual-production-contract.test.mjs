@@ -35,6 +35,11 @@ function refreshAtomicRequirements(region) {
   return region;
 }
 
+/** 为单元级回归夹具提供新的 scene/state 确认组绑定。 */
+function confirmationGroupFor(region, confirmationId) {
+  return { scene_id: region.scene_id ?? "?", state_id: region.state_id ?? "?", confirmation_id: confirmationId, confirmation_sha256: HASH };
+}
+
 /** 构造完整状态分析：单部件默认态需要资源，其余状态明确说明不适用。 */
 function componentContract(componentId, assetId, sourceFile = `art/${assetId}.png`, runtimeFile = `public/${assetId}.png`) {
   const requiredStates = [{ state_id: "default", requirement: "required", reason: "普通可见状态" }];
@@ -43,6 +48,13 @@ function componentContract(componentId, assetId, sourceFile = `art/${assetId}.pn
     id: componentId,
     annotation_number: 1,
     owner_type: "fixed-production-visual",
+    production_origin: "independent-production",
+    production_method: "authored-raster",
+    production_label: "复用既有资源",
+    delivery_kind: "raster-image",
+    image_generation_required: false,
+    generation_record_required: false,
+    substitution_policy: "forbid",
     bounds: { x: 0, y: 0, width: 64, height: 64 },
     state_analysis: { status: "complete", phase: "before-component-splitting", evidence: "evidence/state-analysis.md", evidence_sha256: HASH, reference_target_sha256: HASH, analysis_id: "analysis-1", completed_at: "2026-08-15T00:00:00Z", states: [...requiredStates, ...notApplicable] },
     component_inventory: { granularity: "single-component", component_count: 1, visible_instance_count: 1, delivery_mode: "individual", atlas_allowed: false, created_at: "2026-08-15T00:01:00Z", components: [{ component_id: componentId, atomic_visual_key: `${componentId}-visual`, role: "visual-component", reusable: true, state_coverage: [...requiredStates, ...notApplicable], placements: [{ placement_id: `${componentId}-placement-1`, bounds: { x: 0, y: 0, width: 32, height: 32 }, interaction_required: false }] }] },
@@ -64,6 +76,13 @@ function multiComponentRegion(count, mode = "individual", expectedAssets = null)
   }));
   return refreshAtomicRequirements({
     owner_type: "fixed-production-visual",
+    production_origin: "independent-production",
+    production_method: "authored-raster",
+    production_label: "复用既有资源",
+    delivery_kind: "raster-image",
+    image_generation_required: false,
+    generation_record_required: false,
+    substitution_policy: "forbid",
     annotation_number: 2,
     id: `region-${count}`,
     bounds: { x: 0, y: 0, width: regionWidth, height: 64 },
@@ -473,24 +492,21 @@ test("F2/V5 Evidence 缺少显式文件门必须拒绝", () => {
 /** 构造带 production contract 的实施包夹具，专门覆盖逐部件路径绑定。 */
 function implementationPackageFixture() {
   const region = refreshAtomicRequirements({ ...multiComponentRegion(2), id: "package-region", annotation_number: 2, production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid" });
-  const unit = { ...structuredClone(region), unitId: "PACKAGE-1", region_id: "package-region", owner: "implementer", ownedPaths: ["art", "public"], outputPaths: ["art", "public"], format: "png" };
-  return { region, pkg: { visualProductionUnits: [unit] }, manifest: { coverage_audit: { regions: [region] } } };
+  const unit = { ...structuredClone(region), unitId: "PACKAGE-1", region_id: "package-region", decomposition_confirmation_id: "confirm-package", decomposition_confirmation_sha256: HASH, owner: "implementer", ownedPaths: ["art", "public"], outputPaths: ["art", "public"], format: "png" };
+  return { region, pkg: { visualProductionUnits: [unit], visualDecompositionConfirmations: [confirmationGroupFor(region, "confirm-package")] }, manifest: { coverage_audit: { regions: [region] } } };
 }
 
 /** 构造无图片输出的运行时实现区域，用于路径所有权和方法互斥回归。 */
 function runtimeRegionFixture(annotationNumber = 1, regionId = `runtime-region-${annotationNumber}`, assetId = `runtime-asset-${annotationNumber}`) {
-  const region = multiComponentRegion(1);
-  Object.assign(region, { id: regionId, annotation_number: annotationNumber, asset_id: assetId, production_origin: "independent-production", production_method: "phaser-graphics", delivery_kind: "runtime-drawing", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", runtime_implementation: { kind: "phaser-graphics", integration_files: ["src/components/main.mjs"] } });
-  region.expected_assets = [{ asset_id: assetId, asset_scope: "atomic-component", atomic_visual_key: "component-1-visual", component_id: "component-1", state_id: "default" }];
-  return refreshAtomicRequirements(region);
+  return { id: regionId, annotation_number: annotationNumber, scene_id: "main-gameplay", state_id: "default", owner_type: "runtime-rendered", production_origin: "independent-production", production_method: "phaser-graphics", production_label: "程序实现", delivery_kind: "runtime-drawing", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", runtime_implementation: { kind: "phaser-graphics", integration_files: ["src/components/main.mjs"] } };
 }
 
 /** 构造带 ownedPaths/allowedPaths 的运行时实施包，便于区分合法文件与旁路路径。 */
 function runtimePackageFixture(integrationFile = "src/components/main.mjs") {
   const region = runtimeRegionFixture();
-  const unit = { ...structuredClone(region), unitId: "RUNTIME-PACKAGE-1", region_id: region.id, owner: "implementer", ownedPaths: ["src/components"], outputPaths: ["public"], format: "runtime-program" };
+  const unit = { ...structuredClone(region), unitId: "RUNTIME-PACKAGE-1", region_id: region.id, decomposition_confirmation_id: "confirm-runtime", decomposition_confirmation_sha256: HASH, owner: "implementer", ownedPaths: ["src/components"], outputPaths: ["public"], format: "runtime-program" };
   unit.runtime_implementation = { kind: "phaser-graphics", integration_files: [integrationFile] };
-  return { pkg: { visualProductionUnits: [unit] }, manifest: { coverage_audit: { regions: [region] } } };
+  return { pkg: { visualProductionUnits: [unit], visualDecompositionConfirmations: [confirmationGroupFor(region, "confirm-runtime")] }, manifest: { coverage_audit: { regions: [region] } } };
 }
 
 test("Implementation Package 不能偷偷替换部件 asset_id 或 source/runtime 文件", () => {
@@ -623,7 +639,7 @@ test("Implementation Package 跨单元按规范化路径拒绝 PUBLIC/SHARED.PNG
   secondUnit.annotation_number = 3;
   first.pkg.visualProductionUnits[0].outputPaths = ["art", "public", "PUBLIC/SHARED.PNG"];
   secondUnit.outputPaths = ["art", "public", "public/./shared.png"];
-  const conflict = validateVisualProductionUnits({ visualProductionUnits: [first.pkg.visualProductionUnits[0], secondUnit] }, { coverage_audit: { regions: [first.region, secondRegion] } });
+  const conflict = validateVisualProductionUnits({ visualProductionUnits: [first.pkg.visualProductionUnits[0], secondUnit], visualDecompositionConfirmations: [confirmationGroupFor(first.region, "confirm-package"), confirmationGroupFor(secondRegion, "confirm-package")] }, { coverage_audit: { regions: [first.region, secondRegion] } });
   assert(conflict.some((item) => item.includes("输出路径与其他单元冲突")), conflict.join("\n"));
   assert(conflict.some((item) => item.includes("source_file 路径与其他单元冲突")), conflict.join("\n"));
 
@@ -646,7 +662,7 @@ test("Implementation Package 跨单元按规范化路径拒绝 PUBLIC/SHARED.PNG
   for (const asset of shared.pkg.visualProductionUnits[0].expected_assets) asset.share_id = shareId;
   shared.pkg.visualProductionUnits[0].outputPaths = [{ path: "PUBLIC", share_id: shareId }];
   sharedUnit.outputPaths = [{ path: "public/.", share_id: shareId }];
-  const sharedErrors = validateVisualProductionUnits({ visualProductionUnits: [shared.pkg.visualProductionUnits[0], sharedUnit] }, { coverage_audit: { regions: [shared.region, sharedRegion] } });
+  const sharedErrors = validateVisualProductionUnits({ visualProductionUnits: [shared.pkg.visualProductionUnits[0], sharedUnit], visualDecompositionConfirmations: [confirmationGroupFor(shared.region, "confirm-package"), confirmationGroupFor(sharedRegion, "confirm-package")] }, { coverage_audit: { regions: [shared.region, sharedRegion] } });
   assert.deepEqual(sharedErrors, [], sharedErrors.join("\n"));
 });
 
@@ -704,14 +720,14 @@ function fourStateRegion() {
 test("Coverage→Package→V4→F2/V5 逐项覆盖 default/selected/victory/defeat，漏项必须拒绝", () => {
   const region = fourStateRegion(); const requirements = deriveAtomicImageRequirements(region); assert.deepEqual(requirements.map((item) => item.state_id), ["default", "defeat", "selected", "victory"]);
   assert.deepEqual(validateVisualComponentContract(region, { stage: "V3", annotation_number: 4, region_id: region.id }), []);
-  const unit = { ...structuredClone(region), unitId: "FOUR-STATE-PACKAGE", region_id: region.id, owner: "implementer", ownedPaths: ["art"], outputPaths: ["public"] };
-  assert.deepEqual(validateVisualProductionUnits({ visualProductionUnits: [unit] }, { coverage_audit: { regions: [region] } }), []);
+  const unit = { ...structuredClone(region), unitId: "FOUR-STATE-PACKAGE", region_id: region.id, decomposition_confirmation_id: "confirm-four-state", decomposition_confirmation_sha256: HASH, owner: "implementer", ownedPaths: ["art"], outputPaths: ["public"] };
+  assert.deepEqual(validateVisualProductionUnits({ visualProductionUnits: [unit], visualDecompositionConfirmations: [confirmationGroupFor(region, "confirm-four-state")] }, { coverage_audit: { regions: [region] } }), []);
   const actualAssets = region.expected_assets.map((asset) => ({ ...asset, file: asset.runtime_file }));
   const usages = region.expected_assets.map((asset) => ({ component_id: asset.component_id, state_id: asset.state_id, asset_id: asset.asset_id, placement_ids: ["placement-1"], runtime_file: asset.runtime_file, runtime_sha256: HASH, status: "passed" }));
   const auditUnit = { actual_assets: actualAssets, runtime_consumption: { component_usages: usages } };
   assert.deepEqual(validateComponentAuditEvidence(region, auditUnit, { stage: "V4", annotation_number: 4, region_id: region.id }), []);
   const manifest = { coverage_audit: { regions: [region] }, assets: region.expected_assets.map((asset) => ({ id: asset.asset_id, sha256: HASH, runtime_outputs: [asset.runtime_file] })) };
-  const reviews = { production_contract_review: { component_reviews: region.expected_assets.map((asset) => ({ annotation_number: 4, region_id: region.id, component_id: asset.component_id, state_id: asset.state_id, asset_id: asset.asset_id, placement_ids: ["placement-1"], atomic_visual_key: asset.atomic_visual_key, asset_scope: "atomic-component", runtime_file: asset.runtime_file, runtime_sha256: HASH, status: "passed", runtime_usage_verified: true })) } };
+  const reviews = { production_contract_review: { component_reviews: region.expected_assets.map((asset) => ({ annotation_number: 4, region_id: region.id, component_id: asset.component_id, state_id: asset.state_id, observed_method: "authored-raster", asset_id: asset.asset_id, placement_ids: ["placement-1"], atomic_visual_key: asset.atomic_visual_key, asset_scope: "atomic-component", runtime_file: asset.runtime_file, runtime_sha256: HASH, status: "passed", runtime_usage_verified: true })) } };
   assert.deepEqual(validateComponentReviewCoverage(manifest, reviews, "F2"), []);
   const missing = structuredClone(region); missing.expected_assets = missing.expected_assets.filter((asset) => asset.state_id !== "victory"); refreshAtomicRequirements(missing);
   assert(validateVisualComponentContract(missing, { stage: "V3", annotation_number: 4, region_id: region.id }).some((item) => item.includes("victory") && item.includes("expected_count=1")), "V3 漏 victory 必须失败");

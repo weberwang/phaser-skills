@@ -18,6 +18,14 @@ export function isRasterDelivery(deliveryKind, mimeType = "") {
   return deliveryKind === "raster-image" && (!nonEmptyString(mimeType) || /^image\/(png|webp|jpeg|jpg|avif|bmp|gif)$/i.test(mimeType));
 }
 
+/** 固定视觉 V4 只接受 PNG/JPEG 魔数，不能被 actual_assets.mime_type 自报值绕过。 */
+export function isPngOrJpegMagic(bytes) {
+  if (!Buffer.isBuffer(bytes)) return false;
+  const png = bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  const jpeg = bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  return png || jpeg;
+}
+
 /**
  * 计算 V4 用于部件去重的规范化位图指纹。
  * PNG 使用解码后的 RGBA 像素，避免不同压缩参数或元数据掩盖同一视觉；

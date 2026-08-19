@@ -111,7 +111,7 @@
     },
     "baselineHash": {
       "type": "string",
-      "pattern": "^sha256:[a-f0-9]{64}$"
+      "pattern": "^(?:sha256:[a-f0-9]{64}|[a-f0-9]{40}(?:[a-f0-9]{24})?)$"
     },
     "objective": {
       "type": "string",
@@ -165,6 +165,12 @@
         "authorizedAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "visualConfirmationPrerequisiteFiles": {
+          "$ref": "#/$defs/strings"
+        },
+        "visualConfirmationPrerequisiteFilesSha256": {
+          "$ref": "#/$defs/sha256"
         }
       }
     },
@@ -404,6 +410,12 @@
     "visualDecisionRequired": {
       "type": "boolean"
     },
+    "visualConfirmationAuthorityRefs": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/visualConfirmationAuthorityRef"}
+    },
     "moduleApprovalId": {
       "type": "string"
     },
@@ -613,6 +625,10 @@
         "type": "string"
       }
     },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
     "actions": {
       "type": "array",
       "items": {
@@ -650,8 +666,20 @@
           "phaser-audio-change",
           "phaser-balance-change",
           "phaser-qa-build"
-        ]
+      ]
+    },
+    "visualConfirmationAuthorityRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scene_id", "state_id", "ledger_file", "receipt_id", "receipt_sha256"],
+      "properties": {
+        "scene_id": {"type": "string", "minLength": 1},
+        "state_id": {"type": "string", "minLength": 1},
+        "ledger_file": {"type": "string", "pattern": "^\\.phaser-workflow/user-resolutions/[^/]+\\.json$"},
+        "receipt_id": {"type": "string", "minLength": 1},
+        "receipt_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
       }
+    }
     }
   }
 }

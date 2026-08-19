@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { deflateSync } from "node:zlib";
 import test from "node:test";
 import { main as generateAnnotation } from "./generate_effect_image_annotation.mjs";
 import { renderEffectImageAnnotation } from "./effect_image_annotation_core.mjs";
-import { asciiGlyph, decodePngRgba } from "./effect_image_raster.mjs";
+import { asciiGlyph, decodePngRgba, effectImageFontGlyph, encodePngRgba } from "./effect_image_raster.mjs";
+import { EFFECT_IMAGE_FONT_PROVENANCE } from "./effect_image_font.mjs";
 import { validateAnnotatedPng } from "./validate_visual_manifest.mjs";
 import { deriveAtomicImageRequirements } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
 
@@ -45,7 +46,7 @@ function annotationManifest(targetSha) {
       regions: [
         { id: "runtime-background", scene_id: "main", state_id: "default", layer: "background", bounds: { x: 0, y: 0, width: 32, height: 24 }, owner_type: "runtime-rendered", owner_id: "background", ownership_evidence: "evidence/background-review.md", annotation_number: 1, implementation_plan: { mode: "runtime-program", summary: "运行时绘制背景" } },
         { id: "hero", scene_id: "main", state_id: "default", layer: "actors", bounds: { x: 4, y: 4, width: 8, height: 8 }, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", expected_assets: ["hero"], asset_id: "hero", owner_id: "art", ownership_evidence: "evidence/hero-review.md", annotation_number: 2, implementation_plan: { mode: "generate-now", summary: "本次生成主角" } },
-        { id: "badge", scene_id: "main", state_id: "default", layer: "hud", bounds: { x: 20, y: 2, width: 8, height: 6 }, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "reuse", delivery_kind: "existing-asset", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", expected_assets: ["badge"], asset_id: "badge", owner_id: "art", ownership_evidence: "evidence/badge-review.md", annotation_number: 3, implementation_plan: { mode: "reuse-existing", summary: "复用既有资源", reuse_source: { source_asset_id: "badge", source_manifest: "docs/reuse-snapshot.json", source_manifest_sha256: targetSha, source_file: "badge.png", source_sha256: targetSha, license_record: "docs/license.md", compatibility_evidence: "evidence/badge.png", compatibility_evidence_sha256: targetSha, visual_baseline_id: "baseline", visual_baseline_version: "1.0.0", applicable_scene_ids: ["main"], applicable_state_ids: ["default"] } } },
+        { id: "badge", scene_id: "main", state_id: "default", layer: "hud", bounds: { x: 20, y: 2, width: 8, height: 6 }, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "reuse", delivery_kind: "existing-asset", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", expected_assets: ["badge"], asset_id: "badge", owner_id: "art", ownership_evidence: "evidence/badge-review.md", annotation_number: 3, reuse_snapshot: { schema: "asset-reuse-snapshot/1.0", source_asset_id: "badge", source_manifest_file: "docs/reuse-snapshot.json", source_manifest_sha256: targetSha, source_file: "badge.png", source_sha256: targetSha, compatibility_evidence_file: "evidence/badge-consistency.json", compatibility_evidence_sha256: targetSha, accepted_at: "2026-08-15T00:00:00Z", source_status: "accepted" }, implementation_plan: { mode: "reuse-existing", summary: "复用既有资源" } },
       ],
     },
   };
@@ -54,34 +55,47 @@ function annotationManifest(targetSha) {
   return manifest;
 }
 
+/** 为“复用”标注夹具写入可复算的 accepted asset-reuse-snapshot 证据。 */
+async function addReuseEvidence(root, manifest) {
+  const region = manifest.coverage_audit.regions.find((item) => item.id === "badge");
+  const sourceBytes = minimalPng(8, 6); const compatibilityBytes = Buffer.from(JSON.stringify({ status: "passed" }));
+  const sourceSha = sha256(sourceBytes); const sourceManifest = { status: "accepted", source_file: "badge.png", source_sha256: sourceSha }; const snapshotBytes = Buffer.from(JSON.stringify(sourceManifest));
+  const snapshot = { schema: "asset-reuse-snapshot/1.0", source_asset_id: "badge", source_manifest_file: "docs/reuse-snapshot.json", source_manifest_sha256: sha256(snapshotBytes), source_file: "badge.png", source_sha256: sourceSha, compatibility_evidence_file: "evidence/badge-consistency.json", compatibility_evidence_sha256: sha256(compatibilityBytes), accepted_at: "2026-08-15T00:00:00Z", source_status: "accepted" };
+  region.reuse_snapshot = snapshot;
+  for (const [path, bytes] of [["docs/reuse-snapshot.json", snapshotBytes], ["badge.png", sourceBytes], ["public/badge.png", sourceBytes], ["evidence/badge-consistency.json", compatibilityBytes], ["docs/license.md", Buffer.from("license")]]) { const target = join(root, path); await mkdir(dirname(target), { recursive: true }); await writeFile(target, bytes); }
+}
+
 test("生成独立效果图标注 PNG、右栏说明和绑定提案", async () => {
   const root = await mkdtemp(join(tmpdir(), "effect-annotation-"));
   const original = minimalPng(32, 24); const targetSha = sha256(original); const manifest = annotationManifest(targetSha);
-  const manifestPath = join(root, "visual-assets.json"); await writeFile(join(root, "reference.png"), original); await writeFile(manifestPath, JSON.stringify(manifest));
+  const manifestPath = join(root, "visual-assets.json"); await writeFile(join(root, "reference.png"), original); await addReuseEvidence(root, manifest); await writeFile(manifestPath, JSON.stringify(manifest));
   const code = await generateAnnotation([manifestPath, "--project-root", root, "--scene-id", "main", "--state-id", "default", "--output", "evidence/annotation.png", "--proposal", "evidence/annotation-proposal.json", "--proposal-id", "proposal-1"]);
   assert.equal(code, 0);
   const pngBytes = await readFile(join(root, "evidence/annotation.png")); const decoded = decodePngRgba(pngBytes);
-  assert.equal(decoded.metadata.schema, "effect-image-annotation/png/1"); assert.equal(decoded.metadata.layout, "image-plus-right-panel"); assert(decoded.width > 32); assert(decoded.height >= 24); assert.equal(decoded.metadata.visible_row_count, decoded.metadata.visible_rows.length); assert(decoded.metadata.visible_rows.some((row) => row.kind === "summary" && row.text.includes("SUMMARY REGION") && !row.text.includes("CN[")));
+  assert.equal(decoded.metadata.schema, "effect-image-annotation/png/1"); assert.equal(decoded.metadata.layout, "image-plus-right-panel"); assert(decoded.width > 32); assert(decoded.height >= 24); assert.equal(decoded.metadata.visible_row_count, decoded.metadata.visible_rows.length);
+  const summaryRows = decoded.metadata.visible_rows.filter((row) => row.kind === "summary"); const productionRows = decoded.metadata.visible_rows.filter((row) => row.kind === "production"); assert.deepEqual(summaryRows.map((row) => row.text.split(" ", 1)[0]), ["1", "2", "3"]); assert(summaryRows.some((row) => row.text.startsWith("2 本次生成主角"))); assert(summaryRows.some((row) => row.text.includes("运行时绘制背景"))); assert.equal(productionRows.find((row) => row.annotation_number === 2).production_label, "新生成"); assert.equal(productionRows.find((row) => row.annotation_number === 3).production_label, "复用");
+  const heroSummary = summaryRows.find((row) => row.annotation_number === 2); const heroPixels = []; for (let y = heroSummary.top; y <= heroSummary.bottom; y += 1) for (let x = 40; x < decoded.width; x += 1) { const index = (y * decoded.width + x) * 4; if (decoded.pixels[index] < 230 || decoded.pixels[index + 1] < 230 || decoded.pixels[index + 2] < 230) heroPixels.push(index); } assert(heroPixels.length > 0, "中文摘要必须真实落入 PNG 像素");
   assert.deepEqual(decoded.metadata.plan_labels, { "generate-now": "本次生成", "reuse-existing": "复用既有资源", "runtime-program": "程序实现" }); assert.equal(decoded.metadata.regions.length, 3);
   const proposalBytes = await readFile(join(root, "evidence/annotation-proposal.json")); const proposal = JSON.parse(proposalBytes.toString("utf8"));
-  assert.equal(proposal.numbered_image_mime, "image/png"); assert.equal(proposal.numbered_image_sha256, sha256(pngBytes)); assert.deepEqual(proposal.region_ids, ["runtime-background", "hero", "badge"]); assert.equal(proposal.target_sha256, targetSha);
+  assert.equal(proposal.numbered_image_mime, "image/png"); assert.equal(proposal.numbered_image_sha256, sha256(pngBytes)); assert.deepEqual(proposal.region_ids, ["runtime-background", "hero", "badge"]); assert.equal(proposal.target_sha256, targetSha); assert.equal(proposal.visual_regions.find((region) => region.region_id === "hero").summary, "本次生成主角");
   const tampered = structuredClone(manifest); tampered.coverage_audit.regions[1].bounds.width += 1; const errors = [];
   validateAnnotatedPng(pngBytes, original, tampered.coverage_audit.regions, proposal, "annotation", errors);
   assert(errors.some((item) => item.includes("区域定义 SHA 不一致") || item.includes("atomic_image_requirements") || item.includes("placement")), "篡改区域后旧标注/提案必须失效");
+  const alteredMetadata = structuredClone(decoded.metadata); alteredMetadata.visible_rows.find((row) => row.kind === "summary" && row.annotation_number === 2).text = "2 被篡改的摘要"; const alteredProduction = alteredMetadata.visible_rows.find((row) => row.kind === "production" && row.annotation_number === 2); alteredProduction.text = "复用 METHOD REUSE ORIGIN independent-production DELIVERY existing-asset"; alteredProduction.production_label = "复用"; alteredMetadata.regions.find((region) => region.region_id === "hero").summary = "被篡改的区域摘要"; const alteredPng = encodePngRgba(decoded.width, decoded.height, decoded.pixels, alteredMetadata); const summaryErrors = []; validateAnnotatedPng(alteredPng, original, manifest.coverage_audit.regions, proposal, "annotation", summaryErrors); assert(summaryErrors.some((item) => item.includes("右栏第") && item.includes("未精确呈现")), "删除或修改右栏中文摘要必须被验证器发现"); assert(summaryErrors.some((item) => item.includes("中文摘要与区域合同不一致")), "嵌入区域中文摘要被篡改必须被验证器发现"); assert(summaryErrors.some((item) => item.includes("新生成/复用标识")), "新生成/复用生产标识被篡改必须被验证器发现");
 });
 
 test("标注脚本拒绝重复编号和运行区域挂生产资产", async () => {
   const root = await mkdtemp(join(tmpdir(), "effect-annotation-invalid-")); const original = minimalPng(); const manifest = annotationManifest(sha256(original)); manifest.coverage_audit.regions[2].annotation_number = 2; manifest.coverage_audit.regions[0].asset_id = "forged";
-  await writeFile(join(root, "reference.png"), original); const path = join(root, "visual-assets.json"); await writeFile(path, JSON.stringify(manifest));
+  await writeFile(join(root, "reference.png"), original); await addReuseEvidence(root, manifest); const path = join(root, "visual-assets.json"); await writeFile(path, JSON.stringify(manifest));
   assert.equal(await generateAnnotation([path, "--project-root", root, "--scene-id", "main", "--state-id", "default", "--output", "bad.png"]), 1);
 });
 
 test("标注脚本拒绝坏冻结原图和 PNG 尺寸不匹配", async () => {
   const root = await mkdtemp(join(tmpdir(), "effect-annotation-png-")); const bad = Buffer.from("not-a-png"); const badManifest = annotationManifest(sha256(bad));
-  await writeFile(join(root, "reference.png"), bad); const path = join(root, "bad.json"); await writeFile(path, JSON.stringify(badManifest));
+  await writeFile(join(root, "reference.png"), bad); await addReuseEvidence(root, badManifest); const path = join(root, "bad.json"); await writeFile(path, JSON.stringify(badManifest));
   assert.equal(await generateAnnotation([path, "--project-root", root, "--scene-id", "main", "--state-id", "default", "--output", "bad.png"]), 1);
   const original = minimalPng(32, 24); const mismatch = annotationManifest(sha256(original)); mismatch.coverage_audit.canvases[0].width = 31; mismatch.coverage_audit.regions[0].bounds.width = 31;
-  await writeFile(join(root, "reference.png"), original); await writeFile(path, JSON.stringify(mismatch));
+  await addReuseEvidence(root, mismatch); await writeFile(join(root, "reference.png"), original); await writeFile(path, JSON.stringify(mismatch));
   assert.equal(await generateAnnotation([path, "--project-root", root, "--scene-id", "main", "--state-id", "default", "--output", "mismatch.png"]), 1);
 });
 
@@ -95,13 +109,13 @@ test("PNG 解码器拒绝缺 IEND、尾随垃圾、重复 IHDR 和坏 CRC", () =
 });
 
 test("小画布的图例和边缘区域内容始终夹在画布内", async () => {
-  const root = await mkdtemp(join(tmpdir(), "effect-annotation-edge-")); const original = minimalPng(32, 24); const manifest = annotationManifest(sha256(original)); manifest.coverage_audit.regions[0].bounds = { x: 0, y: 0, width: 2, height: 2 }; manifest.coverage_audit.regions[1].bounds = { x: 24, y: 16, width: 8, height: 8 }; manifest.coverage_audit.regions[1].component_inventory.components[0].placements[0].bounds = { x: 24, y: 16, width: 8, height: 8 }; const path = join(root, "visual-assets.json"); await writeFile(join(root, "reference.png"), original); await writeFile(path, JSON.stringify(manifest));
+  const root = await mkdtemp(join(tmpdir(), "effect-annotation-edge-")); const original = minimalPng(32, 24); const manifest = annotationManifest(sha256(original)); manifest.coverage_audit.regions[0].bounds = { x: 0, y: 0, width: 2, height: 2 }; manifest.coverage_audit.regions[1].bounds = { x: 24, y: 16, width: 8, height: 8 }; manifest.coverage_audit.regions[1].component_inventory.components[0].placements[0].bounds = { x: 24, y: 16, width: 8, height: 8 }; const path = join(root, "visual-assets.json"); await writeFile(join(root, "reference.png"), original); await addReuseEvidence(root, manifest); await writeFile(path, JSON.stringify(manifest));
   assert.equal(await generateAnnotation([path, "--project-root", root, "--scene-id", "main", "--state-id", "default", "--output", "edge.png"]), 0);
   const decoded = decodePngRgba(await readFile(join(root, "edge.png"))); assert.equal(decoded.metadata.regions.length, 3); assert(decoded.metadata.panel_width > 0); assert.equal(decoded.width, decoded.metadata.original_width + decoded.metadata.panel_width);
 });
 
 test("右下边缘摘要自动换侧并夹紧基线", async () => {
-  const root = await mkdtemp(join(tmpdir(), "effect-annotation-summary-edge-")); const original = minimalPng(160, 100); const manifest = annotationManifest(sha256(original)); manifest.coverage_audit.canvases[0] = { scene_id: "main", state_id: "default", width: 160, height: 100 }; manifest.coverage_audit.regions[2].bounds = { x: 140, y: 85, width: 10, height: 10 }; manifest.coverage_audit.regions[2].component_inventory.components[0].placements[0].bounds = { x: 140, y: 85, width: 10, height: 10 }; const path = join(root, "visual-assets.json"); await writeFile(join(root, "reference.png"), original); await writeFile(path, JSON.stringify(manifest));
+  const root = await mkdtemp(join(tmpdir(), "effect-annotation-summary-edge-")); const original = minimalPng(160, 100); const manifest = annotationManifest(sha256(original)); manifest.coverage_audit.canvases[0] = { scene_id: "main", state_id: "default", width: 160, height: 100 }; manifest.coverage_audit.regions[2].bounds = { x: 140, y: 85, width: 10, height: 10 }; manifest.coverage_audit.regions[2].component_inventory.components[0].placements[0].bounds = { x: 140, y: 85, width: 10, height: 10 }; const path = join(root, "visual-assets.json"); await writeFile(join(root, "reference.png"), original); await addReuseEvidence(root, manifest); await writeFile(path, JSON.stringify(manifest));
   assert.equal(await generateAnnotation([path, "--project-root", root, "--scene-id", "main", "--state-id", "default", "--output", "edge-summary.png"]), 0);
   const decoded = decodePngRgba(await readFile(join(root, "edge-summary.png"))); assert(decoded.height >= 100); assert(decoded.metadata.panel_content_complete); assert.equal(decoded.metadata.visible_row_count, decoded.metadata.visible_rows.length); assert(decoded.metadata.panel_width > 0);
 });
@@ -131,6 +145,17 @@ test("单一可复用部件的三个 placement 只保留原子框并完整展示
   assert.deepEqual(heroMeta.placement_ids, ["hero-placement-1", "hero-placement-2", "hero-placement-3"]); assert.equal(decoded.metadata.region_frame_modes.find((item) => item.region_id === "hero").parent_frame_drawn, false); assert.equal(decoded.metadata.visible_rows.filter((row) => row.region_id === "hero" && row.kind === "placement").length, 3); assert.deepEqual(decoded.metadata.visible_rows.find((row) => row.region_id === "hero" && row.kind === "requirement").placement_ids, ["hero-placement-1", "hero-placement-2", "hero-placement-3"]);
 });
 
+test("多组件编号首行显示对应中文摘要和原子资源数量", () => {
+  const original = minimalPng(32, 24); const manifest = annotationManifest(sha256(original)); const region = structuredClone(manifest.coverage_audit.regions[1]); region.implementation_plan.summary = "顶部按钮";
+  const template = region.component_inventory.components[0]; region.component_inventory.components = Array.from({ length: 6 }, (_, index) => { const component = structuredClone(template); component.component_id = `top-button-${index + 1}`; component.atomic_visual_key = `top-button-${index + 1}-visual`; component.placements[0].placement_id = `top-button-${index + 1}-placement`; return component; }); region.component_inventory.component_count = 6; region.component_inventory.visible_instance_count = 6;
+  const png = renderEffectImageAnnotation(original, "reference.png", { width: 32, height: 24 }, [region]); const summary = decodePngRgba(png).metadata.visible_rows.find((row) => row.kind === "summary"); assert.equal(summary.text, "2 顶部按钮（6 个原子资源）");
+});
+
+test("长中文摘要稳定换行并扩展右栏而不越界", () => {
+  const original = minimalPng(12, 10); const manifest = annotationManifest(sha256(original)); const region = structuredClone(manifest.coverage_audit.regions[1]); region.implementation_plan.summary = "顶部按钮状态说明".repeat(12); region.bounds = { x: 1, y: 1, width: 4, height: 4 }; region.component_inventory.components[0].placements[0].bounds = { ...region.bounds };
+  const png = renderEffectImageAnnotation(original, "reference.png", { width: 12, height: 10 }, [region]); const decoded = decodePngRgba(png); const summaries = decoded.metadata.visible_rows.filter((row) => row.kind === "summary"); assert(summaries.length > 1); assert(decoded.width > 12); assert(summaries.every((row) => row.top >= 0 && row.bottom <= decoded.height && row.text.length > 0)); assert.equal(decoded.metadata.visible_row_count, decoded.metadata.visible_rows.length);
+});
+
 test("标注生成器拒绝 SVG/JPG 输出", async () => {
   const root = await mkdtemp(join(tmpdir(), "effect-annotation-format-")); const original = minimalPng(32, 24); const manifest = annotationManifest(sha256(original)); const path = join(root, "visual-assets.json"); await writeFile(join(root, "reference.png"), original); await writeFile(path, JSON.stringify(manifest));
   for (const output of ["evidence/annotation.svg", "evidence/annotation.jpg"]) assert.equal(await generateAnnotation([path, "--project-root", root, "--scene-id", "main", "--state-id", "default", "--output", output]), 1, output);
@@ -141,4 +166,15 @@ test("右栏 ASCII 字模使用标准 5x7 且 A/S 可区分", () => {
   assert.deepEqual(a, [["01110", "10001", "10001", "11111", "10001", "10001", "10001"]]);
   assert.deepEqual(s, [["01111", "10000", "10000", "01110", "00001", "00001", "11110"]]);
   assert.notDeepEqual(a, s);
+});
+
+test("固定 OFL 中文字库为顶部按钮四字提供不同真实像素且覆盖颜色角色生命值", () => {
+  const buttonGlyphs = [..."顶部按钮"].map((character) => effectImageFontGlyph(character)); const uniqueButtonGlyphs = new Set(buttonGlyphs.map((glyph) => JSON.stringify(glyph)));
+  assert.equal(EFFECT_IMAGE_FONT_PROVENANCE.glyph_count, 7540); assert.equal(EFFECT_IMAGE_FONT_PROVENANCE.license, "SIL Open Font License 1.1"); assert.equal(buttonGlyphs.length, 4); assert.equal(uniqueButtonGlyphs.size, 4); assert([..."颜色角色生命值"].every((character) => effectImageFontGlyph(character).some((row) => row.includes("1"))));
+  assert.throws(() => effectImageFontGlyph("𠀀"), /未收录字符/);
+});
+
+test("右栏遇到未知生僻字在生成阶段明确失败，不绘制缺字框继续通过", () => {
+  const original = minimalPng(32, 24); const manifest = annotationManifest(sha256(original)); const region = structuredClone(manifest.coverage_audit.regions[1]); region.implementation_plan.summary = "顶部𠀀";
+  assert.throws(() => renderEffectImageAnnotation(original, "reference.png", { width: 32, height: 24 }, [region]), /未收录字符/);
 });
