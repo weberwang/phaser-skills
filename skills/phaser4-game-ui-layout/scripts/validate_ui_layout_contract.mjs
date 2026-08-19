@@ -55,6 +55,23 @@ function validateFrozenVisualTarget(target, errors) {
   if (target.status !== "frozen") errors.push("frozen_visual_target.status 必须为 frozen");
 }
 
+/** 校验效果图还原布局必须绑定 target、scene/state 和场景合同版本。 */
+function validateSceneReconstructionBinding(document, fidelity, errors) {
+  const binding = document.scene_reconstruction_binding ?? document.sceneReconstructionBinding;
+  // frozen-target 的布局关系是场景还原合同的一部分；普通布局保持 not-applicable 语义。
+  if (binding === undefined) {
+    if (fidelity?.applicability === "frozen-target") errors.push("scene_reconstruction_binding 缺失：frozen-target 必须绑定场景还原合同");
+    return;
+  }
+  if (!isObject(binding)) { errors.push("scene_reconstruction_binding 必须是对象"); return; }
+  for (const field of ["target_sha256", "scene_id", "state_id", "visual_baseline_version", "reconstruction_contract_version"]) if (!isString(binding[field])) errors.push(`scene_reconstruction_binding.${field} 必须是非空字符串`);
+  if (isString(binding.target_sha256) && !SHA_PATTERN.test(binding.target_sha256)) errors.push("scene_reconstruction_binding.target_sha256 格式无效");
+  if (document.frozen_visual_target?.target_sha256 && binding.target_sha256 !== document.frozen_visual_target.target_sha256) errors.push("scene_reconstruction_binding.target_sha256 未绑定当前冻结目标；旧布局合同不得回退 V3");
+  if (document.frozen_visual_target?.visual_baseline_version && binding.visual_baseline_version !== document.frozen_visual_target.visual_baseline_version) errors.push("scene_reconstruction_binding.visual_baseline_version 未绑定当前冻结目标");
+  if (!isObject(binding.target_viewport) || !isNumber(binding.target_viewport.width) || !isNumber(binding.target_viewport.height) || binding.target_viewport.width <= 0 || binding.target_viewport.height <= 0) errors.push("scene_reconstruction_binding.target_viewport 必须包含精确正数尺寸");
+  if (binding.legacy_layout_reused === true || binding.uses_generic_layout === true) errors.push("scene_reconstruction_binding 禁止使用与冻结效果图不一致的旧通用布局");
+}
+
 /** 验证四边几何测量均来自实际目标或运行态。 */
 function validateMeasurement(value, label, errors) {
   if (!isObject(value) || !["x", "y", "width", "height"].every((field) => isNumber(value[field])) || value.width <= 0 || value.height <= 0) errors.push(`${label} 必须包含数值 x/y 和正数 width/height`);
@@ -234,7 +251,7 @@ function validateEvidenceMatrix(matrix, errors) { if (!isObject(matrix)) return;
 /** 验证布局合同并返回稳定结果。 */
 export function validateContract(document) {
   const errors = []; const warnings = []; const specialized = []; validateRoot(document, errors); if (!isObject(document)) return { status: "failed", errors, warnings, specialized_review: specialized };
-  validateScope(document.scope, errors); const fidelity = validateFidelityLifecycle(document, errors); if (fidelity?.applicability === "frozen-target") validateFrozenVisualTarget(document.frozen_visual_target, errors); validateTargets(document.targets, errors); const spaces = validateCoordinateSpaces(document.coordinate_spaces, errors); const ids = validateRegions(document, spaces, errors, specialized); validateScopeRegionIds(document.scope, ids, errors); validateReferenceGraph(document, ids, errors); validateContent(document.content, errors); validateBreakpoints(document.breakpoints, errors); validatePlatformAndScrolling(document, ids, errors); validateDynamicContent(document.dynamic_content, ids, errors); validateOverlays(document.overlay_rules, ids, errors, specialized); validateOverlayCoverage(document, ids, errors); validateInvariants(document.invariants, ids, errors);
+  validateScope(document.scope, errors); const fidelity = validateFidelityLifecycle(document, errors); if (fidelity?.applicability === "frozen-target") validateFrozenVisualTarget(document.frozen_visual_target, errors); validateSceneReconstructionBinding(document, fidelity, errors); validateTargets(document.targets, errors); const spaces = validateCoordinateSpaces(document.coordinate_spaces, errors); const ids = validateRegions(document, spaces, errors, specialized); validateScopeRegionIds(document.scope, ids, errors); validateReferenceGraph(document, ids, errors); validateContent(document.content, errors); validateBreakpoints(document.breakpoints, errors); validatePlatformAndScrolling(document, ids, errors); validateDynamicContent(document.dynamic_content, ids, errors); validateOverlays(document.overlay_rules, ids, errors, specialized); validateOverlayCoverage(document, ids, errors); validateInvariants(document.invariants, ids, errors);
   if (fidelity?.applicability === "frozen-target") {
     validateCriticalAlignments(document.critical_alignments, ids, document.frozen_visual_target, document.scope?.bindings?.code_candidate, fidelity.status, errors);
     if (fidelity.status === "verified") {

@@ -88,7 +88,7 @@ async function selectRegions(manifest, sceneId, stateId, projectRoot) {
     if (plan.mode === "reuse-existing" && productionMethod !== "reuse") throw new Error(`区域 ${region.id} implementation_plan.mode=reuse-existing 必须绑定 production_method=reuse`);
     if (plan.mode === "generate-now" && region.owner_type !== "fixed-production-visual") throw new Error(`区域 ${region.id} 的 generate-now 必须由 fixed-production-visual 负责`);
     if (plan.mode === "reuse-existing" && region.owner_type !== "fixed-production-visual") throw new Error(`区域 ${region.id} 的 reuse-existing 必须由 fixed-production-visual 负责`);
-    if (plan.mode === "runtime-program" && (region.owner_type !== "runtime-data" && region.owner_type !== "runtime-rendered" || Object.hasOwn(region, "asset_id"))) throw new Error(`区域 ${region.id} 的 runtime-program 不得映射生产位图`);
+    if (plan.mode === "runtime-program" && (!["runtime-program", "runtime-data", "runtime-rendered"].includes(region.owner_type) || Object.hasOwn(region, "asset_id"))) throw new Error(`区域 ${region.id} 的 runtime-program 不得映射生产位图`);
     if (plan.mode === "reuse-existing") {
       const source = region.reuse_snapshot;
       if (!isObject(source) || source.schema !== "asset-reuse-snapshot/1.0" || !["source_file", "source_manifest_file", "source_manifest_sha256", "source_sha256", "compatibility_evidence_file", "compatibility_evidence_sha256", "accepted_at", "source_status"].every((field) => nonEmptyString(source[field]))) throw new Error(`区域 ${region.id} 的 reuse_snapshot 字段不完整`);

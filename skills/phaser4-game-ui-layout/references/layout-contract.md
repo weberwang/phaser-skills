@@ -47,3 +47,8 @@ schema 1.1.0 根对象包含 `fidelity`、`frozen_visual_target`、`critical_ali
 `parity_cases` 不可变绑定 scene/state、viewport、DPR、语言、随机种子、输入轨迹、稳定帧/动画采样、合同/基线版本、双方证据、容差、例外 ID 与结论。目标或候选 SHA 不匹配时旧证据不得复用。
 
 specified 可只做结构检查；verified 必须追加 `--check-files --project-root .`，验证冻结原图存在且 SHA 匹配，并拒绝缺失或逃逸项目根目录的目标、运行及 parity 证据路径。
+# 效果图还原布局绑定
+
+当布局服务于 `effect-image` 时，根节点可声明 `scene_reconstruction_binding`，其中必须包含 `target_sha256`、`scene_id`、`state_id`、`target_viewport`、`visual_baseline_version` 和 `reconstruction_contract_version`。V2→V3 合同回对必须校验该绑定；`legacy_layout_reused`、`uses_generic_layout` 或 target SHA 不一致均退回 `V1/PROPOSAL`，不能沿用旧响应式骨架。
+
+目标 viewport 用于精确还原，其他 viewport 只验证关系不变量。布局区域仍须与正式 Scene 结构绑定；整屏截图不能作为交互 Scene、隐藏覆盖层或绝对叠图不能作为布局实现。

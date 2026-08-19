@@ -18,6 +18,7 @@
   },
   "fidelity": {"applicability": "not-applicable", "status": "not-applicable"},
   "frozen_visual_target": null,
+  "scene_reconstruction_binding": null,
   "targets": {
     "min": {"width": 320, "height": 480, "orientation": "portrait"},
     "preferred": {"width": 390, "height": 844, "orientation": "portrait"},

@@ -4,15 +4,15 @@ V3 为每个资源选择一条主路线，并在机器清单记录场景或 shar
 
 | 路线 | 可编辑源文件 | 运行时输出 | 关键验收 | 预算 |
 | --- | --- | --- | --- | --- |
-| UI/图标与字体 `ui-icon-font` | Figma/SVG/矢量源、字体工程、九宫格源图 | SVG 或 PNG/WebP、字体子集、九宫格与布局配置 | 像素密度、透明边缘、图标语法、字体授权、文本安全区、停靠关系 | 字体/图标包体、纹理尺寸、九宫格数量、Draw Call |
+| UI/图标与字体 `ui-icon-font` | Figma/SVG/矢量源、字体工程、九宫格源图 | SVG 或 PNG/WebP、字体子集、九宫格与布局配置 | 像素密度、透明边缘、图标语法、字体授权、文本安全区、停靠关系 | 纹理尺寸、九宫格数量、Draw Call |
 | 像素美术 `pixel-art` | Aseprite/PSD 分层源、调色板 | PNG/WebP、图集与帧数据 | 整数缩放、最近邻采样、调色板、帧边界、像素抖动 | 图集、帧数、纹理内存、采样模式 |
 | 逐帧动画 `frame-animation` | Aseprite/PSD/动画工程 | spritesheet/atlas、帧定义 | 帧序、原点、循环、事件帧、命中与反馈时序 | 采样率、帧数、图集页、纹理内存 |
 | 骨骼动画 `skeletal-animation` | Spine/DragonBones 等工程与依赖贴图 | 骨骼数据、atlas、纹理 | 骨骼层级、蒙皮、混合、事件、运行时版本与许可 | 骨骼/插槽数、贴图、采样、CPU/GPU 成本 |
 | 场景/Tilemap `scene-tilemap` | Tiled/LDtk 工程、tileset 源图 | 地图 JSON、tileset、碰撞/对象层数据 | 接缝、碰撞语义、对象层、坐标系、分块加载 | 图块/图集、地图数据、可见层、Draw Call |
 | VFX/粒子/Shader `vfx-particle-shader` | 粒子配置、shader 源码、噪声/遮罩源图 | 配置、GLSL、纹理 | 动态时序、混合模式、降级、遮挡、色觉差异、设备兼容 | 粒子峰值、过绘、纹理、Draw Call、GPU 时间 |
-| 装饰满幅背景 `decorative-full-bleed` | 分层绘图/3D 工程或可重现生成记录 | PNG/WebP/AVIF 与适配配置 | 屏幕空间、无交互、焦点安全区、裁切/延展、方向切换 | 最大纹理、内存、包体、解码峰值 |
+| 装饰满幅背景 `decorative-full-bleed` | 分层绘图/3D 工程或可重现生成记录 | PNG/WebP/AVIF 与适配配置 | 屏幕空间、无交互、焦点安全区、裁切/延展、方向切换 | 最大纹理、内存、解码峰值 |
 | 世界/玩法环境 `gameplay-environment` | 分层场景、Tilemap、tileset、模块化关卡源 | 独立地块/对象、地图、碰撞及层级数据 | 玩法空间、遮挡、碰撞、导航、交互、动态可读性 | 可见纹理、对象数、过绘、Draw Call、流式加载 |
-| AI 合成栅格拆分 `ai-composite-raster` | 分层重绘文件，或固定全局提示前缀、资产段、状态段、负向段、模型/版本、参数、种子、参考输入与后处理记录 | 独立透明位图及清单（ImageGen 禁止图集；非 ImageGen 图集须另有显式切片合同） | 基线绑定、锚点、框选编号、边缘补绘、透明度、尺度、可复现性、跨资源一致性与授权 | 生成批次、输出数量、纹理内存、图集、包体 |
+| AI 合成栅格拆分 `ai-composite-raster` | 分层重绘文件，或固定全局提示前缀、资产段、状态段、负向段、模型/版本、参数、种子、参考输入与后处理记录 | 独立透明位图及清单（ImageGen 禁止图集；非 ImageGen 图集须另有显式切片合同） | 基线绑定、锚点、框选编号、边缘补绘、透明度、尺度、可复现性、跨资源一致性与授权 | 生成批次、输出数量、纹理内存、图集 |
 
 ## 路线选择规则
 
@@ -28,7 +28,7 @@ V3 为每个资源选择一条主路线，并在机器清单记录场景或 shar
 
 视觉清单 schema 1.5 的新合同字段必须显式填写：`production_origin`、`production_method`、`delivery_kind`、`image_generation_required`、`generation_record_required`、`substitution_policy` 和 `expected_assets`。`production_method` 仅允许 `imagegen`、`authored-raster`、`authored-svg`、`phaser-graphics`、`runtime-program`、`reuse`；`delivery_kind` 仅允许 `raster-image`、`vector-image`、`runtime-drawing`、`runtime-program`、`existing-asset`。`independent-production` 与 `generate-now` 都不能推断 ImageGen；独立生产不等于图片生成，视觉相似不等于生产合同完成。
 
-当 `image_generation_required=true` 时，唯一合格组合是 `production_method=imagegen` 与 `delivery_kind=raster-image`。必须保留独立源/运行时位图、ImageGen 生成记录和完整提示词、MIME、宽高、alpha、输出 SHA，以及已被运行时实际消费的证据；`authored-svg`、`phaser-graphics`、CanvasTexture 和 runtime drawing 均不能等价完成。生成记录禁止裁切冻结参考图，参考图只能作为输入约束。
+当 `image_generation_required=true` 时，唯一合格组合是 `production_method=imagegen` 与 `delivery_kind=raster-image`。必须保留独立源/运行时位图、ImageGen 生成记录和完整提示词、MIME、宽高、alpha、输出 SHA，以及已被运行时实际消费的证据；单图宽高由验证器按逻辑像素 `ceil(max placement width/height × intended_scale_range.max × max_dpr)` 自动计算，`expected_assets.width/height` 和实际输出必须精确等于最小值；`scene_asset_usage.max_dpr` 缺失/非法或 `padding_policy` 不是 `none` 均失败，尺寸计算合同不需要人工审阅。`authored-svg`、`phaser-graphics`、CanvasTexture 和 runtime drawing 均不能等价完成。生成记录禁止裁切冻结参考图，参考图只能作为输入约束。
 
 拆解粒度补充：先完成状态分析，再建立唯一原子 `component_id/atomic_visual_key`；重复视觉实例通过 `placements` 表达，不重复生成资产。② 的六个顶部按钮分别是六个组件；⑧ 的三个相同底部表面可是一组件三 placements；⑨ 的三个动作图标按实际复用关系登记。ImageGen 对每个唯一 component×required state 只接受独立位图，强制 `delivery_mode=individual` 与 `atlas_allowed=false`，编号组图、横向组图和图集均不等价；atlas 只适用于非 ImageGen 方法的显式切片合同。placement 热区有独立 `hotspot_id`，不计入视觉资产。
 

@@ -23,7 +23,7 @@ F2 必须由非作者执行。V2a/V2b 必须由独立美术给出专业视觉结
 1. 逐状态定义第一视觉目标，以及玩家、目标、危险、交互、装饰的优先顺序。
 2. 定义明度、色彩、轮廓和运动区分，可供性（affordance），前摇、命中、受击、奖励反馈时序，遮挡预算及小屏、高速、灰阶、色觉差异阈值。
 3. 只有结构、交互或节奏尚不能被运行证据证明时制作必要灰盒；不得为了流程完整重复已冻结灰盒。
-4. 在生产前定义每场景纹理、图集、帧数、动画采样、纹理内存、包体、过绘、Draw Call 和最大纹理预算。未能量化的阈值标为项目待定义，不能推迟到 V4。
+4. 在生产前定义每场景纹理、图集、帧数、动画采样、纹理内存、过绘、Draw Call 和最大纹理预算。未能量化的阈值标为项目待定义，不能推迟到 V4。
 5. 保留已批准的功能语义、业务状态、交互语义和状态所有权，同时检查构图、信息层级、资源槽、页面模板和布局几何是否足以承载核心玩具、专属场景对象、关键反馈与奖励表达。必要灰盒是功能与结构证据，不是必须原样换皮的最终视觉模板。
 6. 建立全局视觉基线候选，记录基线 ID/版本、风格指纹、主锚点与分系统锚点、世界幻想及形状、比例、镜头、色彩、材质、光源、描边、密度、字体、图标、面板、动画和 VFX 规则，并明确允许变量与禁止项。未冻结内容不得作为批量生产依据。
 
@@ -83,7 +83,7 @@ V2a/V2b 和独立美术 F2 通过后，明确参考/基线且不存在可见偏�
 
 V3 使用仍适用的 V1/V2 `AUTO` 或 `USER_DECISION` 记录、视觉可交付与全局基线；忠实还原还必须绑定冻结视觉目标、忠实度矩阵和已批准例外。
 
-V3 的生产合同字段必须逐 `annotation_number/region_id` 显式记录 `production_origin`、`production_method`、`delivery_kind`、`image_generation_required`、`generation_record_required`、`substitution_policy` 和 `expected_assets`。拆解顺序固定为“先 `state_analysis`，再 `component_inventory`”：所有普通、selected/active、disabled、pressed/hover、victory/defeat/paused 状态必须写 `required` 或 `not-applicable+reason`；`annotation_number` 不是资产数量单位。`component_inventory.component_count` 必须对应可复用部件清单，ImageGen 的 `expected_assets` 必须按 `component_id × required state_id` 一一对应。ImageGen 无条件使用 individual 位图并声明 `atlas_allowed=false`，一张横向组图或图集均不能满足多个部件；仅 authored-raster/authored-svg/reuse 等非 ImageGen 方法可在显式 `atlas_allowed=true` 且每个部件×状态登记完整 `atlas_slice` 时使用图集。交互热区单独登记，不计入视觉资产数量。`independent-production` 与 `generate-now` 不推断 ImageGen；独立生产不等于图片生成，视觉相似不等于生产合同完成。若 `image_generation_required=true`，必须是 `imagegen+raster-image`，并交付独立源/运行时位图、完整提示词与生成记录、MIME/宽高/alpha/SHA、运行时消费证据；SVG、Graphics、CanvasTexture、runtime drawing 和裁切参考图均不合格。实施包的 `visualProductionUnits` 必须与 coverage 一一映射，编号、部件/状态、输出共享、路径、所有权和格式冲突均退回 V3。
+V3 的生产合同字段必须逐 `annotation_number/region_id` 显式记录 `production_origin`、`production_method`、`delivery_kind`、`image_generation_required`、`generation_record_required`、`substitution_policy` 和 `expected_assets`。拆解顺序固定为“先 `state_analysis`，再 `component_inventory`”：所有普通、selected/active、disabled、pressed/hover、victory/defeat/paused 状态必须写 `required` 或 `not-applicable+reason`；`annotation_number` 不是资产数量单位。`component_inventory.component_count` 必须对应可复用部件清单，ImageGen 的 `expected_assets` 必须按 `component_id × required state_id` 一一对应。ImageGen 无条件使用 individual 位图并声明 `atlas_allowed=false`，一张横向组图或图集均不能满足多个部件；验证器按逻辑像素 `ceil(max placement width/height × intended_scale_range.max × max_dpr)` 自动计算 `width/height`，只能使用精确最小尺寸；`scene_asset_usage.max_dpr` 必须为正数，`padding_policy` 必须为 `none`，这部分机器合同不要求 human_review。仅 authored-raster/authored-svg/reuse 等非 ImageGen 方法可在显式 `atlas_allowed=true` 且每个部件×状态登记完整 `atlas_slice` 时使用图集。交互热区单独登记，不计入视觉资产数量。`independent-production` 与 `generate-now` 不推断 ImageGen；独立生产不等于图片生成，视觉相似不等于生产合同完成。若 `image_generation_required=true`，必须是 `imagegen+raster-image`，并交付独立源/运行时位图、完整提示词与生成记录、MIME/宽高/alpha/SHA、运行时消费证据；SVG、Graphics、CanvasTexture、runtime drawing 和裁切参考图均不合格。实施包的 `visualProductionUnits` 必须与 coverage 一一映射，编号、部件/状态、输出共享、路径、所有权和格式冲突均退回 V3。
 
 ImageGen 的源文件、运行时文件和实际输出仅允许 `image/png` 或 `image/jpeg` 以及 `.png`、`.jpg`、`.jpeg` 后缀；通用 authored-raster 可使用其他位图格式。
 
@@ -114,6 +114,30 @@ V4 以文件、性能、加载、响应式、`production_contract_audit` 和一�
 
 当前场景只有在功能代码、V3 规划、全部正式资源 V4 `accepted`、V5 正式接入、占位清理，以及功能、视觉、响应式和性能联合证据全部有效后才能报告完成。全部授权场景和功能关闭前不得据此宣称 G1 完成。
 
+### 人工审阅覆盖（视觉硬门）
+
+所有产生可见内容的视觉阶段都必须绑定结构化人工 reviewer：`reviewer_type=human`、`reviewer_id`、`reviewed_at`、`evidence`、`status`。V2 的完整候选、动态样片和结构化审查、V4 每个 fixed asset/component×state 与同屏组合、V5 full viewport/overlay/diff/逐区域 fidelity 结果及 F2 两位独立 reviewer 均必须逐项人工通过。runtime-program、runtime-rendered、runtime-data 可见区域不豁免。验证器从实际资产和 region 记录交叉推导 COMPLETE 覆盖，不能相信单独的根节点 PASS 或布尔标记。
+
 ### 原子视觉拆解补充
 
 拆解顺序固定为“先状态分析，再按可复用部件拆解”：`component_count` 只计算唯一原子视觉部件，`visible_instance_count` 通过多个 `placements` 表达重复实例。② 的六个顶部按钮分别登记六个 component；⑧ 的三个相同表面可登记一个 component 加三个 placements，⑨ 的三个动作图标按实际复用关系登记。ImageGen 每个唯一 `component×required state` 必须独立位图，强制 `individual + atlas_allowed=false`，不能以编号级组合图或图集替代；atlas 仅适用于非 ImageGen 方法的显式切片合同。交互热区绑定 placement 且不计入视觉资产。状态证据 SHA、冻结目标 SHA、分析 ID 和完成时间必须先于 component inventory。
+# 场景级效果图还原门
+
+效果图路线先建立 `scene_reconstruction_contract`，再执行 V3 资源与正式 Scene 计划。V1 负责冻结视觉事实、整屏构图、目标绑定布局、响应式关系和项目容差；V2 的 F2 审完整场景构图、比例、层级、颜色、材质和装饰密度；V2→V3 检查每个 coverage region（包括 runtime owner）均有 fidelity facts 与实现计划。
+
+V4 除逐资产生产合同外必须完成同屏组合预验收，使用正式 Scene 骨架或相同结构的布局计算。V5 只有在重建合同、layout、V3、V4、F2、F3、逐区域 fidelity、fresh runtime replay 和正式 Scene 消费证据全部通过时才可完成；资源 loaded/used 或 `missing=0` 只能构成工程子门。
+
+### 场景还原硬门与 CLI 回执
+
+效果图路线按 `V1 → V2 → V3 → V4 → V5` 单向推进：V1 冻结 `reference_technical_conflicts`、整屏构图、布局/响应式关系、逐区域事实和项目 tolerance；V2 绑定完整场景候选、动态样片、候选 code/build SHA + diff identity 及结构化 F2；V2→V3 缺字段直接以 `方案缺失` 回 `V1/PROPOSAL`。V3 绑定实施包和正式 Scene 结构；V4 通过 `combination_preacceptance`、`scene_asset_usage` 与资源合同；V5 执行真实文件门、F2 双审、F3 runtime replay 和正式 Scene consumption。
+
+每个 fidelity case 必须带 viewport/DPR/逻辑坐标 `normalization_equivalence` 和非空 `difference_evidence`（不适用时必须附 reason）。每个 region 必须记录 target/candidate、delta、预声明 `tolerance_reference`、result、evidence 和 `exception_ids`；局部临时 tolerance 不具备合同效力。超出数值容差属于验收失败；非数值差异没有精确例外 ID 时也不得 PASS。合同字段缺失是 `方案缺失`，Scene/资源执行偏差是 `执行问题`，证据或错误放行是 `验收问题`，退回最早受影响阶段。
+
+门禁回执示例：
+
+```text
+失败：node scripts/validate_visual_manifest.mjs docs/visual-assets.json --stage V5
+典型输出：V5 必须显式 checkFiles=true；未执行真实文件门，V5 FAIL。
+成功：node scripts/validate_visual_manifest.mjs docs/visual-assets.json --stage V5 --check-files --project-root .
+典型输出：结构合同、组合预验收、F2、fidelity、runtime 和文件证据全部通过，退出码 0。
+```

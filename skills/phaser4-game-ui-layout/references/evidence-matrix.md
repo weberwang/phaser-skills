@@ -4,6 +4,8 @@
 
 冻结视觉目标下，每个 parity case 还必须绑定目标 SHA、当前候选 SHA、scene/state、DPR、输入轨迹、动画采样/稳定帧、视觉基线版本、双方证据、预定义容差、例外 ID 和结论。关键对齐同时保存稳定 element/reference ID、双轴关系、目标/运行几何测量以及实际执行且通过的测试 ID。任何身份变化都使旧 case 失效。
 
+effect-image 的 parity case 不能退化为 `structured-layout-and-independent-review`：必须提供完整 viewport reference/candidate、side-by-side、overlay/diff 和全部 coverage region 的 target/candidate fact、delta、tolerance、result、evidence。任何 `unknown`、`unverified`、`missing` 或未解释差异都使 V5/F2 失败。
+
 `specified` 只冻结目标测量与测试合同，不要求尚未产生的运行证据；`verified` 才要求运行测量、实际证据以及非空且全部通过的 parity cases。普通布局为 `not-applicable`，不创建伪造冻结目标。
 
 ## 最小轴

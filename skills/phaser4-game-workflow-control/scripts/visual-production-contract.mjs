@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 /**
  * 视觉生产合同共享校验模块。
- *
  * 该模块只负责把视觉清单、实施包和门禁证据中的生产事实收敛为一套
  * 机器可读语义。它不调用 ImageGen，也不根据文件后缀或效果图来源猜测
  * 生产方式；所有生产方式都必须在合同中显式声明。
@@ -21,12 +20,17 @@ import { productionFileGateError } from "./visual-file-gate.mjs";
 import { validateFixedVisualProductionMethod, validateVisualDecompositionConfirmationBinding, validateVisualProductionUnitConfirmation, manualDecompositionRegions } from "./visual-decomposition-confirmation.mjs";
 import { validateProductionMethodChangeRequest, validateReuseProductionGate, validateVisualConfirmationGate } from "./visual-confirmation-reuse-gates.mjs";
 import { getVisualRegionDefinitionAliasConflicts, normalizeVisualRegionDefinition } from "../../phaser4-game-asset-integration/scripts/effect_image_annotation_core.mjs";
+import { validateSceneAssetUsageContract, validateSceneCombinationPreacceptance, validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "./scene-reconstruction-contract.mjs";
+import { validateImageGenerationSizeContract } from "./visual-generation-size-contract.mjs";
+import { validateF2ProductionReviews } from "./visual-f2-contract.mjs";
 export { atomicImageRequirementsEqual, canonicalStateId, deriveAtomicImageRequirements, hasRuntimeImplementationField, normalizeAtomicImageRequirements, normalizeProjectRelativePath, validateComponentAuditEvidence, validateComponentReviewCoverage, validateVisualComponentContract, normalizeComponentExpectedAsset, visualComponentContractDifferences } from "./visual-component-contract.mjs";
 export { FIXED_VISUAL_IMAGE_METHODS, PROGRAM_VISUAL_METHODS, manualDecompositionRegions, requiresManualVisualDecomposition, validateFixedVisualProductionMethod, validateVisualDecompositionConfirmationBinding, validateVisualDecompositionConfirmationRecord, validateVisualDecompositionConfirmations, validateVisualProductionUnitConfirmation } from "./visual-decomposition-confirmation.mjs";
 export { REUSE_SCHEMA, validateProductionMethodChangeRequest, validateReuseProductionGate, validateVisualConfirmationGate } from "./visual-confirmation-reuse-gates.mjs";
 export { normalizeProductionExpectedAssets as normalizeExpectedAssets } from "./visual-atomic-contract.mjs";
 export { isPngOrJpegMagic, isRasterDelivery, resolveOutputMetadata } from "./visual-raster-contract.mjs";
 /** 视觉生产合同允许的固定来源。来源不决定生产方法。 */
+export { validateSceneAssetUsageContract, validateSceneCombinationPreacceptance, validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "./scene-reconstruction-contract.mjs";
+export { validateF2ProductionReviews } from "./visual-f2-contract.mjs";
 export const PRODUCTION_ORIGINS = new Set(["bitmap-decomposition", "independent-production"]);
 /** 视觉生产合同允许的显式生产方式。新增方式必须先更新合同和验收器。 */
 export const PRODUCTION_METHODS = new Set([
@@ -68,7 +72,8 @@ export function productionContractError(context = {}, message, details = {}) {
   const state = details.state_id ?? details.stateId ?? context.state_id ?? context.stateId;
   const componentLabel = component !== undefined || state !== undefined ? ` component_id=${component ?? "?"} state_id=${state ?? "?"}` : "";
   const suffix = missing ? ` 缺失=${missing}` : "";
-  return `[${stage}] annotation_number=${annotation} region_id=${region}${componentLabel} expected_method=${expected} observed_method=${observed}${suffix} ${message}`;
+  const returnStage = details.returnStage ?? context.returnStage ?? (stage === "V1" || stage === "V2" ? "V1/PROPOSAL" : stage === "F2" || stage === "F3" || stage === "V5" ? "VALIDATING" : stage);
+  return `[${stage}] annotation_number=${annotation} region_id=${region}${componentLabel} expected_method=${expected} observed_method=${observed} 根因=${details.rootCause ?? context.rootCause ?? (returnStage === "V1/PROPOSAL" ? "方案缺失" : stage === "V4" || stage === "V3" ? "执行问题" : "验收问题")}${suffix} ${message} 应退回阶段=${returnStage}`;
 }
 /** 创建带区域身份的校验上下文，避免门禁错误失去定位信息。 */
 export function contractContext(region = {}, stage = "V3", extra = {}) {
@@ -254,6 +259,7 @@ export function validateImageGenerationContract(asset, contract, context = {}, o
   const consumption = asset?.runtime_consumption;
   if (!isObject(consumption) || !["passed", "consumed", "PASS"].includes(String(consumption.status).toLowerCase())) error("缺少带身份绑定的运行时实际消费 evidence", { missing: "runtime_consumption" });
   else errors.push(...validateEvidenceIdentity(consumption, label, options.identity ?? {}, { projectRoot: options.projectRoot }));
+  if (context.region?.scene_asset_usage || context.region?.sceneAssetUsage || contract?.scene_asset_usage || contract?.sceneAssetUsage || options.sceneAssetUsage) errors.push(...validateImageGenerationSizeContract(asset, contract, context, { ...options, expectedAsset: expectedComponent ?? options.expectedAsset, contract }));
   return errors;
 }
 /** 校验效果图 coverage 的逐 annotation_number 生产合同。 */
@@ -449,6 +455,7 @@ export function auditProductionContract(manifest, options = {}) {
   const assets = new Map((Array.isArray(manifest?.assets) ? manifest.assets : []).filter(isObject).map((asset) => [asset.id, asset]));
   const requests = [...(Array.isArray(manifest?.change_requests) ? manifest.change_requests : []), ...(Array.isArray(manifest?.production_method_change_requests) ? manifest.production_method_change_requests : []), ...(isObject(manifest?.production_method_change_request) ? [manifest.production_method_change_request] : [])];
   const requestById = new Map(requests.filter(isObject).map((request) => [request.changeRequestId ?? request.change_request_id ?? request.id, request]));
+  const reconstructionRegions = new Map((manifest?.scene_reconstruction_contract?.coverage_regions ?? manifest?.scene_reconstruction_contract?.coverageRegions ?? []).filter(isObject).map((region) => [region.region_id ?? region.regionId ?? region.id, region]));
   const identity = manifestEvidenceIdentity(manifest); const generationRecordIds = new Map(); const rasterFingerprints = new Map();
   if (!nonEmptyString(manifest?.workItemId)) errors.push("[V4] effect-image 清单缺少根 workItemId，无法绑定当前 Work Item");
   if (!nonEmptyString(manifest?.candidateVersion)) errors.push("[V4] effect-image 清单缺少根 candidateVersion，无法绑定当前候选版本");
@@ -475,6 +482,9 @@ export function auditProductionContract(manifest, options = {}) {
     const expected = resolveProductionContract(region);
     errors.push(...validateReuseProductionGate(region, context, options));
     errors.push(...validateVisualComponentContract(region, context, { requireImageAssets: true }));
+    // 新版场景合同启用后，V4 还要验证资源放进目标 Scene 后的显示、材质和邻接关系；
+    // 没有合同的旧夹具由上游场景合同门统一报“方案缺失”，不在工程审计重复造错。
+    if (manifest?.scene_reconstruction_contract) errors.push(...validateSceneAssetUsageContract({ ...region, ...(reconstructionRegions.get(region.id) ?? {}) }, unit, "V4"));
     errors.push(...validateComponentAuditEvidence(region, unit, context, { manifestAssets: assets }));
     if (expected.image_generation_required === true) {
       const expectedComponents = Array.isArray(expected.expected_assets) ? expected.expected_assets.map(normalizeComponentExpectedAsset) : [];
@@ -641,27 +651,6 @@ export function validateProductionAuditShape(manifest, options = {}) {
   if (regions.some((region) => !keys.has(`${region.annotation_number}\0${region.id}`))) errors.push("[V4] annotation_number=* region_id=* expected_method=visual-production observed_method=missing 缺失=production_contract_audit.units：未覆盖全部固定视觉区域");
   return errors;
 }
-/** 校验 F2 必须同时完成视觉一致性和生产合同双审。 */
-export function validateF2ProductionReviews(f2, context = {}, options = {}) {
-  const errors = [];
-  const label = context.stage ?? "F2";
-  const error = (message, missing = "") => errors.push(productionContractError({ stage: label, annotation_number: context.annotation_number ?? "*", region_id: context.region_id ?? "*", expectedMethod: "dual-review", observedMethod: "missing" }, message, { missing }));
-  if (!isObject(f2)) { error("F2 gateResult 缺失", "F2"); return errors; }
-  const reviews = [];
-  for (const field of ["visual_fidelity_review", "production_contract_review"]) {
-    const review = f2[field];
-    if (!isObject(review)) { error(`缺少 ${field}`, field); continue; }
-    reviews.push(review);
-    if (!["passed", "PASS"].includes(String(review.status))) error(`${field}.status 必须为 passed`);
-    if (!nonEmptyString(review.review_id ?? review.reviewId)) error(`${field} 缺少 review_id`, `${field}.review_id`);
-    if (!nonEmptyString(review.reviewer)) error(`${field} 缺少 reviewer`, `${field}.reviewer`);
-    if (!nonEmptyString(review.evidence)) error(`${field} 缺少 evidence`, `${field}.evidence`);
-    if (options.requireEvidenceIdentity) errors.push(...validateEvidenceIdentity(review, { stage: label, annotation_number: context.annotation_number ?? "*", region_id: context.region_id ?? field }, options.identity ?? {}, options));
-  }
-  if (reviews.length === 2 && (reviews[0].reviewer === reviews[1].reviewer || (reviews[0].reviewer_id && reviews[0].reviewer_id === reviews[1].reviewer_id))) error("visual_fidelity_review 与 production_contract_review 必须由独立 reviewer 完成");
-  if (!["passed", "PASS"].includes(String(f2.overall_status ?? f2.overallStatus))) error("F2 overall_status 必须为 passed，双审不能只靠单一 reviewer");
-  return errors;
-}
 /** 校验 V5 运行态硬门，要求审计、双审、重放、freshness 和实际消费全部存在。 */
 export function validateV5ProductionGate(manifest, options = {}) {
   const errors = [];
@@ -690,6 +679,9 @@ export function validateV5ProductionGate(manifest, options = {}) {
       else errors.push(...validateEvidenceIdentity(item, { ...context, annotation_number: index + 1, region_id: `fidelity-case-${index + 1}` }, options.identity ?? manifestEvidenceIdentity(manifest), options));
     }
   });
+  if (options.requireSceneReconstruction === true) {
+    errors.push(...validateSceneReconstructionGate(manifest, { stage: "V5" }));
+  }
   const runtimeConsumption = gate.runtime_consumption;
   if (!isObject(runtimeConsumption) || !["passed", "consumed", "PASS"].includes(String(runtimeConsumption.status).toLowerCase())) error("V5 缺少带身份绑定的运行时实际消费 evidence", "runtime_consumption");
   else if (options.requireEvidenceIdentity) errors.push(...validateEvidenceIdentity(runtimeConsumption, context, options.identity ?? manifestEvidenceIdentity(manifest), options));
@@ -709,11 +701,12 @@ export async function validateV5VisualManifest(manifest, options = {}) {
   const identity = manifestEvidenceIdentity(manifest);
   const evidenceOptions = { requireEvidenceIdentity: options.requireEvidenceIdentity !== false, identity, projectRoot: options.projectRoot, checkFiles: options.checkFiles === true, targetFrozenAt: manifest?.reference_target?.frozen_at, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority: options.authority };
   const errors = [
+    ...validateSceneReconstructionGate(manifest, { stage: "V5" }),
     ...validateVisualProductionCoverage(manifest, { stage: "V3", requireManualConfirmation: true, projectRoot: options.projectRoot, checkFiles: options.checkFiles === true, targetSha: identity.target, targetFrozenAt: manifest?.reference_target?.frozen_at, candidateSha: identity.candidate, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority: options.authority }),
     ...validateProductionAuditShape(manifest, { ...options, authority: options.authority }),
-    ...validateF2ProductionReviews(manifest?.f2_review ?? manifest?.f2_reviews, { stage: "F2" }, evidenceOptions),
+    ...validateF2ProductionReviews(manifest?.f2_review ?? manifest?.f2_reviews, { stage: "F2" }, { ...evidenceOptions, requireVisualStructure: true }),
     ...validateComponentReviewCoverage(manifest, manifest?.f2_review ?? manifest?.f2_reviews, "F2"),
-    ...validateV5ProductionGate(manifest, { ...options, ...evidenceOptions }),
+    ...validateV5ProductionGate(manifest, { ...options, ...evidenceOptions, requireSceneReconstruction: true }),
   ];
   // 总门始终复核 V4 的方法/交付一致性；只有传入项目根目录时才额外检查实际文件 SHA。
   errors.push(...await auditProductionContract(manifest, { projectRoot: options.projectRoot, checkFiles: options.checkFiles === true, targetSha: identity.target, targetFrozenAt: manifest?.reference_target?.frozen_at, candidateSha: identity.candidate, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority: options.authority }));
@@ -878,8 +871,14 @@ export function validateVisualImplementationPackageBinding(pkg, options = {}) {
   const errors = [];
   const manifestFile = pkg?.visualManifestFile;
   const manifestSha = pkg?.visualManifestSha256;
-  const context = { stage: "V3", annotation_number: "*", region_id: "*", expectedMethod: "visual-production", observedMethod: "missing" };
+  const requestedStage = options.current_stage ?? options.currentStage ?? pkg?.current_stage ?? pkg?.currentStage;
+  const stage = requestedStage === undefined || requestedStage === null ? "V3" : String(requestedStage).toUpperCase();
+  const context = { stage, annotation_number: "*", region_id: "*", expectedMethod: "visual-production", observedMethod: "missing" };
   const error = (message, missing = "") => errors.push(productionContractError(context, message, { missing }));
+  if (!["V3", "V4", "V5"].includes(stage)) {
+    error(`current_stage 未知：${String(requestedStage)}；禁止静默回落到 V3`, "current_stage");
+    return errors;
+  } if (stage === "V5" && options.checkFiles !== true) error("current_stage=V5 必须显式 checkFiles=true；未执行真实文件门，V5 FAIL", "checkFiles=true");
   if (units === undefined) error("视觉实施包缺少 visualProductionUnits，不能绕过 coverage 映射", "visualProductionUnits");
   if (!nonEmptyString(manifestFile)) { error("Implementation Package 缺少 visualManifestFile", "visualManifestFile"); return errors; }
   if (!isSha256(manifestSha)) error("Implementation Package 缺少 visualManifestSha256", "visualManifestSha256");
@@ -900,9 +899,21 @@ export function validateVisualImplementationPackageBinding(pkg, options = {}) {
   if (manifest?.workItemId !== pkg?.workItemId) error("visual manifest.workItemId 未绑定当前 Implementation Package workItemId", "workItemId");
   if (manifest?.candidateVersion !== pkg?.candidateVersion) error("visual manifest.candidateVersion 未绑定当前 Implementation Package candidateVersion", "candidateVersion");
   const authority = options.authority;
+  // current_stage 由实施包显式决定；远程场景合同门与本地用户拆解确认门必须同时通过。
+  if (requestedStage !== undefined && requestedStage !== null) errors.push(...validateSceneReconstructionGate(manifest, { stage }));
   errors.push(...validateVisualDecompositionConfirmationBinding(pkg, manifest, { stage: "V3", projectRoot, targetSha: manifest?.reference_target?.target_sha256, candidateSha: manifest?.candidate_identity?.sha256, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority }));
-  errors.push(...validateVisualProductionCoverage(manifest, { stage: "V3", requireManualConfirmation: true, checkFiles: true, projectRoot, targetSha: manifest?.reference_target?.target_sha256, targetFrozenAt: manifest?.reference_target?.frozen_at, candidateSha: manifest?.candidate_identity?.sha256, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority }));
+  errors.push(...validateVisualProductionCoverage(manifest, { stage, requireManualConfirmation: true, checkFiles: options.checkFiles === true || stage === "V3", projectRoot, targetSha: manifest?.reference_target?.target_sha256, targetFrozenAt: manifest?.reference_target?.frozen_at, candidateSha: manifest?.candidate_identity?.sha256, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority }));
   errors.push(...validateVisualProductionUnits(pkg, manifest, options));
+  if (stage === "V4" || stage === "V5") {
+    errors.push(...validateProductionAuditShape(manifest));
+    errors.push(...auditProductionContract(manifest, { projectRoot, checkFiles: options.checkFiles === true }));
+  }
+  if (stage === "V5") {
+    const identity = manifestEvidenceIdentity(manifest);
+    errors.push(...validateF2ProductionReviews(manifest?.f2_review ?? manifest?.f2_reviews, { stage: "F2" }, { requireEvidenceIdentity: true, identity, projectRoot, requireVisualStructure: true }));
+    errors.push(...validateComponentReviewCoverage(manifest, manifest?.f2_review ?? manifest?.f2_reviews, "F2"));
+    errors.push(...validateV5ProductionGate(manifest, { requireEvidenceIdentity: true, identity, projectRoot, requireSceneReconstruction: true }));
+  }
   return errors;
 }
 /** 校验视觉实施单元被委派给正确的代理，并继承其输出所有权。 */
@@ -930,8 +941,12 @@ export function validateVisualEvidence(evidence, pkg, options = {}) {
   const baseIdentity = manifestEvidenceIdentity(manifest); const identity = { ...baseIdentity, diff: options.diffFingerprint ?? baseIdentity.diff };
   for (const [key, label] of [["candidate", "candidate"], ["target", "target"], ["baseline", "baseline"], ["diff", "diff"]]) if (!nonEmptyString(identity[key])) errors.push(`[V5] annotation_number=* region_id=* expected_method=production-contract observed_method=missing 缺失=${label}_identity：视觉证据缺少当前身份绑定`);
   const authority = options.authority;
-  errors.push(...validateProductionAuditShape(manifest, { authority, projectRoot: options.projectRoot, checkFiles: Boolean(options.projectRoot) })); errors.push(...auditProductionContract(manifest, { projectRoot: options.projectRoot, checkFiles: Boolean(options.projectRoot), targetSha: identity.target, targetFrozenAt: manifest?.reference_target?.frozen_at, candidateSha: identity.candidate, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority }));
-  const evidenceOptions = { requireEvidenceIdentity: true, identity, projectRoot: options.projectRoot, checkFiles: Boolean(options.projectRoot), targetFrozenAt: manifest?.reference_target?.frozen_at, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority }; errors.push(...validateF2ProductionReviews(evidence?.gateResults?.F2, { stage: "F2" }, evidenceOptions));
+  // Evidence/COMPLETE 只允许消费新版完整场景合同，资源工程子门不能单独形成视觉 PASS。
+  errors.push(...validateSceneReconstructionGate(manifest, { stage: "V5" }));
+  errors.push(...validateProductionAuditShape(manifest, { authority, projectRoot: options.projectRoot, checkFiles: Boolean(options.projectRoot) }));
+  errors.push(...auditProductionContract(manifest, { projectRoot: options.projectRoot, checkFiles: Boolean(options.projectRoot), targetSha: identity.target, targetFrozenAt: manifest?.reference_target?.frozen_at, candidateSha: identity.candidate, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority }));
+  const evidenceOptions = { requireEvidenceIdentity: true, identity, projectRoot: options.projectRoot, checkFiles: Boolean(options.projectRoot), targetFrozenAt: manifest?.reference_target?.frozen_at, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority };
+  errors.push(...validateF2ProductionReviews(evidence?.gateResults?.F2, { stage: "F2" }, { ...evidenceOptions, requireVisualStructure: true }));
   // Evidence 的 F2 可能独立于 manifest 重新提交；必须再次逐 component×state 绑定 V3 expected_assets，不能只验证双审摘要。
   errors.push(...validateComponentReviewCoverage(manifest, evidence?.gateResults?.F2, "F2"));
   const replay = evidence?.gateResults?.F3?.runtime_replay ?? evidence?.runtime_replay;

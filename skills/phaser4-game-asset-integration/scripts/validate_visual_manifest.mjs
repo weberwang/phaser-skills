@@ -15,8 +15,13 @@ import { validateReuseProductionGate } from "../../phaser4-game-workflow-control
 import { validateFormalAnnotationPng } from "./visual-annotation-evidence.mjs";
 import { auditProductionContractByGroups, confirmationAuthorityBase, validateConfirmationGroups, validateImplementationPlan as validateImplementationPlanContract, validateManualConfirmationEvidence, validateReusePlanRelation, validateV5ProductionGateByGroups } from "./visual-manifest-confirmation.mjs";
 import { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, isSha256, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateComponentReviewCoverage, validateEvidenceIdentity, validateF2ProductionReviews, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
+import { validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "../../phaser4-game-workflow-control/scripts/scene-reconstruction-contract.mjs";
+import { validateHumanReview, validateVisualHumanReviewCompletion } from "../../phaser4-game-workflow-control/scripts/visual-human-review-contract.mjs";
+import { validateImageGenerationSizeManifest } from "../../phaser4-game-workflow-control/scripts/visual-generation-size-contract.mjs";
 export { computeRegionDefinitionSha256 } from "./effect_image_annotation_core.mjs";
 export { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateComponentReviewCoverage, validateEvidenceIdentity, validateF2ProductionReviews, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
+export { validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "../../phaser4-game-workflow-control/scripts/scene-reconstruction-contract.mjs";
+export { calculateComponentDisplaySize, validateImageGenerationSizeContract, validateImageGenerationSizeManifest } from "../../phaser4-game-workflow-control/scripts/visual-generation-size-contract.mjs";
 
 export const ALLOWED_ROUTES = new Set(["ui-icon-font", "pixel-art", "frame-animation", "skeletal-animation", "scene-tilemap", "vfx-particle-shader", "decorative-full-bleed", "gameplay-environment", "ai-composite-raster"]);
 export const ALLOWED_STATUSES = new Set(["planned", "producing", "review", "accepted", "rejected", "replaced"]);
@@ -24,11 +29,12 @@ const BASELINE_BOUND_STATUSES = new Set(["producing", "review", "accepted"]);
 const SCHEMA_VERSION = "1.5";
 const STYLE_FINGERPRINT_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
-const COVERAGE_OWNER_TYPES = new Set(["runtime-data", "runtime-rendered", "fixed-production-visual"]);
+// runtime-program 是实现方式，不是免除视觉责任的 owner 类型；它必须继续回填完整场景事实。
+const COVERAGE_OWNER_TYPES = new Set(["runtime-program", "runtime-data", "runtime-rendered", "fixed-production-visual"]);
 const PRODUCTION_ORIGINS = new Set(["bitmap-decomposition", "independent-production"]);
 const RECONCILIATION_DOMAINS = new Set(["scope", "state-machine", "input", "collision", "module-scene-ownership", "coordinate-space", "layout", "budget"]);
 const AI_REQUIRED_TEXT_FIELDS = ["global_prompt_prefix", "asset_prompt", "state_prompt", "negative_prompt", "model", "model_version"];
-const REQUIRED_BUDGETS = new Set(["max_texture_size", "texture_memory_mb", "package_size_mb", "max_atlases", "max_frames", "animation_sample_fps", "max_overdraw", "max_draw_calls"]);
+const REQUIRED_BUDGETS = new Set(["max_texture_size", "texture_memory_mb", "max_atlases", "max_frames", "animation_sample_fps", "max_overdraw", "max_draw_calls"]);
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const PNG_CRC_TABLE = Array.from({ length: 256 }, (_, value) => {
   let crc = value;
@@ -97,15 +103,6 @@ function validateContractReconciliation(gate, target, candidate, errors) {
 
 function validateImplementationPlan(plan, region, assetById, baseline, label, errors) {
   return validateImplementationPlanContract(plan, region, assetById, label, errors);
-/*
-    if (nonEmptyString(source.source_file) && !/\.(?:png|jpe?g)$/i.test(source.source_file)) errors.push(`${label}.reuse_snapshot.source_file 必须是 PNG/JPG 位图`);
-    if (nonEmptyString(source.source_manifest_file) && !source.source_manifest_file.toLowerCase().endsWith(".json")) errors.push(`${label}.reuse_snapshot.source_manifest_file 必须是 JSON 快照文件`);
-    for (const field of ["source_sha256", "source_manifest_sha256", "compatibility_evidence_sha256"]) if (nonEmptyString(source[field]) && !SHA_PATTERN.test(source[field])) errors.push(`${label}.reuse_snapshot.${field} 格式无效`);
-    if (nonEmptyString(source.accepted_at) && Number.isNaN(Date.parse(source.accepted_at))) errors.push(`${label}.reuse_snapshot.accepted_at 必须是可解析时间`);
-    if (source.source_status !== "accepted") errors.push(`${label}.reuse_snapshot.source_status 必须为 accepted`);
-    if (!asset || asset.status !== "accepted") errors.push(`${label}.reuse-existing 必须映射 status=accepted 的既有资源`);
-    if (nonEmptyString(source.source_asset_id) && source.source_asset_id !== region.asset_id) errors.push(`${label}.reuse_snapshot.source_asset_id 必须等于区域 asset_id`);
-*/
 }
 
 /** 验证 ownership-first 覆盖审计、实现分类及条件编号确认。 */
@@ -162,7 +159,7 @@ function validateCoverageAudit(audit, target, assetIds, errors, assetById = new 
       rectangles.push(region.bounds);
       coveredRects.set(key, rectangles);
     }
-    if (!COVERAGE_OWNER_TYPES.has(canonicalRegion.owner_type)) errors.push(`${label}.owner_type 必须为 runtime-data、runtime-rendered 或 fixed-production-visual`);
+    if (!COVERAGE_OWNER_TYPES.has(canonicalRegion.owner_type)) errors.push(`${label}.owner_type 必须为 runtime-program、runtime-data、runtime-rendered 或 fixed-production-visual`);
     if (canonicalRegion.owner_type === "fixed-production-visual") {
       if (!PRODUCTION_ORIGINS.has(canonicalRegion.production_origin)) errors.push(`${label}.production_origin 必须为 bitmap-decomposition 或 independent-production`);
       const declaredAssetIds = Array.isArray(canonicalRegion.asset_ids)
@@ -230,6 +227,7 @@ function validateFidelityCases(cases, target, candidate, baseline, errors, { req
   cases.forEach((item, index) => {
     const label = `fidelity_cases[${index}]`;
     if (!isObject(item)) { errors.push(`${label} 必须是对象`); return; }
+    errors.push(...validateHumanReview(item.human_review, { stage: requireCompleteCoverage ? "V5" : "V3", scene_id: item.scene_id, state_id: item.state_id, returnStage: requireCompleteCoverage ? "V4/F2" : "V2/V3", rootCause: "验收问题" }, { requirePassed: requireCompleteCoverage, returnStage: requireCompleteCoverage ? "V4/F2" : "V2/V3", rootCause: "验收问题" }));
     for (const field of ["id", "target_sha256", "candidate_sha256", "scene_id", "state_id", "language", "input_trace", "animation_sample", "layout_contract_version", "visual_baseline_version", "conclusion"]) if (!nonEmptyString(item[field])) errors.push(`${label}.${field} 必须是非空字符串`);
     if (nonEmptyString(item.scene_id) && !target?.scene_ids?.includes(item.scene_id)) errors.push(`${label}.scene_id 不在 reference_target.scene_ids 范围内`);
     if (nonEmptyString(item.state_id) && !target?.state_ids?.includes(item.state_id)) errors.push(`${label}.state_id 不在 reference_target.state_ids 范围内`);
@@ -394,21 +392,26 @@ export function validateManifest(data, options = {}) {
   const strictProductionContract = reconstruction?.applicability === "effect-image";
   if (strictProductionContract) {
     const stage = requestedStage ?? (reconstruction.lifecycle === "v5-complete" ? "V5" : "V3");
+    // effect-image 没有场景合同就不是完整还原工件；即使调用方未传 stage，也必须明确退回 V1。
+    errors.push(...validateSceneReconstructionGate(data, { stage }));
     const fileGateError = productionFileGateError(data, options, stage);
     if (fileGateError) errors.push(fileGateError);
     // validateManifest 是同步结构门；真实确认文件和权威身份由 checkManifestFiles 的共享硬门复算。
     errors.push(...validateVisualProductionCoverage(fixedVisualAuditManifest(data), { stage: "V3", requireManualConfirmation: false }));
+    errors.push(...validateImageGenerationSizeManifest(data, { stage }));
     const requireAudit = stage === "V4" || stage === "V5" || reconstruction.lifecycle === "v5-complete";
     const requireV5 = stage === "V5" || reconstruction.lifecycle === "v5-complete";
+    // V4/V5 视觉硬门从逐资产、逐区域记录推导人工覆盖，不能信任根节点布尔值。
+    if (requireAudit) errors.push(...validateVisualHumanReviewCompletion(data, { stage }));
     if (requireV5) {
       // V5 是不可绕过的总门：即使对象缺失也必须产出缺失错误，不能靠“没有对象”跳过审计。
       errors.push(...validateProductionAuditShape(fixedVisualAuditManifest(data), { ...options, projectRoot: options.projectRoot, checkFiles: options.checkFiles }));
-      errors.push(...validateF2ProductionReviews(data.f2_review ?? data.f2_reviews, { stage: "F2" }, { requireEvidenceIdentity: true, identity: manifestEvidenceIdentity(data) }));
+      errors.push(...validateF2ProductionReviews(data.f2_review ?? data.f2_reviews, { stage: "F2" }, { requireEvidenceIdentity: true, identity: manifestEvidenceIdentity(data), requireVisualStructure: true }));
       errors.push(...validateComponentReviewCoverage(data, data.f2_review ?? data.f2_reviews, "F2"));
       // 同步 API 只做 V5 结构门；逐编号 accepted/manual 文件证据在后续
       // checkManifestFiles 中用原始 coverage 调用共享权威确认门，避免同步校验伪造“已读文件”。
       const structuralGate = { ...data, coverage_audit: isObject(data.coverage_audit) ? { ...data.coverage_audit, regions: [] } : data.coverage_audit };
-      errors.push(...validateV5ProductionGate(structuralGate, { requireEvidenceIdentity: true }));
+      errors.push(...validateV5ProductionGate(structuralGate, { requireEvidenceIdentity: true, requireSceneReconstruction: true }));
     } else if (requireAudit) {
       // V3-ready 清单进入 V4 文件验收时，production_contract_audit 也必须先存在。
       errors.push(...validateProductionAuditShape(fixedVisualAuditManifest(data), { ...options, projectRoot: options.projectRoot, checkFiles: options.checkFiles }));

@@ -199,7 +199,7 @@ function validateEvidence(evidence) {
 /** 校验 Implementation Package 独立结构。 */
 function validateImplementationPackageShape(pkg, options = {}) {
   requireFields(pkg, PACKAGE_REQUIRED, 'Implementation Package');
-  const extra = Object.keys(pkg).filter((field) => !PACKAGE_REQUIRED.includes(field) && !['visualProductionUnits', 'visualManifestFile', 'visualManifestSha256', 'visualContractVersion', 'candidateVersion', 'visualDecompositionConfirmations'].includes(field));
+  const extra = Object.keys(pkg).filter((field) => !PACKAGE_REQUIRED.includes(field) && !['visualProductionUnits', 'visualManifestFile', 'visualManifestSha256', 'visualContractVersion', 'candidateVersion', 'visualDecompositionConfirmations', 'current_stage', 'currentStage', 'sceneReconstructionContract', 'scene_reconstruction_contract'].includes(field));
   if (extra.length) fail(`Implementation Package 包含 Schema 禁止字段：${extra.join('、')}`);
   requireBaselineHash(pkg.baselineHash, 'Implementation Package baselineHash');
   for (const field of ['approvedRequirements', 'allowedPaths', 'forbiddenPaths', 'expectedAddedFiles', 'expectedDeletedFiles', 'testScope', 'outOfScope', 'definitionOfDone', 'stopConditions']) requireStringArray(pkg[field], `Implementation Package.${field}`);
