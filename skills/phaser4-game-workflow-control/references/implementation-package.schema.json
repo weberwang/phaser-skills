@@ -213,7 +213,7 @@
               "substitution_policy": {"const": "user-change-request-only"},
               "component_inventory": {"required": ["delivery_mode", "atlas_allowed"], "properties": {"delivery_mode": {"const": "individual"}, "atlas_allowed": {"const": false}}},
               "expected_assets": {"items": {"$ref": "#/$defs/imageGenerationExpectedAsset"}},
-              "scene_asset_usage": {"required": ["target_display_size", "intended_scale_range", "max_dpr", "padding_policy"], "properties": {"max_dpr": {"type": "number", "exclusiveMinimum": 0}, "padding_policy": {"const": "none"}}}
+              "scene_asset_usage": {"required": ["target_display_size", "intended_scale_range", "max_dpr", "padding_policy"], "properties": {"max_dpr": {"const": 2, "description": "工作流 DPR 固定为 2。"}, "padding_policy": {"const": "none"}}}
             }
           }
         },
@@ -229,7 +229,7 @@
               "substitution_policy": {"const": "user-change-request-only"},
               "component_inventory": {"required": ["delivery_mode", "atlas_allowed"], "properties": {"delivery_mode": {"const": "individual"}, "atlas_allowed": {"const": false}}},
               "expected_assets": {"items": {"$ref": "#/$defs/imageGenerationExpectedAsset"}},
-              "scene_asset_usage": {"required": ["target_display_size", "intended_scale_range", "max_dpr", "padding_policy"], "properties": {"max_dpr": {"type": "number", "exclusiveMinimum": 0}, "padding_policy": {"const": "none"}}}
+              "scene_asset_usage": {"required": ["target_display_size", "intended_scale_range", "max_dpr", "padding_policy"], "properties": {"max_dpr": {"const": 2, "description": "工作流 DPR 固定为 2。"}, "padding_policy": {"const": "none"}}}
             }
           }
         },
@@ -440,12 +440,21 @@
         "equivalent": {"const": true}
       }
     },
+    "workflowDprNormalizationProof": {
+      "type": "object",
+      "required": ["target", "candidate", "equivalent"],
+      "properties": {
+        "target": {"const": 2},
+        "candidate": {"const": 2},
+        "equivalent": {"const": true}
+      }
+    },
     "normalizationEquivalence": {
       "type": "object",
       "required": ["viewport", "dpr", "logical_coordinates"],
       "properties": {
         "viewport": {"$ref": "#/$defs/normalizationProof"},
-        "dpr": {"$ref": "#/$defs/normalizationProof"},
+        "dpr": {"$ref": "#/$defs/workflowDprNormalizationProof"},
         "logical_coordinates": {"$ref": "#/$defs/normalizationProof"}
       }
     },
@@ -481,7 +490,7 @@
         "scene_id": {"type": "string", "minLength": 1},
         "state_id": {"type": "string", "minLength": 1},
         "viewport": {"type": "object", "required": ["width", "height"]},
-        "dpr": {"type": "number", "exclusiveMinimum": 0},
+        "dpr": {"const": 2, "description": "工作流 DPR 固定为 2。"},
         "locale": {"type": "string", "minLength": 1},
         "random_seed": {"type": ["integer", "string"], "minLength": 1},
         "input_trace": {"type": "string", "minLength": 1},
@@ -509,7 +518,7 @@
       "properties": {
         "target_display_size": {"type": "object", "required": ["width", "height"], "properties": {"width": {"type": "number", "exclusiveMinimum": 0}, "height": {"type": "number", "exclusiveMinimum": 0}}},
         "intended_scale_range": {"type": "object", "required": ["min", "max"], "properties": {"min": {"type": "number", "exclusiveMinimum": 0}, "max": {"type": "number", "exclusiveMinimum": 0}}},
-        "max_dpr": {"type": "number", "exclusiveMinimum": 0, "description": "运行时允许的最大设备像素比；ImageGen 单图尺寸计算只使用该机器合同字段。"},
+        "max_dpr": {"const": 2, "description": "工作流 DPR 固定为 2；ImageGen 单图尺寸计算使用固定 DPR 2。"},
         "padding_policy": {"type": "string", "description": "ImageGen individual 必须为 none；非 ImageGen 可不声明该字段。"},
         "origin": {"type": "object"},
         "anchor": {"type": ["string", "object"], "minLength": 1},

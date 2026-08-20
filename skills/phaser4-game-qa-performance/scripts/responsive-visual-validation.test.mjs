@@ -43,7 +43,7 @@ test("360x800 中 Canvas [0,80,360,640] 必须失败", () => {
     canvasRect: { x: 0, y: 80, width: 360, height: 640 },
     hookSnapshot: hook,
     contract: contract(),
-    devicePixelRatio: 1,
+    devicePixelRatio: 2,
     screenshot
   });
   assert.equal(result.status, "fail");
@@ -59,7 +59,7 @@ test("留白政策未定义时输出 decision_gap", () => {
     canvasRect: { x: 0, y: 0, width: 360, height: 800 },
     hookSnapshot: hook,
     contract: missingWhitespace,
-    devicePixelRatio: 1,
+    devicePixelRatio: 2,
     screenshot
   });
   assert.equal(result.status, "decision_gap");
@@ -72,7 +72,7 @@ test("FIT 只得到 fit_only，不是响应式通过", () => {
     canvasRect: { x: 0, y: 0, width: 360, height: 800 },
     hookSnapshot: hook,
     contract: contract({ viewport: { strategy: "FIT" } }),
-    devicePixelRatio: 1,
+    devicePixelRatio: 2,
     screenshot
   });
   assert.equal(result.status, "fit_only");
@@ -85,21 +85,21 @@ test("缺少 Hook 时相关逻辑、背景和安全区结论只能未验证", ()
     canvasRect: { x: 0, y: 0, width: 360, height: 800 },
     hookSnapshot: null,
     contract: contract(),
-    devicePixelRatio: 1
+    devicePixelRatio: 2
   });
   assert.equal(result.status, "unverified");
   assert.equal(result.responsivePass, false);
   assert.ok(result.unverified.some((reason) => reason.includes("Hook")));
 });
 
-test("无有效安全区 rect 不得当作安全区证据", () => { const badHook = { ...hook, safeArea: { top: 0, right: 0, bottom: 0, left: 0 } }; const result = evaluateViewport({ viewportRect: { x: 0, y: 0, width: 360, height: 800 }, canvasRect: { x: 0, y: 0, width: 360, height: 800 }, hookSnapshot: badHook, contract: contract(), devicePixelRatio: 1, screenshot }); assert.equal(result.status, "unverified"); assert(result.unverified.some((item) => item.includes("安全区"))); });
+test("无有效安全区 rect 不得当作安全区证据", () => { const badHook = { ...hook, safeArea: { top: 0, right: 0, bottom: 0, left: 0 } }; const result = evaluateViewport({ viewportRect: { x: 0, y: 0, width: 360, height: 800 }, canvasRect: { x: 0, y: 0, width: 360, height: 800 }, hookSnapshot: badHook, contract: contract(), devicePixelRatio: 2, screenshot }); assert.equal(result.status, "unverified"); assert(result.unverified.some((item) => item.includes("安全区"))); });
 
-test("required Hook 缺版本、有效 UI 或截图不得通过", () => { for (const kind of ["version", "ui", "screenshot"]) { const snapshot = structuredClone(hook); let image = screenshot; if (kind === "version") delete snapshot.version; if (kind === "ui") snapshot.keyUiRects = {}; if (kind === "screenshot") image = null; const result = evaluateViewport({ viewportRect: { x: 0, y: 0, width: 360, height: 800 }, canvasRect: { x: 0, y: 0, width: 360, height: 800 }, hookSnapshot: snapshot, contract: contract(), devicePixelRatio: 1, screenshot: image }); assert.equal(result.status, "unverified", kind); } });
+test("required Hook 缺版本、有效 UI 或截图不得通过", () => { for (const kind of ["version", "ui", "screenshot"]) { const snapshot = structuredClone(hook); let image = screenshot; if (kind === "version") delete snapshot.version; if (kind === "ui") snapshot.keyUiRects = {}; if (kind === "screenshot") image = null; const result = evaluateViewport({ viewportRect: { x: 0, y: 0, width: 360, height: 800 }, canvasRect: { x: 0, y: 0, width: 360, height: 800 }, hookSnapshot: snapshot, contract: contract(), devicePixelRatio: 2, screenshot: image }); assert.equal(result.status, "unverified", kind); } });
 
 test("resize 轨迹记录同页面前后变化", () => {
   const measurements = [
-    { name: "baseline", status: "pass", viewportRect: { x: 0, y: 0, width: 390, height: 844 }, canvasRect: { x: 0, y: 0, width: 390, height: 844 }, keyUiRects: { score: { x: 16, y: 16, width: 80, height: 24 } } },
-    { name: "narrow", status: "pass", viewportRect: { x: 0, y: 0, width: 360, height: 800 }, canvasRect: { x: 0, y: 0, width: 360, height: 800 }, keyUiRects: { score: { x: 8, y: 8, width: 80, height: 24 } } }
+    { name: "baseline", status: "pass", viewportRect: { x: 0, y: 0, width: 390, height: 844 }, canvasRect: { x: 0, y: 0, width: 390, height: 844 }, scaling: { physical: { dpr: 2 } }, keyUiRects: { score: { x: 16, y: 16, width: 80, height: 24 } } },
+    { name: "narrow", status: "pass", viewportRect: { x: 0, y: 0, width: 360, height: 800 }, canvasRect: { x: 0, y: 0, width: 360, height: 800 }, scaling: { physical: { dpr: 2 } }, keyUiRects: { score: { x: 8, y: 8, width: 80, height: 24 } } }
   ];
   const resize = buildResizeRecords(measurements, { resize: { required: true }, viewport: { strategy: "RESIZE" } });
   assert.equal(resize.status, "pass");
@@ -130,7 +130,7 @@ test("单纯缺证保持未验证，不臆断为验收问题", () => {
     canvasRect: { x: 0, y: 0, width: 360, height: 800 },
     hookSnapshot: null,
     contract: contract(),
-    devicePixelRatio: 1
+    devicePixelRatio: 2
   });
   assert.equal(result.status, "unverified");
   assert.equal(result.rootCause.primary, null);
@@ -143,6 +143,28 @@ test("未声明视口矩阵时返回决策缺口", () => {
 });
 
 test("矩阵只使用运行时实测宽高和 DPR", () => { const measurements = [{ name: "baseline", status: "pass", declaredViewport: { width: 390, height: 844, deviceScaleFactor: 2 }, viewportRect: { width: 360, height: 800 }, scaling: { physical: { dpr: 1 } } }]; const report = summarizeReport(measurements, { ...contract(), resize: { required: false }, viewports: { baseline: { width: 390, height: 844, dpr: 2 } } }, identity); assert.equal(report.matrix.status, "fail"); assert.deepEqual(report.matrix.mismatched, ["baseline"]); });
+test("响应式验证拒绝 0.5、1、3 和字符串 DPR", () => {
+  for (const dpr of [0.5, 1, 3, "2"]) {
+    const result = evaluateViewport({
+      viewportRect: { x: 0, y: 0, width: 360, height: 800 },
+      canvasRect: { x: 0, y: 0, width: 360, height: 800 },
+      hookSnapshot: hook,
+      contract: contract(),
+      devicePixelRatio: dpr,
+      screenshot,
+    });
+    assert.equal(result.status, "fail", `DPR=${dpr}`);
+    assert(result.failures.some((item) => item.includes("必须固定为 2")), `DPR=${dpr}: ${result.failures}`);
+  }
+});
+
+test("响应式合同声明 0.5、1、3 或字符串时报告明确失败", () => {
+  for (const dpr of [0.5, 1, 3, "2"]) {
+    const report = summarizeReport([], { ...contract(), dpr, resize: { required: false }, viewports: [] }, identity);
+    assert.equal(report.status, "fail", `DPR=${dpr}`);
+    assert(report.dprErrors.some((item) => item.includes("必须固定为 2")), `DPR=${dpr}: ${report.dprErrors}`);
+  }
+});
 
 test("报告必须带合法不可变证据身份", () => { const missing = summarizeReport([], { resize: { required: false }, viewports: [] }); assert.equal(missing.responsivePass, false); assert(missing.identityErrors.length > 0); const report = summarizeReport([], { ...contract(), resize: { required: false }, viewports: [] }, { ...identity, target_sha256: `sha256:${"b".repeat(64)}` }); assert.deepEqual(report.identityErrors, []); });
 

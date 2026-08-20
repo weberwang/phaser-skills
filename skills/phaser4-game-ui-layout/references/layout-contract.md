@@ -18,7 +18,7 @@ schema 1.1.0 根对象包含 `fidelity`、`frozen_visual_target`、`critical_ali
 
 ## 目标与尺寸
 
-`targets` 定义最小、首选和最大逻辑宽高、方向、宽高比和 Phaser Scale 策略。`aspect_ratio.min/max` 必须是正数且顺序合理；`scale` 必须声明非空 `mode`、`canvas`、`css_size`、`render_resolution` 和 `dpr_policy`。不得假设单一 Scale 模式适用于所有项目；合同须说明画布尺寸、CSS 尺寸、逻辑尺寸、渲染分辨率和 DPR 的关系。`content` 定义 `max_width`、`columns`、`gaps` 和 `margins`。
+`targets` 定义最小、首选和最大逻辑宽高、方向、宽高比和 Phaser Scale 策略。`aspect_ratio.min/max` 必须是正数且顺序合理；`scale` 必须声明非空 `mode`、`canvas`、`css_size`、`render_resolution`，并固定 `dpr=2` 与 `dpr_policy=fixed-2`。工作流固定 DPR 2 是清晰度和移动端成本的统一基线，合同须说明画布尺寸、CSS 尺寸、逻辑尺寸与渲染分辨率的关系。`content` 定义 `max_width`、`columns`、`gaps` 和 `margins`。
 
 尺寸策略可以是 `fixed`、`content`、`proportional`、`stretch`、`contain`、`cover` 或 `nine_slice`，但必须同时给出最小、首选和最大值；三档宽高须为正数或非空表达式，数值最小值不能大于最大值。固定尺寸、绝对定位和悬浮元素是可审查模式，不是格式错误；缺少参照、策略或证据才退回。
 
@@ -40,11 +40,11 @@ schema 1.1.0 根对象包含 `fidelity`、`frozen_visual_target`、`critical_ali
 
 ## 不变量与证据
 
-`invariants` 的每一项都包含稳定 ID、非空描述/表达式、非空且全部有效的适用区域、非负容差和 `evidence.automation`/`evidence.visual` 字符串项。关系表达优先描述相对中心、边界距离、间距、遮挡和断点结构，而非一个孤立屏幕坐标。`evidence_matrix` 必须绑定同一候选、合同版本和冻结视口条件，并覆盖断点邻值、宽高、方向、字号、本地化、安全区、动作态、DPR、动态值、Scene 生命周期和覆盖层/键盘/滚动组合；Golden 只在冻结目标视口验证精确视觉，普通测试验证关系不变量。
+`invariants` 的每一项都包含稳定 ID、非空描述/表达式、非空且全部有效的适用区域、非负容差和 `evidence.automation`/`evidence.visual` 字符串项。关系表达优先描述相对中心、边界距离、间距、遮挡和断点结构，而非一个孤立屏幕坐标。`evidence_matrix` 必须绑定同一候选、合同版本、固定 DPR 2 和冻结视口条件，并覆盖断点邻值、宽高、方向、字号、本地化、安全区、动作态、DPR、动态值、Scene 生命周期和覆盖层/键盘/滚动组合；Golden 只在冻结目标视口验证精确视觉，普通测试验证关系不变量。
 
 `critical_alignments` 用于冻结目标中的关键 UI/HUD：specified 要求唯一 ID、稳定 element/reference、双轴关系、正尺寸目标测量、`planned_test_id`、目标证据、双方 SHA 和项目容差；verified 才要求 `actual_test_id`、正尺寸运行测量、运行证据和 `passed`。不得全局硬编码 1 logical px。
 
-`parity_cases` 不可变绑定 scene/state、viewport、DPR、语言、随机种子、输入轨迹、稳定帧/动画采样、合同/基线版本、双方证据、容差、例外 ID 与结论。目标或候选 SHA 不匹配时旧证据不得复用。
+`parity_cases` 不可变绑定 scene/state、viewport、固定 DPR 2、语言、随机种子、输入轨迹、稳定帧/动画采样、合同/基线版本、双方证据、容差、例外 ID 与结论。目标或候选 SHA 不匹配时旧证据不得复用。
 
 specified 可只做结构检查；verified 必须追加 `--check-files --project-root .`，验证冻结原图存在且 SHA 匹配，并拒绝缺失或逃逸项目根目录的目标、运行及 parity 证据路径。
 # 效果图还原布局绑定

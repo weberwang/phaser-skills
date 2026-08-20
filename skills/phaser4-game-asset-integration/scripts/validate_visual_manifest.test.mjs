@@ -144,7 +144,7 @@ function attachSceneReconstructionContract(manifest) {
         scene_asset_usage: {
           target_display_size: { width: region.bounds.width, height: region.bounds.height },
           intended_scale_range: { min: 1, max: 1 },
-          max_dpr: 1,
+          max_dpr: 2,
           padding_policy: "none",
           origin: { x: 0.5, y: 0.5 },
           anchor: "target-bound",
@@ -271,9 +271,9 @@ function validOrdinaryManifest() {
 
 /** 构造包含完整生成包的 AI 合成栅格清单。 */
 function validAiManifest() {
-  const manifest = validManifest(); const asset = manifest.assets[0]; const region = manifest.coverage_audit.regions[1]; asset.route = "ai-composite-raster"; asset.production_method = "imagegen"; asset.delivery_kind = "raster-image"; asset.image_generation_required = true; asset.generation_record_required = true; asset.source_file = "art/hero.png"; region.expected_assets[0].source_file = "art/hero.png"; asset.expected_assets[0].source_file = "art/hero.png"; asset.output_file = "public/assets/hero.png"; asset.mime_type = "image/png"; asset.width = 64; asset.height = 96; asset.alpha = true; asset.sha256 = sha256Bytes(minimalPng(64, 96));
+  const manifest = validManifest(); const asset = manifest.assets[0]; const region = manifest.coverage_audit.regions[1]; const width = 128; const height = 192; region.expected_assets[0].width = width; region.expected_assets[0].height = height; asset.expected_assets[0].width = width; asset.expected_assets[0].height = height; manifest.production_contract_audit.units[0].expected_assets[0].width = width; manifest.production_contract_audit.units[0].expected_assets[0].height = height; manifest.production_contract_audit.units[0].actual_assets[0].width = width; manifest.production_contract_audit.units[0].actual_assets[0].height = height; asset.route = "ai-composite-raster"; asset.production_method = "imagegen"; asset.delivery_kind = "raster-image"; asset.image_generation_required = true; asset.generation_record_required = true; asset.source_file = "art/hero.png"; region.expected_assets[0].source_file = "art/hero.png"; asset.expected_assets[0].source_file = "art/hero.png"; asset.output_file = "public/assets/hero.png"; asset.mime_type = "image/png"; asset.width = width; asset.height = height; asset.alpha = true; asset.sha256 = sha256Bytes(minimalPng(width, height)); asset.runtime_consumption.runtime_sha256 = asset.sha256; asset.runtime_consumption.component_usages[0].runtime_sha256 = asset.sha256; manifest.production_contract_audit.units[0].actual_assets[0].sha256 = asset.sha256; manifest.f2_review.production_contract_review.component_reviews[0].runtime_sha256 = asset.sha256;
   region.expected_assets[0].mime_type = "image/png"; asset.expected_assets[0].mime_type = "image/png"; manifest.production_contract_audit.units[0].expected_assets[0].mime_type = "image/png"; manifest.production_contract_audit.units[0].expected_assets[0].source_file = "art/hero.png"; manifest.f2_review.production_contract_review.component_reviews[0].mime_type = "image/png";
-  asset.generation_record = { record_id: "gen-hero-1", generator: "imagegen", generator_version: "1", created_at: "2026-08-15T00:00:00Z", command_or_recipe: "render hero-idle", input_sources: ["prompt:hero-idle"], parameters: { size: "64x96" }, global_prompt_prefix: "冻结前缀", asset_prompt: "主角", state_prompt: "待机", negative_prompt: "禁止写实", model: "image-model", model_version: "1", seed: 42, reference_inputs: ["evidence/visual/ai-reference.png"], postprocess: ["清理边缘"], output_file: "public/assets/hero.png", annotation_number: 2, region_id: "region-hero", component_id: "hero-component", state_id: "default", asset_id: "hero-idle", source_file: "art/hero.png", runtime_file: "public/assets/hero.png" };
+  asset.generation_record = { record_id: "gen-hero-1", generator: "imagegen", generator_version: "1", created_at: "2026-08-15T00:00:00Z", command_or_recipe: "render hero-idle", input_sources: ["prompt:hero-idle"], parameters: { size: `${width}x${height}` }, global_prompt_prefix: "冻结前缀", asset_prompt: "主角", state_prompt: "待机", negative_prompt: "禁止写实", model: "image-model", model_version: "1", seed: 42, reference_inputs: ["evidence/visual/ai-reference.png"], postprocess: ["清理边缘"], output_file: "public/assets/hero.png", annotation_number: 2, region_id: "region-hero", component_id: "hero-component", state_id: "default", asset_id: "hero-idle", source_file: "art/hero.png", runtime_file: "public/assets/hero.png" };
   asset.substitution_policy = "user-change-request-only";
   Object.assign(manifest.coverage_audit.regions[1], { production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
   manifest.coverage_audit.regions[1].atomic_image_requirements = deriveAtomicImageRequirements(manifest.coverage_audit.regions[1]);
@@ -355,11 +355,11 @@ function minimalPng(width = 1, height = 1, raw = Buffer.alloc(height * (width * 
 async function createFixtureFiles(root, includeAi = false) {
   const paths = ["docs/visual-baseline.md", "evidence/visual/main-anchor.png", "evidence/visual/mockup.png", "evidence/visual/reference.png", "evidence/visual/candidate.png", "evidence/coverage/summary.md", "evidence/coverage/state-analysis.md", "evidence/coverage/region-background.md", "evidence/coverage/region-hero.md", "evidence/coverage/region-score.md", "art/hero.aseprite", "docs/license.md", "public/assets/hero.png", "evidence/phaser.png", "evidence/gameplay.mp4", "evidence/visual/hero-consistency.png", "src/region-background.mjs", "src/region-score.mjs", ...["scope", "state-machine", "input", "collision", "module-scene-ownership", "coordinate-space", "layout", "budget"].map((domain) => `evidence/reconcile/${domain}.md`)];
   if (includeAi) paths.push("evidence/visual/ai-reference.png");
-  for (const path of paths) { const target = join(root, path); await mkdir(dirname(target), { recursive: true }); await writeFile(target, path === "evidence/visual/mockup.png" ? minimalPng(390, 844) : path === "public/assets/hero.png" ? minimalPng(64, 96) : ""); }
+  for (const path of paths) { const target = join(root, path); await mkdir(dirname(target), { recursive: true }); await writeFile(target, path === "evidence/visual/mockup.png" ? minimalPng(390, 844) : path === "public/assets/hero.png" ? minimalPng(includeAi ? 128 : 64, includeAi ? 192 : 96) : ""); }
   for (const path of ["evidence/runtime/hero.json", "evidence/f2/visual.md", "evidence/f2/production.md", "evidence/f3/replay.json", "evidence/fidelity/main.json", "evidence/visual/hero-consistency.json"]) { const target = join(root, path); await mkdir(dirname(target), { recursive: true }); await writeFile(target, path.endsWith("hero-consistency.json") ? JSON.stringify({ status: "passed" }) : ""); }
   // 独立生产资源必须与冻结原图保持不同内容，文件夹具用非空字节避免把两者误设为同一份证据。
   await writeFile(join(root, "art/hero.aseprite"), "independent-source");
-  await writeFile(join(root, "art/hero.png"), minimalPng(64, 96));
+  await writeFile(join(root, "art/hero.png"), minimalPng(includeAi ? 128 : 64, includeAi ? 192 : 96));
 }
 
 /** 构造新版不可变位图复用快照；旧 reuse_source 字段不再进入测试合同。 */
@@ -547,6 +547,7 @@ function refreshRegionDerivedContracts(manifest, region) {
 }
 
 test("有效清单通过", () => assert.deepEqual(validateManifest(validManifest(), STRUCTURAL_FILE_GATE_OPTIONS), []));
+test("普通 visual manifest fidelity DPR 只能为数字 2", () => { for (const dpr of [0.5, 1, 3, "2"]) { const manifest = validManifest(); manifest.fidelity_cases[0].dpr = dpr; assert(validateManifest(manifest).some((item) => item.includes("必须固定为 2")), `fidelity dpr=${dpr}`); } });
 test("不保留 visual-assets 1.4 兼容", () => { const manifest = validManifest(); manifest.schema_version = "1.4"; assert(validateManifest(manifest).some((item) => item.includes("schema_version 必须为 1.5"))); });
 test("非效果图 1.5 清单通过", () => assert.deepEqual(validateManifest(validOrdinaryManifest()), []));
 test("effect-image V3-ready 允许 fidelity case 尚未产生", () => { const manifest = validManifest(); manifest.effect_image_reconstruction.lifecycle = "v3-ready"; manifest.fidelity_cases = []; assert.deepEqual(validateManifest(manifest), []); });

@@ -63,7 +63,15 @@ test("max_dpr 缺失失败并包含完整定位上下文", () => {
   const current = region({ scene_asset_usage: { ...structuredClone(BASE_USAGE), max_dpr: undefined } });
   delete current.scene_asset_usage.max_dpr;
   const errors = check(current);
-  assert(errors.some((item) => item.includes("max_dpr 必须是正数") && item.includes("annotation_number=7") && item.includes("component_id=hero") && item.includes("state_id=default") && item.includes("asset_id=hero-default")));
+  assert(errors.some((item) => item.includes("max_dpr 必须固定为 2") && item.includes("annotation_number=7") && item.includes("component_id=hero") && item.includes("state_id=default") && item.includes("asset_id=hero-default")));
+});
+
+test("max_dpr 只能为数字 2，拒绝 0.5、1、3 和字符串 2", () => {
+  for (const maxDpr of [0.5, 1, 3, "2"]) {
+    const current = region({ scene_asset_usage: { ...structuredClone(BASE_USAGE), max_dpr: maxDpr } });
+    const errors = check(current);
+    assert(errors.some((item) => item.includes("max_dpr 必须固定为 2")), `max_dpr=${maxDpr}: ${errors}`);
+  }
 });
 
 test("padding_policy 非 none 失败，不设计额外留白", () => {

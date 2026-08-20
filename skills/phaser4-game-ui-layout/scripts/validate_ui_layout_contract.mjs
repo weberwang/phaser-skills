@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { isWorkflowDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
 
 const ROOT_REQUIRED = ["schema_version", "contract_id", "contract_version", "scope", "fidelity", "frozen_visual_target", "targets", "coordinate_spaces", "regions", "content", "platform_insets", "scrolling", "dynamic_content", "overlay_rules", "breakpoints", "invariants", "critical_alignments", "parity_cases", "evidence_matrix"];
 const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
@@ -123,7 +124,7 @@ function validateParityCases(items, target, codeCandidate, scope, contractVersio
     if (item.layout_contract_version !== contractVersion) errors.push(`${label}.layout_contract_version 与根 contract_version 不一致`);
     if (item.visual_baseline_version !== target?.visual_baseline_version) errors.push(`${label}.visual_baseline_version 与冻结目标不一致`);
     if (!isObject(item.viewport) || !isNumber(item.viewport.width) || item.viewport.width <= 0 || !isNumber(item.viewport.height) || item.viewport.height <= 0) errors.push(`${label}.viewport 必须包含正数 width/height`);
-    if (!isNumber(item.dpr) || item.dpr <= 0) errors.push(`${label}.dpr 必须是正数`);
+    if (!isWorkflowDpr(item.dpr)) errors.push(`${label}.${workflowDprError("dpr", item.dpr)}`);
     if (!(Number.isInteger(item.random_seed) || isString(item.random_seed))) errors.push(`${label}.random_seed 必须是整数或非空字符串`);
     for (const field of ["reference_evidence", "candidate_evidence"]) if (!Array.isArray(item[field]) || item[field].length === 0 || !item[field].every(isString)) errors.push(`${label}.${field} 必须是非空字符串数组`);
     if (!isObject(item.tolerance) || !isString(item.tolerance.unit) || !isNumber(item.tolerance.value) || item.tolerance.value < 0) errors.push(`${label}.tolerance 必须是项目定义的 unit 与非负 value`);
@@ -158,7 +159,10 @@ function validateTargets(targets, errors) {
   for (const name of ["min", "preferred", "max"]) { const target = targets[name]; if (!isObject(target)) { errors.push(`targets.${name} 必须是对象`); continue; } for (const dimension of ["width", "height"]) if (!isNumber(target[dimension]) || target[dimension] <= 0) errors.push(`targets.${name}.${dimension} 必须是正数`); if (!isString(target.orientation)) errors.push(`targets.${name}.orientation 必须是非空字符串`); }
   if (!Array.isArray(targets.orientations) || targets.orientations.length === 0) errors.push("targets.orientations 必须是非空数组");
   if (!isObject(targets.aspect_ratio)) errors.push("targets.aspect_ratio 必须是对象"); else { const { min, max } = targets.aspect_ratio; if (!isNumber(min) || min <= 0) errors.push("targets.aspect_ratio.min 必须是正数"); if (!isNumber(max) || max <= 0) errors.push("targets.aspect_ratio.max 必须是正数"); if (isNumber(min) && isNumber(max) && min > max) errors.push("targets.aspect_ratio.min 不能大于 max"); }
-  if (!isObject(targets.scale)) errors.push("targets.scale 必须是对象"); else for (const field of ["mode", "canvas", "css_size", "render_resolution", "dpr_policy"]) if (!isString(targets.scale[field])) errors.push(`targets.scale.${field} 必须是非空字符串`);
+  if (!isObject(targets.scale)) errors.push("targets.scale 必须是对象"); else {
+    for (const field of ["mode", "canvas", "css_size", "render_resolution", "dpr_policy"]) if (!isString(targets.scale[field])) errors.push(`targets.scale.${field} 必须是非空字符串`);
+    if (!isWorkflowDpr(targets.scale.dpr)) errors.push(`targets.scale.${workflowDprError("dpr", targets.scale.dpr)}`);
+  }
 }
 
 /** 对单父级图执行循环检测。 */
@@ -246,7 +250,19 @@ function validateInvariants(invariants, ids, errors) {
 }
 
 /** 验证证据矩阵绑定和必需轴。 */
-function validateEvidenceMatrix(matrix, errors) { if (!isObject(matrix)) return; for (const field of ["candidate_binding", "golden_policy", "snapshot_stability"]) if (!isString(matrix[field])) errors.push(`evidence_matrix.${field} 必须是非空字符串`); if (!Array.isArray(matrix.required_axes) || matrix.required_axes.length === 0 || !matrix.required_axes.every(isString)) errors.push("evidence_matrix.required_axes 必须是非空数组"); else { const missing = [...REQUIRED_EVIDENCE_AXES].filter((axis) => !matrix.required_axes.includes(axis)).sort(); if (missing.length) errors.push(`evidence_matrix.required_axes 缺少必需轴：${missing.join(", ")}`); } }
+/** 递归检查证据矩阵扩展字段，避免新增 dpr 入口绕过固定基线。 */
+function validateEvidenceMatrixDpr(value, path, errors, seen = new Set()) {
+  if (!value || typeof value !== "object" || seen.has(value)) return;
+  seen.add(value);
+  if (Array.isArray(value)) { value.forEach((item, index) => validateEvidenceMatrixDpr(item, `${path}[${index}]`, errors, seen)); return; }
+  for (const [key, nested] of Object.entries(value)) {
+    if (["dpr", "deviceScaleFactor"].includes(key) && !isWorkflowDpr(nested)) errors.push(workflowDprError(`${path}.${key}`, nested));
+    validateEvidenceMatrixDpr(nested, `${path}.${key}`, errors, seen);
+  }
+}
+
+/** 验证证据矩阵绑定和必需轴。 */
+function validateEvidenceMatrix(matrix, errors) { if (!isObject(matrix)) return; for (const field of ["candidate_binding", "golden_policy", "snapshot_stability"]) if (!isString(matrix[field])) errors.push(`evidence_matrix.${field} 必须是非空字符串`); if (!Array.isArray(matrix.required_axes) || matrix.required_axes.length === 0 || !matrix.required_axes.every(isString)) errors.push("evidence_matrix.required_axes 必须是非空数组"); else { const missing = [...REQUIRED_EVIDENCE_AXES].filter((axis) => !matrix.required_axes.includes(axis)).sort(); if (missing.length) errors.push(`evidence_matrix.required_axes 缺少必需轴：${missing.join(", ")}`); } validateEvidenceMatrixDpr(matrix, "evidence_matrix", errors); }
 
 /** 验证布局合同并返回稳定结果。 */
 export function validateContract(document) {

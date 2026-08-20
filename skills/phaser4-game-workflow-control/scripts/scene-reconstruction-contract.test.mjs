@@ -142,6 +142,23 @@ test("场景还原合同覆盖整屏构图和 runtime fidelity obligation", () =
   assert(validateSceneReconstructionContract(missing, manifest(), { stage: "V3" }).some((item) => item.includes("fidelity obligations")));
 });
 
+test("场景目标和 fidelity DPR 只能固定为数字 2", () => {
+  for (const dpr of [0.5, 1, 3, "2"]) {
+    const target = structuredClone(contract());
+    target.target_conditions.dpr = dpr;
+    assert(validateSceneReconstructionContract(target, manifest(), { stage: "V3" }).some((item) => item.includes("必须固定为 2")), `target dpr=${dpr}`);
+    const fidelity = fidelityCase({ dpr, normalization_equivalence: { viewport: { target: { width: 390, height: 844 }, candidate: { width: 390, height: 844 }, equivalent: true }, dpr: { target: dpr, candidate: dpr, equivalent: true }, logical_coordinates: { target: "logical-px", candidate: "logical-px", equivalent: true } } });
+    assert(validateStructuredFidelityCases([fidelity], manifest(), { stage: "V5" }).some((item) => item.includes("必须固定为 2")), `fidelity dpr=${dpr}`);
+  }
+});
+
+test("normalization_equivalence.dpr 必须是 target=2、candidate=2 且 equivalent=true", () => {
+  for (const proof of [{ target: 1, candidate: 1, equivalent: true }, { target: 2, candidate: 3, equivalent: true }, { target: 2, candidate: 2, equivalent: "true" }]) {
+    const errors = validateStructuredFidelityCases([fidelityCase({ normalization_equivalence: { ...fidelityCase().normalization_equivalence, dpr: proof } })], manifest(), { stage: "V5" });
+    assert(errors.some((item) => item.includes("DPR 等价证明必须证明 target=2")), JSON.stringify(proof));
+  }
+});
+
 test("V1 冲突记录和 V2 完整场景候选/动态样片/结构化审查均为硬门", () => {
   const missingConflict = structuredClone(contract()); delete missingConflict.reference_technical_conflicts;
   assert(validateSceneReconstructionContract(missingConflict, manifest(), { stage: "V1" }).some((item) => item.includes("参考与技术硬约束冲突记录") && item.includes("方案缺失")));

@@ -18,6 +18,7 @@ import { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImag
 import { validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "../../phaser4-game-workflow-control/scripts/scene-reconstruction-contract.mjs";
 import { validateHumanReview, validateVisualHumanReviewCompletion } from "../../phaser4-game-workflow-control/scripts/visual-human-review-contract.mjs";
 import { validateImageGenerationSizeManifest } from "../../phaser4-game-workflow-control/scripts/visual-generation-size-contract.mjs";
+import { isWorkflowDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
 export { computeRegionDefinitionSha256 } from "./effect_image_annotation_core.mjs";
 export { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateComponentReviewCoverage, validateEvidenceIdentity, validateF2ProductionReviews, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
 export { validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "../../phaser4-game-workflow-control/scripts/scene-reconstruction-contract.mjs";
@@ -236,7 +237,7 @@ function validateFidelityCases(cases, target, candidate, baseline, errors, { req
     if (nonEmptyString(candidate?.sha256) && item.candidate_sha256 !== candidate.sha256) errors.push(`${label}.candidate_sha256 与当前候选 SHA 不一致，旧证据已失效`);
     if (nonEmptyString(baseline?.version) && item.visual_baseline_version !== baseline.version) errors.push(`${label}.visual_baseline_version 与根 visual_baseline.version 不一致，旧证据已失效`);
     if (!isObject(item.viewport) || !["width", "height"].every((field) => typeof item.viewport[field] === "number" && item.viewport[field] > 0)) errors.push(`${label}.viewport 必须包含正数 width/height`);
-    if (typeof item.dpr !== "number" || item.dpr <= 0) errors.push(`${label}.dpr 必须是正数`);
+    if (!isWorkflowDpr(item.dpr)) errors.push(`${label}.${workflowDprError("dpr", item.dpr)}`);
     if (!(Number.isInteger(item.random_seed) || nonEmptyString(item.random_seed))) errors.push(`${label}.random_seed 必须是整数或非空字符串`);
     for (const field of ["reference_evidence", "candidate_evidence"]) validatePathList(item[field], `${label}.${field}`, errors);
     if (!isObject(item.tolerance) || !nonEmptyString(item.tolerance.unit) || typeof item.tolerance.value !== "number" || item.tolerance.value < 0) errors.push(`${label}.tolerance 必须包含项目预定义的 unit 和非负 value`);

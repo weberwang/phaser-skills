@@ -52,7 +52,7 @@ V3 输入绑定当前有效的 V1/V2 `AUTO` 或 `USER_DECISION`、已通过的�
 
 ### ImageGen 位图生产合同
 
-V3 的每个 annotation/region 必须先完成 `state_analysis` 再拆解 `component_inventory`。状态分析必须覆盖 `default`、`selected`、`active`、`disabled`、`pressed`、`hover`、`victory`、`defeat`、`paused`；实际使用写 `required`，不适用写 `not-applicable` 并说明 reason，不能只写 default。`annotation_number` 只是审阅区域编号，不是资产数量单位；`component_count` 必须等于可复用部件清单。ImageGen 区域的 `expected_assets` 必须逐 `component_id × required state_id` 映射，且无条件使用 individual 位图（`atlas_allowed=false`），不允许横向组图或 atlas；其宽高由验证器按逻辑像素 `ceil(max placement width/height × intended_scale_range.max × max_dpr)` 自动计算，必须精确等于最小尺寸，`max_dpr` 缺失/非法或 `padding_policy` 非 `none` 直接失败，且尺寸合同不要求 human_review。图集只对 authored-raster/authored-svg/reuse 等非 ImageGen 方法开放，并且必须有完整 `atlas_slice`。交互热区独立记录，不得作为视觉资产。`production_origin`、`production_method`、`delivery_kind`、`image_generation_required`、`generation_record_required`、`substitution_policy` 仍必须显式声明；`independent-production` 与 `generate-now` 都不推断 ImageGen。原文约束是：**独立生产不等于图片生成；视觉相似不等于生产合同完成。** 当且仅当 `image_generation_required=true` 时，才强制 `imagegen` + `raster-image`，并要求独立源/运行时位图、生成与提示词记录、MIME、宽高、alpha、SHA-256 及运行时实际消费；SVG、Graphics、CanvasTexture 或 runtime drawing 不能替代该合同，也不得裁切参考图冒充生成记录。
+V3 的每个 annotation/region 必须先完成 `state_analysis` 再拆解 `component_inventory`。状态分析必须覆盖 `default`、`selected`、`active`、`disabled`、`pressed`、`hover`、`victory`、`defeat`、`paused`；实际使用写 `required`，不适用写 `not-applicable` 并说明 reason，不能只写 default。`annotation_number` 只是审阅区域编号，不是资产数量单位；`component_count` 必须等于可复用部件清单。ImageGen 区域的 `expected_assets` 必须逐 `component_id × required state_id` 映射，且无条件使用 individual 位图（`atlas_allowed=false`），不允许横向组图或 atlas；其宽高由验证器按逻辑像素 `ceil(max placement width/height × intended_scale_range.max × 2)` 自动计算，必须精确等于最小尺寸，`max_dpr` 必须严格为数字 `2`，`padding_policy` 非 `none` 直接失败，且尺寸合同不要求 human_review。工作流固定 DPR 2 是清晰度和移动端成本的统一基线。图集只对 authored-raster/authored-svg/reuse 等非 ImageGen 方法开放，并且必须有完整 `atlas_slice`。交互热区独立记录，不得作为视觉资产。`production_origin`、`production_method`、`delivery_kind`、`image_generation_required`、`generation_record_required`、`substitution_policy` 仍必须显式声明；`independent-production` 与 `generate-now` 都不推断 ImageGen。原文约束是：**独立生产不等于图片生成；视觉相似不等于生产合同完成。** 当且仅当 `image_generation_required=true` 时，才强制 `imagegen` + `raster-image`，并要求独立源/运行时位图、生成与提示词记录、MIME、宽高、alpha、SHA-256 及运行时实际消费；SVG、Graphics、CanvasTexture 或 runtime drawing 不能替代该合同，也不得裁切参考图冒充生成记录。
 
 ImageGen 源文件、运行时文件和实际输出只能使用 `image/png` 或 `image/jpeg`，路径扩展名只能为 `.png`、`.jpg`、`.jpeg`；通用 authored-raster 可依其合同使用其他位图。
 
@@ -64,9 +64,9 @@ ImageGen 源文件、运行时文件和实际输出只能使用 `image/png` 或 
 
 ## V5 同条件与动态验收
 
-在冻结目标视口和状态下，参考与运行证据使用相同设备像素比、语言、操作轨迹、随机种子和动画时间点，逐状态、逐区域更新忠实度矩阵。完整 viewport 截图是主要证据；ROI、并排、叠加和像素差只能作为补充。每项对比记录预定义容差、动态时间采样或稳定帧及遮罩理由；生成式内容、动画和 VFX 不得只靠像素差判断。
+在冻结目标视口和状态下，参考与运行证据统一使用设备像素比 2、语言、操作轨迹、随机种子和动画时间点，逐状态、逐区域更新忠实度矩阵。完整 viewport 截图是主要证据；ROI、并排、叠加和像素差只能作为补充。每项对比记录预定义容差、动态时间采样或稳定帧及遮罩理由；生成式内容、动画和 VFX 不得只靠像素差判断。
 
-每个 fidelity/parity case 不可变绑定冻结目标 SHA、当前代码或构建 SHA、scene/state、viewport、DPR、语言、随机种子、输入轨迹、动画采样/稳定帧、布局合同版本、视觉基线版本、双方证据、预定义容差、例外 ID 和结论；其中视觉基线版本必须等于根 `visual_baseline.version`。任一身份变化即令旧案例失效并重新采集。
+每个 fidelity/parity case 不可变绑定冻结目标 SHA、当前代码或构建 SHA、scene/state、viewport、固定 DPR 2、语言、随机种子、输入轨迹、动画采样/稳定帧、布局合同版本、视觉基线版本、双方证据、预定义容差、例外 ID 和结论；其中视觉基线版本必须等于根 `visual_baseline.version`。任一身份变化即令旧案例失效并重新采集。
 
 机器清单生命周期固定为：非效果图 `not-applicable`；效果图进入 V3 前为 `v3-ready`，此时允许 fidelity case 为空；只有 V5 已验证才为 `v5-complete`，此时 case 必须非空、全部 `passed`，并且冻结目标的每个 scene/state 组合至少有一个 passed case。
 
@@ -87,7 +87,7 @@ V1 灰盒、V2 可玩视觉切片与 V5 正式场景沿用同一生产 Scene 入
 效果图还原的候选、样片、正式资产、组合画面和运行时可见区域全部走人工审阅硬门。每条记录必须包含 `reviewer_type: human`、非空 `reviewer_id`、`reviewed_at`、`evidence` 和 `status`；禁止用 AI、agent、automation、model 或裸 `reviewer` 字段冒充。V2 三类工件绑定同一冻结 target、candidate code/build SHA 与 diff identity；V4 的每个 actual asset/component×state 及同屏组合预验收必须逐项覆盖；V5 的完整 viewport、overlay、diff、每个 fidelity region（含 runtime owner）和 F2 双审必须逐项通过。根节点 PASS 或 `all_visual_artifacts_human_reviewed=true` 不能替代逐项证据，漏项按最早受影响阶段退回。
 # 场景还原合同（强制）
 
-`effect-image` 表示冻结效果图对应的完整正式 Scene，而不是独立 PNG 生产。进入 V3 前必须存在 `scene_reconstruction_contract`，并绑定 `reference_target.target_sha256`、scene/state、原始像素尺寸、viewport、DPR、locale、seed、input trace、稳定帧、visual baseline 与 layout contract 版本。
+`effect-image` 表示冻结效果图对应的完整正式 Scene，而不是独立 PNG 生产。进入 V3 前必须存在 `scene_reconstruction_contract`，并绑定 `reference_target.target_sha256`、scene/state、原始像素尺寸、viewport、固定 DPR 2、locale、seed、input trace、稳定帧、visual baseline 与 layout contract 版本。
 
 合同的 `coverage_regions` 逐区域记录 target bounds、坐标空间、锚点/参照、相对对齐、层级、可见状态、尺寸策略、留白、字体、颜色、材质、光影、装饰密度、裁切、响应式关系、owner、实现计划、证据、预声明容差和精确例外 ID。`runtime-data`、`runtime-rendered`、`runtime-program` 同样必须声明 `fidelity_obligations`，不能因为由代码绘制就免除还原责任。
 

@@ -7,6 +7,7 @@
  */
 
 import { validateHumanReview, validateHumanReviewIdentity } from "./visual-human-review-contract.mjs";
+import { isWorkflowDpr, workflowDprError } from "./workflow-dpr-contract.mjs";
 
 /** 判断是否为普通对象。 */
 export function isObject(value) {
@@ -177,7 +178,7 @@ function validateTargetConditions(contract, manifest, stage, errors) {
   const stateId = requiredString(target, ["state_id", "stateId"], "冻结目标 state_id", errors, requiredContext);
   const viewport = field(target, "viewport", "target_viewport", "targetViewport");
   if (!validViewport(viewport)) errors.push(contractError(stage, contract, null, "冻结目标必须记录精确 viewport", { missing: "viewport.width/height", returnStage: "V1/PROPOSAL" }));
-  if (typeof target.dpr !== "number" || !Number.isFinite(target.dpr) || target.dpr <= 0) errors.push(contractError(stage, contract, null, "冻结目标必须记录正数 DPR", { missing: "dpr", returnStage: "V1/PROPOSAL" }));
+  if (!isWorkflowDpr(target.dpr)) errors.push(contractError(stage, contract, null, workflowDprError("冻结目标 dpr", target.dpr), { missing: "dpr", returnStage: "V1/PROPOSAL" }));
   requiredString(target, ["locale", "language"], "冻结目标 locale", errors, requiredContext);
   const seed = field(target, "random_seed", "randomSeed", "seed");
   if (!(Number.isInteger(seed) || nonEmptyString(seed))) errors.push(contractError(stage, contract, null, "冻结目标必须记录 random seed", { missing: "random_seed", returnStage: "V1/PROPOSAL" }));
@@ -442,6 +443,7 @@ function validateNormalizationEquivalence(item, label, stage, errors) {
     const candidate = field(entry, "candidate", "actual", "candidate_viewport", "candidateViewport", "candidate_dpr", "candidateDpr", "candidate_coordinates", "candidateCoordinates");
     const equivalent = field(entry, "equivalent", "is_equivalent", "isEquivalent", "status");
     if (target === undefined || candidate === undefined || !(equivalent === true || ["equivalent", "equal", "same", "passed", "pass"].includes(String(equivalent).toLowerCase()))) errors.push(contractError(stage, item, item, `${label} ${text} 等价证明必须同时记录 target、candidate 和 equivalent`, { missing: `normalization_equivalence.${key}.target/candidate/equivalent`, actual: JSON.stringify(entry), returnStage: "VALIDATING", rootCause: "验收问题" }));
+    if (key === "dpr" && (!isWorkflowDpr(target) || !isWorkflowDpr(candidate) || equivalent !== true)) errors.push(contractError(stage, item, item, `${label} DPR 等价证明必须证明 target=2、candidate=2 且 equivalent=true`, { expected: JSON.stringify({ target: 2, candidate: 2, equivalent: true }), actual: JSON.stringify(entry), returnStage: "VALIDATING", rootCause: "验收问题" }));
   }
 }
 
@@ -527,7 +529,7 @@ export function validateStructuredFidelityCases(cases, manifest = null, options 
     if (targetPairs.size && targetPairs.has(`${sceneId}\0${stateId}`)) coveredPairs.add(`${sceneId}\0${stateId}`);
     const viewport = field(item, "viewport", "target_viewport", "targetViewport");
     if (!validViewport(viewport)) errors.push(contractError(stage, item, null, `${label} 缺少正数 viewport`, { missing: "viewport", returnStage: "VALIDATING" }));
-    if (typeof item.dpr !== "number" || item.dpr <= 0) errors.push(contractError(stage, item, null, `${label} 缺少正数 DPR`, { missing: "dpr", returnStage: "VALIDATING" }));
+    if (!isWorkflowDpr(item.dpr)) errors.push(contractError(stage, item, null, workflowDprError(`${label}.dpr`, item.dpr), { missing: "dpr", returnStage: "VALIDATING" }));
     for (const [names, text] of [[["locale", "language"], "locale"], [["input_trace", "inputTrace"], "input_trace"], [["stable_frame", "stableFrame", "animation_sample", "animationSample"], "stable frame/animation sample"], [["scene_id", "sceneId"], "scene_id"], [["state_id", "stateId"], "state_id"]]) requiredString(item, names, `${label}.${text}`, errors, { stage, contract: item, region: item, returnStage: "VALIDATING", rootCause: "验收问题", missing: `${label}.${text}` });
     const fidelitySeed = field(item, "random_seed", "randomSeed", "seed");
     if (!(Number.isInteger(fidelitySeed) || nonEmptyString(fidelitySeed))) errors.push(contractError(stage, item, null, `${label}.seed 缺少有效 random seed`, { missing: "seed", returnStage: "VALIDATING" }));

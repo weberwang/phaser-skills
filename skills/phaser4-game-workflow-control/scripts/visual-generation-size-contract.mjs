@@ -4,10 +4,11 @@
  *
  * 该模块只计算机器可确定的输出尺寸，不承载人工审阅字段；视觉产物
  * 仍由现有 V4/V5 人工审阅门负责。尺寸按逻辑像素、最大运行缩放和
- * 最大 DPR 计算，并强制画布不额外添加 padding。
+ * 固定工作流 DPR 计算，并强制画布不额外添加 padding。
  */
 import { normalizeComponentInventory } from "./visual-component-contract.mjs";
 import { resolveOutputMetadata } from "./visual-raster-contract.mjs";
+import { WORKFLOW_DPR, isWorkflowDpr, workflowDprError } from "./workflow-dpr-contract.mjs";
 
 /** 判断值是否是普通对象。 */
 function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
@@ -123,22 +124,23 @@ export function validateImageGenerationSizeContract(asset, contract, context = {
     errors.push(sizeError(local, "intended_scale_range 必须包含正数 min/max 且 max>=min", { missing: "scene_asset_usage.intended_scale_range" }));
   }
   const maxDpr = field(usage, "max_dpr", "maxDpr");
-  if (!positiveNumber(maxDpr)) errors.push(sizeError(local, "max_dpr 必须是正数", { missing: "scene_asset_usage.max_dpr" }));
+  if (!isWorkflowDpr(maxDpr)) errors.push(sizeError(local, workflowDprError("max_dpr", maxDpr), { missing: "scene_asset_usage.max_dpr", expected: WORKFLOW_DPR }));
   const paddingPolicy = field(usage, "padding_policy", "paddingPolicy");
   if (paddingPolicy !== "none") errors.push(sizeError(local, "ImageGen individual 必须使用 padding_policy=none，禁止画布额外留白", { expected: "none", actual: paddingPolicy, missing: "scene_asset_usage.padding_policy" }));
 
   const display = calculateComponentDisplaySize(region ?? options.region, componentId, local, options);
   errors.push(...display.errors);
-  if (!display.displaySize || !isObject(scale) || !positiveNumber(scale.max) || !positiveNumber(maxDpr)) return errors;
+  if (!display.displaySize || !isObject(scale) || !positiveNumber(scale.max) || !isWorkflowDpr(maxDpr)) return errors;
 
   const singleComponent = display.inventory.components.length === 1;
   if (singleComponent && isObject(displaySizeValue) && (displaySizeValue.width !== display.displaySize.width || displaySizeValue.height !== display.displaySize.height)) {
     errors.push(sizeError(local, "单组件场景 target_display_size 必须与 placement 最大逻辑尺寸一致", { expected: display.displaySize, actual: displaySizeValue }));
   }
-  const minimum = { width: Math.ceil(display.displaySize.width * scale.max * maxDpr), height: Math.ceil(display.displaySize.height * scale.max * maxDpr) };
+  // 计算尺寸只使用统一真源，避免错误合同中的任意 DPR 改变 ImageGen 输出要求。
+  const minimum = { width: Math.ceil(display.displaySize.width * scale.max * WORKFLOW_DPR), height: Math.ceil(display.displaySize.height * scale.max * WORKFLOW_DPR) };
   const expectedSize = { width: expectedAsset.width, height: expectedAsset.height };
   if (expectedAsset.width !== minimum.width || expectedAsset.height !== minimum.height) {
-    errors.push(sizeError(local, "expected_assets 必须精确使用机器计算的最小尺寸（按逻辑像素×最大缩放×最大 DPR 向上取整）", { expected: minimum, actual: expectedSize }));
+    errors.push(sizeError(local, "expected_assets 必须精确使用机器计算的最小尺寸（按逻辑像素×最大缩放×固定 DPR 2 向上取整）", { expected: minimum, actual: expectedSize }));
   }
   const metadata = resolveOutputMetadata(asset ?? {});
   if (asset && (metadata.width !== minimum.width || metadata.height !== minimum.height)) {
