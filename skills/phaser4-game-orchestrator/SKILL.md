@@ -34,6 +34,8 @@ V0 分流，V1 契约/低保真，V2 方向/高保真，V3 生产规划，V4 正
 
 其中⑧若三个表面视觉相同，登记为 1 个 component + 3 个 placements；编号和 placement 数量都不能被解释为组合图资产数量。
 
+视觉阶段使用全局控制面的唯一机器枚举 `V0→V1→V2→V3→V4→V5`。`global-static-baseline-frozen` 只冻结静态基线，不等于 `v2-direction-frozen`；生产规划、正式资产验收和运行集成分别使用 `v3-production-planning-complete`、`v4-formal-acceptance-complete`、`v5-runtime-integration-candidate`。正式 Scene/UI 入口、Boot 接入、可见资产消费和旧视觉删除必须由共享跨阶段校验器从带 path+sha256 的 V2/V3/V4/V5 证据派生，不能使用根摘要、手写 PASS 或用户批准文字。灰盒仅可留在隔离 A2/安全 A3，进入正式链后必须重新通过完整视觉阶段门。
+
 ## 完成
 
 只报告状态包、交付物、实际 diff、可复现证据、未覆盖项和下一门。仍有未完成场景、功能、正式视觉接入或占位资源时不得报告 G1 完成；仅全局控制面可迁移到 `PASSED`、`INTEGRATING`、`RELEASING` 或 `COMPLETE`。

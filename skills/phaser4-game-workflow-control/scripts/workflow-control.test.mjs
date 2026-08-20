@@ -712,17 +712,17 @@ test('正向：initializer 使用 A1 任务授权且不强制读取 Ledger', () 
 });
 
 test('V3 视觉 Work Item 缺失 visualProductionUnits 时 CLI 拒绝绕过 coverage', () => {
-  const f = setup({ domain: 'visual-assets', stageId: 'V3' });
+  const f = setup({ domain: 'visual-assets', stageId: 'V3', visualStage: 'V3', visualStageState: 'v3-production-planning-complete' });
   rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /visualManifestFile|visualProductionUnits/);
 });
 
 test('V4 视觉门不允许 domain=code 通过自由文本绕过', () => {
-  const f = setup({ domain: 'code', stageId: 'V4' });
+  const f = setup({ domain: 'code', stageId: 'V4', visualStage: 'V4', visualStageState: 'v4-formal-acceptance-complete' });
   rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /visualManifestFile|visualProductionUnits/);
 });
 
 test('V3 视觉 Implementation Package 的 ImageGen 编号未映射 coverage 时 CLI 拒绝', () => {
-  const f = setup({ domain: 'visual-assets', stageId: 'V3' });
+  const f = setup({ domain: 'visual-assets', stageId: 'V3', visualStage: 'V3', visualStageState: 'v3-production-planning-complete' });
   const manifestPath = join(f.repo, 'docs', 'visual-assets.json');
   writeJson(manifestPath, {
     schema_version: '1.5',

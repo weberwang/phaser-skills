@@ -40,4 +40,16 @@ Work Item 的 `taskAuthorization` 保存用户原始请求、目标、范围、�
 
 视觉生产合同属于 V3-V5 的领域证据，不改变 F0-F4 唯一语义。`visual-assets` 中必须显式区分 `production_origin`、`production_method`、`delivery_kind`、`image_generation_required`、`generation_record_required`、`substitution_policy` 和 `expected_assets`；`independent-production`、`generate-now` 与视觉相似度都不能推断 ImageGen 或替代生产合同。需要 ImageGen 时，V4/F2/V5 必须继续验证独立位图、生成记录、运行时消费和无替换证据。
 
+## V0→V5 跨阶段硬门
+
+视觉阶段是唯一的机器枚举 `V0`、`V1`、`V2`、`V3`、`V4`、`V5`，且必须同时声明有语义的 `visualStageState`。`global-static-baseline-frozen` 只冻结颜色、字体、栅格等静态规则；它不等于 `v2-direction-frozen`。V2 方向冻结还必须由不可变的代表画面、动态样片、人工审查和独立审查证据派生。
+
+```text
+V0 分流 → V1 契约/低保真 → V2 方向冻结
+  → V3 生产规划完成 → V4 正式资产/组件/同屏验收
+  → V5 运行时集成候选 → A4/F4 正式入口
+```
+
+正式 Scene/UI 注册、Boot→可见 Scene 入口修改、正式消费可见资产、删除旧视觉实现或声明视觉完成，必须由共享视觉前置校验器复核 V2 Execution Unit Result、V3 生产合同、V4 验收和 V5 候选。阶段名、`stageId` 文本、根 PASS/布尔值、说明文字和 Approval Ledger 原文都不是证据；所有证据必须使用 Work Item、Unit Result、候选身份和内容哈希的不可变文件引用。任一哈希、审查或依赖漂移会使 pending 变为 stale，恢复路径固定为返回 V2。
+
 新审批不得让未授权的既往动作合法化。基线、对象、阶段、模块、文件范围或动作等级改变时，创建新审批。旧记录只读保留。

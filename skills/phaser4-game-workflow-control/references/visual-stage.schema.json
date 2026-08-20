@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "phaser4-visual-stage.schema.json",
+  "title": "Phaser 4 视觉阶段硬门",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["visualStage", "visualStageState"],
+  "properties": {
+    "visualStage": {"enum": ["V0", "V1", "V2", "V3", "V4", "V5"]},
+    "visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "global-static-baseline-frozen", "v2-direction-frozen", "v3-production-planning-complete", "v4-formal-acceptance-complete", "v5-runtime-integration-candidate"]},
+    "globalStaticBaselineState": {"const": "global-static-baseline-frozen"},
+    "visualStageEvidenceRefs": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/evidenceReference"}
+    }
+  },
+  "$defs": {
+    "evidenceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "workItemId": {"type": "string", "minLength": 1},
+        "resultId": {"type": "string", "minLength": 1},
+        "unitResultId": {"type": "string", "minLength": 1}
+      }
+    }
+  },
+  "allOf": [
+    {"if": {"properties": {"visualStage": {"enum": ["V0", "V1"]}}}, "then": {"properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "global-static-baseline-frozen"]}}}},
+    {"if": {"properties": {"visualStage": {"const": "V2"}}}, "then": {"properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "v2-direction-frozen"]}}}},
+    {"if": {"properties": {"visualStage": {"const": "V3"}}}, "then": {"properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "v3-production-planning-complete"]}}}},
+    {"if": {"properties": {"visualStage": {"const": "V4"}}}, "then": {"properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "v4-formal-acceptance-complete"]}}}},
+    {"if": {"properties": {"visualStage": {"const": "V5"}}}, "then": {"properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "v5-runtime-integration-candidate"]}}}}
+  ]
+}

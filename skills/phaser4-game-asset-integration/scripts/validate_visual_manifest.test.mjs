@@ -76,11 +76,13 @@ function validManifest() {
   const manifest = {
     schema_version: "1.5",
     visual_contract_version: "1.0",
+    visualStage: "V5",
+    visualStageState: "v5-runtime-integration-candidate",
     workItemId: "work-item-1",
     candidateVersion: "candidate-1",
     effect_image_reconstruction: { applicability: "effect-image", lifecycle: "v5-complete" },
-    visual_baseline: { id: "fox-world", version: "1.0.0", style_fingerprint: EMPTY_DOCUMENT_FINGERPRINT, document: "docs/visual-baseline.md", status: "frozen", anchor_evidence: ["evidence/visual/main-anchor.png"] },
-    reference_target: { candidate_id: "mockup-a", original_file: "evidence/visual/mockup.png", target_sha256: targetSha, frozen_at: "2026-08-15T00:00:00Z", status: "frozen", scene_ids: ["main-gameplay"], state_ids: ["default"] },
+    visual_baseline: { id: "fox-world", version: "1.0.0", style_fingerprint: EMPTY_DOCUMENT_FINGERPRINT, document: "docs/visual-baseline.md", status: "global-static-baseline-frozen", anchor_evidence: ["evidence/visual/main-anchor.png"] },
+    reference_target: { candidate_id: "mockup-a", original_file: "evidence/visual/mockup.png", target_sha256: targetSha, frozen_at: "2026-08-15T00:00:00Z", status: "reference-target-frozen", scene_ids: ["main-gameplay"], state_ids: ["default"] },
     candidate_identity: { kind: "git", sha256: candidateSha, diff_fingerprint: "diff-1" },
     contract_reconciliation: {
       decision_id: "reconcile-1", reviewed_at: "2026-08-15T00:10:00Z", target_sha256: targetSha, candidate_sha256: candidateSha, status: "passed", rollback: "V1/module-audit",
@@ -627,7 +629,7 @@ test("公共资源要求稳定复用或运行必需", () => { const valid = vali
 test("场景归属与公共归属不得混用", () => { const manifest = validManifest(); manifest.assets[0].shared = true; manifest.assets[0].shared_scene_ids = ["main-gameplay", "result"]; assert(validateManifest(manifest).some((item) => item.includes("二选一"))); });
 test("重复纹理键和输出路径同时报告", () => { const manifest = validManifest(); manifest.assets.push({ ...manifest.assets[0], id: "hero-run" }); const errors = validateManifest(manifest); assert(errors.some((item) => item.includes("texture_key 重复"))); assert(errors.some((item) => item.includes("路径重复"))); });
 test("已验收资源要求证据", () => { const manifest = validManifest(); delete manifest.assets[0].phaser_evidence; assert(validateManifest(manifest).some((item) => item.includes("phaser_evidence"))); });
-test("视觉基线必须存在且冻结", () => { const missing = validManifest(); delete missing.visual_baseline; assert(validateManifest(missing).includes("visual_baseline 必须是对象")); const draft = validManifest(); draft.visual_baseline.status = "draft"; assert(validateManifest(draft).some((item) => item.includes("status 必须为 frozen"))); });
+test("视觉基线必须存在且使用明确静态冻结语义", () => { const missing = validManifest(); delete missing.visual_baseline; assert(validateManifest(missing).includes("visual_baseline 必须是对象")); const draft = validManifest(); draft.visual_baseline.status = "draft"; assert(validateManifest(draft).some((item) => item.includes("global-static-baseline-frozen"))); const bare = validManifest(); bare.visual_baseline.status = "frozen"; assert(validateManifest(bare).some((item) => item.includes("global-static-baseline-frozen"))); });
 test("风格指纹格式固定", () => { const manifest = validManifest(); manifest.visual_baseline.style_fingerprint = "sha256:ABC"; assert(validateManifest(manifest).some((item) => item.includes("64 位小写十六进制"))); });
 test("阶段证据文档不得作为冻结基线哈希正文", () => { const manifest = validManifest(); manifest.visual_baseline.document = "docs/visual-design.md"; assert(validateManifest(manifest).some((item) => item.includes("不可变 docs/visual-baseline.md"))); });
 test("资源基线绑定必须一致", () => { for (const [field, value] of [["visual_baseline_version", "2.0.0"], ["style_fingerprint", "sha256:drifted"]]) { const manifest = validManifest(); manifest.assets[0][field] = value; assert(validateManifest(manifest).some((item) => item.includes(`${field} 与`))); } });

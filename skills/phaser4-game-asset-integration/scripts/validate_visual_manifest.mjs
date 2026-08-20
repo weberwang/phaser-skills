@@ -19,6 +19,7 @@ import { validateSceneReconstructionGate, validateSceneReconstructionContract, v
 import { validateHumanReview, validateVisualHumanReviewCompletion } from "../../phaser4-game-workflow-control/scripts/visual-human-review-contract.mjs";
 import { validateImageGenerationSizeManifest } from "../../phaser4-game-workflow-control/scripts/visual-generation-size-contract.mjs";
 import { isWorkflowDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
+import { VISUAL_STAGE_IDS, VISUAL_STAGE_STATES } from "../../phaser4-game-workflow-control/scripts/visual-stage-prerequisites.mjs";
 export { computeRegionDefinitionSha256 } from "./effect_image_annotation_core.mjs";
 export { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateComponentReviewCoverage, validateEvidenceIdentity, validateF2ProductionReviews, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
 export { validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "../../phaser4-game-workflow-control/scripts/scene-reconstruction-contract.mjs";
@@ -73,7 +74,7 @@ function validateReferenceTarget(target, errors) {
   for (const field of ["candidate_id", "original_file", "target_sha256", "frozen_at"]) if (!nonEmptyString(target[field])) errors.push(`reference_target.${field} 必须是非空字符串`);
   if (nonEmptyString(target.target_sha256) && !SHA_PATTERN.test(target.target_sha256)) errors.push("reference_target.target_sha256 必须是 sha256: 后接 64 位小写十六进制");
   if (nonEmptyString(target.frozen_at) && Number.isNaN(Date.parse(target.frozen_at))) errors.push("reference_target.frozen_at 必须是可解析时间");
-  if (target.status !== "frozen") errors.push("reference_target.status 必须为 frozen");
+  if (target.status !== "reference-target-frozen") errors.push("reference_target.status 必须为 reference-target-frozen；裸 frozen 不代表 V2");
   for (const field of ["scene_ids", "state_ids"]) if (!Array.isArray(target[field]) || target[field].length === 0 || !target[field].every(nonEmptyString)) errors.push(`reference_target.${field} 必须是非空字符串列表`);
   return target;
 }
@@ -283,9 +284,26 @@ function validateVisualBaseline(baseline, errors) {
   for (const field of ["id", "version", "style_fingerprint", "document"]) if (!nonEmptyString(baseline[field])) errors.push(`visual_baseline.${field} 必须是非空字符串`);
   if (nonEmptyString(baseline.document) && baseline.document !== "docs/visual-baseline.md") errors.push("visual_baseline.document 必须指向不可变 docs/visual-baseline.md，阶段证据不得参与哈希");
   if (nonEmptyString(baseline.style_fingerprint) && !STYLE_FINGERPRINT_PATTERN.test(baseline.style_fingerprint)) errors.push("visual_baseline.style_fingerprint 必须是 sha256: 后接 64 位小写十六进制");
-  if (baseline.status !== "frozen") errors.push("visual_baseline.status 必须为 frozen");
+  if (baseline.status !== "global-static-baseline-frozen") errors.push("visual_baseline.status 必须为 global-static-baseline-frozen；静态基线冻结不代表 V2");
   validatePathList(baseline.anchor_evidence, "visual_baseline.anchor_evidence", errors);
   return baseline;
+}
+
+/** 校验 manifest 的显式 V0→V5 语义；阶段证据不可由 baseline.status 猜测。 */
+function validateVisualStageMetadata(data, requestedStage, errors) {
+  const stage = data.visualStage ?? data.visual_stage;
+  const state = data.visualStageState ?? data.visual_stage_state;
+  const isVisualManifest = data.effect_image_reconstruction?.applicability === "effect-image";
+  if (!isVisualManifest && stage === undefined && state === undefined) return;
+  if (!VISUAL_STAGE_IDS.includes(String(stage ?? "").toUpperCase())) errors.push("visualStage 必须显式为 V0、V1、V2、V3、V4 或 V5，不能从 stageId/文本推断");
+  if (!VISUAL_STAGE_STATES.includes(String(state ?? ""))) errors.push("visualStageState 必须使用有语义的 V0→V5 状态，裸 frozen 或未知状态均失败");
+  if (stage && requestedStage && String(stage).toUpperCase() !== String(requestedStage).toUpperCase()) errors.push(`visualStage=${stage} 与 --stage=${requestedStage} 冲突`);
+  if (String(state) === "global-static-baseline-frozen" && String(stage).toUpperCase() === "V2") errors.push("global-static-baseline-frozen 只表示静态基线冻结，不能冒充 v2-direction-frozen");
+  if (isVisualManifest && (!stage || !state)) errors.push("effect-image 清单必须同时提供 visualStage 与 visualStageState，缺失时不允许继续生产");
+  if (String(stage).toUpperCase() === "V2" && String(state) !== "v2-direction-frozen") errors.push("V2 必须声明 v2-direction-frozen，静态基线或笼统 frozen 不足");
+  if (String(stage).toUpperCase() === "V3" && String(state) !== "v3-production-planning-complete") errors.push("V3 必须声明 v3-production-planning-complete");
+  if (String(stage).toUpperCase() === "V4" && String(state) !== "v4-formal-acceptance-complete") errors.push("V4 必须声明 v4-formal-acceptance-complete");
+  if (String(stage).toUpperCase() === "V5" && String(state) !== "v5-runtime-integration-candidate") errors.push("V5 必须声明 v5-runtime-integration-candidate");
 }
 
 /** 验证生产中及已验收资源绑定当前根基线。 */
@@ -356,6 +374,7 @@ export function validateManifest(data, options = {}) {
   if (requestedStage && !["V3", "V4", "V5"].includes(requestedStage)) errors.push("--stage 只能是 V3、V4 或 V5");
   if (data.schema_version !== SCHEMA_VERSION) errors.push(`schema_version 必须为 ${SCHEMA_VERSION}`);
   const baseline = validateVisualBaseline(data.visual_baseline, errors);
+  validateVisualStageMetadata(data, requestedStage, errors);
   const reconstruction = validateReconstructionLifecycle(data, errors);
   let target = null; let candidate = null;
   if (reconstruction?.applicability === "effect-image") {

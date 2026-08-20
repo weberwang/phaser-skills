@@ -84,6 +84,41 @@
       "type": "string",
       "minLength": 1
     },
+    "visualStage": {
+      "enum": ["V0", "V1", "V2", "V3", "V4", "V5"]
+    },
+    "visualStageState": {
+      "enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "global-static-baseline-frozen", "v2-direction-frozen", "v3-production-planning-complete", "v4-formal-acceptance-complete", "v5-runtime-integration-candidate"]
+    },
+    "globalStaticBaselineState": {"const": "global-static-baseline-frozen"},
+    "visualStageEvidenceRefs": {
+      "type": "object",
+      "properties": {
+        "V2": {"$ref": "#/$defs/visualStageEvidenceReference"},
+        "V3": {"$ref": "#/$defs/visualStageEvidenceReference"},
+        "V4": {"$ref": "#/$defs/visualStageEvidenceReference"},
+        "V5": {"$ref": "#/$defs/visualStageEvidenceReference"}
+      },
+      "additionalProperties": false
+    },
+    "visualIntegration": {
+      "type": "object",
+      "properties": {
+        "registersFormalScene": {"type": "boolean"},
+        "replacesFormalScene": {"type": "boolean"},
+        "modifiesBootEntry": {"type": "boolean"},
+        "registersProductionEntry": {"type": "boolean"},
+        "formalRuntimeConsumption": {"type": "boolean"},
+        "deletesLegacyVisualImplementation": {"type": "boolean"},
+        "declaresVisualComplete": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "visibleVisualProductionIntegration": {"type": "boolean"},
+    "graybox": {"type": "boolean"},
+    "isolatedPrototype": {"type": "boolean"},
+    "pendingVisualPrerequisiteSnapshot": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}},
+    "pendingApprovalStatus": {"enum": ["pending", "stale", "invalid"]},
     "sceneReconstructionContract": {
       "type": "object",
       "description": "effect-image V1-V5 场景还原合同；缺失时不得把独立资源工件视为完整还原。",
@@ -498,6 +533,36 @@
   },
   "allOf": [
     {
+      "if": {"required": ["visualStage"], "properties": {"visualStage": {"enum": ["V0", "V1"]}}},
+      "then": {"required": ["visualStageState"], "properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "global-static-baseline-frozen"]}}}
+    },
+    {
+      "if": {"required": ["visualStage"], "properties": {"visualStage": {"const": "V2"}}},
+      "then": {"required": ["visualStageState"], "properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "v2-direction-frozen"]}}}
+    },
+    {
+      "if": {"required": ["visualStage"], "properties": {"visualStage": {"const": "V3"}}},
+      "then": {"required": ["visualStageState"], "properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "v3-production-planning-complete"]}}}
+    },
+    {
+      "if": {"required": ["visualStage"], "properties": {"visualStage": {"const": "V4"}}},
+      "then": {"required": ["visualStageState"], "properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "v4-formal-acceptance-complete"]}}}
+    },
+    {
+      "if": {"required": ["visualStage"], "properties": {"visualStage": {"const": "V5"}}},
+      "then": {"required": ["visualStageState"], "properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "v5-runtime-integration-candidate"]}}}
+    },
+    {
+      "if": {"required": ["stageId"], "properties": {"stageId": {"pattern": "^V[0-9]+$"}}},
+      "then": {
+        "required": ["visualStage", "visualStageState"],
+        "properties": {
+          "visualStage": {"enum": ["V0", "V1", "V2", "V3", "V4", "V5"]},
+          "visualStageState": {"not": {"const": "frozen"}}
+        }
+      }
+    },
+    {
       "if": {"required": ["stageId"], "properties": {"stageId": {"enum": ["V2", "V3", "V4", "V5"]}}},
       "then": {
         "anyOf": [
@@ -677,6 +742,18 @@
     }
   ],
   "$defs": {
+    "visualStageEvidenceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "workItemId": {"type": "string", "minLength": 1},
+        "resultId": {"type": "string", "minLength": 1},
+        "unitResultId": {"type": "string", "minLength": 1}
+      }
+    },
     "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
     "referenceTechnicalConflicts": {"type": "array", "items": {"type": "object", "minProperties": 1}},
     "artifactIdentity": {

@@ -17,7 +17,7 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 
 `$phaser4-game-workflow-control` 独占全局状态、风险门、动作等级、路径/外部目标门、状态迁移与证据一致性。任何领域 Skill 只能提议、审查或在 Work Item 授权范围内修改，并必须回到总控；领域规则只能收紧。
 
-全局状态为：`INTAKE`、`BASELINE`、`PROPOSAL`、`REVIEW`、`IMPLEMENTING`、`VALIDATING`、`PASSED`、`INTEGRATING`、`RELEASE_APPROVAL_REQUIRED`、`RELEASING`、`COMPLETE`、`RETURN`、`BLOCKED`。A1-A3 从 `REVIEW` 直接进入适用验证或实施状态；G0-G3、V0-V5 和领域生产阶段都映射为 `stageId`，不能形成第二套状态机。
+全局状态为：`INTAKE`、`BASELINE`、`PROPOSAL`、`REVIEW`、`IMPLEMENTING`、`VALIDATING`、`PASSED`、`INTEGRATING`、`RELEASE_APPROVAL_REQUIRED`、`RELEASING`、`COMPLETE`、`RETURN`、`BLOCKED`。A1-A3 从 `REVIEW` 直接进入适用验证或实施状态；`stageId` 只描述范围，不能替代显式视觉阶段字段或形成第二套状态机。
 
 统一门语义：F0 授权与流程合规、F1 规格一致性、F2 领域质量、F3 工程验证、F4 集成/发布决策。
 
@@ -42,6 +42,25 @@ node <skill-dir>\scripts\workflow-control.mjs parallel-check --work-item .workfl
 node <skill-dir>\scripts\workflow-control.mjs diff-audit --work-item .workflow-control\work-items\WI-1.json --implementation-package .workflow-control\implementation-package.json --baseline <git-sha> --baseline-hash <sha256> --action-level A3 --record .workflow-control\evidence\WI-1\diff-audit.json
 # 仅 A4-A6 具体操作使用 prepare-approval、handoff、approve 与 --ledger，并用 --impact 冻结影响。
 ```
+
+### V0→V5 视觉硬门
+
+任何注册/替换正式 Phaser Scene、修改 Boot→可见 Scene 入口、正式消费可见资产、删除旧视觉实现或声明视觉完成的 Work Item，都必须通过同一个视觉阶段前置校验器：
+
+| 阶段 | 唯一机器状态 | 必须绑定的下游证据 |
+| --- | --- | --- |
+| V0 | `not-started`/`in-progress` 等过程状态 | 视觉任务范围与适用阶段 |
+| V1 | `not-started`/`in-progress` 等过程状态 | 低保真/结构与交互合同 |
+| V2 | `v2-direction-frozen` | 有效 Execution Unit Result `PASS`、代表画面、动态样片、人工视觉审查、独立 F2 |
+| V3 | `v3-production-planning-complete` | 生产计划和视觉生产合同 |
+| V4 | `v4-formal-acceptance-complete` | 正式资产/组件状态和同屏组合验收 |
+| V5 | `v5-runtime-integration-candidate` | 当前候选身份、内容/基线/diff 哈希和运行时集成候选 |
+
+`global-static-baseline-frozen` 只冻结颜色、字体、栅格等静态规则，不等于 V2。裸 `frozen`、未知阶段、`stageId=main/production-entry/integration`、根 `PASS`/布尔值、说明文字或用户回复均不能代替阶段证据。V2→V5 证据必须由 Work Item 的 `path + sha256` 不可变引用加载并复算文件哈希；任一引用、基线、diff、候选或审查变化都会使 pending 变为 stale，恢复路径固定回到 V2。
+
+灰盒/Graphics/诊断文本可以在隔离环境作为 A2 或安全 A3 候选，但不得注册正式入口、宣称 V2/V4/V5、删除旧实现或作为正式资产验收证据；进入 Scene/Boot 生产链必须重新完成 V2→V5。
+
+视觉硬门失败输出结构化 `errorCode`、`missingStages`、`missingEvidence`、`invalidatedDependencies` 和 `nextAction`。`lint`、`preflight`、`route`、`advance`、`prepare-approval`、`handoff`、`approve`、`unit-check`、`evidence-check`、`status` 均复用同一校验器；`prepare-approval` 失败不创建 pending，`approve` 会在写入 Ledger 前重新校验。
 
 命令只控制白名单 `phaser-*` 动作。`route` 对 Phaser A0-A3 输出 `TASK_AUTHORIZATION`，未决取舍输出 `USER_INPUT_REQUIRED`，仅 Phaser A4-A6 输出 `EXPLICIT_APPROVAL`。Git、通用 Shell/文件管理、包管理、浏览器、消息、GitHub、普通云配置、第三方 API 和通用进程管理完全属于 `OUT_OF_SCOPE`，无需 Work Item 或 Ledger，也不会触发状态迁移；它们由上层系统安全规则与当前用户任务处理。本控制面仅把 Git diff 和本地服务查重当作 Phaser 验证证据。
 

@@ -11,6 +11,13 @@
 - [Implementation Package](implementation-package.schema.json)
 - [视觉拆解人工确认](visual-decomposition-confirmation.schema.json)
 - [Change Request](change-request.schema.json)
+- [视觉阶段硬门](visual-stage.schema.json)
+
+## 视觉阶段 Schema
+
+`visualStage` 只能是 `V0` 至 `V5`，`visualStageState` 只能使用带上下文的状态：`global-static-baseline-frozen`、`v2-direction-frozen`、`v3-production-planning-complete`、`v4-formal-acceptance-complete`、`v5-runtime-integration-candidate`（以及明确的过程/失效状态）。裸 `frozen`、未知阶段、缺少阶段语义或冲突声明均失败。
+
+正式可见视觉集成的 `visualStageEvidenceRefs` 必须逐阶段提供 `path` 与 `sha256`，由控制面从文件读取并复算内容身份；内联对象、根 `PASS`、布尔值、说明文字和 Ledger 文本不能满足依赖。V2 引用必须是有效 Execution Unit Result，且包含代表画面、动态样片、人工审查和独立审查；V3/V4/V5 引用必须分别绑定生产合同、正式资产/组件/同屏验收和运行时候选身份。
 
 建议项目布局：
 

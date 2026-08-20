@@ -13,6 +13,7 @@ import { repositoryLint } from './repository-lint.mjs';
 import { pathMatches } from './path-matcher.mjs';
 import { isVisualProductionWork, loadVisualManifestSnapshot, validateVisualChangeRequest, validateVisualDelegationBinding, validateVisualEvidence, validateVisualImplementationPackage, validateVisualImplementationPackageBinding } from './visual-production-contract.mjs';
 import { computeVisualConfirmationPrerequisiteFilesSha256, validateVisualConfirmationReferences, visualConfirmationAuthority } from './visual-confirmation-authority.mjs';
+import { enforceVisualStageGate, validateVisualStageDeclaration } from './visual-stage-prerequisites.mjs';
 const STATES = ['INTAKE', 'BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING', 'VALIDATING', 'PASSED', 'INTEGRATING', 'RELEASE_APPROVAL_REQUIRED', 'RELEASING', 'COMPLETE', 'RETURN', 'BLOCKED'];
 const LEVELS = ['A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6'];
 const GATES = ['F0', 'F1', 'F2', 'F3', 'F4'];
@@ -37,18 +38,13 @@ const TRANSITIONS = {
 const SHORT_APPROVAL = /^(批准|同意|可以|继续|就这个|选\s*[a-zA-Z]|按流程推进|你看着办|做完它|批准然后按(?:照)?工作流推进)[。！!\s]*$/i;
 const AFFIRMATIVE_APPROVAL = /^(批准|同意|确认|接受|通过)(?:$|[\s，,：:。！!].*)/;
 const NEGATIVE_APPROVAL = /(不同意|不批准|拒绝|取消|停止)/;
-/** 输出中文错误并使用稳定的非零退出码终止。 */ function fail(message, code = 2) {
-  process.stderr.write(`拒绝：${message}\n`);
-  process.exit(code);
-}
+/** 输出中文错误并使用稳定的非零退出码终止。 */ function fail(message, code = 2) { process.stderr.write(`拒绝：${message}\n`); process.exit(code); }
+const visualStageGate = enforceVisualStageGate;
 /** 校验 Phaser 生命周期动作白名单及其唯一等级，未知 phaser-* 也不得旁路。 */ function validatePhaserAction(actionType, level = null, label = 'actionType') {
   if (!PHASER_ACTIONS.has(actionType)) fail(`${label} 不是受控 Phaser 动作白名单成员：${actionType}`);
   if (level && PHASER_ACTION_LEVEL.get(actionType) !== level) fail(`${label} 与动作等级不一致：${actionType} 只能使用 ${PHASER_ACTION_LEVEL.get(actionType)}`);
 }
-/** 非 Phaser 操作完全退出本控制面，不读取或修改任何工作流工件。 */ function returnOutOfScope(actionType) {
-  process.stdout.write(JSON.stringify({ controlled: false, channel: 'OUT_OF_SCOPE', authorizationBasis: 'OUTSIDE_PHASER_WORKFLOW', explicitApprovalRequired: false }));
-  return true;
-}
+/** 非 Phaser 操作完全退出本控制面，不读取或修改任何工作流工件。 */ function returnOutOfScope(actionType) { process.stdout.write(JSON.stringify({ controlled: false, channel: 'OUT_OF_SCOPE', authorizationBasis: 'OUTSIDE_PHASER_WORKFLOW', explicitApprovalRequired: false })); return true; }
 /** 在读取 Work Item 前判定显式 actionType 是否属于本控制面。 */ function bypassOutsidePhaser(args) {
   const actionType = String(args['action-type'] ?? '');
   if (!actionType || actionType.startsWith('phaser-')) return false;
@@ -66,25 +62,14 @@ const NEGATIVE_APPROVAL = /(不同意|不批准|拒绝|取消|停止)/;
   }
   return result;
 }
-/** 将单值或重复参数统一为字符串数组。 */ function list(value) {
-  if (value === undefined || value === true) return [];
-  return (Array.isArray(value) ? value : [value]).flatMap((item) => String(item).split(',')).map((item) => item.trim()).filter(Boolean);
-}
+/** 将单值或重复参数统一为字符串数组。 */ function list(value) { if (value === undefined || value === true) return []; return (Array.isArray(value) ? value : [value]).flatMap((item) => String(item).split(',')).map((item) => item.trim()).filter(Boolean); }
 /** 读取 JSON 并把语法错误转成控制面错误。 */ function readJson(path, label) {
   if (!path || path === true) fail(`缺少 ${label} 路径`);
   try { return JSON.parse(readFileSync(resolve(String(path)), 'utf8')); }
   catch (error) { fail(`无法读取 ${label}：${error.message}`); }
 }
-/** 写入稳定格式 JSON，并确保控制目录存在。 */ function writeJson(path, value) {
-  const target = resolve(String(path));
-  mkdirSync(dirname(target), { recursive: true });
-  writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-}
-/** 校验必填字段存在。 */ function requireFields(value, fields, label) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) fail(`${label} 必须为对象`);
-  const missing = fields.filter((field) => value[field] === undefined);
-  if (missing.length) fail(`${label} 缺少字段：${missing.join('、')}`);
-}
+/** 写入稳定格式 JSON，并确保控制目录存在。 */ function writeJson(path, value) { const target = resolve(String(path)); mkdirSync(dirname(target), { recursive: true }); writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`, 'utf8'); }
+/** 校验必填字段存在。 */ function requireFields(value, fields, label) { if (!value || typeof value !== 'object' || Array.isArray(value)) fail(`${label} 必须为对象`); const missing = fields.filter((field) => value[field] === undefined); if (missing.length) fail(`${label} 缺少字段：${missing.join('、')}`); }
 /** 校验字符串数组。 */ function requireStringArray(value, label) {
   if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) fail(`${label} 必须为字符串数组`);
 }
@@ -105,6 +90,12 @@ function hashText(value) {
 /** 校验工作项的核心结构、枚举与控制字段。 */
 function validateWorkItem(work) {
   requireFields(work, WORK_REQUIRED, 'Work Item');
+  const visualDeclarationErrors = validateVisualStageDeclaration(work);
+  if (visualDeclarationErrors.length) {
+    const failure = { ok: false, command: 'work-item-schema', errorCode: visualDeclarationErrors[0].errorCode, message: visualDeclarationErrors[0].message, missingStages: visualDeclarationErrors[0].missingStages ?? [], missingEvidence: visualDeclarationErrors[0].missingEvidence ?? [], invalidatedDependencies: [], nextAction: visualDeclarationErrors[0].nextAction ?? '补齐 V0→V5 的显式阶段和语义状态' };
+    process.stderr.write(`${JSON.stringify(failure, null, 2)}\n`);
+    process.exit(2);
+  }
   const visualReferenceErrors = validateVisualConfirmationReferences(work);
   if (visualReferenceErrors.length) fail(visualReferenceErrors[0]);
   requireStringArray(work.moduleIds, 'Work Item.moduleIds');
@@ -351,6 +342,7 @@ function route(args) {
   const requestedType = String(args['action-type'] ?? '');
   if (requestedType) validatePhaserAction(requestedType, args['action-level'] ? String(args['action-level']) : null, 'route actionType');
   const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
+  visualStageGate(work, { command: 'route', actionLevel: work.pendingApprovalActionLevel, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, projectRoot: resolve(String(args.repo ?? process.cwd())) });
   if (requestedType && requestedType !== work.pendingApprovalActionType) fail('route 显式 Phaser 动作必须匹配 Work Item 当前动作');
   const ledger = args.ledger ? readLedger(args.ledger) : { schemaVersion: '1.0', approvals: [] };
   const approval = effectiveApproval(work, ledger);
@@ -419,6 +411,8 @@ function preflight(args) {
   if (!work.allowedActions.includes(actionType)) fail('动作类型未获 Work Item.allowedActions 授权');
   if (work.prohibitedActions.includes(actionType)) fail(`动作命中 prohibitedActions：${actionType}`);
   const repo = resolve(String(args.repo ?? process.cwd()));
+  // 先执行视觉硬门，避免正式入口被普通等级/包校验的错误顺序遮蔽而形成旁路。
+  visualStageGate({ ...work, actionLevel: level }, { command: 'preflight', actionLevel: level, projectRoot: repo });
   const paths = checkPaths(list(args.path), work.allowedPaths, work.forbiddenPaths, repo);
   if (level !== 'A0' && paths.length === 0 && !['A5', 'A6'].includes(level)) fail('本地动作必须声明至少一个 --path');
   const targets = list(args['external-target']);
@@ -490,6 +484,8 @@ function prepareApproval(args) {
   if ((flags.physicalDevice || flags.destructive || flags.release) && level !== 'A6') fail('真机、破坏性或发布审批点必须为 A6');
   if (ledger.approvals.some((approval) => approval.promptContextId === pendingId) || pendingId === work.pendingApprovalId) fail('pendingApprovalId 已使用，审批点必须轮换');
   if (work.globalState === 'RELEASE_APPROVAL_REQUIRED' && !work.releaseWorkItem) fail('发布审批点必须属于独立发布 Work Item');
+  const visualGate = visualStageGate({ ...work, actionLevel: level }, { command: 'prepare-approval', actionLevel: level, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, projectRoot: resolve(String(args.repo ?? process.cwd())), implementationPackage: args['implementation-package'] ? readJson(args['implementation-package'], 'Implementation Package') : null });
+  if (visualGate.required && level !== 'A4') fail('正式可见视觉集成必须使用 A4/F4，不得以其他等级替代');
   work.previousApprovalRecord = work.approvalRecord;
   work.pendingApprovalId = pendingId;
   work.pendingApprovalObject = object;
@@ -512,6 +508,11 @@ function prepareApproval(args) {
   work.pendingApprovalPreparedAt = new Date().toISOString();
   work.pendingApprovalPresentedId = null;
   work.pendingApprovalPresentedAt = null;
+  if (visualGate.required) {
+    // 快照写入 pending 只用于失效检测；不写入或改写 Approval Ledger 历史。
+    work.pendingVisualPrerequisiteSnapshot = visualGate.snapshot;
+    work.pendingApprovalStatus = 'pending';
+  }
   work.nextGate = gate;
   work.approvalRecord = null;
   // 先在内存中验证完整 pending，失败时不得把下次无法读取的半成品写回磁盘。
@@ -523,6 +524,7 @@ function prepareApproval(args) {
 /** 追加审批，且所有原文只能绑定当前已展示 pending approval。 */
 function approve(args) {
   const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
+  visualStageGate(work, { command: 'approve', actionLevel: work.pendingApprovalActionLevel, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, projectRoot: resolve(String(args.repo ?? process.cwd())) });
   if (!['A4', 'A5', 'A6'].includes(work.pendingApprovalActionLevel)) fail('approve 仅接受 A4-A6 具体操作审批');
   const ledger = existsSync(resolve(String(args.ledger))) ? readLedger(args.ledger) : { schemaVersion: '1.0', approvals: [] };
   // 无 record 时，记录完全从当前已冻结 pending 生成，调用者不能借短回复扩权。
@@ -603,6 +605,7 @@ function unitCheck(args) {
   const result = readJson(resultPath, 'Execution Unit Result');
   const unit = pkg.executionUnits.find((item) => item.unitId === result.unitId);
   if (!unit) fail(`Execution Unit Result 引用未知单元：${result.unitId}`);
+  visualStageGate({ ...work, implementationPackage: pkg }, { command: 'unit-check', actionLevel: work.pendingApprovalActionLevel, projectRoot: resolve(String(args.repo ?? process.cwd())), pendingSnapshot: work.pendingVisualPrerequisiteSnapshot });
   try { validateUnitResult(result, resultPath, work, pkg, unit, resolve(String(args.repo ?? process.cwd())), unitIo()); } catch (error) { fail(error.message); }
   process.stdout.write(JSON.stringify({ ok: true, command: 'unit-check', unitId: unit.unitId, resultId: result.resultId }, null, 2));
 }
@@ -817,6 +820,7 @@ function evidenceCheck(args, silent = false) {
   if (f0Authorization !== audit.authorizationId || evidence.gateResults.F3.evidenceId !== evidence.evidenceId || !reviewer) fail('F0 授权、F2 审查或 F3 证据绑定不完整');
   let visualManifest = null;
   if (visualPackage) { const snapshot = loadVisualManifestSnapshot(visualPackage, repo); if (snapshot.errors.length) fail(snapshot.errors[0]); visualManifest = snapshot.manifest; }
+  visualStageGate({ ...work, implementationPackage: visualPackage, visualManifest }, { command: 'evidence-check', actionLevel: audit.actionLevel, projectRoot: repo, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, evidence });
   const visualEvidenceErrors = validateVisualEvidence(evidence, visualPackage, { manifest: visualManifest, projectRoot: repo, diffFingerprint: evidence.diffFingerprint, implementationPackage: visualPackage, authority: visualConfirmationAuthority(work, visualManifest, { projectRoot: repo, checkFiles: true, implementationPackage: visualPackage }) });
   if (visualEvidenceErrors.length) fail(visualEvidenceErrors[0]);
   if (['A1', 'A2'].includes(audit.actionLevel)) {
@@ -835,6 +839,7 @@ function transition(args) {
   const target = String(args.to ?? '');
   if (!(TRANSITIONS[work.globalState] ?? []).includes(target)) fail(`禁止状态迁移：${work.globalState} → ${target}`);
   const repo = resolve(String(args.repo ?? process.cwd()));
+  visualStageGate(work, { command: 'transition', actionLevel: work.pendingApprovalActionLevel, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, projectRoot: repo, evidence: args.evidence ? readJson(args.evidence, 'Evidence Manifest') : null, implementationPackage: args['implementation-package'] ? readJson(args['implementation-package'], 'Implementation Package') : null });
   if (target === 'IMPLEMENTING') {
     const level = work.pendingApprovalActionLevel;
     if (!['A2', 'A3'].includes(level)) fail('进入 IMPLEMENTING 仅允许 A2/A3');
@@ -881,6 +886,7 @@ function transition(args) {
 function advance(args) {
   const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
   requireResolvedUserInput(work);
+  visualStageGate(work, { command: 'advance', actionLevel: work.pendingApprovalActionLevel, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, projectRoot: resolve(String(args.repo ?? process.cwd())), evidence: args.evidence ? readJson(args.evidence, 'Evidence Manifest') : null, implementationPackage: args['implementation-package'] ? readJson(args['implementation-package'], 'Implementation Package') : null });
   const ledger = args.ledger ? readLedger(args.ledger) : { schemaVersion: '1.0', approvals: [] };
   const approval = effectiveApproval(work, ledger);
   const routeResult = deriveRoute(work, approval);
@@ -900,6 +906,8 @@ function handoff(args) {
   const workPath = resolve(String(args['work-item']));
   const work = validateWorkItem(readJson(workPath, 'Work Item'));
   const repo = resolve(String(args.repo ?? process.cwd()));
+  const handoffEvidence = args.evidence ? readJson(args.evidence, 'Evidence Manifest') : null;
+  visualStageGate(work, { command: 'handoff', actionLevel: work.pendingApprovalActionLevel, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, projectRoot: repo, evidence: handoffEvidence, implementationPackage: args['implementation-package'] ? readJson(args['implementation-package'], 'Implementation Package') : null });
   if (!['A4', 'A5', 'A6'].includes(work.pendingApprovalActionLevel) || !requiresExplicitApproval(work.pendingApprovalActionLevel, { external: work.pendingApprovalExternalWrite, device: work.pendingApprovalPhysicalDevice, release: work.pendingApprovalRelease, destructive: work.pendingApprovalDestructive, allowDelete: work.pendingApprovalAllowDelete })) fail('handoff 仅展示 A4-A6 的具体操作及影响；用户选择不得进入审批账本');
   if (work.pendingApprovalState !== work.globalState || work.approvalRecord !== null) fail('handoff 只能针对当前状态新准备且尚未批准的 pending approval');
   const actualEntries = changedEntries(repo, work.baselineId).filter((entry) => !pathMatches(entry.file, '.workflow-control'));
@@ -936,8 +944,9 @@ function handoff(args) {
 /** 输出工作项关键状态。 */
 function status(args) {
   const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
+  const visualGate = visualStageGate(work, { command: 'status', actionLevel: work.pendingApprovalActionLevel, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, projectRoot: resolve(String(args.repo ?? process.cwd())) });
   if (args.ledger) readLedger(args.ledger);
-  process.stdout.write(JSON.stringify({ workItemId: work.workItemId, projectId: work.projectId, moduleIds: work.moduleIds, domain: work.domain, stageId: work.stageId, globalState: work.globalState, nextGate: work.nextGate, baselineId: work.baselineId, baselineVersion: work.baselineVersion, baselineHash: work.baselineHash, approvalRecord: work.approvalRecord, pendingApprovalId: work.pendingApprovalId, pendingApprovalState: work.pendingApprovalState, pendingApprovalContext: work.pendingApprovalContext, pendingApprovalPresentedId: work.pendingApprovalPresentedId, pendingApprovalPresentedAt: work.pendingApprovalPresentedAt, diffAuditRecord: work.diffAuditRecord ?? null, nextCommand: `node <skill-dir>/scripts/workflow-control.mjs route --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'}` }, null, 2));
+  process.stdout.write(JSON.stringify({ workItemId: work.workItemId, projectId: work.projectId, moduleIds: work.moduleIds, domain: work.domain, stageId: work.stageId, visualStage: work.visualStage ?? null, visualStageState: work.visualStageState ?? null, visualStageGate: visualGate.required ? { ok: visualGate.ok, errorCode: visualGate.errors?.[0]?.errorCode ?? null, missingStages: visualGate.missingStages, missingEvidence: visualGate.missingEvidence, invalidatedDependencies: visualGate.invalidatedDependencies, nextAction: visualGate.nextAction } : { required: false }, globalState: work.globalState, nextGate: work.nextGate, baselineId: work.baselineId, baselineVersion: work.baselineVersion, baselineHash: work.baselineHash, approvalRecord: work.approvalRecord, pendingApprovalId: work.pendingApprovalId, pendingApprovalState: work.pendingApprovalState, pendingApprovalStatus: work.pendingApprovalStatus ?? null, pendingApprovalContext: work.pendingApprovalContext, pendingApprovalPresentedId: work.pendingApprovalPresentedId, pendingApprovalPresentedAt: work.pendingApprovalPresentedAt, diffAuditRecord: work.diffAuditRecord ?? null, nextCommand: `node <skill-dir>/scripts/workflow-control.mjs route --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'}` }, null, 2));
 }
 
 /** 仅在控制目录不存在时创建空账本、目录和首个 Work Item。 */
@@ -969,13 +978,13 @@ function init(args) {
 /** 对控制文件或整个仓库执行完整结构/策略 lint。 */
 function lint(args) {
   let checked = 0;
-  for (const path of list(args['work-item'])) { validateWorkItem(readJson(path, 'Work Item')); checked += 1; }
+  for (const path of list(args['work-item'])) { const work = validateWorkItem(readJson(path, 'Work Item')); visualStageGate(work, { command: 'lint', actionLevel: work.pendingApprovalActionLevel, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, projectRoot: resolve(String(args.repository === true ? process.cwd() : args.repository ?? process.cwd())) }); checked += 1; }
   for (const path of list(args.ledger)) { readLedger(path); checked += 1; }
   for (const path of list(args.delegation)) { validateDelegation(readJson(path, 'Delegation Package')); checked += 1; }
   for (const path of list(args.evidence)) { validateEvidence(readJson(path, 'Evidence Manifest')); checked += 1; }
   for (const path of list(args['implementation-package'])) { validateImplementationPackageShape(readJson(path, 'Implementation Package'), { projectRoot: resolve(String(args.repository === true ? process.cwd() : args.repository ?? process.cwd())), checkFiles: true }); checked += 1; }
   for (const path of list(args['change-request'])) { validateChangeRequestShape(readJson(path, 'Change Request')); checked += 1; }
-  if (args.repository) { repositoryLint(resolve(String(args.repository === true ? process.cwd() : args.repository)), fail); checked += 1; }
+  if (args.repository) { const repo = resolve(String(args.repository === true ? process.cwd() : args.repository)); const workRoot = join(repo, '.workflow-control', 'work-items'); if (existsSync(workRoot)) for (const name of readdirSync(workRoot).filter((item) => item.endsWith('.json')).sort()) { const work = validateWorkItem(readJson(join(workRoot, name), 'Work Item')); visualStageGate(work, { command: 'lint', actionLevel: work.pendingApprovalActionLevel, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, projectRoot: repo }); checked += 1; } repositoryLint(repo, fail); checked += 1; }
   if (!checked) fail('lint 至少需要一种控制文件或 --repository');
   process.stdout.write(JSON.stringify({ ok: true, command: 'lint', checked }, null, 2));
 }

@@ -25,6 +25,19 @@
 
 V0-V5、G0-G3 与领域阶段是 `stageId`，不是另一套状态机。只有全局控制面改变 `globalState`。
 
+### V0→V5 机器状态依赖
+
+| 阶段 | 唯一完成状态 | 下游硬依赖 |
+| --- | --- | --- |
+| V0 | `not-started`/`in-progress` 等过程状态 | 分流对象与范围 |
+| V1 | `in-progress`/过程状态 | 视觉契约、布局和容差 |
+| V2 | `v2-direction-frozen` | 代表画面、动态样片、人工视觉审查、独立 F2 审查 |
+| V3 | `v3-production-planning-complete` | 生产规划、逐部件合同、候选与基线身份 |
+| V4 | `v4-formal-acceptance-complete` | 正式资产、组件状态、同屏组合验收 |
+| V5 | `v5-runtime-integration-candidate` | runtime replay、fresh fidelity、正式 Scene 消费、无替代 |
+
+`global-static-baseline-frozen` 是静态基线的独立状态，不是 V2 完成状态。正式可见 Scene/UI 工作进入 A4/F4 前，校验器必须从 V2→V3→V4 的不可变文件证据派生 V5；裸 `frozen`、未知阶段、根摘要、手写 PASS 或 `stageId=main/integration/production-entry` 均失败。灰盒只允许隔离 A2 或安全 A3，接入正式 Boot/Scene 链即重新走完整依赖。
+
 ## 强制停止门
 
 - 用户请求范围变化：停止受影响实现，创建 Change Request；只有存在实质产品、行为、预算、合规或数据边界取舍时请求决定。
