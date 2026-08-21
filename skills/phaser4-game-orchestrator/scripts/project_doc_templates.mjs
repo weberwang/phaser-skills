@@ -45,7 +45,7 @@ templates.optional.assets["asset-license-register.md"] += "拆解前的 V3 文�
 templates.optional.assets["asset-license-register.md"] += "用户确认回执只能由编排层写入 `.phaser-workflow/user-resolutions/` 下的 `user-resolution-ledger/1.0`；写入后先冻结新的 Git commit/tree 基线，loader 必须从 Work Item.baselineHash 比对 ledger/receipt blob；实施代理和委派单元不得创建或修改 ledger。Work Item 仅保存 `visualConfirmationAuthorityRefs[]` 的 ledger_file/receipt_id/receipt_sha256 引用，禁止内嵌 receipt 或自称 authority。\n";
 templates.optional.assets["asset-license-register.md"] += "效果图还原必须额外填写 `scene_reconstruction_contract`：冻结 target 条件、整屏 composition、逐 coverage region 视觉事实（含 runtime fidelity obligations）、目标绑定 layout、responsive 不变量、predeclared tolerances 和完整 implementation plan；V4 还要填同屏组合预验收。\n";
 templates.optional.assets["asset-license-register.md"] += "视觉阶段必须使用唯一 `visualStage`/`visualStageState` 枚举：V0→V1→V2→V3→V4→V5；`global-static-baseline-frozen` 只表示全局静态基线冻结，不等于 `v2-direction-frozen`。\n";
-templates.optional.assets["asset-license-register.md"] += "整条 V0→V5 链只在 V2 视觉方向冻结时登记一次 `visual_human_approval`；该记录不采集 reviewer_type/reviewer_id/reviewer 字符串，仅绑定 review_id、reviewed_at、evidence、evidence_sha256、PASS、target、V2 candidate、diff、baseline 与审批证据 SHA。V4/V5 逐资产、逐区域和 F2 检查使用可追溯机器/AI 证据，不要求第二位真人或重复 `human_review`。\n";
+templates.optional.assets["asset-license-register.md"] += "整条 V0→V5 链只在 V2 视觉方向冻结时登记一次 `visual_human_approval`；该记录不采集 reviewer_type/reviewer_id/reviewer 字符串，仅绑定 review_id、reviewed_at、evidence、evidence_sha256、PASS、target、V2 candidate、diff、baseline 与审批证据 SHA。V4/V5 逐资产、逐区域和 F2 检查只使用绑定当前身份的确定性机器证据，不要求第二位真人或重复 `human_review`。\n";
 templates.optional.assets["visual-assets.json"] = `${JSON.stringify({
   schema_version: "1.5",
   visual_contract_version: "1.0",
@@ -62,7 +62,7 @@ templates.optional.assets["visual-assets.json"] = `${JSON.stringify({
 }, null, 2)}\n`;
 
 // 冻结基线正文与可追加阶段证据分离，避免正常留痕改变风格指纹。
-templates.core["visual-baseline.md"] = "# 冻结全局视觉基线\n\n本文件只保存当前冻结版本的全局视觉规则，不追加 V2b、V4、V5 证据。冻结后按完整文件字节计算 SHA-256；规则变化必须生成新版本和新哈希，并使受影响证据失效。静态基线状态只能写 `global-static-baseline-frozen`，不能写裸 `frozen`，也不能声称 V2。\n\n## 基线身份\n\n- 基线 ID：\n- 版本：\n- 状态：draft\n- 冻结日期：\n- 负责人：\n- 独立美术审阅：\n\n## 冻结规则\n\n| 系统 | 不变量 | 允许变量 | 禁止项 |\n| --- | --- | --- | --- |\n";
+templates.core["visual-baseline.md"] = "# 冻结全局视觉基线\n\n本文件只保存当前冻结版本的全局视觉规则，不追加 V2b、V4、V5 证据。冻结后按完整文件字节计算 SHA-256；规则变化必须生成新版本和新哈希，并使受影响证据失效。静态基线状态只能写 `global-static-baseline-frozen`，不能写裸 `frozen`，也不能声称 V2。\n\n## 基线身份\n\n- 基线 ID：\n- 版本：\n- 状态：draft\n- 冻结日期：\n- 负责人：\n- 机器验证器版本与运行标识：\n\n## 冻结规则\n\n| 系统 | 不变量 | 允许变量 | 禁止项 |\n| --- | --- | --- | --- |\n";
 templates.core["visual-design.md"] = templates.core["visual-design.md"]
   .replace("本文件是全局视觉控制的单一事实源。V1 建立候选，V2a 冻结；冻结后不得静默改写。", "本文件是可追加的视觉方向、阶段证据与冻结基线索引；不可变规则正文位于 docs/visual-baseline.md。")
   .replace("风格指纹不回填本文件。冻结后对本文件完整字节计算 SHA-256，并仅在 `visual-assets.json` 记录 `sha256:<64 位小写十六进制>`；正式文件检查会重新计算并拒绝静默修改。", "风格指纹只计算 docs/visual-baseline.md 完整字节；本文件追加 V2b/V4/V5 留痕不会改变基线哈希。");

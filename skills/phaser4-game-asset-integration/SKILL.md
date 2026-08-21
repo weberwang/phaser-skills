@@ -17,7 +17,7 @@ description: 为 Phaser 4 游戏规划、生产、登记、验证并集成 UI、
 
 `effect-image` 表示完整正式 Scene 的忠实还原，不是独立 PNG 生产。进入 V3 前必须有 `scene_reconstruction_contract`：冻结目标条件、整屏构图、逐 coverage region 视觉事实（runtime-data/runtime-rendered/runtime-program 也必须有 `fidelity_obligations`）、目标绑定布局、响应式关系、预声明容差和资源/布局/运行时对象/组合实现计划。合同缺失或 layout contract 未绑定当前 target SHA 时，必须返回 `V1/PROPOSAL`。
 
-V4 需要使用正式 Scene 结构的同屏组合预验收；V5 需要结构化 fidelity case、逐区域测量与差异证据、独立视觉 F2、F3 runtime replay 和正式 Scene 消费证据。资源 loaded/used、missing=0、resize 稳定只属于工程子门，不能单独驱动 COMPLETE。
+V4 需要使用正式 Scene 结构的同屏组合预验收；V5 需要结构化 fidelity case、逐区域测量与差异证据、确定性机器 F2、F3 runtime replay 和正式 Scene 消费证据。资源 loaded/used、missing=0、resize 稳定只属于工程子门，不能单独驱动 COMPLETE。
 
 1. 读取项目配置、GDD、visual-design、TDD、控制面和资源登记；执行 [V0-V5 视觉生产管线](references/visual-production-pipeline.md)。
 2. V0 先判断任务属于原子资源、组件/资源集，还是场景/整套 UI/视觉系统/参考还原。原子资源只有在结构、布局、交互和视口行为不变，且已有适用视觉契约、`AUTO` 或 `USER_DECISION` 记录、视觉可交付结论与预算基线时才能跳过 V1/V2。
@@ -36,8 +36,8 @@ V4 需要使用正式 Scene 结构的同屏组合预验收；V5 需要结构化 
 
 ## 审核与交付
 
-所有候选先通过 F0-F3，F4 只用于 A4-A6。V1/V2 专业检查必须执行；用户选择是条件性的。自动路径记录 `AUTO` 决策依据，实质取舍记录一次 `USER_DECISION` 并回写权威工件。每个交付包记录任务授权或 A4-A6 操作批准、候选身份、基线、来源、预算和证据。
+所有候选先通过 F0-F3，F4 只用于 A4-A6。V1/V2 确定性机器检查必须执行；用户选择是条件性的。自动路径记录 `AUTO` 决策依据，实质取舍记录一次 `USER_DECISION` 并回写权威工件。每个交付包记录任务授权或 A4-A6 操作批准、候选身份、基线、来源、预算和证据。
 
 ### 唯一视觉人工审批硬门
 
-整条 V0→V5 链只在 V2 视觉方向冻结时要求一次结构化真人审批 `visual_human_approval`。它不采集 `reviewer_type`、`reviewer_id` 或 reviewer 字符串，仅以 `review_id/reviewed_at/evidence/evidence_sha256`、PASS 及冻结 target、V2 candidate、diff、baseline SHA 表达一次人工通过事件；任一绑定漂移后审批失效并重新回到 V2。V2 代表画面、动态样片和结构化机器检查仍必须齐全。V4 actual asset/component×state/同屏组合以及 V5 full viewport、overlay、diff、逐区域 fidelity、F2 视觉一致性与生产合同检查全部使用可追溯机器/AI 证据，不得再次要求或伪造真人审批。根节点 PASS、布尔值、AI reviewer 字段或后续重复 `human_review` 均不能代替这条唯一 V2 审批。
+整条 V0→V5 链只在 V2 视觉方向冻结时要求一次结构化真人审批 `visual_human_approval`。它不采集 `reviewer_type`、`reviewer_id` 或 reviewer 字符串，仅以 `review_id/reviewed_at/evidence/evidence_sha256`、PASS 及冻结 target、V2 candidate、diff、baseline SHA 表达一次人工通过事件；任一绑定漂移后审批失效并重新回到 V2。V2 代表画面、动态样片和结构化机器检查仍必须齐全。V4 actual asset/component×state/同屏组合以及 V5 full viewport、overlay、diff、逐区域 fidelity、F2 视觉一致性与生产合同检查全部使用绑定当前身份的确定性机器证据，不得再次要求或伪造真人审批。根节点 PASS、布尔值、AI reviewer 字段或后续重复 `human_review` 均不能代替这条唯一 V2 审批。

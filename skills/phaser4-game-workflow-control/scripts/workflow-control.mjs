@@ -809,24 +809,24 @@ function evidenceCheck(args, silent = false) {
   if (Date.parse(evidence.recordedAt) < Date.parse(audit.recordedAt)) fail('Evidence.recordedAt 早于当前 Diff Audit Record');
   const head = git(repo, ['rev-parse', 'HEAD']).trim();
   if (evidence.codeFingerprint !== `git:${head}`) fail('证据 codeFingerprint 未绑定当前代码基线');
+  const visualMachineValidation = isVisualProductionWork(work);
   for (const gate of GATES.slice(0, 4)) {
     const result = evidence.gateResults[gate];
     requireFields(result, ['status', 'baselineHash', 'diffFingerprint'], `Evidence.gateResults.${gate}`);
-    if (result.status !== 'PASS' || result.baselineHash !== work.baselineHash || result.diffFingerprint !== evidence.diffFingerprint) fail(`${gate} 未绑定当前候选并通过`);
+    const passed = result.status === 'PASS' || (gate === 'F2' && visualMachineValidation && result.status === 'passed');
+    if (!passed || result.baselineHash !== work.baselineHash || result.diffFingerprint !== evidence.diffFingerprint) fail(`${gate} 未绑定当前候选并通过`);
   }
   const reviewer = evidence.gateResults.F2.reviewer;
   const reviewMode = evidence.gateResults.F2.reviewMode;
   const f0Authorization = evidence.gateResults.F0.authorizationId ?? evidence.gateResults.F0.approvalId;
-  if (f0Authorization !== audit.authorizationId || evidence.gateResults.F3.evidenceId !== evidence.evidenceId || !reviewer) fail('F0 授权、F2 审查或 F3 证据绑定不完整');
+  // V2 唯一人工确认通过后，V3-V5 的视觉 F2 只消费机器验证事实；通用非视觉 F2 仍保留 reviewer/reviewMode 硬门。
+  if (f0Authorization !== audit.authorizationId || evidence.gateResults.F3.evidenceId !== evidence.evidenceId || (!visualMachineValidation && !reviewer)) fail('F0 授权、F2 审查或 F3 证据绑定不完整');
   let visualManifest = null;
   if (visualPackage) { const snapshot = loadVisualManifestSnapshot(visualPackage, repo); if (snapshot.errors.length) fail(snapshot.errors[0]); visualManifest = snapshot.manifest; }
   visualStageGate({ ...work, implementationPackage: visualPackage, visualManifest }, { command: 'evidence-check', actionLevel: audit.actionLevel, projectRoot: repo, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, evidence });
   const visualEvidenceErrors = validateVisualEvidence(evidence, visualPackage, { manifest: visualManifest, projectRoot: repo, diffFingerprint: evidence.diffFingerprint, implementationPackage: visualPackage, authority: visualConfirmationAuthority(work, visualManifest, { projectRoot: repo, checkFiles: true, implementationPackage: visualPackage }) });
   if (visualEvidenceErrors.length) fail(visualEvidenceErrors[0]);
-  if (['A1', 'A2'].includes(audit.actionLevel)) {
-    if (!['SELF', 'INDEPENDENT'].includes(reviewMode)) fail('A1/A2 F2 必须声明 SELF 或 INDEPENDENT reviewMode');
-    if (reviewMode === 'SELF' && reviewer !== work.assignedAgent) fail('SELF reviewer 必须是 Work Item.assignedAgent');
-  } else if (reviewMode !== 'INDEPENDENT' || reviewer === work.assignedAgent || work.delegatedAgents.includes(reviewer)) fail('A3-A6 F2 必须由独立 reviewer 审查');
+  if (!visualMachineValidation) if (['A1', 'A2'].includes(audit.actionLevel)) { if (!['SELF', 'INDEPENDENT'].includes(reviewMode)) fail('A1/A2 F2 必须声明 SELF 或 INDEPENDENT reviewMode'); if (reviewMode === 'SELF' && reviewer !== work.assignedAgent) fail('SELF reviewer 必须是 Work Item.assignedAgent'); } else if (reviewMode !== 'INDEPENDENT' || reviewer === work.assignedAgent || work.delegatedAgents.includes(reviewer)) fail('A3-A6 F2 必须由独立 reviewer 审查');
   if (!silent) process.stdout.write(JSON.stringify({ ok: true, command: 'evidence-check', evidenceId: evidence.evidenceId, fingerprint: evidence.diffFingerprint }, null, 2));
   return evidence;
 }

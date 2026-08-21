@@ -80,17 +80,18 @@ function validManifest() {
     visualStageState: "v5-runtime-integration-candidate",
     workItemId: "work-item-1",
     candidateVersion: "candidate-1",
+    baseline_sha256: EMPTY_DOCUMENT_FINGERPRINT,
     effect_image_reconstruction: { applicability: "effect-image", lifecycle: "v5-complete" },
     visual_baseline: { id: "fox-world", version: "1.0.0", style_fingerprint: EMPTY_DOCUMENT_FINGERPRINT, document: "docs/visual-baseline.md", status: "global-static-baseline-frozen", anchor_evidence: ["evidence/visual/main-anchor.png"] },
     reference_target: { candidate_id: "mockup-a", original_file: "evidence/visual/mockup.png", target_sha256: targetSha, frozen_at: "2026-08-15T00:00:00Z", status: "reference-target-frozen", scene_ids: ["main-gameplay"], state_ids: ["default"] },
     candidate_identity: { kind: "git", sha256: candidateSha, diff_fingerprint: "diff-1" },
     contract_reconciliation: {
-      decision_id: "reconcile-1", reviewed_at: "2026-08-15T00:10:00Z", target_sha256: targetSha, candidate_sha256: candidateSha, status: "passed", rollback: "V1/module-audit",
+      decision_id: "reconcile-1", reconciled_at: "2026-08-15T00:10:00Z", target_sha256: targetSha, candidate_sha256: candidateSha, status: "passed", rollback: "V1/module-audit",
       bindings: { gdd: "docs/GDD.md#v1", tdd: "docs/TDD.md#v1", gameplay_visual_contract: "visual-contract:v1", gameplay_function_contract: "function-contract:v1", layout_contract: "layout:v1", module_scene_ownership: "ownership:v1", budget_baseline: "budget:v1" },
       checks: ["scope", "state-machine", "input", "collision", "module-scene-ownership", "coordinate-space", "layout", "budget"].map((domain) => ({ domain, status: "passed", evidence: `evidence/reconcile/${domain}.md` })),
     },
   coverage_audit: { version: "1", reference_target_sha256: targetSha, canvases: [{ scene_id: "main-gameplay", state_id: "default", width: 390, height: 844 }], summaries: [{ scene_id: "main-gameplay", state_id: "default", coverage_ratio: 1, uncovered: [], status: "passed", evidence: "evidence/coverage/summary.md" }], regions: [{ id: "region-background", scene_id: "main-gameplay", state_id: "default", layer: "background", bounds: { x: 0, y: 0, width: 390, height: 844 }, owner_type: "runtime-rendered", owner_id: "scene-background", production_method: "runtime-program", delivery_kind: "runtime-program", confirmation: { mode: "AUTO", reasons: [], evidence: "evidence/coverage/region-background.md" } }, { id: "region-hero", scene_id: "main-gameplay", state_id: "default", layer: "actors", bounds: { x: 10, y: 20, width: 64, height: 96 }, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", ...visualComponentContract("hero-component", "hero-idle", "art/hero.png", "public/assets/hero.png", targetSha), owner_id: "asset-pipeline", asset_id: "hero-idle", confirmation: { mode: "AUTO", reasons: [], evidence: "evidence/coverage/region-hero.md" } }, { id: "region-score", scene_id: "main-gameplay", state_id: "default", layer: "hud", bounds: { x: 300, y: 10, width: 70, height: 30 }, owner_type: "runtime-data", owner_id: "score-state", production_method: "runtime-program", delivery_kind: "runtime-program", confirmation: { mode: "AUTO", reasons: [], evidence: "evidence/coverage/region-score.md" } }] },
-    fidelity_cases: [{ id: "main-default", target_sha256: targetSha, candidate_sha256: candidateSha, scene_id: "main-gameplay", state_id: "default", viewport: { width: 390, height: 844 }, dpr: 1.5, language: "zh-CN", random_seed: 42, input_trace: "traces/main-default.json", animation_sample: "stable-frame:120", layout_contract_version: "1.1.0", visual_baseline_version: "1.0.0", reference_evidence: ["evidence/visual/reference.png"], candidate_evidence: ["evidence/visual/candidate.png"], tolerance: { unit: "logical-px", value: 2 }, exception_ids: [], conclusion: "passed", human_review: { reviewer_type: "human", reviewer_id: "legacy-fidelity-human", reviewed_at: "2026-08-15T00:16:00Z", evidence: "evidence/f2/legacy-fidelity-human.json", status: "passed", target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: "diff-1" } }],
+    fidelity_cases: [{ id: "main-default", target_sha256: targetSha, candidate_sha256: candidateSha, scene_id: "main-gameplay", state_id: "default", viewport: { width: 390, height: 844 }, dpr: 1.5, language: "zh-CN", random_seed: 42, input_trace: "traces/main-default.json", animation_sample: "stable-frame:120", layout_contract_version: "1.1.0", visual_baseline_version: "1.0.0", reference_evidence: ["evidence/visual/reference.png"], candidate_evidence: ["evidence/visual/candidate.png"], tolerance: { unit: "logical-px", value: 2 }, exception_ids: [], conclusion: "passed" }],
     budgets: { max_texture_size: 4096, texture_memory_mb: 64, max_atlases: 8, max_frames: 512, animation_sample_fps: 24, max_overdraw: 3, max_draw_calls: 100 },
     assets: [{ id: "hero-idle", texture_key: "hero-idle", ownership_type: "fixed-production-visual", coverage_region_ids: ["region-hero"], scene_id: "main-gameplay", route: "frame-animation", status: "accepted", production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", ...visualComponentContract("hero-component", "hero-idle", "art/hero.png", "public/assets/hero.png", targetSha), visual_baseline_id: "fox-world", visual_baseline_version: "1.0.0", style_fingerprint: EMPTY_DOCUMENT_FINGERPRINT, source_file: "art/hero.png", license_record: "docs/license.md", runtime_outputs: ["public/assets/hero.png"], sha256: heroPngSha, phaser_evidence: "evidence/phaser.png", gameplay_visual_evidence: "evidence/gameplay.mp4", consistency_evidence: ["evidence/visual/hero-consistency.png"] }],
   };
@@ -99,9 +100,9 @@ function validManifest() {
   manifest.assets[0].runtime_consumption = { status: "passed", evidence: "evidence/runtime/hero.json", ...evidenceIdentity, component_usages: componentUsage };
   const heroRegion = manifest.coverage_audit.regions[1];
   const heroExpected = heroRegion.expected_assets[0];
-  manifest.production_contract_audit = { status: "passed", candidate_version: manifest.candidateVersion, target_sha256: targetSha, reviewed_at: "2026-08-15T00:30:00Z", units: [{ annotation_number: 2, region_id: "region-hero", observed_method: "authored-raster", observed_delivery_kind: "raster-image", status: "passed", expected_assets: [{ ...heroExpected }], atomic_image_requirements: heroRegion.atomic_image_requirements, actual_assets: [{ asset_id: "hero-idle", file: "public/assets/hero.png", component_id: "hero-component", state_id: "default", asset_scope: "atomic-component", atomic_visual_key: heroExpected.atomic_visual_key, mime_type: "image/png", width: 64, height: 96, alpha: true, sha256: heroPngSha, human_review: { reviewer_type: "human", reviewer_id: "asset-hero-human", reviewed_at: "2026-08-15T00:29:00Z", evidence: "evidence/f2/asset-hero-human.json", status: "passed", target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint } }], runtime_consumption: { status: "passed", evidence: "evidence/runtime/hero.json", ...evidenceIdentity, component_usages: componentUsage } }] };
-  manifest.f2_review = { overall_status: "passed", visual_fidelity_review: { status: "passed", review_id: "vf-1", reviewer: "art", reviewer_type: "human", reviewer_id: "f2-visual-human", reviewed_at: "2026-08-15T00:32:00Z", evidence: "evidence/f2/visual.md", ...evidenceIdentity }, production_contract_review: { status: "passed", review_id: "pc-1", reviewer: "qa", reviewer_type: "human", reviewer_id: "f2-production-human", reviewed_at: "2026-08-15T00:33:00Z", evidence: "evidence/f2/production.md", ...evidenceIdentity, component_reviews: [{ annotation_number: 2, region_id: "region-hero", component_id: "hero-component", state_id: "default", observed_method: "authored-raster", asset_id: "hero-idle", placement_ids: ["hero-component-placement-1"], atomic_visual_key: heroExpected.atomic_visual_key, asset_scope: "atomic-component", runtime_file: "public/assets/hero.png", runtime_sha256: heroPngSha, status: "passed", runtime_usage_verified: true, human_review: { reviewer_type: "human", reviewer_id: "component-hero-human", reviewed_at: "2026-08-15T00:34:00Z", evidence: "evidence/f2/component-hero-human.json", status: "passed", target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint } }] } };
-  manifest.v5_production_gate = { status: "passed", v3_status: "passed", implementation_package_status: "passed", v4_status: "passed", f2_status: "passed", f2_visual_fidelity_status: "passed", f2_production_contract_status: "passed", f3_status: "passed", runtime_replay: { status: "passed", evidence: "evidence/f3/replay.json", ...evidenceIdentity }, fidelity_cases: [{ candidate_sha256: candidateSha, created_at: "2026-08-15T00:31:00Z", freshness_bound: true, evidence: "evidence/fidelity/main.json", ...evidenceIdentity }], candidate_sha256: candidateSha, target_sha256: targetSha, runtime_consumption: { status: "passed", evidence: "evidence/runtime/hero.json", ...evidenceIdentity, component_usages: componentUsage }, unapproved_substitution: false };
+  manifest.production_contract_audit = { status: "passed", candidate_version: manifest.candidateVersion, target_sha256: targetSha, audited_at: "2026-08-15T00:30:00Z", units: [{ annotation_number: 2, region_id: "region-hero", observed_method: "authored-raster", observed_delivery_kind: "raster-image", status: "passed", expected_assets: [{ ...heroExpected }], atomic_image_requirements: heroRegion.atomic_image_requirements, actual_assets: [{ asset_id: "hero-idle", file: "public/assets/hero.png", component_id: "hero-component", state_id: "default", asset_scope: "atomic-component", atomic_visual_key: heroExpected.atomic_visual_key, mime_type: "image/png", width: 64, height: 96, alpha: true, sha256: heroPngSha }], runtime_consumption: { status: "passed", evidence: "evidence/runtime/hero.json", ...evidenceIdentity, component_usages: componentUsage } }] };
+  // V2 人工确认后，F2 只记录可重算的机器验证事实，不再嵌套任何 reviewer 或二次复核工件。
+  manifest.v5_production_gate = { status: "passed", v3_status: "passed", implementation_package_status: "passed", v4_status: "passed", f2_status: "passed", f2_machine_validation: { status: "passed", validationMode: "MACHINE", evidence: "evidence/f2/machine.json", baselineHash: EMPTY_DOCUMENT_FINGERPRINT, diffFingerprint: "diff-1" }, f3_status: "passed", runtime_replay: { status: "passed", evidence: "evidence/f3/replay.json", ...evidenceIdentity }, fidelity_cases: [{ candidate_sha256: candidateSha, created_at: "2026-08-15T00:31:00Z", freshness_bound: true, evidence: "evidence/fidelity/main.json", ...evidenceIdentity }], candidate_sha256: candidateSha, target_sha256: targetSha, runtime_consumption: { status: "passed", evidence: "evidence/runtime/hero.json", ...evidenceIdentity, component_usages: componentUsage }, unapproved_substitution: false };
   manifest.coverage_audit.regions.forEach((region, index) => { region.annotation_number = index + 1; region.ownership_evidence = `evidence/coverage/${region.id}.md`; region.implementation_plan = region.owner_type === "fixed-production-visual" ? { mode: "generate-now", summary: `生成区域 ${region.id}` } : { mode: "runtime-program", summary: `程序实现区域 ${region.id}` }; if (region.owner_type !== "fixed-production-visual") region.runtime_implementation = { kind: "runtime-program", integration_files: [`src/${region.id}.mjs`] }; });
   addManualConfirmationRecords(manifest);
   manifest.coverage_audit.regions[1].confirmation.region_definition_sha256 = computeRegionDefinitionSha256(manifest.coverage_audit.regions[1]);
@@ -166,15 +167,13 @@ function attachSceneReconstructionContract(manifest) {
     v2_scene_candidate: {
       identity: { sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
       evidence: "evidence/fidelity/main.json",
-      human_review: { reviewer_type: "human", reviewer_id: "v2-scene-human", reviewed_at: "2026-08-15T00:12:00Z", evidence: "evidence/f2/v2-scene-human.json", status: "passed", target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
     },
     v2_dynamic_sample: {
       identity: { sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
       evidence: "evidence/fidelity/main.json",
-      human_review: { reviewer_type: "human", reviewer_id: "v2-dynamic-human", reviewed_at: "2026-08-15T00:13:00Z", evidence: "evidence/f2/v2-dynamic-human.json", status: "passed", target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
     },
     v2_structured_review: {
-      reviewer_type: "human", reviewer_id: "v2-structured-human", reviewed_at: "2026-08-15T00:14:00Z", evidence: "evidence/f2/v2-structured-human.json", status: "passed", target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint,
+      validationMode: "MACHINE", status: "passed", evidence: "evidence/f2/v2-structured-machine.json", target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint,
       reviewed_target_identity: { sha256: targetSha },
       reviewed_candidate_identity: { sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
       full_viewport_comparison: { reference: "evidence/visual/reference.png", candidate: "evidence/visual/candidate.png" },
@@ -186,7 +185,7 @@ function attachSceneReconstructionContract(manifest) {
       decoration_density_review: { status: "passed", evidence: "evidence/f2/decoration.json" },
       responsive_review: { status: "passed", evidence: "evidence/f2/responsive.json" },
     },
-    visual_human_approval: { review_id: "v2-approval", reviewed_at: "2026-08-15T00:11:00Z", evidence: "evidence/f2/v2-direction-approval.json", evidence_sha256: candidateSha, status: "passed", target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint, baseline_sha256: targetSha },
+    visual_human_approval: { review_id: "v2-approval", reviewed_at: "2026-08-15T00:11:00Z", evidence: "evidence/f2/v2-direction-approval.json", evidence_sha256: EMPTY_DOCUMENT_FINGERPRINT, status: "passed", target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint, baseline_sha256: EMPTY_DOCUMENT_FINGERPRINT },
     target_conditions: {
       target_sha256: targetSha,
       original_pixel_size: { width: 390, height: 844 },
@@ -241,26 +240,8 @@ function attachSceneReconstructionContract(manifest) {
     overlay_evidence: "evidence/fidelity/overlay.png",
     difference_evidence: "evidence/fidelity/diff.png",
     tolerance_set: { id: "layout-tolerance", geometry: { unit: "logical-px", value: 2 } },
-    per_region_results: manifest.coverage_audit.regions.map((region) => ({ region_id: region.id, target_measurement: { bounds: { ...region.bounds } }, candidate_measurement: { bounds: { ...region.bounds } }, delta: 0, tolerance_reference: "layout-tolerance", tolerance: { id: "layout-tolerance", value: 2 }, result: "passed", evidence: [`evidence/fidelity/${region.id}.json`], exception_ids: [], human_review: { reviewer_type: "human", reviewer_id: `fidelity-${region.id}-human`, reviewed_at: "2026-08-15T00:18:00Z", evidence: `evidence/f2/${region.id}-fidelity-human.json`, status: "passed", target_sha256: targetSha, candidate_sha256: manifest.candidate_identity.sha256, diff_fingerprint: manifest.candidate_identity.diff_fingerprint } })),
-    human_review: { reviewer_type: "human", reviewer_id: "fidelity-case-human", reviewed_at: "2026-08-15T00:17:00Z", evidence: "evidence/f2/fidelity-case-human.json", status: "passed", target_sha256: targetSha, candidate_sha256: manifest.candidate_identity.sha256, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
+    per_region_results: manifest.coverage_audit.regions.map((region) => ({ region_id: region.id, target_measurement: { bounds: { ...region.bounds } }, candidate_measurement: { bounds: { ...region.bounds } }, delta: 0, tolerance_reference: "layout-tolerance", tolerance: { id: "layout-tolerance", value: 2 }, result: "passed", evidence: [`evidence/fidelity/${region.id}.json`], exception_ids: [] })),
   });
-  const visual = manifest.f2_review.visual_fidelity_review;
-  Object.assign(visual, {
-    reviewed_target_identity: { sha256: targetSha },
-    reviewed_candidate_identity: { sha256: manifest.candidate_identity.sha256 },
-    full_viewport_comparison: { reference: "evidence/visual/reference.png", candidate: "evidence/visual/candidate.png" },
-    per_region_review: manifest.coverage_audit.regions.map((region) => ({ region_id: region.id, result: "passed", evidence: `evidence/f2/${region.id}.json` })),
-    composition_review: { status: "passed", evidence: "evidence/f2/composition.json" },
-    geometry_review: { status: "passed", evidence: "evidence/f2/geometry.json" },
-    color_material_review: { status: "passed", evidence: "evidence/f2/color-material.json" },
-    typography_review: { status: "passed", evidence: "evidence/f2/typography.json" },
-    decoration_density_review: { status: "passed", evidence: "evidence/f2/decoration.json" },
-    responsive_review: { status: "passed", evidence: "evidence/f2/responsive.json" },
-    unresolved_differences: [],
-    findings: [],
-    severity_counts: { P0: 0, P1: 0, P2: 0, P3: 0 },
-  });
-  manifest.all_visual_artifacts_human_reviewed = true;
   return manifest;
 }
 
@@ -274,8 +255,8 @@ function validOrdinaryManifest() {
 
 /** 构造包含完整生成包的 AI 合成栅格清单。 */
 function validAiManifest() {
-  const manifest = validManifest(); const asset = manifest.assets[0]; const region = manifest.coverage_audit.regions[1]; const width = 96; const height = 144; region.expected_assets[0].width = width; region.expected_assets[0].height = height; asset.expected_assets[0].width = width; asset.expected_assets[0].height = height; manifest.production_contract_audit.units[0].expected_assets[0].width = width; manifest.production_contract_audit.units[0].expected_assets[0].height = height; manifest.production_contract_audit.units[0].actual_assets[0].width = width; manifest.production_contract_audit.units[0].actual_assets[0].height = height; asset.route = "ai-composite-raster"; asset.production_method = "imagegen"; asset.delivery_kind = "raster-image"; asset.image_generation_required = true; asset.generation_record_required = true; asset.source_file = "art/hero.png"; region.expected_assets[0].source_file = "art/hero.png"; asset.expected_assets[0].source_file = "art/hero.png"; asset.output_file = "public/assets/hero.png"; asset.mime_type = "image/png"; asset.width = width; asset.height = height; asset.alpha = true; asset.sha256 = sha256Bytes(minimalPng(width, height)); asset.runtime_consumption.runtime_sha256 = asset.sha256; asset.runtime_consumption.component_usages[0].runtime_sha256 = asset.sha256; manifest.production_contract_audit.units[0].actual_assets[0].sha256 = asset.sha256; manifest.f2_review.production_contract_review.component_reviews[0].runtime_sha256 = asset.sha256;
-  region.expected_assets[0].mime_type = "image/png"; asset.expected_assets[0].mime_type = "image/png"; manifest.production_contract_audit.units[0].expected_assets[0].mime_type = "image/png"; manifest.production_contract_audit.units[0].expected_assets[0].source_file = "art/hero.png"; manifest.f2_review.production_contract_review.component_reviews[0].mime_type = "image/png";
+  const manifest = validManifest(); const asset = manifest.assets[0]; const region = manifest.coverage_audit.regions[1]; const width = 96; const height = 144; region.expected_assets[0].width = width; region.expected_assets[0].height = height; asset.expected_assets[0].width = width; asset.expected_assets[0].height = height; manifest.production_contract_audit.units[0].expected_assets[0].width = width; manifest.production_contract_audit.units[0].expected_assets[0].height = height; manifest.production_contract_audit.units[0].actual_assets[0].width = width; manifest.production_contract_audit.units[0].actual_assets[0].height = height; asset.route = "ai-composite-raster"; asset.production_method = "imagegen"; asset.delivery_kind = "raster-image"; asset.image_generation_required = true; asset.generation_record_required = true; asset.source_file = "art/hero.png"; region.expected_assets[0].source_file = "art/hero.png"; asset.expected_assets[0].source_file = "art/hero.png"; asset.output_file = "public/assets/hero.png"; asset.mime_type = "image/png"; asset.width = width; asset.height = height; asset.alpha = true; asset.sha256 = sha256Bytes(minimalPng(width, height)); asset.runtime_consumption.runtime_sha256 = asset.sha256; asset.runtime_consumption.component_usages[0].runtime_sha256 = asset.sha256; manifest.production_contract_audit.units[0].actual_assets[0].sha256 = asset.sha256;
+  region.expected_assets[0].mime_type = "image/png"; asset.expected_assets[0].mime_type = "image/png"; manifest.production_contract_audit.units[0].expected_assets[0].mime_type = "image/png"; manifest.production_contract_audit.units[0].expected_assets[0].source_file = "art/hero.png";
   asset.generation_record = { record_id: "gen-hero-1", generator: "imagegen", generator_version: "1", created_at: "2026-08-15T00:00:00Z", command_or_recipe: "render hero-idle", input_sources: ["prompt:hero-idle"], parameters: { size: `${width}x${height}` }, global_prompt_prefix: "冻结前缀", asset_prompt: "主角", state_prompt: "待机", negative_prompt: "禁止写实", model: "image-model", model_version: "1", seed: 42, reference_inputs: ["evidence/visual/ai-reference.png"], postprocess: ["清理边缘"], output_file: "public/assets/hero.png", annotation_number: 2, region_id: "region-hero", component_id: "hero-component", state_id: "default", asset_id: "hero-idle", source_file: "art/hero.png", runtime_file: "public/assets/hero.png" };
   asset.substitution_policy = "user-change-request-only";
   Object.assign(manifest.coverage_audit.regions[1], { production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
@@ -284,7 +265,6 @@ function validAiManifest() {
   addManualConfirmationRecords(manifest);
   manifest.coverage_audit.regions[1].confirmation.region_definition_sha256 = computeRegionDefinitionSha256(manifest.coverage_audit.regions[1]);
   Object.assign(manifest.production_contract_audit.units[0], { observed_method: "imagegen", observed_delivery_kind: "raster-image", atomic_image_requirements: manifest.coverage_audit.regions[1].atomic_image_requirements });
-  Object.assign(manifest.f2_review.production_contract_review.component_reviews[0], { observed_method: "imagegen", observed_delivery_kind: "raster-image" });
   return manifest;
 }
 
@@ -591,18 +571,18 @@ test("V4 主入口拒绝错误 Work Item 或过期 candidateVersion 的 Change R
   assert(validateManifest(stale, { stage: "V4" }).some((item) => item.includes("candidateVersion") && item.includes("不一致")));
 });
 test("V5 complete 必须有全部通过的 fidelity case", () => { const missing = validManifest(); missing.fidelity_cases = []; assert(validateManifest(missing).some((item) => item.includes("fidelity_cases 必须是非空数组"))); const failed = validManifest(); failed.fidelity_cases[0].conclusion = "failed"; assert(validateManifest(failed).some((item) => item.includes("必须全部 passed"))); });
-test("V5 F2 两类机器证据拒绝旧 candidate SHA 或旧 diff 身份", () => {
-  for (const reviewField of ["visual_fidelity_review", "production_contract_review"]) {
-    for (const identityField of ["candidate_sha256", "diff_fingerprint"]) {
-      const manifest = validManifest();
-      manifest.f2_review[reviewField][identityField] = identityField === "candidate_sha256" ? `sha256:${"9".repeat(64)}` : "diff-old";
-      assert(validateManifest(manifest).some((item) => item.includes("F2") && item.includes("未绑定当前候选")), `${reviewField}.${identityField}`);
-    }
+test("V5 F2 机器事实拒绝旧 baseline 或旧 diff 身份", () => {
+  for (const [field, value] of [["baselineHash", `sha256:${"9".repeat(64)}`], ["diffFingerprint", "diff-old"]]) {
+    const manifest = validManifest();
+    manifest.v5_production_gate.f2_machine_validation[field] = value;
+    assert(validateManifest(manifest).some((item) => item.includes("F2") && item.includes("未绑定当前")), field);
   }
 });
 test("V5 complete 缺少 V4、F2 或 V5 对象时不得绕过总门", () => {
-  for (const [field, marker] of [["production_contract_audit", "production_contract_audit"], ["f2_review", "F2"], ["v5_production_gate", "V5 production gate"]]) {
-    const manifest = validManifest(); delete manifest[field];
+  for (const [field, marker] of [["production_contract_audit", "production_contract_audit"], ["f2_machine_validation", "F2"], ["v5_production_gate", "V5 production gate"]]) {
+    const manifest = validManifest();
+    if (field === "f2_machine_validation") delete manifest.v5_production_gate.f2_machine_validation;
+    else delete manifest[field];
     assert(validateManifest(manifest).some((item) => item.includes(marker)), field);
   }
 });
@@ -642,18 +622,16 @@ test("任意路线使用 generation_record 时必须提供完整公共生成身�
 test("预算必须是正数", () => { const manifest = validManifest(); manifest.budgets.max_texture_size = null; assert(validateManifest(manifest).some((item) => item.includes("max_texture_size 必须是正数"))); });
 test("PNG 必须具备支持的 IHDR 组合和完整扫描行", () => { assert.deepEqual(readPngDimensions(minimalPng(1, 1)), { width: 1, height: 1 }); assert.equal(readPngDimensions(minimalPng(1, 1, Buffer.alloc(0))), null); assert.equal(readPngDimensions(minimalPng(1, 1, Buffer.from([5, 0, 0, 0, 0]))), null); });
 test("文件检查覆盖存在性、哈希与 AI 引用", async () => { const root = await mkdtemp(join(tmpdir(), "visual-manifest-")); const manifest = validAiManifest(); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("文件不存在"))); await createFixtureFiles(root, true); await writeConfirmationFixtureFiles(root, manifest); assert.deepEqual(await checkManifestFiles(manifest, root), []); await writeFile(join(root, "docs/visual-baseline.md"), "修改"); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("SHA-256 不一致"))); });
-test("V5 check-files 与 CLI 拒绝旧 F2 candidate SHA 或旧 diff 身份", async () => {
+test("V5 check-files 与 CLI 拒绝旧 F2 baseline 或旧 diff 身份", async () => {
   const root = await mkdtemp(join(tmpdir(), "visual-f2-identity-"));
   await createFixtureFiles(root);
   const manifestPath = join(root, "visual-assets.json");
-  for (const reviewField of ["visual_fidelity_review", "production_contract_review"]) {
-    for (const identityField of ["candidate_sha256", "diff_fingerprint"]) {
-      const manifest = validManifest();
-      manifest.f2_review[reviewField][identityField] = identityField === "candidate_sha256" ? `sha256:${"8".repeat(64)}` : "diff-old";
-      assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("未绑定当前候选")), `check-files ${reviewField}.${identityField}`);
-      await writeFile(manifestPath, JSON.stringify(manifest));
-      assert.equal(await main([manifestPath, "--stage", "V5", "--check-files", "--project-root", root]), 1, `CLI ${reviewField}.${identityField}`);
-    }
+  for (const [field, value] of [["baselineHash", `sha256:${"8".repeat(64)}`], ["diffFingerprint", "diff-old"]]) {
+    const manifest = validManifest();
+    manifest.v5_production_gate.f2_machine_validation[field] = value;
+    assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("未绑定当前")), `check-files ${field}`);
+    await writeFile(manifestPath, JSON.stringify(manifest));
+    assert.equal(await main([manifestPath, "--stage", "V5", "--check-files", "--project-root", root]), 1, `CLI ${field}`);
   }
 });
 test("V4 文件审计拒绝扩展名伪装的 mjs raster", async () => { const root = await mkdtemp(join(tmpdir(), "visual-fake-raster-")); const manifest = validManifest(); await createFixtureFiles(root); const fake = join(root, "public/assets/fake.mjs"); await mkdir(dirname(fake), { recursive: true }); await writeFile(fake, "export default 1;"); manifest.assets[0].runtime_outputs = ["public/assets/fake.mjs"]; manifest.production_contract_audit.units[0].actual_assets[0].file = "public/assets/fake.mjs"; manifest.production_contract_audit.units[0].actual_assets[0].sha256 = sha256Bytes(Buffer.from("export default 1;")); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("不是可解码 PNG/JPEG/WebP"))); });
@@ -671,7 +649,6 @@ test("reuse-existing 只能绑定新版不可变快照且不得改回 generate-n
   region.production_method = "reuse"; region.delivery_kind = "existing-asset"; region.implementation_plan = { mode: "reuse-existing", summary: "复用已验收主角资源" }; region.reuse_snapshot = reuseSnapshot();
   Object.assign(manifest.assets[0], { production_method: "reuse", delivery_kind: "existing-asset" });
   Object.assign(manifest.production_contract_audit.units[0], { observed_method: "reuse", observed_delivery_kind: "existing-asset" });
-  Object.assign(manifest.f2_review.production_contract_review.component_reviews[0], { observed_method: "reuse", observed_delivery_kind: "existing-asset" });
   refreshRegionDerivedContracts(manifest, region); addManualConfirmationRecords(manifest);
   const invalid = structuredClone(manifest); invalid.coverage_audit.regions[1].reuse_snapshot.source_status = "rejected";
   assert(validateManifest(invalid).some((item) => item.includes("source_status") && item.includes("accepted")));
@@ -692,7 +669,7 @@ test("reuse-existing 文件身份必须绑定 accepted 源快照、源文件和�
   const sourceManifest = { status: "accepted", source_file: "art/hero.png", source_sha256: sha256Bytes(sourceBytes) }; const sourceManifestBytes = Buffer.from(JSON.stringify(sourceManifest));
   const snapshot = reuseSnapshot({ source_asset_id: "hero-idle", source_manifest_sha256: sha256Bytes(sourceManifestBytes), source_sha256: sha256Bytes(sourceBytes), compatibility_evidence_sha256: sha256Bytes(Buffer.from(compatibility)) });
   region.production_method = "reuse"; region.delivery_kind = "existing-asset"; region.implementation_plan = { mode: "reuse-existing", summary: "复用已验收主角资源" }; region.reuse_snapshot = snapshot;
-  Object.assign(manifest.assets[0], { production_method: "reuse", delivery_kind: "existing-asset" }); Object.assign(manifest.production_contract_audit.units[0], { observed_method: "reuse", observed_delivery_kind: "existing-asset" }); Object.assign(manifest.f2_review.production_contract_review.component_reviews[0], { observed_method: "reuse", observed_delivery_kind: "existing-asset" });
+  Object.assign(manifest.assets[0], { production_method: "reuse", delivery_kind: "existing-asset" }); Object.assign(manifest.production_contract_audit.units[0], { observed_method: "reuse", observed_delivery_kind: "existing-asset" });
   refreshRegionDerivedContracts(manifest, region); addManualConfirmationRecords(manifest); await createFixtureFiles(root); await writeFile(join(root, "art/hero.png"), sourceBytes); await writeFile(join(root, "evidence/visual/hero-consistency.json"), compatibility); await writeFile(join(root, "docs/reuse-snapshot.json"), sourceManifestBytes); await writeConfirmationFixtureFiles(root, manifest);
   assert.deepEqual(await checkManifestFiles(manifest, root), []);
   await writeFile(join(root, "art/hero.png"), Buffer.from("source-drift")); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("source_file") && item.includes("SHA")));
@@ -728,7 +705,7 @@ test("拆解提案前必须绑定已有 ownership 审阅证据", () => { const m
 test("reuse 快照文件漂移或来源状态变化时拒绝", async () => {
   const root = await mkdtemp(join(tmpdir(), "visual-reuse-snapshot-drift-")); const manifest = validManifest(); const region = manifest.coverage_audit.regions[1]; const sourceBytes = minimalPng(64, 96); const compatibility = JSON.stringify({ status: "passed" });
   const sourceManifest = { status: "accepted", source_file: "art/hero.png", source_sha256: sha256Bytes(sourceBytes) }; const sourceManifestBytes = Buffer.from(JSON.stringify(sourceManifest)); const snapshot = reuseSnapshot({ source_asset_id: "hero-idle", source_manifest_sha256: sha256Bytes(sourceManifestBytes), source_sha256: sha256Bytes(sourceBytes), compatibility_evidence_sha256: sha256Bytes(Buffer.from(compatibility)) });
-  region.production_method = "reuse"; region.delivery_kind = "existing-asset"; region.implementation_plan = { mode: "reuse-existing", summary: "复用快照资源" }; region.reuse_snapshot = snapshot; Object.assign(manifest.assets[0], { production_method: "reuse", delivery_kind: "existing-asset" }); Object.assign(manifest.production_contract_audit.units[0], { observed_method: "reuse", observed_delivery_kind: "existing-asset" }); Object.assign(manifest.f2_review.production_contract_review.component_reviews[0], { observed_method: "reuse", observed_delivery_kind: "existing-asset" }); refreshRegionDerivedContracts(manifest, region); addManualConfirmationRecords(manifest);
+  region.production_method = "reuse"; region.delivery_kind = "existing-asset"; region.implementation_plan = { mode: "reuse-existing", summary: "复用快照资源" }; region.reuse_snapshot = snapshot; Object.assign(manifest.assets[0], { production_method: "reuse", delivery_kind: "existing-asset" }); Object.assign(manifest.production_contract_audit.units[0], { observed_method: "reuse", observed_delivery_kind: "existing-asset" }); refreshRegionDerivedContracts(manifest, region); addManualConfirmationRecords(manifest);
   await createFixtureFiles(root); await writeFile(join(root, "art/hero.png"), sourceBytes); await writeFile(join(root, "evidence/visual/hero-consistency.json"), compatibility); await writeFile(join(root, "docs/reuse-snapshot.json"), sourceManifestBytes); await writeConfirmationFixtureFiles(root, manifest); assert.deepEqual(await checkManifestFiles(manifest, root), []);
   const rejected = structuredClone(manifest); rejected.coverage_audit.regions[1].reuse_snapshot.source_status = "rejected"; assert((await checkManifestFiles(rejected, root)).some((item) => item.includes("source_status") && item.includes("accepted")));
   await writeFile(join(root, "art/hero.png"), Buffer.from("drift")); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("source_file") && item.includes("SHA")));

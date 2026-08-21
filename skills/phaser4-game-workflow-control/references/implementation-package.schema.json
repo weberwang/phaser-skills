@@ -337,12 +337,14 @@
         "identity": {"$ref": "#/$defs/artifactIdentity"},
         "evidence": {"$ref": "#/$defs/evidenceValue"}
       },
+      "not": {"anyOf": [{"required": ["reviewer"]}, {"required": ["reviewer_type"]}, {"required": ["reviewerType"]}, {"required": ["reviewer_id"]}, {"required": ["reviewerId"]}, {"required": ["review_id"]}, {"required": ["reviewId"]}, {"required": ["reviewed_at"]}, {"required": ["reviewedAt"]}, {"required": ["human_review"]}, {"required": ["humanReview"]}, {"required": ["f2_review"]}, {"required": ["f2_reviews"]}, {"required": ["f2Review"]}, {"required": ["f2Reviews"]}, {"required": ["visual_fidelity_review"]}, {"required": ["visualFidelityReview"]}, {"required": ["production_contract_review"]}, {"required": ["productionContractReview"]}, {"required": ["component_reviews"]}, {"required": ["componentReviews"]}]},
       "additionalProperties": true
     },
     "v2StructuredReview": {
       "type": "object",
-      "required": ["evidence", "status", "reviewed_target_identity", "reviewed_candidate_identity", "full_viewport_comparison", "per_region_review", "composition_review", "geometry_review", "color_material_review", "typography_review", "decoration_density_review", "responsive_review"],
+      "required": ["validationMode", "evidence", "status", "reviewed_target_identity", "reviewed_candidate_identity", "full_viewport_comparison", "per_region_review", "composition_review", "geometry_review", "color_material_review", "typography_review", "decoration_density_review", "responsive_review"],
       "properties": {
+        "validationMode": {"const": "MACHINE"},
         "evidence": {"$ref": "#/$defs/evidenceValue"},
         "status": {"enum": ["passed", "PASS", "failed", "FAIL"]},
         "reviewed_target_identity": {"type": "object", "minProperties": 1},
@@ -354,10 +356,9 @@
         "color_material_review": {"type": "object", "minProperties": 1},
         "typography_review": {"type": "object", "minProperties": 1},
         "decoration_density_review": {"type": "object", "minProperties": 1},
-        "responsive_review": {"type": "object", "minProperties": 1},
-        "unresolved_differences": {"type": "array"},
-        "findings": {"type": "array"}
-      }
+        "responsive_review": {"type": "object", "minProperties": 1}
+      },
+      "not": {"anyOf": [{"required": ["reviewer"]}, {"required": ["reviewer_type"]}, {"required": ["reviewer_id"]}, {"required": ["review_id"]}, {"required": ["reviewed_at"]}, {"required": ["human_review"]}, {"required": ["humanReview"]}, {"required": ["f2_review"]}, {"required": ["f2_reviews"]}, {"required": ["f2Review"]}, {"required": ["f2Reviews"]}, {"required": ["visual_fidelity_review"]}, {"required": ["visualFidelityReview"]}, {"required": ["production_contract_review"]}, {"required": ["productionContractReview"]}, {"required": ["component_reviews"]}, {"required": ["componentReviews"]}]}
     },
     "sceneCoverageRegion": {
       "type": "object",

@@ -772,21 +772,23 @@
       "anyOf": [{"required": ["sha256"]}, {"required": ["code_sha256"]}, {"required": ["build_sha256"]}, {"required": ["candidate_sha256"]}]
     },
     "evidenceValue": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "array", "minItems": 1, "items": {"type": ["string", "object"]}}, {"type": "object", "minProperties": 1}]},
-    "humanReview": {"type": "object", "required": ["reviewer_type", "reviewer_id", "reviewed_at", "evidence", "status"], "properties": {"reviewer_type": {"const": "human"}, "reviewer_id": {"type": "string", "minLength": 1}, "reviewed_at": {"type": "string", "format": "date-time"}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "status": {"enum": ["passed", "PASS", "failed", "FAIL"]}, "target_sha256": {"$ref": "#/$defs/sha256"}, "candidate_sha256": {"$ref": "#/$defs/sha256"}, "code_sha256": {"$ref": "#/$defs/sha256"}, "build_sha256": {"$ref": "#/$defs/sha256"}, "diff_fingerprint": {"type": "string", "minLength": 1}, "diff_identity": {"type": "string", "minLength": 1}}, "additionalProperties": true},
-    "visualHumanApproval": {"type": "object", "required": ["review_id", "reviewed_at", "evidence", "evidence_sha256", "status", "target_sha256", "candidate_sha256", "diff_fingerprint", "baseline_sha256"], "properties": {"review_id": {"type": "string", "minLength": 1}, "reviewed_at": {"type": "string", "format": "date-time"}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "evidence_sha256": {"$ref": "#/$defs/sha256"}, "status": {"enum": ["passed", "PASS"]}, "target_sha256": {"$ref": "#/$defs/sha256"}, "candidate_sha256": {"$ref": "#/$defs/sha256"}, "diff_fingerprint": {"type": "string", "minLength": 1}, "baseline_sha256": {"$ref": "#/$defs/sha256"}}, "not": {"anyOf": [{"required": ["reviewer_type"]}, {"required": ["reviewerType"]}, {"required": ["reviewer_id"]}, {"required": ["reviewerId"]}, {"required": ["reviewer"]}]}, "additionalProperties": true},
+    "visualHumanApproval": {"type": "object", "required": ["review_id", "reviewed_at", "evidence", "evidence_sha256", "status", "target_sha256", "candidate_sha256", "diff_fingerprint", "baseline_sha256"], "properties": {"review_id": {"type": "string", "minLength": 1}, "reviewed_at": {"type": "string", "format": "date-time"}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "evidence_sha256": {"$ref": "#/$defs/sha256"}, "status": {"enum": ["passed", "PASS"]}, "target_sha256": {"$ref": "#/$defs/sha256"}, "candidate_sha256": {"$ref": "#/$defs/sha256"}, "diff_fingerprint": {"type": "string", "minLength": 1}, "baseline_sha256": {"$ref": "#/$defs/sha256"}}, "not": {"anyOf": [{"required": ["reviewer_type"]}, {"required": ["reviewerType"]}, {"required": ["reviewer_id"]}, {"required": ["reviewerId"]}, {"required": ["reviewer"]}, {"required": ["f2_review"]}, {"required": ["f2_reviews"]}, {"required": ["visual_fidelity_review"]}, {"required": ["visualFidelityReview"]}, {"required": ["production_contract_review"]}, {"required": ["productionContractReview"]}, {"required": ["component_reviews"]}, {"required": ["componentReviews"]}, {"required": ["human_review"]}]}, "additionalProperties": true},
     "v2Artifact": {
       "type": "object",
       "required": ["identity", "evidence"],
       "properties": {"identity": {"$ref": "#/$defs/artifactIdentity"}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "visual_human_approval_id": {"type": "string", "minLength": 1}, "visual_human_approval_sha256": {"$ref": "#/$defs/sha256"}},
+      "not": {"anyOf": [{"required": ["reviewer"]}, {"required": ["reviewer_type"]}, {"required": ["reviewerType"]}, {"required": ["reviewer_id"]}, {"required": ["reviewerId"]}, {"required": ["review_id"]}, {"required": ["reviewId"]}, {"required": ["reviewed_at"]}, {"required": ["reviewedAt"]}, {"required": ["human_review"]}, {"required": ["humanReview"]}, {"required": ["f2_review"]}, {"required": ["f2_reviews"]}, {"required": ["f2Review"]}, {"required": ["f2Reviews"]}, {"required": ["visual_fidelity_review"]}, {"required": ["visualFidelityReview"]}, {"required": ["production_contract_review"]}, {"required": ["productionContractReview"]}, {"required": ["component_reviews"]}, {"required": ["componentReviews"]}]},
       "additionalProperties": true
     },
     "v2StructuredReview": {
       "type": "object",
-      "required": ["evidence", "status", "reviewed_target_identity", "reviewed_candidate_identity", "full_viewport_comparison", "per_region_review", "composition_review", "geometry_review", "color_material_review", "typography_review", "decoration_density_review", "responsive_review"],
+      "required": ["validationMode", "evidence", "status", "reviewed_target_identity", "reviewed_candidate_identity", "full_viewport_comparison", "per_region_review", "composition_review", "geometry_review", "color_material_review", "typography_review", "decoration_density_review", "responsive_review"],
       "properties": {
+        "validationMode": {"const": "MACHINE"},
         "evidence": {"$ref": "#/$defs/evidenceValue"}, "status": {"enum": ["passed", "PASS", "failed", "FAIL"]},
         "reviewed_target_identity": {"type": "object", "minProperties": 1}, "reviewed_candidate_identity": {"type": "object", "minProperties": 1}, "full_viewport_comparison": {"$ref": "#/$defs/evidenceValue"}, "per_region_review": {"type": "array", "minItems": 1}, "composition_review": {"type": "object", "minProperties": 1}, "geometry_review": {"type": "object", "minProperties": 1}, "color_material_review": {"type": "object", "minProperties": 1}, "typography_review": {"type": "object", "minProperties": 1}, "decoration_density_review": {"type": "object", "minProperties": 1}, "responsive_review": {"type": "object", "minProperties": 1}
-      }
+      },
+      "not": {"anyOf": [{"required": ["reviewer"]}, {"required": ["reviewer_type"]}, {"required": ["reviewerType"]}, {"required": ["reviewer_id"]}, {"required": ["reviewerId"]}, {"required": ["reviewed_at"]}, {"required": ["reviewedAt"]}, {"required": ["review_id"]}, {"required": ["reviewId"]}, {"required": ["human_review"]}, {"required": ["humanReview"]}, {"required": ["f2_review"]}, {"required": ["f2_reviews"]}, {"required": ["f2Review"]}, {"required": ["f2Reviews"]}, {"required": ["visual_fidelity_review"]}, {"required": ["visualFidelityReview"]}, {"required": ["production_contract_review"]}, {"required": ["productionContractReview"]}, {"required": ["component_reviews"]}, {"required": ["componentReviews"]}]}
     },
     "sceneCoverageRegion": {
       "type": "object",
@@ -815,10 +817,6 @@
       "items": {
         "type": "string"
       }
-    },
-    "sha256": {
-      "type": "string",
-      "pattern": "^sha256:[a-f0-9]{64}$"
     },
     "actions": {
       "type": "array",

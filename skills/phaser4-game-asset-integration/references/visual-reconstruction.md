@@ -56,7 +56,7 @@ V3 的每个 annotation/region 必须先完成 `state_analysis` 再拆解 `compo
 
 ImageGen 源文件、运行时文件和实际输出只能使用 `image/png` 或 `image/jpeg`，路径扩展名只能为 `.png`、`.jpg`、`.jpeg`；通用 authored-raster 可依其合同使用其他位图。
 
-实施包的 `visualProductionUnits` 必须与覆盖区域按 annotation number 和 region ID 一一绑定，并校验输出共享、路径、所有权与格式。V4 记录 `production_contract_audit`；F2 必须同时通过 `visual_fidelity_review` 与 `production_contract_review` 两类机器证据，且 `overall_status` 通过。V5 还必须具备 V3、实施包、V4、F2 两类机器证据、F3 runtime replay、非空且 freshness-bound 的 fidelity cases、运行时消费证据及无未批准替换。生产方法变更只能由绑定区域、工作项、候选版本、用户原文和时间的 `ACCEPTED` Change Request 批准。
+实施包的 `visualProductionUnits` 必须与覆盖区域按 annotation number 和 region ID 一一绑定，并校验输出共享、路径、所有权与格式。V4 记录 `production_contract_audit`；F2 只接受带 `validationMode=MACHINE` 的当前身份机器事实，并由现有组件合同校验 component×state、placement 和 runtime 输出。V5 还必须具备 V3、实施包、V4、F2 机器验证事实、F3 runtime replay、非空且 freshness-bound 的 fidelity cases、运行时消费证据及无未批准替换。生产方法变更只能由绑定区域、工作项、候选版本、用户原文和时间的 `ACCEPTED` Change Request 批准；V2 唯一人工确认通过后不再生成视觉复核工件。
 
 ### 原子拆解与标注版式
 
@@ -72,7 +72,7 @@ ImageGen 源文件、运行时文件和实际输出只能使用 `image/png` 或 
 
 V1 灰盒、V2 可玩视觉切片与 V5 正式场景沿用同一生产 Scene 入口和骨架逐步重构。禁止一次性截图 Scene、整屏铺图、隐藏覆盖层或用绝对叠层凑像素。
 
-在其他视口按布局合同验证视觉意图和关系不变量，并在同一页面重放可复现交互轨迹和动态 resize，验证功能契约、识别、预警、反馈、遮挡、安全区、小屏缩放和性能峰值。玩法负责规则、状态和交互；美术负责表现资源和视觉集成；非作者 F2 给出独立领域质量结论，F3 只验证当前候选的工程证据。
+在其他视口按布局合同验证视觉意图和关系不变量，并在同一页面重放可复现交互轨迹和动态 resize，验证功能契约、识别、预警、反馈、遮挡、安全区、小屏缩放和性能峰值。玩法负责规则、状态和交互；美术负责表现资源和视觉集成；F2 由确定性机器事实给出领域质量结论，F3 只验证当前候选的工程证据。
 
 出现下列任一情况，V2、V5 或完成报告不得通过：
 
@@ -84,7 +84,7 @@ V1 灰盒、V2 可玩视觉切片与 V5 正式场景沿用同一生产 Scene 入
 
 ### 唯一真人方向审批
 
-效果图还原只在 V2 冻结视觉方向时要求一次真人审批。唯一 `visual_human_approval` 不采集 reviewer_type/reviewer_id，仅以 reviewed_at、evidence/evidence_sha256、PASS、review_id 及冻结 target、V2 candidate code/build SHA、diff identity、baseline SHA 表达人工通过事件。V2 代表画面、动态样片和结构化机器检查必须先齐全；V4/V5 的正式资产、同屏组合、完整 viewport、overlay、diff、逐区域 fidelity 及 F2 两类检查由可追溯机器/AI 证据完成，不再逐项登记 `human_review` 或要求第二位真人。根节点 PASS、说明文字、AI reviewer 字段和重复审批均不能替代唯一 V2 审批。
+效果图还原只在 V2 冻结视觉方向时要求一次真人审批。唯一 `visual_human_approval` 不采集 reviewer_type/reviewer_id，仅以 reviewed_at、evidence/evidence_sha256、PASS、review_id 及冻结 target、V2 candidate code/build SHA、diff identity、baseline SHA 表达人工通过事件。V2 代表画面、动态样片和结构化机器检查必须先齐全；V4/V5 的正式资产、同屏组合、完整 viewport、overlay、diff、逐区域 fidelity 及 F2 两类检查由绑定当前身份的确定性机器证据完成，不再逐项登记 `human_review` 或要求第二位真人。根节点 PASS、说明文字、AI reviewer 字段和重复审批均不能替代唯一 V2 审批。
 # 场景还原合同（强制）
 
 `effect-image` 表示冻结效果图对应的完整正式 Scene，而不是独立 PNG 生产。进入 V3 前必须存在 `scene_reconstruction_contract`，并绑定 `reference_target.target_sha256`、scene/state、原始像素尺寸、viewport、实际有效 DPR（(0,1.5]）、locale、seed、input trace、稳定帧、visual baseline 与 layout contract 版本。

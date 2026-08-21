@@ -301,6 +301,8 @@ function validateV2MachineStructuredReview(v2, missingEvidence) {
     missingEvidence.push('V2 structured machine review');
     return;
   }
+  // 该结构化检查只负责确认前的机器验证，不能成为第二个人工审批入口。
+  if (review.validationMode !== 'MACHINE') missingEvidence.push('V2 structured machine review validationMode=MACHINE');
   if (!statusPass(review.status ?? review.verdict ?? review.result)) missingEvidence.push('V2 structured machine review PASS');
   const evidence = firstValue(review.evidence, review.evidencePath, review.evidence_path, review.fullViewportComparison, review.full_viewport_comparison);
   if (!(nonEmpty(evidence) || (Array.isArray(evidence) && evidence.length > 0) || isObject(evidence))) missingEvidence.push('V2 structured machine review evidence');
