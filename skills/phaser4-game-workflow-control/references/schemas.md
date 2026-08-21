@@ -7,6 +7,7 @@
 - [Delegation Package](delegation-package.schema.json)
 - [Parallel Delegation Batch](parallel-delegation-batch.schema.json)
 - [Execution Unit Result](execution-unit-result.schema.json)
+- [Execution State](execution-state.schema.json)
 - [Evidence Manifest](evidence-manifest.schema.json)
 - [Implementation Package](implementation-package.schema.json)
 - [视觉拆解人工确认](visual-decomposition-confirmation.schema.json)
@@ -29,6 +30,7 @@
   delegations/batches/<batchId>.json
   evidence/<workItemId>/<evidenceId>.json
   evidence/<workItemId>/units/<resultId>.json
+  evidence/<workItemId>/execution-state.json
   change-requests/<changeRequestId>.json
 ```
 
@@ -43,6 +45,8 @@ Work Item 使用 `taskAuthorization` 保存用户原始请求、目标、范围�
 Work Item 与 Approval Ledger 使用排序后的非空 `moduleIds`。Implementation Package 在 A3 前冻结 `executionUnits`；数组顺序是计划制定者预设的唯一执行顺序，控制面只校验/执行，不通过依赖图、闭包或拓扑关系推导顺序。每个单元绑定 `moduleId`，场景单元还绑定 `sceneId`；SERIAL 单元各占一个顺序位置，同一非空 `parallelGroup` 的 PARALLEL 单元必须连续出现并视为一个顺序阶段。SHARED/INTEGRATION 强制 SERIAL，只有 MODULE/SCENE 可进入至少含两个单元的并行组。`fileOwnership` 与实施单元写范围必须双向唯一覆盖且 owner 相同，预期增删文件也必须唯一落入实施单元。
 
 Execution Unit Result 绑定当前工作项、实施包、单元、基线、代码与该单元路径级 diff 指纹、实际成功命令和证据哈希；`files` 唯一且必须与 `fileHashes` 精确一一对应，只有当前有效 PASS 才满足预设顺序的前序门。目标 SERIAL 单元需要其前面全部单元 PASS；目标 PARALLEL 单元只需要其并行组首项之前全部单元 PASS，同组 peer 不构成前序条件。Evidence Manifest 的 `completedUnitIds` 必须覆盖全部实施单元并由结果复核。A0-A2 Delegation Package 禁止实施单元字段；串行 A3 使用 `delegate-check`，并行 A3 必须通过保存于 `delegations/batches/` 的完整不可变批次执行 `parallel-check`，单独委派不得放行。
+
+`execution-state.json` 是实施顺序的可执行状态合同，只能在进入 `IMPLEMENTING` 时初始化，并由通过 `unit-check` 的当前 Result 原子更新：当前单元变为 `COMPLETE`，下一串行单元或下一并行组变为 `IN_PROGRESS`；并行组未全部完成时不得激活后续数组位置，全部单元完成且无下一任务时必须输出 `WORKFLOW_COMPLETE`。状态逐字段绑定 `workItemId`、`packageId`、`baselineHash`、`executionUnitIds` 数组顺序、计划指纹及每个 Result 的路径/内容指纹；`delegate-check`、`parallel-check`、`unit-check`、`evidence-check` 和进入 `VALIDATING` 的迁移缺少或篡改状态均 fail closed。V2 单元序列完成后，机器状态必须输出 `V3-PRODUCTION-PLANNING`；只有唯一的 `v2ToV3Contract` 对象同时声明 `status=PASS`、`contractId`、位于 `evidenceRoot` 内的 `evidenceFile` 及匹配当前文件字节的 `evidenceSha256`，合同回对门才可将该下一任务标为 `IN_PROGRESS`，否则保持 `BLOCKED`。
 
 构造 Parallel Delegation Batch 时，先将位于 `.workflow-control/delegations/` 且不在 `batches/` 下的全部委派路径排序，记录逐文件 `delegationHashes`，再从委派内容推导排序唯一的 `executionUnitIds` 和 `assignedAgents`，最后计算覆盖这些不可变字段的 `fingerprint`。`parallel-check` 会先复核路径与当前文件哈希，再复算派生数组；扫描历史批次时只使用批次内不可变单元/代理索引，不重新读取可能已变化的历史委派文件，任何历史批次结构或指纹损坏都会阻断。
 

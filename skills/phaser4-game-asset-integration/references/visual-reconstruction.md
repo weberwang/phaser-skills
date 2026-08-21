@@ -60,7 +60,7 @@ ImageGen 源文件、运行时文件和实际输出只能使用 `image/png` 或 
 
 ### 原子拆解与标注版式
 
-状态分析完成后才允许拆分；`component_count` 统计唯一原子视觉部件，重复实例用 `visible_instance_count` 和多个 `placements` 表达，编号不代表资产数量。② 顶部六按钮逐 component 交付；⑧ 三个相同底部表面可为一个 component 加三个 placements；⑨ 三个动作图标按实际复用关系登记。PNG 标注左侧只保留冻结原图、框、编号圆点和 placement 子编号，摘要、图例和 atomic image requirements 统一放在右侧说明栏。ImageGen 强制 individual 位图与 `atlas_allowed=false`，不允许编号组图、横向组图或 atlas；atlas 只适用于非 ImageGen 的显式切片合同。交互热区独立绑定 placement，不计入视觉资产。
+状态分析完成后才允许拆分；`component_count` 统计唯一原子视觉部件，重复实例用 `visible_instance_count` 和多个 `placements` 表达，编号不代表资产数量。② 顶部六按钮逐 component 交付；⑧ 三个相同底部表面可为一个 component 加三个 placements；⑨ 三个动作图标按实际复用关系登记。PNG 标注左侧只保留冻结原图、框和稳定编号，不绘制 placement ID 或子编号；用户摘要、中文计划标签和图例统一放在右侧说明栏，坐标尺寸及其他技术字段写入 proposal 拆解分析技术 JSON。ImageGen 强制 individual 位图与 `atlas_allowed=false`，不允许编号组图、横向组图或 atlas；atlas 只适用于非 ImageGen 的显式切片合同。交互热区独立绑定 placement，不计入视觉资产。
 
 ## V5 同条件与动态验收
 

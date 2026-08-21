@@ -75,7 +75,7 @@ node <skill-dir>\scripts\workflow-control.mjs diff-audit --work-item .workflow-c
 
 ## 效果图还原与位图拆解
 
-效果图还原使用 schema 1.5 的 `visual-assets.json`。先冻结原始效果图，再生成 PNG 标注图：左侧保持原图尺寸并只绘制框选、稳定编号和原子 placement，右侧独立说明栏集中展示三类实现计划、编号说明和 atomic image requirements。正式标注产物仅为 PNG；PNG 目标图须为与场景画布一致的完整合法图像，标注编号和说明栏不得越界。
+效果图还原使用 schema 1.5 的 `visual-assets.json`。先冻结原始效果图，再生成 PNG 用户图示：左侧保持原图尺寸并只绘制框选、稳定编号和原子框，右侧说明栏只显示用户可读摘要及“本次生成 / 复用既有资源 / 程序实现”标签，不绘制 placement ID、坐标尺寸或组件/状态/资产字段。完整坐标、状态、生产合同、原子需求和资源映射统一保存在 `--proposal` 生成的拆解分析技术 JSON 中。正式标注产物仅为 PNG；PNG 目标图须为与场景画布一致的完整合法图像，标注编号和说明栏不得越界。
 
 只有 `bitmap-decomposition` 下的 `generate-now` 区域需要在生产前等待用户精确确认。确认前禁止裁切、抠图、分层、AI 分割或补全；`reuse-existing` 与 `runtime-program` 区域仍须在同一 PNG 标注图中可见，但不触发位图拆解确认。校验器会用确定性 PNG 渲染器重建标注图并逐字节复验，防止隐藏、覆盖或篡改标注。
 
@@ -89,7 +89,7 @@ ImageGen 位图生产还需逐区域显式声明 `production_origin`、`producti
 
 拆解必须先完成状态分析，再建立 `component_inventory`：逐项覆盖 `default`、`selected`、`active`、`disabled`、`pressed`、`hover`、`victory`、`defeat`、`paused`，并先绑定状态证据 SHA、冻结目标 SHA 和 `completed_at`。编号不是资产数量单位；② 的 6 个顶部按钮、⑨ 的 3 个动作图标必须按每个可复用 `component × required state` 交付独立位图，⑧ 的相同 3 个底部表面登记为 1 个 component + 3 个 placements。ImageGen 强制 `delivery_mode=individual`、`atlas_allowed=false`，禁止横向组图和图集；交互热区必须与 interactive placement 一一独立绑定且不计入视觉资产，重复视觉实例只登记一个 component 并用多个 placements 表达。
 
-标注说明统一放在 PNG 右侧说明栏，不回流到左侧效果图；重复视觉部件只登记一个 component，并用多个 placements 表达。状态证据的 SHA、冻结目标 SHA、analysis ID 和完成时间必须先于 component inventory 的 `created_at`。正式流程不生成或接受 SVG 标注产物。
+用户说明统一放在 PNG 右侧说明栏，不回流到左侧效果图；技术拆解详情只写入与 PNG/区域定义 SHA 绑定的 proposal 技术 JSON。重复视觉部件只登记一个 component，并用多个 placements 表达。状态证据的 SHA、冻结目标 SHA、analysis ID 和完成时间必须先于 component inventory 的 `created_at`。正式流程不生成或接受 SVG 标注产物。
 
 最小命令示例：
 
@@ -99,6 +99,8 @@ node <skill-dir>\scripts\validate_visual_manifest.mjs docs\visual-assets.json --
 node <skill-dir>\scripts\validate_visual_manifest.mjs docs\visual-assets.json --stage V4 --check-files --project-root .
 node <skill-dir>\scripts\validate_visual_manifest.mjs docs\visual-assets.json --stage V5 --check-files --project-root .
 ```
+
+正式生成命令必须带 `--proposal <file>.json`；省略该参数直接失败，不生成只有用户图示的成功产物。
 
 ## 初始化与验证
 

@@ -6,7 +6,7 @@
  * 和比较证据收敛成独立的机器门，供 V1-V5 入口共享。
  */
 
-import { validateVisualHumanApproval } from "./visual-human-review-contract.mjs";
+import { validateVisualHumanApproval, validateVisualPostApprovalReviewFields } from "./visual-human-review-contract.mjs";
 import { isWorkflowDpr, workflowDprError } from "./workflow-dpr-contract.mjs";
 
 /** 判断是否为普通对象。 */
@@ -113,8 +113,9 @@ function validateV2Artifact(value, label, contract, stage, errors, options = {})
   const evidence = field(value, "evidence", "evidence_path", "evidencePath", "full_viewport_evidence", "fullViewportEvidence", "sample_evidence", "sampleEvidence");
   if (!(nonEmptyString(evidence) || (Array.isArray(evidence) && evidence.length > 0) || (isObject(evidence) && Object.keys(evidence).length > 0))) errors.push(contractError(stage, contract, null, `${label} 缺少可复核证据`, { missing: `${label}.evidence`, returnStage: "V1/PROPOSAL", rootCause: "方案缺失" }));
   if (options.requireDiff === true && !nonEmptyString(field(identity, "diff_fingerprint", "diffFingerprint", "diff_identity", "diffIdentity"))) errors.push(contractError(stage, contract, null, `${label} identity 缺少 diff identity`, { missing: `${label}.identity.diff_fingerprint`, returnStage: "V1/PROPOSAL", rootCause: "方案缺失" }));
-  // V2 候选和动态样片只由机器身份/文件证据驱动；历史 human_review 字段
-  // 即使存在也不参与放行，唯一真人方向审批必须来自共享 approval。
+  // V2 候选和动态样片只由机器身份/文件证据驱动；任何 human/reviewer
+  // 字段都会制造第二个人工确认入口，因此在确认前也直接拒绝。
+  errors.push(...validateVisualPostApprovalReviewFields(value, { stage: "V2" }));
 }
 
 /** V2 必须提供完整场景候选、动态样片和结构化审查，缺任一项均退回 V1。 */
@@ -128,6 +129,9 @@ function validateV2StageArtifacts(contract, stage, errors) {
     errors.push(contractError(stage, contract, null, "V2 缺少完整场景结构化审查，不能进入 V3", { missing: "v2_structured_review", returnStage: "V1/PROPOSAL", rootCause: "方案缺失" }));
     return;
   }
+  // v2_structured_review 允许保留，但它只能是确认前的机器验证，不能携带
+  // reviewer、review_id 或 human_review 身份，避免把它误读成第二次审批。
+  errors.push(...validateVisualPostApprovalReviewFields(review, { stage: "V2" }));
   for (const [names, text] of [
     [["reviewed_target_identity", "reviewedTargetIdentity"], "reviewed target identity"],
     [["reviewed_candidate_identity", "reviewedCandidateIdentity"], "reviewed candidate identity"],
@@ -349,6 +353,7 @@ export function validateSceneReconstructionContract(contract, manifest = null, o
   validateReferenceTechnicalConflicts(contract, stage, errors);
   if (["V2", "V3", "V4", "V5"].includes(String(stage).toUpperCase())) {
     validateV2StageArtifacts(contract, stage, errors);
+    if (String(stage).toUpperCase() !== "V2") errors.push(...validateVisualPostApprovalReviewFields(manifest ?? contract, { stage }));
     const candidate = field(contract, "v2_scene_candidate", "v2SceneCandidate", "v2_candidate", "v2Candidate") ?? {};
     const candidateIdentity = field(candidate, "identity", "candidate_identity", "candidateIdentity") ?? candidate;
     const approval = field(contract, "visual_human_approval", "visualHumanApproval")
@@ -519,6 +524,8 @@ export function validateStructuredFidelityCases(cases, manifest = null, options 
   for (const [index, item] of cases.entries()) {
     const label = `fidelity_cases[${index}]`;
     if (!isObject(item)) { errors.push(contractError(stage, null, null, `${label} 必须是对象`, { missing: label, returnStage: "VALIDATING" })); continue; }
+    // fidelity case 属于 V5 机器验证事实；V2 人工确认后不得再挂 human_review 或 reviewer。
+    errors.push(...validateVisualPostApprovalReviewFields(item, { stage }));
     const targetIdentity = identityObject(field(item, "target_identity", "targetIdentity"), item.target_sha256, null);
     const candidateIdentity = identityObject(field(item, "candidate_identity", "candidateIdentity"), item.candidate_sha256, item.diff_fingerprint);
     const targetIdentitySha = field(targetIdentity, "sha256", "target_sha256", "targetSha256");

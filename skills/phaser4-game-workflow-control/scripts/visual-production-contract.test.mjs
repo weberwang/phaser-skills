@@ -9,8 +9,7 @@ import test from "node:test";
 import {
   auditProductionContract,
   validateComponentAuditEvidence,
-  validateComponentReviewCoverage,
-  validateF2ProductionReviews,
+  validateVisualF2MachineGate,
   validateImageGenerationContract,
   validateProductionContract,
   validateProductionMethodChangeRequest,
@@ -26,11 +25,6 @@ import {
 import { declaredPathEntry, registerCrossUnitPath } from "./visual-package-paths.mjs";
 
 const HASH = `sha256:${"a".repeat(64)}`;
-
-/** 构造视觉产物的结构化人工审阅身份。 */
-function humanReview(id, status = "passed") {
-  return { reviewer_type: "human", reviewer_id: id, reviewed_at: "2026-08-15T00:00:00Z", evidence: `evidence/human/${id}.json`, status, target_sha256: HASH, candidate_sha256: HASH, diff_fingerprint: "diff-1" };
-}
 
 const IMPLEMENTATION_PACKAGE_SCHEMA = JSON.parse(readFileSync(new URL("../references/implementation-package.schema.json", import.meta.url), "utf8"));
 
@@ -152,12 +146,11 @@ function v5FixtureManifest(fixture) {
   const region = refreshAtomicRequirements({ ...component, id: fixture.number, annotation_number: fixture.annotation_number, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", expected_assets: [{ ...component.expected_assets[0], mime_type: fixture.mime_type }], asset_id: fixture.number });
   const asset = { ...imageGenAsset({ mime_type: fixture.mime_type, source_file: `art/${fixture.number}.png`, runtime_outputs: [`public/${fixture.number}.png`], generation_record: { ...imageGenAsset().generation_record, annotation_number: fixture.annotation_number, region_id: fixture.number, component_id: componentId, state_id: "default", asset_id: fixture.number, source_file: `art/${fixture.number}.png`, runtime_file: `public/${fixture.number}.png` } }), ...component, id: fixture.number, production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", expected_assets: [{ ...component.expected_assets[0], mime_type: fixture.mime_type }] };
   const identity = { evidence_sha256: HASH, candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1" };
-  const actualAsset = { asset_id: fixture.number, asset_scope: "atomic-component", atomic_visual_key: `${componentId}-visual`, file: `public/${fixture.number}.png`, component_id: componentId, state_id: "default", mime_type: fixture.mime_type, width: 64, height: 96, alpha: true, sha256: HASH, human_review: humanReview(`asset-${fixture.number}`) };
+  const actualAsset = { asset_id: fixture.number, asset_scope: "atomic-component", atomic_visual_key: `${componentId}-visual`, file: `public/${fixture.number}.png`, component_id: componentId, state_id: "default", mime_type: fixture.mime_type, width: 64, height: 96, alpha: true, sha256: HASH };
   const placementIds = component.component_inventory.components[0].placements.map((placement) => placement.placement_id);
   const runtimeConsumption = { status: "passed", evidence: "runtime.json", ...identity, component_usages: [{ component_id: componentId, state_id: "default", asset_id: fixture.number, placement_ids: placementIds, runtime_file: `public/${fixture.number}.png`, runtime_sha256: HASH, status: "passed" }] };
-  const audit = { status: "passed", candidate_version: "candidate-1", target_sha256: HASH, reviewed_at: "2026-08-15T00:00:00Z", units: [{ annotation_number: fixture.annotation_number, region_id: fixture.number, observed_method: "imagegen", observed_delivery_kind: fixture.delivery_kind, status: "passed", expected_assets: region.expected_assets, atomic_image_requirements: region.atomic_image_requirements, interaction_hotspots: [], actual_assets: [actualAsset], runtime_consumption: runtimeConsumption }] };
-  const componentReview = [{ annotation_number: fixture.annotation_number, region_id: fixture.number, component_id: componentId, atomic_visual_key: `${componentId}-visual`, asset_scope: "atomic-component", state_id: "default", asset_id: fixture.number, placement_ids: placementIds, runtime_file: `public/${fixture.number}.png`, runtime_sha256: HASH, status: "passed", runtime_usage_verified: true, human_review: humanReview(`component-${fixture.number}`) }];
-  return { workItemId: "work-item-1", candidateVersion: "candidate-1", candidate_identity: { sha256: HASH, diff_fingerprint: "diff-1" }, visual_baseline: { style_fingerprint: HASH }, reference_target: { target_sha256: HASH }, coverage_audit: { regions: [region] }, assets: [asset], production_contract_audit: audit, f2_review: { overall_status: "passed", visual_fidelity_review: { status: "passed", review_id: "vf", reviewer: "art", reviewer_type: "human", reviewer_id: "visual-human", reviewed_at: "2026-08-15T00:01:00Z", evidence: "vf.md", ...identity }, production_contract_review: { status: "passed", review_id: "pc", reviewer: "qa", reviewer_type: "human", reviewer_id: "production-human", reviewed_at: "2026-08-15T00:02:00Z", evidence: "pc.md", ...identity, component_reviews: componentReview } }, v5_production_gate: { status: "passed", v3_status: "passed", implementation_package_status: "passed", v4_status: "passed", f2_status: "passed", f2_visual_fidelity_status: "passed", f2_production_contract_status: "passed", f3_status: "passed", runtime_replay: { status: "passed", evidence: "replay.json", ...identity }, fidelity_cases: [{ candidate_sha256: HASH, created_at: "2026-08-15T00:00:00Z", freshness_bound: true, evidence: "fidelity.json", ...identity }], candidate_sha256: HASH, target_sha256: HASH, runtime_consumption: runtimeConsumption, unapproved_substitution: false } };
+  const audit = { status: "passed", candidate_version: "candidate-1", target_sha256: HASH, audited_at: "2026-08-15T00:00:00Z", units: [{ annotation_number: fixture.annotation_number, region_id: fixture.number, observed_method: "imagegen", observed_delivery_kind: fixture.delivery_kind, status: "passed", expected_assets: region.expected_assets, atomic_image_requirements: region.atomic_image_requirements, interaction_hotspots: [], actual_assets: [actualAsset], runtime_consumption: runtimeConsumption }] };
+  return { workItemId: "work-item-1", candidateVersion: "candidate-1", candidate_identity: { sha256: HASH, diff_fingerprint: "diff-1" }, visual_baseline: { style_fingerprint: HASH }, reference_target: { target_sha256: HASH }, coverage_audit: { regions: [region] }, assets: [asset], production_contract_audit: audit, v5_production_gate: { status: "passed", v3_status: "passed", implementation_package_status: "passed", v4_status: "passed", f2_status: "passed", f2_machine_validation: { status: "passed", validationMode: "MACHINE", baselineHash: HASH, diffFingerprint: "diff-1" }, f3_status: "passed", runtime_replay: { status: "passed", evidence: "replay.json", ...identity }, fidelity_cases: [{ candidate_sha256: HASH, created_at: "2026-08-15T00:00:00Z", freshness_bound: true, evidence: "fidelity.json", ...identity }], candidate_sha256: HASH, target_sha256: HASH, runtime_consumption: runtimeConsumption, unapproved_substitution: false } };
 }
 
 test("independent-production 显式 graphics 不推断 ImageGen", () => {
@@ -362,26 +355,21 @@ test("visualProductionUnits 拒绝重复编号和输出冲突", () => {
 test("V4 production_contract_audit 必须逐区域匹配合同", async () => {
   const manifest = {
     coverage_audit: { regions: [{ id: "r1", annotation_number: 1, owner_type: "fixed-production-visual", production_method: "phaser-graphics", delivery_kind: "runtime-drawing", production_origin: "independent-production", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", expected_assets: ["a"] }] },
-    production_contract_audit: { status: "passed", candidate_version: "c1", reviewed_at: "2026-08-15T00:00:00Z", units: [{ annotation_number: 1, region_id: "r1", production_method: "authored-svg", delivery_kind: "vector-image", actual_assets: ["a"], status: "passed" }] },
+    production_contract_audit: { status: "passed", candidate_version: "c1", audited_at: "2026-08-15T00:00:00Z", units: [{ annotation_number: 1, region_id: "r1", production_method: "authored-svg", delivery_kind: "vector-image", actual_assets: ["a"], status: "passed" }] },
   };
   const errors = await auditProductionContract(manifest, { checkFiles: false });
   assert(errors.some((item) => item.includes("V4 实际生产方式")));
 });
 
-test("F2 必须同时通过 visual fidelity 和 production contract 双审", () => {
-  const errors = validateF2ProductionReviews({ overall_status: "passed", visual_fidelity_review: { status: "passed", review_id: "vf", reviewer: "art", evidence: "vf.md" } }, { stage: "F2" });
-  assert(errors.some((item) => item.includes("production_contract_review")));
-});
-
 test("V5 拒绝缺少 runtime replay 和 freshness fidelity cases", () => {
-  const errors = validateV5ProductionGate({ v5_production_gate: { status: "passed", v3_status: "passed", implementation_package_status: "passed", v4_status: "passed", f2_status: "passed", f2_visual_fidelity_status: "passed", f2_production_contract_status: "passed", f3_status: "failed" } });
+  const errors = validateV5ProductionGate({ v5_production_gate: { status: "passed", v3_status: "passed", implementation_package_status: "passed", v4_status: "passed", f2_status: "passed", f2_machine_validation: { status: "passed", validationMode: "MACHINE", baselineHash: HASH, diffFingerprint: "diff-1" }, f3_status: "failed" } });
   assert(errors.some((item) => item.includes("runtime replay")));
   assert(errors.some((item) => item.includes("fidelity_cases")));
 });
 
 test("V5 通过要求 freshness、消费和无未批准替换", () => {
   const evidence = { status: "passed", evidence: "runtime.json", evidence_sha256: HASH, candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1" };
-  const gate = { production_contract_audit: { status: "passed" }, v5_production_gate: { status: "passed", v3_status: "passed", implementation_package_status: "passed", v4_status: "passed", f2_status: "passed", f2_visual_fidelity_status: "passed", f2_production_contract_status: "passed", f3_status: "passed", runtime_replay: { status: "passed", evidence: "replay.json" }, fidelity_cases: [{ candidate_sha256: HASH, created_at: "2026-08-15T00:00:00Z", freshness_bound: true }], runtime_consumption: evidence, unapproved_substitution: false } };
+  const gate = { production_contract_audit: { status: "passed" }, v5_production_gate: { status: "passed", v3_status: "passed", implementation_package_status: "passed", v4_status: "passed", f2_status: "passed", f2_machine_validation: { status: "passed", validationMode: "MACHINE", baselineHash: HASH, diffFingerprint: "diff-1" }, f3_status: "passed", runtime_replay: { status: "passed", evidence: "replay.json" }, fidelity_cases: [{ candidate_sha256: HASH, created_at: "2026-08-15T00:00:00Z", freshness_bound: true }], runtime_consumption: evidence, unapproved_substitution: false } };
   gate.v5_production_gate.candidate_sha256 = HASH; gate.v5_production_gate.target_sha256 = HASH;
   assert.deepEqual(validateV5ProductionGate(gate), []);
 });
@@ -458,7 +446,7 @@ test("V4 atlas actual_assets 必须复核 V3 切片身份", () => {
     { asset_id: "atlas", component_id: "component-1", state_id: "default", source_file: "art/atlas.png", runtime_file: "public/atlas.png", sha256: HASH, atlas_slice: { atlas_asset_id: "atlas", slice_id: "one", atlas_size: { width: 40, height: 20 }, rect: { x: 0, y: 0, width: 20, height: 20 } } },
     { asset_id: "atlas", component_id: "component-2", state_id: "default", source_file: "art/atlas.png", runtime_file: "public/atlas.png", sha256: HASH, atlas_slice: { atlas_asset_id: "atlas", slice_id: "two", atlas_size: { width: 40, height: 20 }, rect: { x: 20, y: 0, width: 20, height: 20 } } },
   ]);
-  const baseUnit = { actual_assets: region.expected_assets.map((asset, index) => ({ ...asset, human_review: humanReview(`atlas-${index + 1}`) })), runtime_consumption: { component_usages: [{ component_id: "component-1", state_id: "default", asset_id: "atlas", placement_ids: ["placement-1"], runtime_file: "public/atlas.png", runtime_sha256: HASH, status: "passed", atlas_slice: region.expected_assets[0].atlas_slice }, { component_id: "component-2", state_id: "default", asset_id: "atlas", placement_ids: ["placement-2"], runtime_file: "public/atlas.png", runtime_sha256: HASH, status: "passed", atlas_slice: region.expected_assets[1].atlas_slice }] } };
+  const baseUnit = { actual_assets: region.expected_assets.map((asset) => ({ ...asset })), runtime_consumption: { component_usages: [{ component_id: "component-1", state_id: "default", asset_id: "atlas", placement_ids: ["placement-1"], runtime_file: "public/atlas.png", runtime_sha256: HASH, status: "passed", atlas_slice: region.expected_assets[0].atlas_slice }, { component_id: "component-2", state_id: "default", asset_id: "atlas", placement_ids: ["placement-2"], runtime_file: "public/atlas.png", runtime_sha256: HASH, status: "passed", atlas_slice: region.expected_assets[1].atlas_slice }] } };
   assert.deepEqual(validateComponentAuditEvidence(region, baseUnit, { stage: "V4", annotation_number: 2, region_id: "atlas" }), []);
   const stale = structuredClone(baseUnit); stale.actual_assets[1].atlas_slice.slice_id = "wrong";
   assert(validateComponentAuditEvidence(region, stale, { stage: "V4", annotation_number: 2, region_id: "atlas" }).some((item) => item.includes("atlas_slice identity")));
@@ -472,14 +460,14 @@ test("固定回归夹具①–④⑦–⑨只允许①⑦ PNG，错误交付被 
     const asset = imageGenAsset({ mime_type: fixture.mime_type });
     const v3Errors = validateImageGenerationContract(asset, contract, { stage: "V3", annotation_number: fixture.annotation_number, region_id: fixture.number });
     const region = { id: fixture.number, annotation_number: fixture.annotation_number, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "forbid", expected_assets: [{ asset_id: fixture.number, mime_type: fixture.mime_type }] };
-    const v4Errors = await auditProductionContract({ coverage_audit: { regions: [region] }, production_contract_audit: { status: "passed", candidate_version: "fixture", reviewed_at: "2026-08-15T00:00:00Z", units: [{ annotation_number: fixture.annotation_number, region_id: fixture.number, observed_method: "imagegen", observed_delivery_kind: fixture.delivery_kind, status: "passed", expected_assets: [fixture.number], actual_assets: [{ file: `art/${fixture.number}.png`, mime_type: fixture.mime_type }], runtime_consumption: { status: "passed" } }] } }, { checkFiles: false });
+    const v4Errors = await auditProductionContract({ coverage_audit: { regions: [region] }, production_contract_audit: { status: "passed", candidate_version: "fixture", audited_at: "2026-08-15T00:00:00Z", units: [{ annotation_number: fixture.annotation_number, region_id: fixture.number, observed_method: "imagegen", observed_delivery_kind: fixture.delivery_kind, status: "passed", expected_assets: [fixture.number], actual_assets: [{ file: `art/${fixture.number}.png`, mime_type: fixture.mime_type }], runtime_consumption: { status: "passed" } }] } }, { checkFiles: false });
     if (["①", "⑦"].includes(fixture.number)) assert.deepEqual(v3Errors, [], fixture.number);
     else {
       assert(v3Errors.length > 0, `${fixture.number} V3 must reject non-PNG`);
       assert(v4Errors.length > 0, `${fixture.number} V4 must reject non-PNG`);
     }
-    const f2Errors = validateF2ProductionReviews({ overall_status: "failed", visual_fidelity_review: { status: "passed", review_id: "vf", reviewer: "art", evidence: "vf.md" }, production_contract_review: { status: "failed", review_id: "pc", reviewer: "qa", evidence: "pc.md" } });
-    assert(f2Errors.length > 0, `${fixture.number} F2 must reject failed production review`);
+    const f2Errors = validateVisualF2MachineGate({ status: "failed", validationMode: "MACHINE", baselineHash: HASH, diffFingerprint: "diff-1" }, { stage: "F2" });
+    assert(f2Errors.length > 0, `${fixture.number} F2 must reject failed machine validation`);
     const v5Errors = validateV5ProductionGate({ v5_production_gate: { status: "failed", v3_status: "passed", implementation_package_status: "passed", v4_status: "failed", f2_status: "failed", f3_status: "failed" } });
     assert(v5Errors.length > 0, `${fixture.number} V5 must reject failed upstream gate`);
     const totalErrors = await validateV5VisualManifest(v5FixtureManifest(fixture));
@@ -490,7 +478,7 @@ test("固定回归夹具①–④⑦–⑨只允许①⑦ PNG，错误交付被 
 test("F2/V5 Evidence 缺少显式文件门必须拒绝", () => {
   const manifest = v5FixtureManifest(IMAGEGEN_REGRESSION_FIXTURES[0]);
   const pkg = { visualProductionUnits: [{ unitId: "U-1" }] };
-  const evidence = { gateResults: { F2: manifest.f2_review, F3: { runtime_replay: manifest.v5_production_gate.runtime_replay } }, v5_production_gate: manifest.v5_production_gate };
+  const evidence = { gateResults: { F2: manifest.v5_production_gate.f2_machine_validation, F3: { runtime_replay: manifest.v5_production_gate.runtime_replay } }, v5_production_gate: manifest.v5_production_gate };
   assert(validateVisualEvidence(evidence, pkg, { manifest, diffFingerprint: "diff-1" }).some((item) => item.includes("checkFiles=true") && item.includes("projectRoot")));
 });
 
@@ -696,61 +684,6 @@ test("多部件 ImageGen 不得复用同一个 generation_record.record_id", () 
   assert(errors.some((item) => item.includes("record_id=GEN-1") && item.includes("component_id=component-2")), errors.join("\n"));
 });
 
-test("F2 component review 和 V4 runtime usage 必须绑定正确 asset_id", () => {
-  const region = { ...multiComponentRegion(1), id: "f2-region", annotation_number: 3 };
-  const manifest = { coverage_audit: { regions: [region] } };
-  const review = { production_contract_review: { component_reviews: [{ annotation_number: 3, region_id: "f2-region", component_id: "component-1", state_id: "default", asset_id: "wrong-asset", status: "passed", runtime_usage_verified: true }] } };
-  const reviewErrors = validateComponentReviewCoverage(manifest, review, "F2");
-  assert(reviewErrors.some((item) => item.includes("asset_id 与 V3 expected_assets 不一致")), reviewErrors.join("\n"));
-  const auditErrors = validateComponentAuditEvidence(region, { actual_assets: region.expected_assets.map((asset) => ({ ...asset })), runtime_consumption: { component_usages: [{ component_id: "component-1", state_id: "default", asset_id: "wrong-asset", status: "passed" }] } }, { stage: "V4", annotation_number: 3, region_id: "f2-region" });
-  assert(auditErrors.some((item) => item.includes("runtime_consumption.component_usages") && item.includes("asset_id")), auditErrors.join("\n"));
-});
-
-/** 构造同一原子部件覆盖 default/selected/victory/defeat 的多状态夹具。 */
-function fourStateRegion() {
-  const region = multiComponentRegion(1);
-  const stateIds = ["default", "selected", "victory", "defeat"];
-  const states = [
-    ...stateIds.map((state_id) => ({ state_id, requirement: "required", reason: `${state_id} 实际游戏状态` })),
-    ...["active", "disabled", "pressed", "hover", "paused"].map((state_id) => ({ state_id, requirement: "not-applicable", reason: "当前夹具不适用" })),
-  ];
-  Object.assign(region, { id: "four-state-region", annotation_number: 4, production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid" });
-  region.state_analysis.states = states; region.component_inventory.components[0].state_coverage = states;
-  const component = region.component_inventory.components[0];
-  region.expected_assets = stateIds.map((state_id) => ({ asset_id: `four-state-${state_id}`, asset_scope: "atomic-component", atomic_visual_key: component.atomic_visual_key, component_id: component.component_id, state_id, source_file: `art/four-state-${state_id}.png`, runtime_file: `public/four-state-${state_id}.png`, mime_type: "image/png", width: 1, height: 1, alpha: true, sha256: HASH }));
-  region.asset_ids = region.expected_assets.map((asset) => asset.asset_id); region.component_inventory.component_count = 1; region.component_inventory.visible_instance_count = 1;
-  return refreshAtomicRequirements(region);
-}
-
-test("Coverage→Package→V4→F2/V5 逐项覆盖 default/selected/victory/defeat，漏项必须拒绝", () => {
-  const region = fourStateRegion(); const requirements = deriveAtomicImageRequirements(region); assert.deepEqual(requirements.map((item) => item.state_id), ["default", "defeat", "selected", "victory"]);
-  assert.deepEqual(validateVisualComponentContract(region, { stage: "V3", annotation_number: 4, region_id: region.id }), []);
-  const unit = { ...structuredClone(region), unitId: "FOUR-STATE-PACKAGE", region_id: region.id, decomposition_confirmation_id: "confirm-four-state", decomposition_confirmation_sha256: HASH, owner: "implementer", ownedPaths: ["art"], outputPaths: ["public"] };
-  assert.deepEqual(validateVisualProductionUnits({ visualProductionUnits: [unit], visualDecompositionConfirmations: [confirmationGroupFor(region, "confirm-four-state")] }, { coverage_audit: { regions: [region] } }), []);
-  const actualAssets = region.expected_assets.map((asset, index) => ({ ...asset, file: asset.runtime_file, human_review: humanReview(`four-state-${index}`) }));
-  const usages = region.expected_assets.map((asset) => ({ component_id: asset.component_id, state_id: asset.state_id, asset_id: asset.asset_id, placement_ids: ["placement-1"], runtime_file: asset.runtime_file, runtime_sha256: HASH, status: "passed" }));
-  const auditUnit = { actual_assets: actualAssets, runtime_consumption: { component_usages: usages } };
-  assert.deepEqual(validateComponentAuditEvidence(region, auditUnit, { stage: "V4", annotation_number: 4, region_id: region.id }), []);
-  const manifest = { coverage_audit: { regions: [region] }, assets: region.expected_assets.map((asset) => ({ id: asset.asset_id, sha256: HASH, runtime_outputs: [asset.runtime_file] })) };
-  const reviews = { production_contract_review: { component_reviews: region.expected_assets.map((asset, index) => ({ annotation_number: 4, region_id: region.id, component_id: asset.component_id, state_id: asset.state_id, observed_method: "authored-raster", asset_id: asset.asset_id, placement_ids: ["placement-1"], atomic_visual_key: asset.atomic_visual_key, asset_scope: "atomic-component", runtime_file: asset.runtime_file, runtime_sha256: HASH, status: "passed", runtime_usage_verified: true, human_review: humanReview(`four-state-component-${index}`) })) } };
-  assert.deepEqual(validateComponentReviewCoverage(manifest, reviews, "F2"), []);
-  const missing = structuredClone(region); missing.expected_assets = missing.expected_assets.filter((asset) => asset.state_id !== "victory"); refreshAtomicRequirements(missing);
-  assert(validateVisualComponentContract(missing, { stage: "V3", annotation_number: 4, region_id: region.id }).some((item) => item.includes("victory") && item.includes("expected_count=1")), "V3 漏 victory 必须失败");
-  const missingV4 = structuredClone(auditUnit); missingV4.actual_assets = missingV4.actual_assets.filter((asset) => asset.state_id !== "defeat"); missingV4.runtime_consumption.component_usages = missingV4.runtime_consumption.component_usages.filter((usage) => usage.state_id !== "defeat");
-  assert(validateComponentAuditEvidence(region, missingV4, { stage: "V4", annotation_number: 4, region_id: region.id }).some((item) => item.includes("state_id=defeat")), "V4 漏 defeat 必须失败");
-  const missingF2 = structuredClone(reviews); missingF2.production_contract_review.component_reviews = missingF2.production_contract_review.component_reviews.filter((review) => review.state_id !== "selected");
-  assert(validateComponentReviewCoverage(manifest, missingF2, "F2").some((item) => item.includes("state_id=selected")), "F2 漏 selected 必须失败");
-  assert(validateV5ProductionGate({ v5_production_gate: { status: "passed", v3_status: "passed", implementation_package_status: "passed", v4_status: "passed", f2_status: "failed", f2_visual_fidelity_status: "passed", f2_production_contract_status: "failed", f3_status: "passed" } }).some((item) => item.includes("F2")), "V5 必须拒绝上游状态漏项");
-});
-
-test("V4/F2 漏掉 component placement 时拒绝，即使 asset_id 和 state 正确", () => {
-  const base = v5FixtureManifest(IMAGEGEN_REGRESSION_FIXTURES[0]); const usageMissing = structuredClone(base); delete usageMissing.production_contract_audit.units[0].runtime_consumption.component_usages[0].placement_ids;
-  const usageErrors = validateComponentAuditEvidence(usageMissing.coverage_audit.regions[0], usageMissing.production_contract_audit.units[0], { stage: "V4", annotation_number: 1, region_id: "①" });
-  assert(usageErrors.some((item) => item.includes("placement_ids") && item.includes("component_id=①-component")), usageErrors.join("\n"));
-  const reviewMissing = structuredClone(base); delete reviewMissing.f2_review.production_contract_review.component_reviews[0].placement_ids;
-  const reviewErrors = validateComponentReviewCoverage(reviewMissing, reviewMissing.f2_review, "F2"); assert(reviewErrors.some((item) => item.includes("placement_ids") && item.includes("component_id=①-component")), reviewErrors.join("\n"));
-});
-
 test("V4 文件门按 RGBA 像素指纹拒绝不同 ID/路径的重复 PNG", async () => {
   const root = await mkdtemp(join(tmpdir(), "visual-raster-dedupe-")); await mkdir(join(root, "evidence"), { recursive: true }); await writeFile(join(root, "evidence/runtime.json"), "runtime");
   const png = encodePngRgba(2, 2, Buffer.alloc(16, 128)); const pngSha = `sha256:${createHash("sha256").update(png).digest("hex")}`; const identity = { evidence_sha256: HASH, candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1" };
@@ -759,7 +692,7 @@ test("V4 文件门按 RGBA 像素指纹拒绝不同 ID/路径的重复 PNG", asy
   const assets = region.expected_assets.map((expected, index) => ({ id: expected.asset_id, texture_key: expected.asset_id, source_file: expected.source_file, production_origin: region.production_origin, production_method: region.production_method, delivery_kind: region.delivery_kind, image_generation_required: true, generation_record_required: true, substitution_policy: region.substitution_policy, expected_assets: [expected], mime_type: "image/png", width: 2, height: 2, alpha: true, sha256: pngSha, runtime_outputs: [expected.runtime_file], runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", ...identity }, generation_record: { ...imageGenAsset().generation_record, record_id: `DEDUP-GEN-${index + 1}`, annotation_number: 5, region_id: region.id, component_id: expected.component_id, state_id: expected.state_id, asset_id: expected.asset_id, source_file: expected.source_file, runtime_file: expected.runtime_file, output_file: expected.runtime_file } }));
   await mkdir(join(root, "public"), { recursive: true }); for (const expected of region.expected_assets) await writeFile(join(root, expected.runtime_file), png);
   const actualAssets = region.expected_assets.map((expected) => ({ ...expected, file: expected.runtime_file })); const usages = region.expected_assets.map((expected) => ({ component_id: expected.component_id, state_id: expected.state_id, asset_id: expected.asset_id, placement_ids: [expected.component_id === "component-1" ? "placement-1" : "placement-2"], runtime_file: expected.runtime_file, runtime_sha256: pngSha, status: "passed" }));
-  const manifest = { workItemId: "work-item-1", candidateVersion: "candidate-1", candidate_identity: { sha256: HASH, diff_fingerprint: "diff-1" }, visual_baseline: { style_fingerprint: HASH }, reference_target: { target_sha256: HASH }, coverage_audit: { regions: [region] }, assets, production_contract_audit: { status: "passed", candidate_version: "candidate-1", candidate_sha256: HASH, target_sha256: HASH, reviewed_at: "2026-08-15T00:00:00Z", units: [{ annotation_number: 5, region_id: region.id, observed_method: "imagegen", observed_delivery_kind: "raster-image", status: "passed", expected_assets: region.expected_assets, actual_assets: actualAssets, runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", ...identity, component_usages: usages } }] } };
+  const manifest = { workItemId: "work-item-1", candidateVersion: "candidate-1", candidate_identity: { sha256: HASH, diff_fingerprint: "diff-1" }, visual_baseline: { style_fingerprint: HASH }, reference_target: { target_sha256: HASH }, coverage_audit: { regions: [region] }, assets, production_contract_audit: { status: "passed", candidate_version: "candidate-1", candidate_sha256: HASH, target_sha256: HASH, audited_at: "2026-08-15T00:00:00Z", units: [{ annotation_number: 5, region_id: region.id, observed_method: "imagegen", observed_delivery_kind: "raster-image", status: "passed", expected_assets: region.expected_assets, actual_assets: actualAssets, runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", ...identity, component_usages: usages } }] } };
   const errors = await auditProductionContract(manifest, { projectRoot: root, checkFiles: true }); assert(errors.some((item) => item.includes("相同位图像素") && item.includes("component_id=component-2")), errors.join("\n"));
 });
 
@@ -814,22 +747,6 @@ test("V4 actual_assets 和 runtime usage 必须绑定 runtime_file 与实际 SHA
   wrongSha.production_contract_audit.units[0].runtime_consumption.component_usages[0].runtime_sha256 = `sha256:${"b".repeat(64)}`;
   const wrongShaErrors = await auditProductionContract(wrongSha, { checkFiles: false });
   assert(wrongShaErrors.some((item) => item.includes("checkFiles=true") && item.includes("projectRoot")), wrongShaErrors.join("\n"));
-});
-
-test("F2 component_reviews 必须绑定 V3 runtime_file 与 manifest 正式 SHA", () => {
-  const base = v5FixtureManifest(IMAGEGEN_REGRESSION_FIXTURES[0]);
-  const missingFile = structuredClone(base);
-  delete missingFile.f2_review.production_contract_review.component_reviews[0].runtime_file;
-  const missingFileErrors = validateComponentReviewCoverage(missingFile, missingFile.f2_review, "F2");
-  assert(missingFileErrors.some((item) => item.includes("component review 缺少 runtime_file")), missingFileErrors.join("\n"));
-  const wrongFile = structuredClone(base);
-  wrongFile.f2_review.production_contract_review.component_reviews[0].runtime_file = "public/wrong.png";
-  const wrongFileErrors = validateComponentReviewCoverage(wrongFile, wrongFile.f2_review, "F2");
-  assert(wrongFileErrors.some((item) => item.includes("runtime_file 与 V3 expected 不一致")), wrongFileErrors.join("\n"));
-  const wrongSha = structuredClone(base);
-  wrongSha.f2_review.production_contract_review.component_reviews[0].runtime_sha256 = `sha256:${"b".repeat(64)}`;
-  const wrongShaErrors = validateComponentReviewCoverage(wrongSha, wrongSha.f2_review, "F2");
-  assert(wrongShaErrors.some((item) => item.includes("runtime_sha256") && item.includes("manifest 正式资源 SHA")), wrongShaErrors.join("\n"));
 });
 
 test("ImageGen 区域强制 individual，atlas/横向组图不能作为位图交付", () => {

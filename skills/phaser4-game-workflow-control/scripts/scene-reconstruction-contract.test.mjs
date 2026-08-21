@@ -5,14 +5,9 @@ import test from "node:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { validateSceneReconstructionContract, validateStructuredFidelityCases } from "./scene-reconstruction-contract.mjs";
-import { validateF2ProductionReviews, validateSceneAssetUsageContract, validateSceneCombinationPreacceptance, validateV5ProductionGate, validateVisualImplementationPackageBinding } from "./visual-production-contract.mjs";
+import { validateSceneAssetUsageContract, validateSceneCombinationPreacceptance, validateV5ProductionGate, validateVisualImplementationPackageBinding } from "./visual-production-contract.mjs";
 
 const SHA = "sha256:" + "a".repeat(64);
-
-/** 构造带目标、候选和 diff 绑定的人工审阅身份。 */
-function humanReview(id, status = "passed") {
-  return { reviewer_type: "human", reviewer_id: id, reviewed_at: "2026-08-18T00:00:00Z", evidence: `evidence/human/${id}.json`, status, target_sha256: SHA, candidate_sha256: SHA, diff_fingerprint: "diff-1" };
-}
 
 /** 构造覆盖运行时和固定视觉事实的最小完整场景合同。 */
 function contract() {
@@ -63,10 +58,10 @@ function contract() {
     },
     coverage_regions: [regionFacts("hud", "runtime-program"), regionFacts("board", "fixed-production-visual")],
     reference_technical_conflicts: [],
-    v2_scene_candidate: { identity: { sha256: SHA, diff_fingerprint: "diff-1" }, evidence: "evidence/v2/scene.png", human_review: humanReview("v2-scene") },
-    v2_dynamic_sample: { identity: { sha256: SHA, diff_fingerprint: "diff-1" }, evidence: "evidence/v2/sample.mp4", human_review: humanReview("v2-dynamic") },
+    v2_scene_candidate: { identity: { sha256: SHA, diff_fingerprint: "diff-1" }, evidence: "evidence/v2/scene.png" },
+    v2_dynamic_sample: { identity: { sha256: SHA, diff_fingerprint: "diff-1" }, evidence: "evidence/v2/sample.mp4" },
     v2_structured_review: {
-      ...humanReview("v2-structured"), reviewed_target_identity: { sha256: SHA }, reviewed_candidate_identity: { sha256: SHA, diff_fingerprint: "diff-1" }, full_viewport_comparison: "evidence/v2/compare.png", per_region_review: [{ region_id: "hud", result: "passed" }], composition_review: { status: "passed" }, geometry_review: { status: "passed" }, color_material_review: { status: "passed" }, typography_review: { status: "passed" }, decoration_density_review: { status: "passed" }, responsive_review: { status: "passed" },
+      status: "passed", evidence: "evidence/v2/structured-machine.json", reviewed_target_identity: { sha256: SHA }, reviewed_candidate_identity: { sha256: SHA, diff_fingerprint: "diff-1" }, full_viewport_comparison: "evidence/v2/compare.png", per_region_review: [{ region_id: "hud", result: "passed" }], composition_review: { status: "passed" }, geometry_review: { status: "passed" }, color_material_review: { status: "passed" }, typography_review: { status: "passed" }, decoration_density_review: { status: "passed" }, responsive_review: { status: "passed" },
     },
     visual_human_approval: { review_id: "v2-approval", reviewed_at: "2026-08-18T00:00:00Z", evidence: "evidence/human/v2-approval.json", evidence_sha256: SHA, status: "passed", target_sha256: SHA, candidate_sha256: SHA, diff_fingerprint: "diff-1", baseline_sha256: SHA },
     composition: {
@@ -87,7 +82,7 @@ function contract() {
     },
     predeclared_tolerances: [{ id: "layout-tolerance", rules: { geometry: { unit: "logical-px", value: 2 } } }],
     implementation_plan: { resources: ["board-surface"], layout: ["target-bound-layout"], runtime_objects: ["hud", "board"], composition: ["main-scene-stack"] },
-    combination_preacceptance: { ...humanReview("v4-combination"), status: "passed", formal_scene_structure: "MainScene/ContainerGraph", layout_calculation_identity: "layout:main:1", evidence: ["evidence/scene/combined.png"], target_sha256: SHA, candidate_sha256: SHA, diff_fingerprint: "diff-1" },
+    combination_preacceptance: { status: "passed", formal_scene_structure: "MainScene/ContainerGraph", layout_calculation_identity: "layout:main:1", evidence: ["evidence/scene/combined.png"], target_sha256: SHA, candidate_sha256: SHA, diff_fingerprint: "diff-1" },
   };
 }
 
@@ -125,16 +120,12 @@ function fidelityCase(overrides = {}) {
     difference_evidence: "diff.png",
     tolerance_set: { id: "layout-tolerance", geometry: { unit: "logical-px", value: 2 } },
     per_region_results: [
-      { region_id: "hud", target_measurement: { width: 390, height: 96 }, candidate_measurement: { width: 390, height: 96 }, delta: 0, tolerance_reference: "layout-tolerance", result: "passed", evidence: ["hud.json"], exception_ids: [], human_review: humanReview("v5-hud") },
-      { region_id: "board", target_measurement: { width: 350, height: 620 }, candidate_measurement: { width: 350, height: 620 }, delta: 0, tolerance_reference: "layout-tolerance", result: "passed", evidence: ["board.json"], exception_ids: [], human_review: humanReview("v5-board") },
+      { region_id: "hud", target_measurement: { width: 390, height: 96 }, candidate_measurement: { width: 390, height: 96 }, delta: 0, tolerance_reference: "layout-tolerance", result: "passed", evidence: ["hud.json"], exception_ids: [] },
+      { region_id: "board", target_measurement: { width: 350, height: 620 }, candidate_measurement: { width: 350, height: 620 }, delta: 0, tolerance_reference: "layout-tolerance", result: "passed", evidence: ["board.json"], exception_ids: [] },
     ],
-    human_review: humanReview("v5-case"),
     conclusion: "passed",
   };
-  const result = { ...base, ...overrides };
-  result.human_review ??= humanReview("v5-case");
-  result.per_region_results = result.per_region_results?.map((item, index) => ({ ...item, human_review: item.human_review ?? humanReview(`v5-region-${index}`) }));
-  return result;
+  return { ...base, ...overrides };
 }
 
 test("场景还原合同覆盖整屏构图和 runtime fidelity obligation", () => {
@@ -196,15 +187,6 @@ test("V5 fidelity 拒绝字符串 tolerance、尺寸不等价和缺逐区域矩�
   assert(errors.some((value) => value.includes("tolerance 必须是结构化")));
   const complete = structuredClone(item); complete.tolerance = { id: "layout-tolerance", geometry: { unit: "logical-px", value: 2 } }; complete.per_region_results = [{ region_id: "hud", target_measurement: { width: 100 }, candidate_measurement: { width: 100 }, delta: 0, tolerance: 2, result: "passed", evidence: ["hud.json"] }, { region_id: "board", target_measurement: { width: 100 }, candidate_measurement: { width: 100 }, delta: 0, tolerance: 2, result: "passed", evidence: ["board.json"] }];
   assert(validateStructuredFidelityCases([complete], manifest(), { stage: "V5" }).every((value) => !value.includes("逐区域结果矩阵")));
-});
-
-test("F2 两类机器证据均 PASS 但逐区域 FAIL 或构图检查缺失时仍失败", () => {
-  const base = { status: "passed", review_id: "review", reviewer: "art", reviewer_type: "human", reviewer_id: "human-art", reviewed_at: "2026-08-18T00:00:00Z", evidence: "review.json" };
-  const f2 = { overall_status: "passed", visual_fidelity_review: { ...base, reviewed_target_identity: {}, reviewed_candidate_identity: {}, full_viewport_comparison: {}, per_region_review: [{ region_id: "hud", result: "failed" }], composition_review: {}, geometry_review: {}, color_material_review: {}, typography_review: {}, decoration_density_review: {}, responsive_review: {}, unresolved_differences: [], findings: [] }, production_contract_review: { ...base, reviewer: "qa" } };
-  const errors = validateF2ProductionReviews(f2, { stage: "F2" }, { requireVisualStructure: true });
-  assert(errors.some((value) => value.includes("逐区域 FAIL")));
-  const missing = structuredClone(f2); delete missing.visual_fidelity_review.composition_review;
-  assert(validateF2ProductionReviews(missing, { stage: "F2" }, { requireVisualStructure: true }).some((value) => value.includes("composition review")));
 });
 
 test("Implementation Package current_stage 只接受 V3/V4/V5，未知阶段不回落", () => {
@@ -290,20 +272,6 @@ test("完整参考图和候选图但缺逐区域矩阵必须失败", () => {
   assert(errors.some((value) => value.includes("逐区域结果矩阵")));
 });
 
-test("F2 两类机器证据都 PASS 但逐区域 FAIL 时仍失败", () => {
-  const review = { status: "passed", review_id: "review", reviewer: "art", reviewer_type: "human", reviewer_id: "human-art", reviewed_at: "2026-08-18T00:00:00Z", evidence: "review.json", reviewed_target_identity: {}, reviewed_candidate_identity: {}, full_viewport_comparison: {}, per_region_review: [{ region_id: "hud", result: "failed" }], composition_review: {}, geometry_review: {}, color_material_review: {}, typography_review: {}, decoration_density_review: {}, responsive_review: {}, unresolved_differences: [], findings: [] };
-  const f2 = { overall_status: "passed", visual_fidelity_review: review, production_contract_review: { ...review, reviewer: "qa", review_id: "review-qa" } };
-  assert(validateF2ProductionReviews(f2, { stage: "F2" }, { requireVisualStructure: true }).some((value) => value.includes("逐区域 FAIL")));
-});
-
-test("F2 两类机器证据都 PASS 但缺构图或材质检查时仍失败", () => {
-  const review = { status: "passed", review_id: "review", reviewer: "art", reviewer_type: "human", reviewer_id: "human-art", reviewed_at: "2026-08-18T00:00:00Z", evidence: "review.json", reviewed_target_identity: {}, reviewed_candidate_identity: {}, full_viewport_comparison: {}, per_region_review: [{ region_id: "hud", result: "passed" }], geometry_review: {}, typography_review: {}, decoration_density_review: {}, responsive_review: {}, unresolved_differences: [], findings: [] };
-  const f2 = { overall_status: "passed", visual_fidelity_review: review, production_contract_review: { ...review, reviewer: "qa", review_id: "review-qa" } };
-  const errors = validateF2ProductionReviews(f2, { stage: "F2" }, { requireVisualStructure: true });
-  assert(errors.some((value) => value.includes("composition review")));
-  assert(errors.some((value) => value.includes("color/material review")));
-});
-
 test("正式 Scene 使用错误旧布局时 V5 同屏组合预验收失败", () => {
   const value = structuredClone(contract());
   value.combination_preacceptance.formal_scene_structure = "full-screen-image";
@@ -340,6 +308,6 @@ test("完整 reconstruction/layout/V3/V4/F2/F3/V5 happy path 通过场景级门"
   assert.deepEqual(validateSceneCombinationPreacceptance(value, "V4"), []);
   assert.deepEqual(validateSceneAssetUsageContract(value.coverage_regions[1], {}, "V4"), []);
   assert.deepEqual(validateStructuredFidelityCases([fidelity], targetManifest, { stage: "V5" }), []);
-  const gateManifest = { ...targetManifest, scene_reconstruction_contract: value, fidelity_cases: [fidelity], candidate_identity: { sha256: SHA }, production_contract_audit: { status: "passed" }, v5_production_gate: { status: "passed", v3_status: "passed", implementation_package_status: "passed", v4_status: "passed", f2_status: "passed", f2_visual_fidelity_status: "passed", f2_production_contract_status: "passed", f3_status: "passed", runtime_replay: { status: "passed", evidence: "replay.json" }, fidelity_cases: [{ candidate_sha256: SHA, created_at: "2026-08-18T00:00:00Z", freshness_bound: true }], candidate_sha256: SHA, target_sha256: SHA, runtime_consumption: { status: "passed" } } };
+  const gateManifest = { ...targetManifest, scene_reconstruction_contract: value, fidelity_cases: [fidelity], candidate_identity: { sha256: SHA }, production_contract_audit: { status: "passed" }, v5_production_gate: { status: "passed", v3_status: "passed", implementation_package_status: "passed", v4_status: "passed", f2_status: "passed", f2_machine_validation: { status: "passed", validationMode: "MACHINE", baselineHash: SHA, diffFingerprint: "diff-1" }, f3_status: "passed", runtime_replay: { status: "passed", evidence: "replay.json" }, fidelity_cases: [{ candidate_sha256: SHA, created_at: "2026-08-18T00:00:00Z", freshness_bound: true }], candidate_sha256: SHA, target_sha256: SHA, runtime_consumption: { status: "passed" } } };
   assert.deepEqual(validateV5ProductionGate(gateManifest, { requireSceneReconstruction: true }), []);
 });

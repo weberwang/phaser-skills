@@ -14,14 +14,14 @@ import { buildVisualConfirmationAuthorityByRegion, validateVisualDecompositionCo
 import { validateReuseProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-confirmation-reuse-gates.mjs";
 import { validateFormalAnnotationPng } from "./visual-annotation-evidence.mjs";
 import { auditProductionContractByGroups, confirmationAuthorityBase, validateConfirmationGroups, validateImplementationPlan as validateImplementationPlanContract, validateManualConfirmationEvidence, validateReusePlanRelation, validateV5ProductionGateByGroups } from "./visual-manifest-confirmation.mjs";
-import { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, isSha256, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateComponentReviewCoverage, validateEvidenceIdentity, validateF2ProductionReviews, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
+import { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, isSha256, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateEvidenceIdentity, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
+import { validateVisualPostApprovalReviewFields } from "../../phaser4-game-workflow-control/scripts/visual-human-review-contract.mjs";
 import { validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "../../phaser4-game-workflow-control/scripts/scene-reconstruction-contract.mjs";
-import { validateVisualHumanReviewCompletion } from "../../phaser4-game-workflow-control/scripts/visual-human-review-contract.mjs";
 import { validateImageGenerationSizeManifest } from "../../phaser4-game-workflow-control/scripts/visual-generation-size-contract.mjs";
 import { isWorkflowDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
 import { VISUAL_STAGE_IDS, VISUAL_STAGE_STATES } from "../../phaser4-game-workflow-control/scripts/visual-stage-prerequisites.mjs";
 export { computeRegionDefinitionSha256 } from "./effect_image_annotation_core.mjs";
-export { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateComponentReviewCoverage, validateEvidenceIdentity, validateF2ProductionReviews, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
+export { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateEvidenceIdentity, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
 export { validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "../../phaser4-game-workflow-control/scripts/scene-reconstruction-contract.mjs";
 export { calculateComponentDisplaySize, validateImageGenerationSizeContract, validateImageGenerationSizeManifest } from "../../phaser4-game-workflow-control/scripts/visual-generation-size-contract.mjs";
 
@@ -82,7 +82,8 @@ function validateReferenceTarget(target, errors) {
 /** 验证 V2 冻结后、V3 前的合同回对门。 */
 function validateContractReconciliation(gate, target, candidate, errors) {
   if (!isObject(gate)) { errors.push("contract_reconciliation 必须是对象"); return; }
-  for (const field of ["decision_id", "reviewed_at", "rollback", "target_sha256", "candidate_sha256"]) if (!nonEmptyString(gate[field])) errors.push(`contract_reconciliation.${field} 必须是非空字符串`);
+  for (const field of ["decision_id", "reconciled_at", "rollback", "target_sha256", "candidate_sha256"]) if (!nonEmptyString(gate[field])) errors.push(`contract_reconciliation.${field} 必须是非空字符串`);
+  if (Object.hasOwn(gate, "reviewed_at") || Object.hasOwn(gate, "reviewedAt")) errors.push("contract_reconciliation 禁止使用 reviewed_at；机器回对请使用 reconciled_at");
   if (nonEmptyString(target?.target_sha256) && gate.target_sha256 !== target.target_sha256) errors.push("contract_reconciliation.target_sha256 与冻结目标 SHA 不一致");
   if (nonEmptyString(candidate?.sha256) && gate.candidate_sha256 !== candidate.sha256) errors.push("contract_reconciliation.candidate_sha256 与当前候选 SHA 不一致");
   if (gate.status !== "passed") errors.push("contract_reconciliation.status 必须为 passed，变化时退回 V1/模块审计");
@@ -411,6 +412,8 @@ export function validateManifest(data, options = {}) {
   const strictProductionContract = reconstruction?.applicability === "effect-image";
   if (strictProductionContract) {
     const stage = requestedStage ?? (reconstruction.lifecycle === "v5-complete" ? "V5" : "V3");
+    // V2 人工确认之后，清单上的所有后续证据都只能是确定性机器验证；旧复核字段 fail closed。
+    errors.push(...validateVisualPostApprovalReviewFields(data, { stage }));
     // effect-image 没有场景合同就不是完整还原工件；即使调用方未传 stage，也必须明确退回 V1。
     errors.push(...validateSceneReconstructionGate(data, { stage }));
     const fileGateError = productionFileGateError(data, options, stage);
@@ -420,13 +423,9 @@ export function validateManifest(data, options = {}) {
     errors.push(...validateImageGenerationSizeManifest(data, { stage }));
     const requireAudit = stage === "V4" || stage === "V5" || reconstruction.lifecycle === "v5-complete";
     const requireV5 = stage === "V5" || reconstruction.lifecycle === "v5-complete";
-    // V4/V5 视觉硬门从逐资产、逐区域记录推导人工覆盖，不能信任根节点布尔值。
-    if (requireAudit) errors.push(...validateVisualHumanReviewCompletion(data, { stage }));
     if (requireV5) {
       // V5 是不可绕过的总门：即使对象缺失也必须产出缺失错误，不能靠“没有对象”跳过审计。
       errors.push(...validateProductionAuditShape(fixedVisualAuditManifest(data), { ...options, projectRoot: options.projectRoot, checkFiles: options.checkFiles }));
-      errors.push(...validateF2ProductionReviews(data.f2_review ?? data.f2_reviews, { stage: "F2" }, { requireEvidenceIdentity: true, identity: manifestEvidenceIdentity(data), requireVisualStructure: true }));
-      errors.push(...validateComponentReviewCoverage(data, data.f2_review ?? data.f2_reviews, "F2"));
       // 同步 API 只做 V5 结构门；逐编号 accepted/manual 文件证据在后续
       // checkManifestFiles 中用原始 coverage 调用共享权威确认门，避免同步校验伪造“已读文件”。
       const structuralGate = { ...data, coverage_audit: isObject(data.coverage_audit) ? { ...data.coverage_audit, regions: [] } : data.coverage_audit };
@@ -439,10 +438,6 @@ export function validateManifest(data, options = {}) {
       if (isObject(data.v5_production_gate) || isObject(data.production_v5_gate)) {
         const structuralGate = { ...data, coverage_audit: isObject(data.coverage_audit) ? { ...data.coverage_audit, regions: [] } : data.coverage_audit };
         errors.push(...validateV5ProductionGate(structuralGate));
-      }
-      if (isObject(data.f2_review) || isObject(data.f2_reviews)) {
-        errors.push(...validateF2ProductionReviews(data.f2_review ?? data.f2_reviews, { stage: "F2" }));
-        errors.push(...validateComponentReviewCoverage(data, data.f2_review ?? data.f2_reviews, "F2"));
       }
     }
     const changeContext = { workItemId: data.workItemId, candidateVersion: data.candidateVersion };
@@ -572,6 +567,100 @@ function canonicalAnnotationJson(value) {
   return encoded === undefined ? "null" : encoded;
 }
 
+/** 校验 proposal 中的完整技术拆解，防止图示精简时丢失坐标、状态或资源合同。 */
+function expectedTechnicalProductionContract(region) {
+  const contract = resolveProductionContract(region);
+  const display = annotationProductionContract(region);
+  return {
+    production_origin: contract.production_origin ?? display.production_origin ?? null,
+    production_method: contract.production_method ?? display.production_method ?? "",
+    delivery_kind: contract.delivery_kind ?? display.delivery_kind ?? "",
+    image_generation_required: contract.image_generation_required,
+    generation_record_required: contract.generation_record_required,
+    substitution_policy: contract.substitution_policy,
+    runtime_implementation: contract.runtime_implementation ?? region.runtime_implementation,
+    asset_id: contract.asset_id ?? region.asset_id,
+    asset_ids: contract.asset_ids ?? region.asset_ids ?? [],
+    expected_assets: region.expected_assets ?? contract.expected_assets ?? [],
+  };
+}
+
+/** 从当前区域重算技术文件中的组件实例平面映射，确保 placement 坐标仍受门禁保护。 */
+function expectedTechnicalPlacements(region) {
+  const inventory = region.component_inventory ?? resolveProductionContract(region).component_inventory;
+  const components = Array.isArray(inventory?.components) ? inventory.components : [];
+  return components.flatMap((component) => (Array.isArray(component?.placements) ? component.placements : []).map((placement) => ({ ...placement, component_id: component.component_id })));
+}
+
+/** 重算技术文件中的资产映射，避免只验证区域摘要而放过资源漂移。 */
+function expectedTechnicalResourceMapping(region) {
+  const production = resolveProductionContract(region);
+  const requirements = deriveAtomicImageRequirements(region);
+  const expectedAssets = region.expected_assets ?? production.expected_assets ?? [];
+  const assetIds = [...new Set([
+    ...(Array.isArray(region.asset_ids) ? region.asset_ids : []),
+    region.asset_id,
+    ...(Array.isArray(production.asset_ids) ? production.asset_ids : []),
+    production.asset_id,
+    ...(Array.isArray(expectedAssets) ? expectedAssets.map((asset) => asset?.asset_id) : []),
+  ].filter(nonEmptyString))].sort();
+  return {
+    asset_id: production.asset_id ?? region.asset_id ?? null,
+    asset_ids: assetIds,
+    expected_assets: expectedAssets,
+    component_assets: requirements.map((requirement) => ({ requirement_id: requirement.requirement_id, component_id: requirement.component_id, state_id: requirement.state_id, asset_id: requirement.asset_id, source_file: requirement.source_file, runtime_file: requirement.runtime_file })),
+  };
+}
+
+function validateTechnicalProposal(proposal, regions, canvas, label, errors) {
+  const expectedProposalKind = "effect-image-decomposition-technical-analysis";
+  // 正式标注必须绑定完整技术文件；缺少类型或命名空间时直接拒绝，不能退回只看用户图示的路径。
+  if (proposal?.proposal_kind !== expectedProposalKind) {
+    errors.push(`${label}.proposal_kind 必须为 ${expectedProposalKind}，正式效果图标注必须绑定拆解分析技术文件`);
+    return;
+  }
+  const technical = proposal?.technical_analysis;
+  if (!isObject(technical)) { errors.push(`${label}.proposal 技术文件缺少 technical_analysis`); return; }
+  if (technical.schema_version !== "1") errors.push(`${label}.proposal 技术文件 schema_version 必须为 1`);
+  const expectedCanvas = canvas ?? { scene_id: regions[0]?.scene_id, state_id: regions[0]?.state_id, width: undefined, height: undefined };
+  for (const [field, expected] of [["scene_id", expectedCanvas.scene_id], ["state_id", expectedCanvas.state_id], ["width", expectedCanvas.width], ["height", expectedCanvas.height]]) {
+    if (expected !== undefined && technical.canvas?.[field] !== expected) errors.push(`${label}.proposal 技术文件 canvas.${field} 与当前画布不一致`);
+    if (expected !== undefined && proposal.canvas?.[field] !== expected) errors.push(`${label}.proposal.canvas.${field} 与当前画布不一致`);
+  }
+  if (!isObject(technical.canvas) || !Number.isInteger(technical.canvas.width) || !Number.isInteger(technical.canvas.height)) errors.push(`${label}.proposal 技术文件必须保存完整画布尺寸`);
+  if (!isObject(proposal.canvas) || !Number.isInteger(proposal.canvas.width) || !Number.isInteger(proposal.canvas.height)) errors.push(`${label}.proposal 必须保存完整画布尺寸`);
+  const technicalRegions = Array.isArray(technical.regions) ? technical.regions : [];
+  const actualById = new Map(technicalRegions.map((item) => [item?.region_id, item]));
+  if (technicalRegions.length !== regions.length) errors.push(`${label}.proposal 技术文件区域数量与当前 scene/state 不一致`);
+  for (const region of regions) {
+    const item = actualById.get(region.id);
+    if (!isObject(item)) { errors.push(`${label}.proposal 技术文件缺少区域：${region.id}`); continue; }
+    if (canonicalAnnotationJson(item.bounds) !== canonicalAnnotationJson(region.bounds)) errors.push(`${label}.proposal 技术文件 ${region.id} 区域 bounds 不一致`);
+    if (item.region_definition_sha256 !== computeRegionDefinitionSha256(region)) errors.push(`${label}.proposal 技术文件 ${region.id} 区域定义 SHA 不一致`);
+    const expectedProduction = expectedTechnicalProductionContract(region);
+    if (!isObject(item.production_contract) || !nonEmptyString(item.production_contract.production_method) || !nonEmptyString(item.production_contract.delivery_kind)) errors.push(`${label}.proposal 技术文件 ${region.id} 缺少完整 production_contract`);
+    for (const field of ["production_origin", "production_method", "delivery_kind", "image_generation_required", "generation_record_required", "substitution_policy", "asset_id", "asset_ids", "expected_assets"]) if (expectedProduction[field] !== undefined && canonicalAnnotationJson(item.production_contract?.[field]) !== canonicalAnnotationJson(expectedProduction[field])) errors.push(`${label}.proposal 技术文件 ${region.id} production_contract.${field} 不一致`);
+    if (expectedProduction.runtime_implementation !== undefined && canonicalAnnotationJson(item.production_contract?.runtime_implementation) !== canonicalAnnotationJson(expectedProduction.runtime_implementation)) errors.push(`${label}.proposal 技术文件 ${region.id} runtime_implementation 不一致`);
+    const expectedRequirements = deriveAtomicImageRequirements(region);
+    if (!Array.isArray(item.atomic_image_requirements) || canonicalAnnotationJson(item.atomic_image_requirements) !== canonicalAnnotationJson(expectedRequirements)) errors.push(`${label}.proposal 技术文件 ${region.id} atomic_image_requirements 不一致`);
+    const expectedResourceMapping = expectedTechnicalResourceMapping(region);
+    if (!isObject(item.resource_mapping) || canonicalAnnotationJson(item.resource_mapping) !== canonicalAnnotationJson(expectedResourceMapping)) errors.push(`${label}.proposal 技术文件 ${region.id} 资源映射不一致`);
+    if (region.owner_type === "fixed-production-visual" && (!isObject(item.component_inventory) || !Array.isArray(item.component_inventory.components ?? []))) errors.push(`${label}.proposal 技术文件 ${region.id} 缺少 component_inventory`);
+    const expectedInventory = region.component_inventory ?? resolveProductionContract(region).component_inventory;
+    if (expectedInventory !== undefined && canonicalAnnotationJson(item.component_inventory) !== canonicalAnnotationJson(expectedInventory)) errors.push(`${label}.proposal 技术文件 ${region.id} component_inventory 不一致`);
+    const expectedComponents = Array.isArray(expectedInventory?.components) ? expectedInventory.components : [];
+    if (canonicalAnnotationJson(item.components) !== canonicalAnnotationJson(expectedComponents)) errors.push(`${label}.proposal 技术文件 ${region.id} components 不一致`);
+    const expectedPlacements = expectedTechnicalPlacements(region);
+    if (!Array.isArray(item.placements) || canonicalAnnotationJson(item.placements) !== canonicalAnnotationJson(expectedPlacements)) errors.push(`${label}.proposal 技术文件 ${region.id} placement 坐标不一致`);
+    const expectedStateAnalysis = region.state_analysis ?? region.stateAnalysis;
+    if (expectedStateAnalysis !== undefined && canonicalAnnotationJson(item.state_analysis) !== canonicalAnnotationJson(expectedStateAnalysis)) errors.push(`${label}.proposal 技术文件 ${region.id} state_analysis 不一致`);
+    if (!isObject(item.state_analysis) && region.owner_type === "fixed-production-visual") errors.push(`${label}.proposal 技术文件 ${region.id} 缺少 state_analysis`);
+    // confirmation 的文件 SHA 会在提案落盘后补齐，隐藏技术合同比较时排除这组可变证据字段。
+    const { confirmation: _confirmation, ...technicalDefinition } = region;
+    if (canonicalAnnotationJson(item.technical_definition) !== canonicalAnnotationJson(technicalDefinition)) errors.push(`${label}.proposal 技术文件 ${region.id} technical_definition 与当前区域不一致`);
+  }
+}
+
 /** 校验确定性 PNG 标注；元数据、像素边界和 proposal 必须同时绑定。 */
 export function validateAnnotatedPng(bytes, targetBytes, regions, proposal, label, errors, canvas = null) {
   let annotated; let target;
@@ -586,6 +675,7 @@ export function validateAnnotatedPng(bytes, targetBytes, regions, proposal, labe
   for (const item of actualRegions) { if (!isObject(item) || !nonEmptyString(item.region_id) || actualById.has(item.region_id)) errors.push(`${label} PNG 区域元数据必须包含唯一 region_id`); else actualById.set(item.region_id, item); }
   if (actualById.size !== expected.length) errors.push(`${label} PNG 标注区域数量与当前 scene/state 不一致`);
   const proposalRegions = Array.isArray(proposal?.visual_regions) ? proposal.visual_regions : (Array.isArray(proposal?.regions) ? proposal.regions : (proposal?.region_id ? [proposal] : [])); const proposalById = new Map(proposalRegions.map((item) => [item.region_id, item]));
+  validateTechnicalProposal(proposal, expected, canvas ?? (target ? { scene_id: expected[0]?.scene_id, state_id: expected[0]?.state_id, width: target.width, height: target.height } : null), label, errors);
   for (const region of expected) {
     const item = actualById.get(region.id); const plan = region.implementation_plan ?? {}; const production = annotationProductionContract(region); const definitionSha = computeRegionDefinitionSha256(region); const requirements = deriveAtomicImageRequirements(region); const requirementSha = `sha256:${createHash("sha256").update(canonicalAnnotationJson(requirements)).digest("hex")}`;
     if (!item) { errors.push(`${label} 缺少区域标注：${region.id}`); continue; }
@@ -601,13 +691,12 @@ export function validateAnnotatedPng(bytes, targetBytes, regions, proposal, labe
     if (!proposalRegion || proposalRegion.region_definition_sha256 !== definitionSha || proposalRegion.annotation_number !== region.annotation_number || proposalRegion.mode !== plan.mode || proposalRegion.summary !== plan.summary || proposalRegion.production_method !== production.production_method || proposalRegion.production_origin !== production.production_origin || proposalRegion.delivery_kind !== production.delivery_kind || proposalRegion.production_label !== production.label || !atomicImageRequirementsEqual(proposalRegion.atomic_image_requirements, requirements)) errors.push(`${label}.${region.id} 与 proposal 原子需求、摘要或生产标识不一致`);
   }
   const expectedRows = deriveVisibleAnnotationRows(expected, { regions: actualRegions }); const actualRows = Array.isArray(metadata.visible_rows) ? metadata.visible_rows : [];
-  if (metadata.panel_content_complete !== true || metadata.visible_row_count !== expectedRows.length || actualRows.length !== expectedRows.length) errors.push(`${label} PNG 右栏 visible_row_count/完整性元数据与全部区域、部件、placement、状态需求不一致`);
-  const fontSize = Math.max(1, Math.min(3, Math.floor(expectedTarget.height / 28))); const availableChars = Math.floor((metadata.panel_width - 24) / (6 * fontSize));
+  if (metadata.panel_content_complete !== true || metadata.visible_row_count !== expectedRows.length || actualRows.length !== expectedRows.length) errors.push(`${label} PNG 右栏 visible_row_count/用户说明完整性元数据与全部编号不一致`);
+  const fontSize = Math.max(1, Math.min(3, Math.floor(expectedTarget.height / 28))); const availableWidth = metadata.panel_width - 24;
   expectedRows.forEach((row, index) => {
     const actualRow = actualRows[index];
-    if (!actualRow || actualRow.row_index !== index || actualRow.text !== row.text || actualRow.kind !== row.kind || actualRow.region_id !== row.region_id || actualRow.component_id !== row.component_id || actualRow.placement_id !== row.placement_id || actualRow.state_id !== row.state_id || actualRow.asset_id !== row.asset_id || JSON.stringify([...(actualRow.placement_ids ?? [])].sort()) !== JSON.stringify([...(row.placement_ids ?? [])].sort())) errors.push(`${label} PNG 右栏第 ${index + 1} 行未精确呈现全部原子说明`);
-    if (actualRow && (actualRow.production_method !== row.production_method || actualRow.production_origin !== row.production_origin || actualRow.delivery_kind !== row.delivery_kind || actualRow.production_label !== row.production_label)) errors.push(`${label} annotation_number=${row.annotation_number} region_id=${row.region_id} PNG 右栏新生成/复用标识与 production_method/production_origin 不一致`);
-    if (actualRow && (actualRow.top < 0 || actualRow.bottom > annotated.height || actualRow.baseline < actualRow.top || actualRow.bottom < actualRow.baseline || asciiTextForValidation(actualRow.text).length > availableChars)) errors.push(`${label} PNG 右栏第 ${index + 1} 行边界或宽度越界，禁止静默截断`);
+    if (!actualRow || actualRow.row_index !== index || actualRow.text !== row.text || actualRow.kind !== row.kind || actualRow.region_id !== row.region_id || actualRow.annotation_number !== row.annotation_number || actualRow.label !== row.label) errors.push(`${label} PNG 右栏第 ${index + 1} 行未精确呈现用户说明`);
+    if (actualRow && (actualRow.top < 0 || actualRow.bottom > annotated.height || actualRow.baseline < actualRow.top || actualRow.bottom < actualRow.baseline || annotationTextWidthForValidation(actualRow.text, fontSize) > availableWidth)) errors.push(`${label} PNG 右栏第 ${index + 1} 行边界或宽度越界，禁止静默截断`);
   });
   const frameModes = new Map((metadata.region_frame_modes ?? []).map((item) => [item.region_id, item.parent_frame_drawn]));
   expected.forEach((region) => {
@@ -619,8 +708,8 @@ export function validateAnnotatedPng(bytes, targetBytes, regions, proposal, labe
   if (!isObject(metadata.plan_labels) || Object.entries(PLAN_LABELS).some(([mode, text]) => metadata.plan_labels[mode] !== text)) errors.push(`${label} PNG 右栏三类实现计划图例元数据不完整`);
 }
 
-/** 与栅格渲染器保持相同 ASCII 可见宽度计算，验证每一行不会被裁掉。 */
-function asciiTextForValidation(value) { return String(value ?? "").replace(/[^\x20-\x7e]/g, "?").toUpperCase(); }
+/** 与栅格渲染器保持相同中英文步进，验证用户说明不会被裁掉。 */
+function annotationTextWidthForValidation(value, scale) { return [...String(value ?? "")].reduce((sum, character) => sum + (/[^\x00-\x7f]/u.test(character) ? 18 * scale : 6 * scale), 0); }
 
 /** 读取绑定证据文件，统一检查项目边界、存在性、SHA 和可选文件格式。 */
 async function loadEvidenceFile(projectRoot, label, relativePath, expectedSha, kind, errors, shaLabel = label) {
@@ -783,9 +872,8 @@ export async function checkManifestFiles(data, projectRoot, options = {}) {
   const confirmationAuthority = confirmationAuthorityBase(data, projectRoot, options);
   if (requireV5) {
     // 直接调用 checkManifestFiles 也必须执行三类 V5 结构门，不能只依赖外层 validateManifest。
+    errors.push(...validateVisualPostApprovalReviewFields(data, { stage: "V5" }));
     errors.push(...validateProductionAuditShape(data, { ...options, ...confirmationAuthority, projectRoot, checkFiles: true }));
-    errors.push(...validateF2ProductionReviews(data.f2_review ?? data.f2_reviews, { stage: "F2" }, { requireEvidenceIdentity: true, identity: manifestEvidenceIdentity(data), projectRoot }));
-    errors.push(...validateComponentReviewCoverage(data, data.f2_review ?? data.f2_reviews, "F2"));
       errors.push(...validateV5ProductionGateByGroups(data, { ...options, ...confirmationAuthority, projectRoot, checkFiles: true, requireEvidenceIdentity: true, identity: manifestEvidenceIdentity(data) }));
   } else if (requireAudit) {
     errors.push(...validateProductionAuditShape(data, { ...options, ...confirmationAuthority, projectRoot, checkFiles: true }));

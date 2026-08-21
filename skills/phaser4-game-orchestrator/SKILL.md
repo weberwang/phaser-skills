@@ -23,6 +23,7 @@ description: Phaser 4 游戏的领域编排角色。用于在全局控制面已�
 - F0-F4 只采用 [唯一语义](../phaser4-game-workflow-control/references/control-model.md)：F0 授权与流程合规、F1 规格一致性、F2 领域质量、F3 工程验证、F4 集成/发布决策。
 - 需求变化只停止直接受影响范围。首次模块或边界变化先从事实确定；仅有会改变产品行为、架构/data 边界或成本的实质取舍才进入 grilling。
 - 进入 A3 `IMPLEMENTING` 前冻结绑定任务授权的 Implementation Package。拆分模块和场景时按 `executionUnits` 数组记录计划制定者预设的实施顺序，逐实施单元标注并行模式/并行组、负责人、互斥文件与状态所有权、验收和串行原因；控制面只按数组位置校验当前候选完成证据并执行 READY，不从依赖图推导顺序。串行单元等待其前面全部单元，并行单元等待其并行组首项之前全部单元；同一并行组必须连续出现且同组 peer 不互相等待。每个子代理委派绑定实施单元与并行组，含 authorizationId、所有权、allowed/forbidden、验收命令和不得覆盖他人；串行单元通过 `delegate-check`，同组并行单元必须组成完整原子批次并通过 `parallel-check`。
+- 进入 A3 `IMPLEMENTING` 后，控制面必须维护与当前 Work Item、Implementation Package、baseline 和 `executionUnits` 数组顺序绑定的 `execution-state.json`。每次 `unit-check` 通过都必须把当前单元更新为 `COMPLETE`，并把下一串行单元或下一并行组更新为 `IN_PROGRESS`；并行组未齐不得推进后续数组位置，所有单元完成且无下一任务时必须明确 `WORKFLOW_COMPLETE`。`delegate-check`、`parallel-check`、`unit-check`、`evidence-check` 和进入 `VALIDATING` 的迁移不得绕过缺失或过期状态。
 - 实施后用真实 Git diff 执行 `diff-audit`；领域验证生成 Evidence Manifest 并执行 `evidence-check`。越界只报告并停止，不自动回滚共享工作区。
 - 启动服务前检查同项目健康实例并复用。本项目本地验证、非特权且无外部写入时直接执行；不得终止归属不明进程。
 - 发布使用独立 Work Item；A5 外部准备与 A6 真机/商店/正式发布分别逐对象精确审批。本地构建、测试、G3 候选或旧批准都不授权发布。

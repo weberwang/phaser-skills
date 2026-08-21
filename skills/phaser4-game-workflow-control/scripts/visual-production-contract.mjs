@@ -10,7 +10,7 @@ import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { existsSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
-import { atomicImageRequirementsEqual, canonicalStateId, deriveAtomicImageRequirements, hasRuntimeImplementationField, normalizeAtomicImageRequirements, normalizeProjectRelativePath, validateComponentAuditEvidence, validateComponentReviewCoverage, validateVisualComponentContract, normalizeComponentExpectedAsset, visualComponentContractDifferences } from "./visual-component-contract.mjs";
+import { atomicImageRequirementsEqual, canonicalStateId, deriveAtomicImageRequirements, hasRuntimeImplementationField, normalizeAtomicImageRequirements, normalizeProjectRelativePath, validateComponentAuditEvidence, validateVisualComponentContract, normalizeComponentExpectedAsset, visualComponentContractDifferences } from "./visual-component-contract.mjs";
 import { normalizeProductionExpectedAssets as normalizeExpectedAssets } from "./visual-atomic-contract.mjs";
 import { computeRasterFingerprint, isPngOrJpegMagic, isRasterDelivery, registerRasterFingerprint, resolveOutputMetadata } from "./visual-raster-contract.mjs";
 import { collectImageGenerationPathValues, collectImageGenerationRasterViolations } from "./visual-imagegen-format.mjs";
@@ -22,15 +22,14 @@ import { validateProductionMethodChangeRequest, validateReuseProductionGate, val
 import { getVisualRegionDefinitionAliasConflicts, normalizeVisualRegionDefinition } from "../../phaser4-game-asset-integration/scripts/effect_image_annotation_core.mjs";
 import { validateSceneAssetUsageContract, validateSceneCombinationPreacceptance, validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "./scene-reconstruction-contract.mjs";
 import { validateImageGenerationSizeContract } from "./visual-generation-size-contract.mjs";
-import { validateF2ProductionReviews } from "./visual-f2-contract.mjs";
-export { atomicImageRequirementsEqual, canonicalStateId, deriveAtomicImageRequirements, hasRuntimeImplementationField, normalizeAtomicImageRequirements, normalizeProjectRelativePath, validateComponentAuditEvidence, validateComponentReviewCoverage, validateVisualComponentContract, normalizeComponentExpectedAsset, visualComponentContractDifferences } from "./visual-component-contract.mjs";
+import { validateVisualPostApprovalReviewFields } from "./visual-human-review-contract.mjs";
+export { atomicImageRequirementsEqual, canonicalStateId, deriveAtomicImageRequirements, hasRuntimeImplementationField, normalizeAtomicImageRequirements, normalizeProjectRelativePath, validateComponentAuditEvidence, validateVisualComponentContract, normalizeComponentExpectedAsset, visualComponentContractDifferences } from "./visual-component-contract.mjs";
 export { FIXED_VISUAL_IMAGE_METHODS, PROGRAM_VISUAL_METHODS, manualDecompositionRegions, requiresManualVisualDecomposition, validateFixedVisualProductionMethod, validateVisualDecompositionConfirmationBinding, validateVisualDecompositionConfirmationRecord, validateVisualDecompositionConfirmations, validateVisualProductionUnitConfirmation } from "./visual-decomposition-confirmation.mjs";
 export { REUSE_SCHEMA, validateProductionMethodChangeRequest, validateReuseProductionGate, validateVisualConfirmationGate } from "./visual-confirmation-reuse-gates.mjs";
 export { normalizeProductionExpectedAssets as normalizeExpectedAssets } from "./visual-atomic-contract.mjs";
 export { isPngOrJpegMagic, isRasterDelivery, resolveOutputMetadata } from "./visual-raster-contract.mjs";
 /** 视觉生产合同允许的固定来源。来源不决定生产方法。 */
 export { validateSceneAssetUsageContract, validateSceneCombinationPreacceptance, validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "./scene-reconstruction-contract.mjs";
-export { validateF2ProductionReviews } from "./visual-f2-contract.mjs";
 export const PRODUCTION_ORIGINS = new Set(["bitmap-decomposition", "independent-production"]);
 /** 视觉生产合同允许的显式生产方式。新增方式必须先更新合同和验收器。 */
 export const PRODUCTION_METHODS = new Set([
@@ -53,6 +52,32 @@ export function nonEmptyString(value) {
 }
 export function isSha256(value) {
   return typeof value === "string" && /^sha256:[a-f0-9]{64}$/.test(value);
+}
+/**
+ * 校验视觉 F2 只消费确定性机器事实。
+ * V2 人工确认冻结方向后，F2 仍需验证身份和状态，但不能再要求 reviewer
+ * 或任何重复复核工件；非视觉 F2 的通用 reviewer 语义由 workflow-control 保留。
+ */
+export function validateVisualF2MachineGate(gate, context = {}, options = {}) {
+  const errors = [];
+  const stage = context.stage ?? "F2";
+  const error = (message, missing = "") => errors.push(productionContractError({ stage, annotation_number: context.annotation_number ?? "*", region_id: context.region_id ?? "*", expectedMethod: "machine-validation", observedMethod: "machine-validation" }, message, { missing, returnStage: "VALIDATING" }));
+  if (!isObject(gate)) {
+    error("视觉 F2 必须提供确定性机器验证 gate", "gateResults.F2");
+    return errors;
+  }
+  const mode = gate.validationMode ?? gate.validation_mode;
+  if (mode !== "MACHINE") error("视觉 F2 validationMode 必须为 MACHINE；人工确认后只允许确定性机器验证", "validationMode=MACHINE");
+  if (!["passed", "PASS"].includes(String(gate.status))) error("视觉 F2 机器验证 status 必须为 passed", "status=passed");
+  const identity = options.identity ?? {};
+  const baseline = gate.baselineHash ?? gate.baseline_hash ?? gate.baseline_sha256;
+  const diff = gate.diffFingerprint ?? gate.diff_fingerprint ?? gate.diff_identity;
+  if (!nonEmptyString(baseline)) error("视觉 F2 机器验证缺少 baselineHash", "baselineHash");
+  if (!nonEmptyString(diff)) error("视觉 F2 机器验证缺少 diffFingerprint", "diffFingerprint");
+  if (identity.baseline && baseline !== identity.baseline) error("视觉 F2 baselineHash 未绑定当前冻结基线", "baselineHash");
+  if (identity.diff && diff !== identity.diff) error("视觉 F2 diffFingerprint 未绑定当前候选 diff", "diffFingerprint");
+  errors.push(...validateVisualPostApprovalReviewFields(gate, { stage }));
+  return errors;
 }
 /** 判断 Work Item 是否进入 V3+视觉/资源生产阶段；普通代码包不受视觉合同门影响。 */
 export function isVisualProductionWork(work = {}) {
@@ -468,7 +493,8 @@ export function auditProductionContract(manifest, options = {}) {
   if (nonEmptyString(manifest?.candidateVersion) && audit.candidate_version !== manifest.candidateVersion) errors.push("[V4] production_contract_audit candidate_version 未绑定当前 candidateVersion");
   if (audit.candidate_sha256 !== undefined && identity.candidate && audit.candidate_sha256 !== identity.candidate) errors.push("[V4] production_contract_audit candidate_sha256 未绑定当前 candidate_identity.sha256");
   if (identity.target && audit.target_sha256 !== identity.target) errors.push("[V4] production_contract_audit 未绑定当前冻结 target_sha256");
-  if (!nonEmptyString(audit.reviewed_at) || Number.isNaN(Date.parse(audit.reviewed_at))) errors.push("[V4] production_contract_audit.reviewed_at 必须是有效时间");
+  if (Object.hasOwn(audit, "reviewed_at") || Object.hasOwn(audit, "reviewedAt")) errors.push("[V4] production_contract_audit 禁止使用 reviewed_at；这是人工复核字段，机器审计请使用 audited_at");
+  if (!nonEmptyString(audit.audited_at) || Number.isNaN(Date.parse(audit.audited_at))) errors.push("[V4] production_contract_audit.audited_at 必须是有效时间");
   if (!units.length) errors.push("[V4] production_contract_audit.units 必须是非空数组");
   if (units.length !== regions.length) errors.push("[V4] production_contract_audit.units 数量必须与 coverage 固定视觉区域一致");
   const byRegion = new Map(units.map((unit) => [`${unit.annotation_number}\0${unit.region_id}`, unit]));
@@ -594,7 +620,8 @@ export function validateProductionAuditShape(manifest, options = {}) {
   if (nonEmptyString(manifest?.candidateVersion) && audit.candidate_version !== manifest.candidateVersion) errors.push("[V4] production_contract_audit candidate_version 未绑定当前 candidateVersion");
   if (audit.candidate_sha256 !== undefined && identity.candidate && audit.candidate_sha256 !== identity.candidate) errors.push("[V4] production_contract_audit candidate_sha256 未绑定当前 candidate_identity.sha256");
   if (identity.target && audit.target_sha256 !== identity.target) errors.push("[V4] production_contract_audit 未绑定当前冻结 target_sha256");
-  if (!nonEmptyString(audit.reviewed_at) || Number.isNaN(Date.parse(audit.reviewed_at))) errors.push("[V4] production_contract_audit.reviewed_at 必须是有效时间");
+  if (Object.hasOwn(audit, "reviewed_at") || Object.hasOwn(audit, "reviewedAt")) errors.push("[V4] production_contract_audit 禁止使用 reviewed_at；这是人工复核字段，机器审计请使用 audited_at");
+  if (!nonEmptyString(audit.audited_at) || Number.isNaN(Date.parse(audit.audited_at))) errors.push("[V4] production_contract_audit.audited_at 必须是有效时间");
   if (!units.length) errors.push("[V4] production_contract_audit.units 必须是非空数组");
   const regions = Array.isArray(manifest?.coverage_audit?.regions) ? manifest.coverage_audit.regions.filter((item) => isObject(item) && normalizeVisualRegionDefinition(item).owner_type === "fixed-production-visual") : [];
   const keys = new Set();
@@ -651,7 +678,7 @@ export function validateProductionAuditShape(manifest, options = {}) {
   if (regions.some((region) => !keys.has(`${region.annotation_number}\0${region.id}`))) errors.push("[V4] annotation_number=* region_id=* expected_method=visual-production observed_method=missing 缺失=production_contract_audit.units：未覆盖全部固定视觉区域");
   return errors;
 }
-/** 校验 V5 运行态硬门，要求审计、F2 双证据、重放、freshness 和实际消费全部存在。 */
+/** 校验 V5 运行态硬门，要求审计、F2 机器事实、重放、freshness 和实际消费全部存在。 */
 export function validateV5ProductionGate(manifest, options = {}) {
   const errors = [];
   errors.push(...validateVisualConfirmationGate(manifest, { ...options, stage: "V5", requireManualConfirmation: true }));
@@ -662,9 +689,11 @@ export function validateV5ProductionGate(manifest, options = {}) {
   if (!["passed", "PASS"].includes(String(gate.status))) error("V5 production gate status 必须为 passed");
   const audit = manifest?.production_contract_audit ?? gate.production_contract_audit;
   if (!isObject(audit) || !["passed", "PASS"].includes(String(audit.status))) error("V5 缺少通过的 production_contract_audit", "production_contract_audit");
-  for (const [field, label] of [["v3_status", "V3"], ["implementation_package_status", "Implementation Package"], ["v4_status", "V4 production_contract_audit"], ["f2_status", "F2 双证据"], ["f3_status", "F3 runtime replay"]]) if (!["passed", "PASS"].includes(String(gate[field]))) error(`${label} 未通过`, field);
-  if (gate.f2_status && !["passed", "PASS"].includes(String(gate.f2_visual_fidelity_status))) error("F2 visual_fidelity_review 未通过", "f2_visual_fidelity_status");
-  if (gate.f2_status && !["passed", "PASS"].includes(String(gate.f2_production_contract_status))) error("F2 production_contract_review 未通过", "f2_production_contract_status");
+  for (const [field, label] of [["v3_status", "V3"], ["implementation_package_status", "Implementation Package"], ["v4_status", "V4 production_contract_audit"], ["f2_status", "F2 机器验证"], ["f3_status", "F3 runtime replay"]]) if (!["passed", "PASS"].includes(String(gate[field]))) error(`${label} 未通过`, field);
+  const f2MachineGate = gate.f2_machine_validation ?? gate.f2MachineValidation ?? gate.f2_gate ?? gate.f2GateResult ?? gate.f2_validation;
+  if (f2MachineGate) errors.push(...validateVisualF2MachineGate(f2MachineGate, { stage: "F2" }, { identity: options.identity ?? manifestEvidenceIdentity(manifest) }));
+  else if (gate.f2_status) error("V5 缺少 F2 validationMode=MACHINE 机器验证事实", "f2_machine_validation");
+  errors.push(...validateVisualPostApprovalReviewFields(manifest, { stage: "V5" }));
   const replay = gate.runtime_replay ?? gate.f3_runtime_replay;
   if (!isObject(replay) || !["passed", "PASS"].includes(String(replay.status))) error("缺少通过的 F3 runtime replay", "runtime_replay");
   else if (!nonEmptyString(replay.evidence)) error("F3 runtime replay 缺少 evidence", "runtime_replay.evidence");
@@ -694,7 +723,7 @@ export function validateV5ProductionGate(manifest, options = {}) {
   else if (currentTarget && gate.target_sha256 !== currentTarget) error("V5 target_sha256 与冻结目标不一致");
   return errors;
 }
-/** V5 总入口：把 V3 coverage、V4 审计、F2 双证据和 V5 运行态门收敛为一个不可绕过的结果。 */
+/** V5 总入口：把 V3 coverage、V4 审计、F2 机器事实和 V5 运行态门收敛为一个不可绕过的结果。 */
 export async function validateV5VisualManifest(manifest, options = {}) {
   const fileGateError = productionFileGateError(manifest, options, "V5");
   if (fileGateError) return [fileGateError];
@@ -704,8 +733,6 @@ export async function validateV5VisualManifest(manifest, options = {}) {
     ...validateSceneReconstructionGate(manifest, { stage: "V5" }),
     ...validateVisualProductionCoverage(manifest, { stage: "V3", requireManualConfirmation: true, projectRoot: options.projectRoot, checkFiles: options.checkFiles === true, targetSha: identity.target, targetFrozenAt: manifest?.reference_target?.frozen_at, candidateSha: identity.candidate, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority: options.authority }),
     ...validateProductionAuditShape(manifest, { ...options, authority: options.authority }),
-    ...validateF2ProductionReviews(manifest?.f2_review ?? manifest?.f2_reviews, { stage: "F2" }, { ...evidenceOptions, requireVisualStructure: true }),
-    ...validateComponentReviewCoverage(manifest, manifest?.f2_review ?? manifest?.f2_reviews, "F2"),
     ...validateV5ProductionGate(manifest, { ...options, ...evidenceOptions, requireSceneReconstruction: true }),
   ];
   // 总门始终复核 V4 的方法/交付一致性；只有传入项目根目录时才额外检查实际文件 SHA。
@@ -910,8 +937,7 @@ export function validateVisualImplementationPackageBinding(pkg, options = {}) {
   }
   if (stage === "V5") {
     const identity = manifestEvidenceIdentity(manifest);
-    errors.push(...validateF2ProductionReviews(manifest?.f2_review ?? manifest?.f2_reviews, { stage: "F2" }, { requireEvidenceIdentity: true, identity, projectRoot, requireVisualStructure: true }));
-    errors.push(...validateComponentReviewCoverage(manifest, manifest?.f2_review ?? manifest?.f2_reviews, "F2"));
+    errors.push(...validateVisualPostApprovalReviewFields(manifest, { stage: "V5" }));
     errors.push(...validateV5ProductionGate(manifest, { requireEvidenceIdentity: true, identity, projectRoot, requireSceneReconstruction: true }));
   }
   return errors;
@@ -946,9 +972,8 @@ export function validateVisualEvidence(evidence, pkg, options = {}) {
   errors.push(...validateProductionAuditShape(manifest, { authority, projectRoot: options.projectRoot, checkFiles: Boolean(options.projectRoot) }));
   errors.push(...auditProductionContract(manifest, { projectRoot: options.projectRoot, checkFiles: Boolean(options.projectRoot), targetSha: identity.target, targetFrozenAt: manifest?.reference_target?.frozen_at, candidateSha: identity.candidate, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority }));
   const evidenceOptions = { requireEvidenceIdentity: true, identity, projectRoot: options.projectRoot, checkFiles: Boolean(options.projectRoot), targetFrozenAt: manifest?.reference_target?.frozen_at, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority };
-  errors.push(...validateF2ProductionReviews(evidence?.gateResults?.F2, { stage: "F2" }, { ...evidenceOptions, requireVisualStructure: true }));
-  // Evidence 的 F2 可能独立于 manifest 重新提交；必须再次逐 component×state 绑定 V3 expected_assets，不能只验证双证据摘要。
-  errors.push(...validateComponentReviewCoverage(manifest, evidence?.gateResults?.F2, "F2"));
+  errors.push(...validateVisualPostApprovalReviewFields(manifest, { stage: "V5" }));
+  errors.push(...validateVisualF2MachineGate(evidence?.gateResults?.F2, { stage: "F2" }, evidenceOptions));
   const replay = evidence?.gateResults?.F3?.runtime_replay ?? evidence?.runtime_replay;
   if (!isObject(replay) || !["passed", "PASS"].includes(String(replay.status)) || !nonEmptyString(replay.evidence)) errors.push("[F3] annotation_number=* region_id=* expected_method=runtime-replay observed_method=missing 缺失=runtime_replay：视觉候选必须绑定通过的 runtime replay"); else errors.push(...validateEvidenceIdentity(replay, { stage: "F3", annotation_number: "*", region_id: "runtime-replay" }, identity, evidenceOptions));
   const gate = evidence?.visual_production_gate ?? evidence?.v5_production_gate; if (!gate) errors.push("[V5] annotation_number=* region_id=* expected_method=production-contract observed_method=missing 缺失=visual_production_gate：视觉候选缺少 V5 生产合同门"); else errors.push(...validateV5ProductionGate({ ...manifest, v5_production_gate: gate }, { ...evidenceOptions, candidateSha256: identity.candidate, targetSha256: identity.target, targetFrozenAt: manifest?.reference_target?.frozen_at, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion }));

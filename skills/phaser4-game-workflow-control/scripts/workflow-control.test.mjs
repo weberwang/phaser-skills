@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
-import { scopedDiffFingerprint } from './execution-unit-control.mjs';
+import { createExecutionState, executionStatePath, scopedDiffFingerprint } from './execution-unit-control.mjs';
 import { parallelBatchFingerprint } from './parallel-batch-control.mjs';
 
 const CLI = resolve(import.meta.dirname, 'workflow-control.mjs');
@@ -116,7 +116,17 @@ function setup(workOverrides = {}, approvals = []) {
   writeJson(workPath, makeWork(head, workOverrides));
   writeJson(ledgerPath, { schemaVersion: '1.0', approvals });
   writeJson(packagePath, makePackage());
+  const work = JSON.parse(readFileSync(workPath, 'utf8'));
+  if (work.globalState === 'IMPLEMENTING') writeExecutionState({ repo, workPath, packagePath });
   return { repo, head, root, workPath, ledgerPath, packagePath };
+}
+
+/** 为实现阶段测试夹具写入与当前包/阶段绑定的初始顺序状态。 */
+function writeExecutionState(fixture) {
+  const work = JSON.parse(readFileSync(fixture.workPath, 'utf8'));
+  const pkg = JSON.parse(readFileSync(fixture.packagePath, 'utf8'));
+  const state = createExecutionState(work, pkg, { hashText: (value) => `sha256:${createHash('sha256').update(value).digest('hex')}` }, '2026-08-11T00:01:00.000Z');
+  writeJson(join(fixture.repo, executionStatePath(work)), state);
 }
 
 /** 执行控制 CLI 并返回子进程结果。 */
@@ -140,8 +150,10 @@ function auditA3(fixture) {
 }
 
 /** 为当前默认实施包写入全部单元的有效完成证据。 */
-function writeUnitResults(fixture, overrides = {}) {
+function writeUnitResults(fixture, overrides = {}, options = {}) {
   const pkg = JSON.parse(readFileSync(fixture.packagePath, 'utf8'));
+  const work = JSON.parse(readFileSync(fixture.workPath, 'utf8'));
+  if (work.globalState === 'IMPLEMENTING') writeExecutionState(fixture);
   const unitsRoot = join(fixture.root, 'evidence', 'WI-1', 'units');
   mkdirSync(unitsRoot, { recursive: true });
   const io = { git: (repo, args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }), fileHash: hashFile, hashText: (value) => `sha256:${createHash('sha256').update(value).digest('hex')}`, resolve };
@@ -152,12 +164,29 @@ function writeUnitResults(fixture, overrides = {}) {
     const result = { resultId: `RESULT-${unit.unitId}`, workItemId: 'WI-1', packageId: pkg.packageId, unitId: unit.unitId, baselineHash: HASH, codeFingerprint: `git:${fixture.head}`, diffFingerprint: scopedDiffFingerprint(fixture.repo, fixture.head, unit.ownedPaths, io), completedAt: '2026-08-11T00:02:00.000Z', commands: [{ command: 'node --test', exitCode: 0, outputFile: relativeOutput, outputHash: hashFile(output) }], files: [relativeOutput], fileHashes: { [relativeOutput]: hashFile(output) }, verdict: 'PASS', ...(overrides[unit.unitId] ?? {}) };
     writeJson(join(unitsRoot, `${unit.unitId}.json`), result);
   }
+  if (work.globalState === 'IMPLEMENTING' && options.completeState !== false) {
+    for (const unit of pkg.executionUnits) {
+      const resultPath = join(unitsRoot, `${unit.unitId}.json`);
+      const checked = run('unit-check', ['--work-item', fixture.workPath, '--implementation-package', fixture.packagePath, '--result', resultPath], fixture.repo);
+      assert.equal(checked.status, 0, checked.stderr);
+    }
+  }
+}
+
+/** 只推进指定前缀单元，保留下一单元 IN_PROGRESS 以测试 READY 和阶段边界。 */
+function completeUnits(fixture, unitIds) {
+  for (const unitId of unitIds) {
+    const resultPath = join(fixture.root, 'evidence', 'WI-1', 'units', `${unitId}.json`);
+    const checked = run('unit-check', ['--work-item', fixture.workPath, '--implementation-package', fixture.packagePath, '--result', resultPath], fixture.repo);
+    assert.equal(checked.status, 0, checked.stderr);
+  }
 }
 
 /** 创建含两个已登记代理、委派文件和不可变批次的并行测试夹具。 */
 function prepareParallelFixture(state = 'IMPLEMENTING') {
   const f = setup({ globalState: state, delegatedAgents: ['module-agent', 'scene-agent'] });
   writeJson(f.packagePath, makePackage({ fileOwnership: { 'src/main.js': 'implementer', 'src/module': 'module-agent', 'src/scene': 'scene-agent' }, executionUnits: makePackage().executionUnits.map((unit) => unit.unitId === 'MODULE-1' ? { ...unit, owner: 'module-agent' } : unit.unitId === 'SCENE-1' ? { ...unit, owner: 'scene-agent' } : unit) }));
+  writeExecutionState(f);
   writeJson(join(f.root, 'delegations', 'm.json'), makeDelegation('module-agent', 'MODULE-1', 'PG-1', 'src/module'));
   writeJson(join(f.root, 'delegations', 's.json'), makeDelegation('scene-agent', 'SCENE-1', 'PG-1', 'src/scene'));
   const batchPath = join(f.root, 'delegations', 'batches', 'batch.json');
@@ -570,7 +599,9 @@ test('并行计划：模块与场景单元可在同组通过并行委派检查',
   const scenePath = join(f.root, 'delegations', 'scene.json');
   writeJson(modulePath, makeDelegation('module-agent', 'MODULE-1', 'PG-1', 'src/module'));
   writeJson(scenePath, makeDelegation('scene-agent', 'SCENE-1', 'PG-1', 'src/scene'));
-  writeUnitResults(f);
+  writeUnitResults(f, {}, { completeState: false });
+  const sharedResult = join(f.root, 'evidence', 'WI-1', 'units', 'SHARED-1.json');
+  assert.equal(run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', sharedResult], f.repo).status, 0);
   // 只保留并行阶段之前的共享单元结果，验证同组 peer 不构成 READY 前序条件。
   rmSync(join(f.root, 'evidence', 'WI-1', 'units', 'MODULE-1.json'));
   rmSync(join(f.root, 'evidence', 'WI-1', 'units', 'SCENE-1.json'));
@@ -583,15 +614,18 @@ test('并行计划：模块与场景单元可在同组通过并行委派检查',
 test('预设串行顺序：a1→a2→a3 只按数组位置放行并拒绝跳过前序', () => {
   const f = setup({ delegatedAgents: ['implementer'] });
   writeJson(f.packagePath, makeOrderedSerialPackage());
+  writeExecutionState(f);
   const delegationPath = join(f.root, 'delegations', 'a3.json');
   writeJson(delegationPath, makeDelegation('implementer', 'a3', null, 'src/scene'));
 
   rejects(run('delegate-check', ['--work-item', f.workPath, '--delegation', delegationPath, '--implementation-package', f.packagePath], f.repo), /a3.*a1|尚未 READY/);
-  writeUnitResults(f);
+  writeUnitResults(f, {}, { completeState: false });
+  completeUnits(f, ['a1', 'a2']);
   rmSync(join(f.root, 'evidence', 'WI-1', 'units', 'a2.json'));
   rmSync(join(f.root, 'evidence', 'WI-1', 'units', 'a3.json'));
   rejects(run('delegate-check', ['--work-item', f.workPath, '--delegation', delegationPath, '--implementation-package', f.packagePath], f.repo), /a3.*a2|预设顺序前序证据/);
-  writeUnitResults(f);
+  writeUnitResults(f, {}, { completeState: false });
+  completeUnits(f, ['a1', 'a2']);
   assert.equal(run('delegate-check', ['--work-item', f.workPath, '--delegation', delegationPath, '--implementation-package', f.packagePath], f.repo).status, 0);
 });
 
@@ -630,7 +664,8 @@ test('并行委派：并行组不匹配、所有权冲突或写范围冲突均�
     const leftPath = join(f.root, 'delegations', 'left.json'); const peerPath = join(f.root, 'delegations', 'peer.json');
     writeJson(leftPath, makeDelegation('module-agent', 'MODULE-1', 'PG-1', 'src/module'));
     writeJson(peerPath, makeDelegation('scene-agent', 'SCENE-1', 'PG-1', item.peer?.ownership?.[0] ?? 'src/scene', item.peer ?? {}));
-    writeUnitResults(f);
+    // 这些用例验证批次结构先行失败，故只生成 Result 文件，不尝试推进故意损坏的实施包状态。
+    writeUnitResults(f, {}, { completeState: false });
     const batchPath = join(f.root, 'delegations', 'batches', 'invalid.json');
     writeJson(batchPath, makeParallelBatch(f.repo, ['.workflow-control/delegations/left.json', '.workflow-control/delegations/peer.json']));
     rejects(run('parallel-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--batch', batchPath], f.repo), item.pattern);
@@ -640,10 +675,11 @@ test('并行委派：并行组不匹配、所有权冲突或写范围冲突均�
 test('单元证据：缺失、旧基线和旧路径 diff 均拒绝 READY，有效 Result 通过', () => {
   const f = setup({ delegatedAgents: ['implementer'] });
   writeJson(f.packagePath, makeSerialPackage());
+  writeExecutionState(f);
   const delegationPath = join(f.root, 'delegations', 'serial-module.json');
   writeJson(delegationPath, makeDelegation('implementer', 'MODULE-1', null, 'src/module'));
   rejects(run('delegate-check', ['--work-item', f.workPath, '--delegation', delegationPath, '--implementation-package', f.packagePath], f.repo), /尚未 READY|预设顺序前序证据/);
-  writeUnitResults(f);
+  writeUnitResults(f, {}, { completeState: false });
   const sharedResult = join(f.root, 'evidence', 'WI-1', 'units', 'SHARED-1.json');
   assert.equal(run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', sharedResult], f.repo).status, 0);
   assert.equal(run('delegate-check', ['--work-item', f.workPath, '--delegation', delegationPath, '--implementation-package', f.packagePath], f.repo).status, 0);
@@ -709,11 +745,90 @@ test('单元证据严格映射：files 重复或 fileHashes 多余均拒绝', ()
 
 test('A3 COMPLETE：completedUnitIds 或当前 Unit Result 缺失时拒绝', () => {
   const missingId = setup(); const { audit } = auditA3(missingId); const evidencePath = join(missingId.root, 'evidence', 'WI-1', 'complete.json'); const evidence = makeEvidence(missingId, audit); evidence.completedUnitIds.pop(); writeJson(evidencePath, evidence);
-  assert.equal(run('transition', ['--work-item', missingId.workPath, '--to', 'VALIDATING'], missingId.repo).status, 0);
+  const missingIdValidating = run('transition', ['--work-item', missingId.workPath, '--to', 'VALIDATING'], missingId.repo); assert.equal(missingIdValidating.status, 0, `${missingIdValidating.stderr} ${missingIdValidating.stdout} ${missingIdValidating.error?.message ?? ''}`);
   rejects(run('transition', ['--work-item', missingId.workPath, '--to', 'PASSED', '--evidence', evidencePath], missingId.repo), /completedUnitIds/);
   const missingResult = setup(); const audited = auditA3(missingResult); const secondEvidence = join(missingResult.root, 'evidence', 'WI-1', 'complete.json'); writeJson(secondEvidence, makeEvidence(missingResult, audited.audit)); rmSync(join(missingResult.root, 'evidence', 'WI-1', 'units', 'SCENE-1.json'));
-  assert.equal(run('transition', ['--work-item', missingResult.workPath, '--to', 'VALIDATING'], missingResult.repo).status, 0);
-  rejects(run('transition', ['--work-item', missingResult.workPath, '--to', 'PASSED', '--evidence', secondEvidence], missingResult.repo), /缺少当前有效 Unit Result/);
+  rejects(run('transition', ['--work-item', missingResult.workPath, '--to', 'VALIDATING'], missingResult.repo), /Execution State.*结果文件不存在|缺少当前有效 Unit Result/);
+});
+
+test('状态合同：串行 unit-check 完成当前单元并立即激活下一单元，最后明确 COMPLETE', () => {
+  const f = setup();
+  writeJson(f.packagePath, makeSerialPackage());
+  writeExecutionState(f);
+  writeUnitResults(f, {}, { completeState: false });
+  const statePath = join(f.root, 'evidence', 'WI-1', 'execution-state.json');
+  const check = (unitId) => {
+    const result = run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', join(f.root, 'evidence', 'WI-1', 'units', `${unitId}.json`)], f.repo);
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout).executionState;
+  };
+  let output = check('SHARED-1');
+  assert.deepEqual(output.currentUnitIds, ['MODULE-1']);
+  assert.equal(output.nextTask.kind, 'SERIAL_UNIT');
+  assert.equal(output.nextTask.taskId, 'MODULE-1');
+  output = check('MODULE-1');
+  assert.deepEqual(output.currentUnitIds, ['SCENE-1']);
+  output = check('SCENE-1');
+  assert.equal(output.workflowState, 'COMPLETE');
+  assert.equal(output.unitSequenceState, 'COMPLETE');
+  assert.equal(output.nextTask.kind, 'WORKFLOW_COMPLETE');
+  const state = JSON.parse(readFileSync(statePath, 'utf8'));
+  assert(state.units.every((unit) => unit.state === 'COMPLETE'));
+});
+
+test('状态合同：并行组未齐不推进，全部完成后才激活下一阶段', () => {
+  const f = setup();
+  writeExecutionState(f);
+  writeUnitResults(f, {}, { completeState: false });
+  const check = (unitId) => {
+    const result = run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', join(f.root, 'evidence', 'WI-1', 'units', `${unitId}.json`)], f.repo);
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout).executionState;
+  };
+  check('SHARED-1');
+  const partial = check('MODULE-1');
+  assert.deepEqual(partial.currentUnitIds, ['SCENE-1']);
+  assert.equal(partial.nextTask.kind, 'PARALLEL_GROUP');
+  assert.equal(partial.nextTask.taskId, 'PG-1');
+  const complete = check('SCENE-1');
+  assert.equal(complete.workflowState, 'COMPLETE');
+  assert.equal(complete.nextTask.kind, 'WORKFLOW_COMPLETE');
+});
+
+test('状态合同：缺失或篡改 Execution State 时所有单元放行路径 fail closed', () => {
+  const missing = setup({ delegatedAgents: ['implementer'] });
+  rmSync(join(missing.root, 'evidence', 'WI-1', 'execution-state.json'));
+  const delegationPath = join(missing.root, 'delegations', 'shared.json');
+  writeJson(delegationPath, makeDelegation('implementer', 'SHARED-1', null, 'src/main.js'));
+  rejects(run('delegate-check', ['--work-item', missing.workPath, '--delegation', delegationPath, '--implementation-package', missing.packagePath], missing.repo), /缺少当前 Execution State/);
+
+  const tampered = setup();
+  const statePath = join(tampered.root, 'evidence', 'WI-1', 'execution-state.json');
+  const resultPath = join(tampered.root, 'evidence', 'WI-1', 'units', 'SHARED-1.json');
+  writeUnitResults(tampered, {}, { completeState: false });
+  const state = JSON.parse(readFileSync(statePath, 'utf8')); state.executionUnitIds = ['SCENE-1', 'MODULE-1', 'SHARED-1']; writeJson(statePath, state);
+  rejects(run('unit-check', ['--work-item', tampered.workPath, '--implementation-package', tampered.packagePath, '--result', resultPath], tampered.repo), /executionUnits 预设顺序|Execution State/);
+});
+
+test('V2→V3 状态合同：V2 完成后只输出 V3 生产规划，合同回对未通过不得推进', () => {
+  const blocked = setup({ visualStage: 'V2', visualStageState: 'v2-direction-frozen' });
+  writeJson(blocked.packagePath, makeSerialPackage()); writeExecutionState(blocked); writeUnitResults(blocked, {}, { completeState: false });
+  const blockedResult = run('unit-check', ['--work-item', blocked.workPath, '--implementation-package', blocked.packagePath, '--result', join(blocked.root, 'evidence', 'WI-1', 'units', 'SHARED-1.json')], blocked.repo); assert.equal(blockedResult.status, 0, blockedResult.stderr);
+  for (const unitId of ['MODULE-1', 'SCENE-1']) {
+    const result = run('unit-check', ['--work-item', blocked.workPath, '--implementation-package', blocked.packagePath, '--result', join(blocked.root, 'evidence', 'WI-1', 'units', `${unitId}.json`)], blocked.repo); assert.equal(result.status, 0, result.stderr);
+    if (unitId === 'SCENE-1') { const output = JSON.parse(result.stdout).executionState; assert.equal(output.nextTask.kind, 'V3_PRODUCTION_PLANNING'); assert.equal(output.nextTask.state, 'BLOCKED'); assert.equal(output.nextTask.gate, 'V2_TO_V3_CONTRACT'); }
+  }
+  const passed = setup({ visualStage: 'V2', visualStageState: 'v2-direction-frozen' });
+  const v2ContractEvidence = join(passed.root, 'evidence', 'WI-1', 'v2-v3-contract.json');
+  writeJson(v2ContractEvidence, { contractId: 'V2-V3-1', verdict: 'PASS', reviewedAt: '2026-08-11T00:01:00.000Z' });
+  const passedWork = JSON.parse(readFileSync(passed.workPath, 'utf8'));
+  passedWork.v2ToV3Contract = { status: 'PASS', contractId: 'V2-V3-1', evidenceFile: '.workflow-control/evidence/WI-1/v2-v3-contract.json', evidenceSha256: hashFile(v2ContractEvidence) };
+  writeJson(passed.workPath, passedWork);
+  writeJson(passed.packagePath, makeSerialPackage()); writeExecutionState(passed); writeUnitResults(passed, {}, { completeState: false });
+  for (const unitId of ['SHARED-1', 'MODULE-1', 'SCENE-1']) {
+    const result = run('unit-check', ['--work-item', passed.workPath, '--implementation-package', passed.packagePath, '--result', join(passed.root, 'evidence', 'WI-1', 'units', `${unitId}.json`)], passed.repo); assert.equal(result.status, 0, result.stderr);
+    if (unitId === 'SCENE-1') { const output = JSON.parse(result.stdout).executionState; assert.equal(output.nextTask.kind, 'V3_PRODUCTION_PLANNING'); assert.equal(output.nextTask.state, 'IN_PROGRESS'); assert.equal(output.nextTask.gateStatus, 'PASS'); }
+  }
 });
 
 test('lint：当前仓库策略、Schema 和 Markdown 链接一致', () => {

@@ -55,6 +55,43 @@ const VISUAL_APPROVAL_REVIEWER_FIELDS = Object.freeze([
   "reviewer_id",
   "reviewerId",
   "reviewer",
+  "human_review",
+  "humanReview",
+]);
+
+/**
+ * V2 审批通过后不再创建任何新的视觉复核身份或复核工件。
+ *
+ * 这些字段曾被 V4/F2/V5 当成第二套人工/AI 审阅入口；现在它们会掩盖
+ * 已冻结的 V2 方向并造成重复确认，因此由共享门统一 fail closed。机器
+ * 验证只能写入明确的确定性事实，例如文件 SHA、运行消费和 fidelity case。
+ */
+export const VISUAL_POST_APPROVAL_REVIEW_FIELDS = Object.freeze([
+  "reviewer",
+  "reviewer_type",
+  "reviewerType",
+  "reviewer_id",
+  "reviewerId",
+  "review_id",
+  "reviewId",
+  "reviewed_at",
+  "reviewedAt",
+  "human_review",
+  "humanReview",
+]);
+
+/** V3-V5 禁止重复生成的视觉复核工件名称。 */
+export const VISUAL_POST_APPROVAL_REVIEW_ARTIFACTS = Object.freeze([
+  "f2_review",
+  "f2_reviews",
+  "f2Review",
+  "f2Reviews",
+  "visual_fidelity_review",
+  "visualFidelityReview",
+  "production_contract_review",
+  "productionContractReview",
+  "component_reviews",
+  "componentReviews",
 ]);
 
 /** 计算视觉问题最早应退回的阶段。 */
@@ -139,6 +176,7 @@ export function validateVisualHumanApproval(approval, binding = {}, context = {}
   // 人工审批由记录语义和证据表达，不接收 reviewer_type/reviewer_id/reviewer 字段，
   // 避免 AI 或手写身份被误当成真人审批真值；旧字段不能参与回退判断。
   for (const field of VISUAL_APPROVAL_REVIEWER_FIELDS) if (Object.hasOwn(approval, field)) fail(`visual_human_approval 禁止使用 ${field}，真人身份不通过 reviewer 字段推断`, "不得包含 reviewer_type/reviewer_id/reviewer", approval[field]);
+  for (const field of VISUAL_POST_APPROVAL_REVIEW_ARTIFACTS) if (Object.hasOwn(approval, field)) fail(`visual_human_approval 禁止嵌套重复复核工件 ${field}`, "不得包含 F2/V4/V5 review 工件", approval[field]);
   if (!nonEmptyString(approval.reviewed_at) || Number.isNaN(Date.parse(approval.reviewed_at))) fail("唯一视觉真人审批缺少可解析 reviewed_at", "reviewed_at=ISO-8601", approval.reviewed_at);
   if (!isReviewEvidence(approval.evidence)) fail("唯一视觉真人审批缺少有效 evidence", "evidence=non-empty path/object/list", approval.evidence);
   if (!['passed', 'PASS'].includes(String(approval.status))) fail("唯一视觉真人审批必须为 PASS", "status=passed|PASS", approval.status);
@@ -198,32 +236,36 @@ export function validateHumanReviewIdentity(review, identity = {}, context = {},
   return errors;
 }
 
-/** 校验 V5 完成标记和关键视觉人工覆盖是否来自实际逐项记录。 */
-export function validateVisualHumanReviewCompletion(manifest, options = {}) {
+/**
+ * 校验视觉对象没有携带 V2 通过后的重复复核字段或工件。
+ *
+ * `visual_human_approval` 是唯一允许包含 review_id/reviewed_at 的对象；
+ * 其余视觉对象只能保存确定性机器验证事实。递归检查便于同时覆盖
+ * manifest、Evidence Manifest、F2 gateResult 和嵌套的 fidelity/asset 记录。
+ */
+export function validateVisualPostApprovalReviewFields(value, options = {}) {
   const errors = [];
-  const stage = options.stage ?? "V5";
-  const scene = manifest?.scene_reconstruction_contract ?? manifest?.sceneReconstructionContract;
-  const contextFor = (extra = {}) => ({ stage, ...extra });
-  if (!isObject(scene)) return [humanReviewError(contextFor(), "缺少 scene_reconstruction_contract，无法校验唯一 V2 真人审批", { missing: "scene_reconstruction_contract", returnStage: "V1/PROPOSAL", rootCause: "方案缺失" })];
-  const targetSha = manifest?.reference_target?.target_sha256 ?? scene?.target_conditions?.target_sha256;
-  // 唯一真人审批冻结的是 V2 方向候选；V3-V5 正常生产会产生新的运行时候选，
-  // 不能拿后续候选 SHA 反向要求重复真人审批。
-  const candidateIdentity = scene?.v2_scene_candidate?.identity ?? manifest?.v2_candidate_identity ?? {};
-  const candidateSha = candidateIdentity.sha256 ?? candidateIdentity.code_sha256 ?? candidateIdentity.build_sha256 ?? candidateIdentity.candidate_sha256;
-  const diffIdentity = candidateIdentity.diff_fingerprint ?? candidateIdentity.diffFingerprint ?? candidateIdentity.diff_identity ?? candidateIdentity.diffIdentity;
-  const baselineSha = manifest?.baseline_sha256 ?? manifest?.baselineHash ?? manifest?.visual_baseline?.sha256 ?? manifest?.visual_baseline?.baseline_sha256;
-  const approvals = [
-    manifest?.visual_human_approval,
-    manifest?.visualHumanApproval,
-    scene?.visual_human_approval,
-    scene?.visualHumanApproval,
-  ].filter(isObject);
-  const approval = approvals[0];
-  if (!approval) errors.push(humanReviewError(contextFor(), "缺少唯一 V2 visual_human_approval；后续阶段不能自行产生人工审批", { missing: "visual_human_approval", returnStage: "V1/PROPOSAL", rootCause: "方案缺失" }));
-  else {
-    errors.push(...validateVisualHumanApproval(approval, { targetSha, candidateSha, diffIdentity, baselineSha }, contextFor({ scene_id: scene.target_conditions?.scene_id, state_id: scene.target_conditions?.state_id }), { requirePassed: true, returnStage: "V1/PROPOSAL", rootCause: "方案缺失" }));
-    const approvalId = approval.review_id ?? approval.reviewId;
-    for (const other of approvals.slice(1)) errors.push(humanReviewError(contextFor(), "检测到重复或冲突的 visual_human_approval，必须只有一个唯一审批记录", { expected: `唯一 review_id=${approvalId}`, actual: reviewerSummary(other), review: other, returnStage: "V1/PROPOSAL", rootCause: "方案缺失" }));
-  }
+  const stage = options.stage ?? "V4/V5";
+  const contextFor = (path) => ({ stage, region_id: path || "*" });
+  const approvalKeys = new Set(["visual_human_approval", "visualHumanApproval"]);
+  const walk = (current, path = "") => {
+    if (Array.isArray(current)) {
+      current.forEach((item, index) => walk(item, `${path}[${index}]`));
+      return;
+    }
+    if (!isObject(current)) return;
+    for (const [key, child] of Object.entries(current)) {
+      const childPath = path ? `${path}.${key}` : key;
+      // 唯一 V2 审批自身合法拥有 review_id/reviewed_at，其他对象一律不允许。
+      if (approvalKeys.has(key)) continue;
+      if (VISUAL_POST_APPROVAL_REVIEW_ARTIFACTS.includes(key)) {
+        errors.push(humanReviewError(contextFor(childPath), `禁止使用重复视觉复核工件 ${key}；V2 人工确认后只允许确定性机器验证`, { expected: "无重复复核工件", actual: key, returnStage: stage }));
+        continue;
+      }
+      if (VISUAL_POST_APPROVAL_REVIEW_FIELDS.includes(key)) errors.push(humanReviewError(contextFor(childPath), `禁止使用 post-approval 视觉复核字段 ${key}；人工确认后不得再次复核`, { expected: "无 reviewer/review/human_review 字段", actual: key, returnStage: stage }));
+      walk(child, childPath);
+    }
+  };
+  walk(value);
   return errors;
 }

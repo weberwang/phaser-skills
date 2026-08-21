@@ -63,6 +63,7 @@ export function validateParallelBatch(batch, batchPath, work, pkg, repo, io) {
   const derivedAgents = [...new Set(delegations.map((delegation) => delegation.assignedAgent))].sort();
   if (JSON.stringify(derivedUnits) !== JSON.stringify(batch.executionUnitIds) || JSON.stringify(derivedAgents) !== JSON.stringify(batch.assignedAgents)) throw new Error('并行批次 executionUnitIds/assignedAgents 与委派内容不一致');
   const agents = new Set(); const assignedUnits = new Set();
+  const readyUnits = [];
   for (const delegation of delegations) {
     io.validateDelegationForWork(delegation, work, repo);
     if (delegation.actionLevel !== 'A3' || delegation.parallelGroup !== batch.parallelGroup) throw new Error('并行批次委派必须全部为同一非空组的 A3');
@@ -70,7 +71,7 @@ export function validateParallelBatch(batch, batchPath, work, pkg, repo, io) {
     for (const unit of binding.units) {
       if (assignedUnits.has(unit.unitId)) throw new Error(`并行批次重复分配 execution unit：${unit.unitId}`);
       assignedUnits.add(unit.unitId);
-      io.assertUnitReady(unit, work, pkg, repo);
+      readyUnits.push(unit);
     }
     if (agents.has(delegation.assignedAgent)) throw new Error(`并行批次代理身份重复：${delegation.assignedAgent}`);
     agents.add(delegation.assignedAgent);
@@ -89,5 +90,7 @@ export function validateParallelBatch(batch, batchPath, work, pkg, repo, io) {
     const duplicated = history.executionUnitIds.filter((unitId) => assignedUnits.has(unitId));
     if (duplicated.length) throw new Error(`execution unit 已存在历史并行批次分配：${duplicated.join('、')}`);
   }
+  // 结构、内容哈希和历史不可变性全部通过后才检查当前顺序状态，避免任何结构错误被状态门遮蔽；成功路径仍绝不绕过状态硬门。
+  for (const unit of readyUnits) io.assertUnitReady(unit, work, pkg, repo);
   return { batchId: batch.batchId, parallelGroup: batch.parallelGroup, executionUnitIds: [...assignedUnits].sort() };
 }
