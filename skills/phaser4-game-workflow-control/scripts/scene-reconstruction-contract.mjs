@@ -162,7 +162,7 @@ function validateV2StageArtifacts(contract, stage, errors) {
   if (isObject(reviewedCandidate) && field(reviewedCandidate, "sha256", "candidate_sha256", "candidateSha256", "code_sha256", "codeSha256", "build_sha256", "buildSha256") !== field(candidateIdentity, "sha256", "candidate_sha256", "candidateSha256", "code_sha256", "codeSha256", "build_sha256", "buildSha256")) errors.push(contractError(stage, contract, null, "V2 结构化审查 candidate identity 与完整场景候选不一致", { expected: JSON.stringify(candidateIdentity), actual: JSON.stringify(reviewedCandidate), returnStage: "V1/PROPOSAL", rootCause: "方案缺失" }));
 }
 
-/** 校验冻结目标条件，确保比较不是在隐式 viewport/DPR 下进行。 */
+/** 校验冻结目标条件，确保比较绑定显式 viewport 和动态封顶范围内的 DPR。 */
 function validateTargetConditions(contract, manifest, stage, errors) {
   const target = field(contract, "target_conditions", "targetConditions", "target", "frozen_target", "frozenTarget");
   if (!isObject(target)) {
@@ -443,7 +443,8 @@ function validateNormalizationEquivalence(item, label, stage, errors) {
     const candidate = field(entry, "candidate", "actual", "candidate_viewport", "candidateViewport", "candidate_dpr", "candidateDpr", "candidate_coordinates", "candidateCoordinates");
     const equivalent = field(entry, "equivalent", "is_equivalent", "isEquivalent", "status");
     if (target === undefined || candidate === undefined || !(equivalent === true || ["equivalent", "equal", "same", "passed", "pass"].includes(String(equivalent).toLowerCase()))) errors.push(contractError(stage, item, item, `${label} ${text} 等价证明必须同时记录 target、candidate 和 equivalent`, { missing: `normalization_equivalence.${key}.target/candidate/equivalent`, actual: JSON.stringify(entry), returnStage: "VALIDATING", rootCause: "验收问题" }));
-    if (key === "dpr" && (!isWorkflowDpr(target) || !isWorkflowDpr(candidate) || equivalent !== true)) errors.push(contractError(stage, item, item, `${label} DPR 等价证明必须证明 target=2、candidate=2 且 equivalent=true`, { expected: JSON.stringify({ target: 2, candidate: 2, equivalent: true }), actual: JSON.stringify(entry), returnStage: "VALIDATING", rootCause: "验收问题" }));
+    // DPR 等价证明不要求设备都达到上限，但必须是有效值、两侧相等且由机器明确标记等价。
+    if (key === "dpr" && (!isWorkflowDpr(target) || !isWorkflowDpr(candidate) || target !== candidate || equivalent !== true)) errors.push(contractError(stage, item, item, `${label} DPR 等价证明必须使用有效 DPR、target 与 candidate 相等且 equivalent=true`, { expected: JSON.stringify({ target: "(0,1.5]", candidate: "与 target 相等", equivalent: true }), actual: JSON.stringify(entry), returnStage: "VALIDATING", rootCause: "验收问题" }));
   }
 }
 

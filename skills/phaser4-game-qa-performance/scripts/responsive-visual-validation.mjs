@@ -5,7 +5,7 @@ import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { validateContract as validateUiLayoutContract } from "../../phaser4-game-ui-layout/scripts/validate_ui_layout_contract.mjs";
-import { WORKFLOW_DPR, isWorkflowDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
+import { DEFAULT_DPR, isDeviceDprInput, isWorkflowDpr, parseDeviceDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
 
 export const DEFAULT_HOOK_NAME = "__PHASER_VISUAL_VALIDATION__";
 const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
@@ -99,7 +99,11 @@ function own(object, key) {
   return Object.prototype.hasOwnProperty.call(object, key);
 }
 
-/** 收集合同中所有显式 DPR，确保嵌套的视口配置也遵循固定基线。 */
+/**
+ * 收集合同中所有 DPR，区分有效证据声明和原始设备输入。
+ * `dpr` 是已经解析过的证据值，必须在 (0,1.5]；`deviceScaleFactor` 是设备
+ * 输入，允许大于 1.5 并由统一解析器封顶，其他非法类型仍必须失败。
+ */
 function collectDprErrors(value, path = "contract", errors = [], seen = new Set()) {
   if (!value || typeof value !== "object" || seen.has(value)) return errors;
   seen.add(value);
@@ -108,7 +112,8 @@ function collectDprErrors(value, path = "contract", errors = [], seen = new Set(
     return errors;
   }
   for (const [key, nested] of Object.entries(value)) {
-    if (["dpr", "deviceScaleFactor"].includes(key) && !isWorkflowDpr(nested)) errors.push(workflowDprError(`${path}.${key}`, nested));
+    if (key === "dpr" && !isWorkflowDpr(nested)) errors.push(workflowDprError(`${path}.${key}`, nested));
+    if (key === "deviceScaleFactor" && !isDeviceDprInput(nested)) errors.push(workflowDprError(`${path}.${key}（原始设备值）`, nested));
     collectDprErrors(nested, `${path}.${key}`, errors, seen);
   }
   return errors;
@@ -197,7 +202,7 @@ export function classifyRootCause({ failures = [], decisionGaps = [], acceptance
 /** 依据逻辑尺寸和 Hook 缩放计算 CSS、物理像素比例。 */
 function deriveScaling(canvasRect, logicalSize, dpr, hookScale) {
   const canvas = normalizeRect(canvasRect);
-  const physicalDpr = finiteNumber(dpr) ?? WORKFLOW_DPR;
+  const physicalDpr = parseDeviceDpr(dpr, DEFAULT_DPR);
   const cssScale = hookScale && typeof hookScale === "object"
     ? { x: finiteNumber(hookScale.x) ?? null, y: finiteNumber(hookScale.y) ?? null }
     : logicalSize && canvas
@@ -210,7 +215,7 @@ function deriveScaling(canvasRect, logicalSize, dpr, hookScale) {
 }
 
 /** 评估一个 viewport；失败优先于 decision_gap，避免几何硬失败被缺字段掩盖。 */
-export function evaluateViewport({ viewportRect, canvasRect, hookSnapshot, contract, devicePixelRatio = WORKFLOW_DPR, screenshot = null }) {
+export function evaluateViewport({ viewportRect, canvasRect, hookSnapshot, contract, devicePixelRatio, screenshot = null }) {
   const normalized = normalizeContract(contract);
   const viewport = normalizeRect(viewportRect);
   const canvas = normalizeRect(canvasRect);
@@ -224,8 +229,8 @@ export function evaluateViewport({ viewportRect, canvasRect, hookSnapshot, contr
   const unverified = [];
 
   if (normalized.dprErrors.length > 0) failures.push(...normalized.dprErrors);
-  const measuredDpr = devicePixelRatio === undefined ? WORKFLOW_DPR : devicePixelRatio;
-  if (!isWorkflowDpr(measuredDpr)) failures.push(workflowDprError("实际测得物理 DPR", measuredDpr));
+  const measuredDpr = parseDeviceDpr(devicePixelRatio, DEFAULT_DPR);
+  if (devicePixelRatio !== undefined && !isDeviceDprInput(devicePixelRatio)) failures.push(workflowDprError("实际测得原始设备 DPR", devicePixelRatio));
   if (!viewport || !canvas) unverified.push("viewportRect 或 canvasRect 缺失");
   if (fullViewport && edgeGaps && (edgeGaps.left < -tolerance || edgeGaps.top < -tolerance || edgeGaps.right < -tolerance || edgeGaps.bottom < -tolerance)) {
     failures.push("Canvas 溢出 viewport");
@@ -303,7 +308,7 @@ export function buildResizeRecords(measurements, contract = {}) {
   }
   const required = normalized.resize.required || normalized.resize.trajectory.length > 1;
   const validReflow = records.some((record) => record.samePage && record.viewportChanged && (record.canvasChanged || record.keyUiChanged));
-  // 工作流固定 DPR 2，resize 证据只证明同一 context 的视口变化。
+  // DPR 由设备动态决定；resize 证据只证明同一 context 的视口变化。
   const trajectoryStatus = required ? validReflow ? "pass" : records.length === 0 ? "unverified" : "fail" : "pass";
   return { records, required, status: trajectoryStatus };
 }
@@ -325,8 +330,8 @@ export function evaluateMatrixCoverage(measurements, contract = {}) {
     const actual = measurements.find((item) => item.name === name); if (!actual) continue;
     const actualWidth = finiteNumber(actual.viewportRect?.width); const actualHeight = finiteNumber(actual.viewportRect?.height); const actualDpr = actual.scaling?.physical?.dpr;
     const declaredDpr = wanted?.deviceScaleFactor ?? wanted?.dpr;
-    const expectedDpr = declaredDpr === undefined ? WORKFLOW_DPR : declaredDpr;
-    if (actualWidth !== finiteNumber(wanted?.width) || actualHeight !== finiteNumber(wanted?.height) || !isWorkflowDpr(expectedDpr) || !isWorkflowDpr(actualDpr)) mismatched.push(name);
+    const expectedDpr = declaredDpr === undefined ? DEFAULT_DPR : wanted?.deviceScaleFactor !== undefined ? parseDeviceDpr(declaredDpr) : declaredDpr;
+    if (actualWidth !== finiteNumber(wanted?.width) || actualHeight !== finiteNumber(wanted?.height) || !isWorkflowDpr(expectedDpr) || !isWorkflowDpr(actualDpr) || actualDpr !== expectedDpr) mismatched.push(name);
   }
   const status = expected.length === 0 || missing.length > 0 ? "decision_gap" : mismatched.length > 0 ? "fail" : "pass";
   return { expected, observed: [...observed], missing, mismatched, status };
@@ -487,7 +492,9 @@ async function runBrowserValidation(options) {
   const viewports = parseViewports(viewportInput ?? options.viewports ?? "390x844");
   const viewportDprErrors = viewports.flatMap((viewport, index) => {
     const declared = viewport.deviceScaleFactor ?? viewport.dpr;
-    return declared === undefined ? [] : (isWorkflowDpr(declared) ? [] : [workflowDprError(`viewports[${index}].${viewport.deviceScaleFactor !== undefined ? "deviceScaleFactor" : "dpr"}`, declared)]);
+    if (declared === undefined) return [];
+    const valid = viewport.deviceScaleFactor !== undefined ? isDeviceDprInput(declared) : isWorkflowDpr(declared);
+    return valid ? [] : [workflowDprError(`viewports[${index}].${viewport.deviceScaleFactor !== undefined ? "deviceScaleFactor（原始设备值）" : "dpr"}`, declared)];
   });
   if (viewportDprErrors.length) throw new Error(viewportDprErrors.join("；"));
   const outputDir = path.resolve(String(options.output ?? "responsive-artifacts"));
@@ -498,7 +505,9 @@ async function runBrowserValidation(options) {
   try {
     for (let index = 0; index < viewports.length; index += 1) {
       const viewport = viewports[index];
-      const requestedDpr = viewport.deviceScaleFactor ?? viewport.dpr ?? WORKFLOW_DPR;
+      // Playwright 只接收统一解析后的有效 DPR，设备值超过 1.5 时在 context 创建前封顶。
+      const rawDpr = viewport.deviceScaleFactor ?? viewport.dpr;
+      const requestedDpr = viewport.deviceScaleFactor !== undefined ? parseDeviceDpr(rawDpr, DEFAULT_DPR) : rawDpr === undefined ? DEFAULT_DPR : rawDpr;
       const contextChanged = context === null || requestedDpr !== activeDpr;
       if (contextChanged) {
         if (context) await context.close();

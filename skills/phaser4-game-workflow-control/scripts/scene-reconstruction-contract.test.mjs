@@ -53,7 +53,7 @@ function contract() {
       scene_id: "main",
       state_id: "default",
       viewport: { width: 390, height: 844 },
-      dpr: 2,
+      dpr: 1.5,
       locale: "zh-CN",
       random_seed: 42,
       input_trace: "traces/main.json",
@@ -103,7 +103,7 @@ function fidelityCase(overrides = {}) {
     scene_id: "main",
     state_id: "default",
     viewport: { width: 390, height: 844 },
-    dpr: 2,
+    dpr: 1.5,
     locale: "zh-CN",
     seed: 42,
     input_trace: "trace.json",
@@ -114,7 +114,7 @@ function fidelityCase(overrides = {}) {
     normalized_comparison_canvas: { width: 390, height: 844 },
     normalization_equivalence: {
       viewport: { target: { width: 390, height: 844 }, candidate: { width: 390, height: 844 }, equivalent: true },
-      dpr: { target: 2, candidate: 2, equivalent: true },
+      dpr: { target: 1.5, candidate: 1.5, equivalent: true },
       logical_coordinates: { target: "logical-px", candidate: "logical-px", equivalent: true },
     },
     full_viewport_reference: "ref.png",
@@ -142,20 +142,26 @@ test("场景还原合同覆盖整屏构图和 runtime fidelity obligation", () =
   assert(validateSceneReconstructionContract(missing, manifest(), { stage: "V3" }).some((item) => item.includes("fidelity obligations")));
 });
 
-test("场景目标和 fidelity DPR 只能固定为数字 2", () => {
-  for (const dpr of [0.5, 1, 3, "2"]) {
+test("场景目标和 fidelity DPR 允许动态有效值并拒绝非法声明", () => {
+  for (const dpr of [0.5, 1, 1.25, 1.5]) {
     const target = structuredClone(contract());
     target.target_conditions.dpr = dpr;
-    assert(validateSceneReconstructionContract(target, manifest(), { stage: "V3" }).some((item) => item.includes("必须固定为 2")), `target dpr=${dpr}`);
+    assert.deepEqual(validateSceneReconstructionContract(target, manifest(), { stage: "V3" }), [], `target dpr=${dpr}`);
     const fidelity = fidelityCase({ dpr, normalization_equivalence: { viewport: { target: { width: 390, height: 844 }, candidate: { width: 390, height: 844 }, equivalent: true }, dpr: { target: dpr, candidate: dpr, equivalent: true }, logical_coordinates: { target: "logical-px", candidate: "logical-px", equivalent: true } } });
-    assert(validateStructuredFidelityCases([fidelity], manifest(), { stage: "V5" }).some((item) => item.includes("必须固定为 2")), `fidelity dpr=${dpr}`);
+    assert.deepEqual(validateStructuredFidelityCases([fidelity], manifest(), { stage: "V5" }), [], `fidelity dpr=${dpr}`);
+  }
+  for (const dpr of [0, -1, 1.5001, 2, 3, "1.5", NaN, Infinity]) {
+    const target = structuredClone(contract()); target.target_conditions.dpr = dpr;
+    assert(validateSceneReconstructionContract(target, manifest(), { stage: "V3" }).some((item) => item.includes("正有限数字且不超过 1.5")), `target dpr=${dpr}`);
+    const fidelity = fidelityCase({ dpr });
+    assert(validateStructuredFidelityCases([fidelity], manifest(), { stage: "V5" }).some((item) => item.includes("正有限数字且不超过 1.5")), `fidelity dpr=${dpr}`);
   }
 });
 
-test("normalization_equivalence.dpr 必须是 target=2、candidate=2 且 equivalent=true", () => {
-  for (const proof of [{ target: 1, candidate: 1, equivalent: true }, { target: 2, candidate: 3, equivalent: true }, { target: 2, candidate: 2, equivalent: "true" }]) {
+test("normalization_equivalence.dpr 必须是有效且相等的 target/candidate 并明确 equivalent=true", () => {
+  for (const proof of [{ target: 1, candidate: 1.5, equivalent: true }, { target: 1.5, candidate: 2, equivalent: true }, { target: 1, candidate: 1, equivalent: "true" }, { target: 0, candidate: 0, equivalent: true }]) {
     const errors = validateStructuredFidelityCases([fidelityCase({ normalization_equivalence: { ...fidelityCase().normalization_equivalence, dpr: proof } })], manifest(), { stage: "V5" });
-    assert(errors.some((item) => item.includes("DPR 等价证明必须证明 target=2")), JSON.stringify(proof));
+    assert(errors.some((item) => item.includes("DPR 等价证明必须使用有效 DPR")), JSON.stringify(proof));
   }
 });
 
@@ -183,7 +189,7 @@ test("未绑定 target SHA 的旧布局合同返回 V1", () => {
 });
 
 test("V5 fidelity 拒绝字符串 tolerance、尺寸不等价和缺逐区域矩阵", () => {
-  const item = { id: "case-1", target_identity: { sha256: SHA }, candidate_identity: { sha256: SHA, diff_fingerprint: "diff-1" }, scene_id: "main", state_id: "default", viewport: { width: 393, height: 852 }, dpr: 2, locale: "zh-CN", seed: 42, input_trace: "trace.json", stable_frame: "frame:1", original_target_size: { width: 390, height: 844 }, original_candidate_size: { width: 393, height: 852 }, normalization_transform: { type: "scale", scale_x: 1, scale_y: 1 }, normalized_comparison_canvas: { width: 390, height: 844 }, full_viewport_reference: "ref.png", full_viewport_candidate: "candidate.png", side_by_side_evidence: "side.png", overlay_evidence: "overlay.png", difference_evidence: "diff.png", tolerance: "any-string", conclusion: "passed" };
+  const item = { id: "case-1", target_identity: { sha256: SHA }, candidate_identity: { sha256: SHA, diff_fingerprint: "diff-1" }, scene_id: "main", state_id: "default", viewport: { width: 393, height: 852 }, dpr: 1.5, locale: "zh-CN", seed: 42, input_trace: "trace.json", stable_frame: "frame:1", original_target_size: { width: 390, height: 844 }, original_candidate_size: { width: 393, height: 852 }, normalization_transform: { type: "scale", scale_x: 1, scale_y: 1 }, normalized_comparison_canvas: { width: 390, height: 844 }, full_viewport_reference: "ref.png", full_viewport_candidate: "candidate.png", side_by_side_evidence: "side.png", overlay_evidence: "overlay.png", difference_evidence: "diff.png", tolerance: "any-string", conclusion: "passed" };
   const errors = validateStructuredFidelityCases([item], manifest(), { stage: "V5" });
   assert(errors.some((value) => value.includes("逐区域结果矩阵")));
   assert(errors.some((value) => value.includes("tolerance 必须是结构化")));

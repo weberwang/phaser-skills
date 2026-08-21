@@ -17,7 +17,7 @@ function fidelityContract(status = "verified") {
   document.frozen_visual_target = { candidate_id: "mockup-a", original_file: "evidence/target.png", target_sha256: targetSha, visual_baseline_version: "ui-v1", status: "frozen" };
   document.scene_reconstruction_binding = { target_sha256: targetSha, scene_id: "MainScene", state_id: "default", visual_baseline_version: "ui-v1", reconstruction_contract_version: "1.0.0", target_viewport: { width: 390, height: 844 } };
   document.critical_alignments = [{ id: "title-center", element_id: "title", reference_id: "safe-area", horizontal: { type: "center-aligned", element_anchor: "center", reference_anchor: "center" }, vertical: { type: "top-offset", element_anchor: "top", reference_anchor: "top" }, target_measurement: { x: 115, y: 32, width: 160, height: 48 }, planned_test_id: "tests/layout/title-center", target_evidence: ["evidence/target-title.png"], target_sha256: targetSha, candidate_sha256: candidateSha, tolerance: { unit: "logical-px", value: 2 } }];
-  if (status === "verified") { Object.assign(document.critical_alignments[0], { actual_test_id: "tests/layout/title-center", runtime_measurement: { x: 115, y: 32, width: 160, height: 48 }, test_status: "passed", runtime_evidence: ["evidence/runtime-title.png"] }); document.parity_cases = [{ id: "main-default", target_sha256: targetSha, candidate_sha256: candidateSha, scene_id: "MainScene", state_id: "default", viewport: { width: 390, height: 844 }, dpr: 2, language: "zh-CN", random_seed: 42, input_trace: "traces/main.json", sample_rule: "stable-frame", layout_contract_version: "1.0.0", visual_baseline_version: "ui-v1", reference_evidence: ["evidence/target.png"], candidate_evidence: ["evidence/candidate.png"], tolerance: { unit: "logical-px", value: 2 }, exception_ids: [], conclusion: "passed" }]; }
+  if (status === "verified") { Object.assign(document.critical_alignments[0], { actual_test_id: "tests/layout/title-center", runtime_measurement: { x: 115, y: 32, width: 160, height: 48 }, test_status: "passed", runtime_evidence: ["evidence/runtime-title.png"] }); document.parity_cases = [{ id: "main-default", target_sha256: targetSha, candidate_sha256: candidateSha, scene_id: "MainScene", state_id: "default", viewport: { width: 390, height: 844 }, dpr: 1.5, language: "zh-CN", random_seed: 42, input_trace: "traces/main.json", sample_rule: "stable-frame", layout_contract_version: "1.0.0", visual_baseline_version: "ui-v1", reference_evidence: ["evidence/target.png"], candidate_evidence: ["evidence/candidate.png"], tolerance: { unit: "logical-px", value: 2 }, exception_ids: [], conclusion: "passed" }]; }
   return document;
 }
 /** 断言指定缺陷稳定地产生失败和可定位诊断。 */
@@ -33,9 +33,20 @@ test("关键对齐未知 UI ID 与未执行测试失败", () => { const unknown 
 test("关键对齐目标和候选 SHA 必须匹配", () => { for (const field of ["target_sha256", "candidate_sha256"]) { const document = fidelityContract(); document.critical_alignments[0][field] = `sha256:${"f".repeat(64)}`; assertFailed(document, field === "target_sha256" ? "与冻结目标不一致" : "与当前代码候选不一致"); } });
 test("目标和代码候选 SHA 格式固定", () => { const code = copy(); code.scope.bindings.code_candidate = "git:abc"; assertFailed(code, "code_candidate 必须是 sha256"); const target = fidelityContract("specified"); target.frozen_visual_target.target_sha256 = "sha256:BAD"; assertFailed(target, "target_sha256 格式无效"); });
 test("verified parity 必须全部通过且身份完整", () => { const target = fidelityContract(); target.parity_cases[0].target_sha256 = `sha256:${"e".repeat(64)}`; assertFailed(target, "与冻结目标不一致"); const failed = fidelityContract(); failed.parity_cases[0].conclusion = "failed"; assertFailed(failed, "必须全部 passed"); const evidence = fidelityContract(); evidence.parity_cases[0].candidate_evidence = []; assertFailed(evidence, "candidate_evidence 必须是非空字符串数组"); });
-test("布局 evidence matrix 的 parity DPR 只能为数字 2", () => { for (const dpr of [0.5, 1, 3, "2"]) { const document = fidelityContract(); document.parity_cases[0].dpr = dpr; assertFailed(document, "必须固定为 2"); } });
-test("布局 targets.scale DPR 只能为数字 2 且不得缺失", () => { for (const dpr of [0.5, 1, 3, "2", undefined]) { const document = copy(); if (dpr === undefined) delete document.targets.scale.dpr; else document.targets.scale.dpr = dpr; assertFailed(document, "targets.scale.dpr 必须固定为 2"); } });
-test("布局 evidence matrix 扩展 case 的 DPR 只能为数字 2", () => { const document = copy(); document.evidence_matrix.cases = [{ dpr: 1 }, { deviceScaleFactor: "2" }]; assertFailed(document, "evidence_matrix.cases"); });
+test("布局 parity DPR 允许动态有效值并拒绝越界或隐式值", () => {
+  for (const dpr of [0.5, 1, 1.25, 1.5]) { const document = fidelityContract(); document.parity_cases[0].dpr = dpr; assert.equal(validateContract(document).status, "passed", `dpr=${dpr}`); }
+  for (const dpr of [0, -1, 1.5001, 2, 3, "1.5", NaN, Infinity]) { const document = fidelityContract(); document.parity_cases[0].dpr = dpr; assertFailed(document, "必须是正有限数字且不超过 1.5"); }
+});
+test("布局 targets.scale 使用动态封顶策略并保留生产上限", () => {
+  const invalidPolicy = copy(); invalidPolicy.targets.scale.dpr_policy = "fixed-2"; assertFailed(invalidPolicy, "dpr_policy 必须为 dynamic-capped-1.5");
+  const invalidMax = copy(); invalidMax.targets.scale.max_dpr = 2; assertFailed(invalidMax, "max_dpr 必须严格为 1.5");
+  const legacyDpr = copy(); legacyDpr.targets.scale.dpr = 2; assertFailed(legacyDpr, "targets.scale.dpr 必须是正有限数字且不超过 1.5");
+  const valid = copy(); valid.targets.scale.dpr = 1.5; assert.equal(validateContract(valid).status, "passed");
+});
+test("布局 evidence matrix 扩展 case 的 DPR 允许有效值但拒绝非法值", () => {
+  const valid = copy(); valid.evidence_matrix.cases = [{ dpr: 1 }, { deviceScaleFactor: 1.5 }]; assert.equal(validateContract(valid).status, "passed");
+  const invalid = copy(); invalid.evidence_matrix.cases = [{ dpr: 0 }, { deviceScaleFactor: "2" }]; assertFailed(invalid, "evidence_matrix");
+});
 test("关键对齐与 parity ID 必须唯一", () => { const alignment = fidelityContract(); alignment.critical_alignments.push(structuredClone(alignment.critical_alignments[0])); assertFailed(alignment, "id 重复"); const parity = fidelityContract(); parity.parity_cases.push(structuredClone(parity.parity_cases[0])); assertFailed(parity, "id 重复"); });
 test("缺少坐标空间失败", () => { const document = copy(); document.coordinate_spaces = []; assertFailed(document, "coordinate_spaces 必须是非空数组"); });
 test("坐标空间循环失败", () => { const document = copy(); document.coordinate_spaces[0].parent = "ui-space"; document.coordinate_spaces[1].parent = "screen-space"; assertFailed(document, "坐标空间存在循环"); });

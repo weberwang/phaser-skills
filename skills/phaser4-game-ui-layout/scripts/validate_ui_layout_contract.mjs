@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { isWorkflowDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
+import { DPR_POLICY, MAX_DPR, isDeviceDprInput, isWorkflowDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
 
 const ROOT_REQUIRED = ["schema_version", "contract_id", "contract_version", "scope", "fidelity", "frozen_visual_target", "targets", "coordinate_spaces", "regions", "content", "platform_insets", "scrolling", "dynamic_content", "overlay_rules", "breakpoints", "invariants", "critical_alignments", "parity_cases", "evidence_matrix"];
 const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
@@ -153,7 +153,7 @@ function validateScopeRegionIds(scope, regionIds, errors) {
   if (missing.length) errors.push(`scope.ui_ids 缺少 regions ID：${missing.join(", ")}`); if (extra.length) errors.push(`scope.ui_ids 包含未声明 regions ID：${extra.join(", ")}`);
 }
 
-/** 验证目标视口和方向策略。 */
+/** 验证目标视口、方向策略和动态封顶 DPR 合同。 */
 function validateTargets(targets, errors) {
   if (!isObject(targets)) return;
   for (const name of ["min", "preferred", "max"]) { const target = targets[name]; if (!isObject(target)) { errors.push(`targets.${name} 必须是对象`); continue; } for (const dimension of ["width", "height"]) if (!isNumber(target[dimension]) || target[dimension] <= 0) errors.push(`targets.${name}.${dimension} 必须是正数`); if (!isString(target.orientation)) errors.push(`targets.${name}.orientation 必须是非空字符串`); }
@@ -161,7 +161,9 @@ function validateTargets(targets, errors) {
   if (!isObject(targets.aspect_ratio)) errors.push("targets.aspect_ratio 必须是对象"); else { const { min, max } = targets.aspect_ratio; if (!isNumber(min) || min <= 0) errors.push("targets.aspect_ratio.min 必须是正数"); if (!isNumber(max) || max <= 0) errors.push("targets.aspect_ratio.max 必须是正数"); if (isNumber(min) && isNumber(max) && min > max) errors.push("targets.aspect_ratio.min 不能大于 max"); }
   if (!isObject(targets.scale)) errors.push("targets.scale 必须是对象"); else {
     for (const field of ["mode", "canvas", "css_size", "render_resolution", "dpr_policy"]) if (!isString(targets.scale[field])) errors.push(`targets.scale.${field} 必须是非空字符串`);
-    if (!isWorkflowDpr(targets.scale.dpr)) errors.push(`targets.scale.${workflowDprError("dpr", targets.scale.dpr)}`);
+    if (targets.scale.dpr !== undefined && !isWorkflowDpr(targets.scale.dpr)) errors.push(`targets.scale.${workflowDprError("dpr", targets.scale.dpr)}`);
+    if (targets.scale.dpr_policy !== DPR_POLICY) errors.push(`targets.scale.dpr_policy 必须为 ${DPR_POLICY}`);
+    if (targets.scale.max_dpr !== MAX_DPR || typeof targets.scale.max_dpr !== "number") errors.push(`targets.scale.max_dpr 必须严格为 ${MAX_DPR}`);
   }
 }
 
@@ -256,7 +258,8 @@ function validateEvidenceMatrixDpr(value, path, errors, seen = new Set()) {
   seen.add(value);
   if (Array.isArray(value)) { value.forEach((item, index) => validateEvidenceMatrixDpr(item, `${path}[${index}]`, errors, seen)); return; }
   for (const [key, nested] of Object.entries(value)) {
-    if (["dpr", "deviceScaleFactor"].includes(key) && !isWorkflowDpr(nested)) errors.push(workflowDprError(`${path}.${key}`, nested));
+    if (key === "dpr" && !isWorkflowDpr(nested)) errors.push(workflowDprError(`${path}.${key}`, nested));
+    if (key === "deviceScaleFactor" && !isDeviceDprInput(nested)) errors.push(workflowDprError(`${path}.${key}（原始设备值）`, nested));
     validateEvidenceMatrixDpr(nested, `${path}.${key}`, errors, seen);
   }
 }

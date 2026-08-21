@@ -2,7 +2,7 @@
 
 所有快照、运行轨迹和关系测试必须绑定同一代码候选 SHA/候选 ID、合同版本、视口配置、语言、状态、随机种子和稳定帧。缺证据时报告“未验证”，不以用户确认或旧候选替代。
 
-冻结视觉目标下，每个 parity case 还必须绑定目标 SHA、当前候选 SHA、scene/state、固定 DPR 2、输入轨迹、动画采样/稳定帧、视觉基线版本、双方证据、预定义容差、例外 ID 和结论。关键对齐同时保存稳定 element/reference ID、双轴关系、目标/运行几何测量以及实际执行且通过的测试 ID。任何身份变化都使旧 case 失效。
+冻结视觉目标下，每个 parity case 还必须绑定目标 SHA、当前候选 SHA、scene/state、实际有效 DPR（(0,1.5]）、输入轨迹、动画采样/稳定帧、视觉基线版本、双方证据、预定义容差、例外 ID 和结论。关键对齐同时保存稳定 element/reference ID、双轴关系、目标/运行几何测量以及实际执行且通过的测试 ID。任何身份变化都使旧 case 失效。
 
 effect-image 的 parity case 不能退化为 `structured-layout-and-independent-review`：必须提供完整 viewport reference/candidate、side-by-side、overlay/diff 和全部 coverage region 的 target/candidate fact、delta、tolerance、result、evidence。任何 `unknown`、`unverified`、`missing` 或未解释差异都使 V5/F2 失败。
 
@@ -24,7 +24,7 @@ effect-image 的 parity case 不能退化为 `structured-layout-and-independent-
 ## 证据类型
 
 - 自动化：纯布局计算和关系不变量测试，断言中心、间距、边界、唯一滚动轴、遮挡和断点结构。
-- QA 运行：操作轨迹证明可达、滚动、键盘和触控；记录设备/视口、固定 DPR 2、语言、状态和稳定帧。
+- QA 运行：操作轨迹证明可达、滚动、键盘和触控；记录设备/视口、运行时实际有效 DPR（设备值动态封顶 1.5）、语言、状态和稳定帧。
 - 视觉：记录 ROI、容差、断点前后结构、相对中心、底部距离、层级与遮挡。Golden 只允许在冻结目标视口验证精确视觉。
 
 组合过大时可按等价类削减，但必须写出削减依据、未覆盖组合和风险。布局计算与 Phaser GameObject 测试不得把绝对屏幕坐标当作所有视口的验收标准。

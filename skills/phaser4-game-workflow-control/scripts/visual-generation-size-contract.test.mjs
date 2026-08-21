@@ -5,7 +5,7 @@ import { calculateComponentDisplaySize, validateImageGenerationSizeContract, val
 const BASE_USAGE = {
   target_display_size: { width: 30, height: 20 },
   intended_scale_range: { min: 1, max: 1.5 },
-  max_dpr: 2,
+  max_dpr: 1.5,
   padding_policy: "none",
 };
 
@@ -20,7 +20,7 @@ function region(overrides = {}) {
       { placement_id: "hero-1", bounds: { x: 0, y: 0, width: 30, height: 20 }, interaction_required: false },
     ],
   };
-  const expected = { asset_id: "hero-default", asset_scope: "atomic-component", atomic_visual_key: "hero-atomic", component_id: "hero", state_id: "default", width: 90, height: 60 };
+  const expected = { asset_id: "hero-default", asset_scope: "atomic-component", atomic_visual_key: "hero-atomic", component_id: "hero", state_id: "default", width: 68, height: 45 };
   return {
     annotation_number: 7,
     id: "region-hero",
@@ -35,7 +35,7 @@ function region(overrides = {}) {
 }
 
 /** 构造带声明尺寸的 ImageGen 输出元数据。 */
-function output(width = 90, height = 60) { return { width, height, mime_type: "image/png", alpha: true, sha256: `sha256:${"a".repeat(64)}` }; }
+function output(width = 68, height = 45) { return { width, height, mime_type: "image/png", alpha: true, sha256: `sha256:${"a".repeat(64)}` }; }
 
 /** 运行单资产尺寸合同，统一传入当前 expected asset 和区域上下文。 */
 function check(currentRegion, asset = output(), contract = currentRegion) {
@@ -49,13 +49,13 @@ test("正确的最小尺寸通过，尺寸合同不要求 human_review", () => {
 
 test("expected asset 小于最小尺寸失败", () => {
   const current = region({ expected_assets: [{ ...region().expected_assets[0], width: 89 }] });
-  const errors = check(current, output(89, 60));
+  const errors = check(current, output(67, 45));
   assert(errors.some((item) => item.includes("精确使用机器计算的最小尺寸")));
 });
 
 test("expected asset 大于最小尺寸也失败，不能借大图放行", () => {
   const current = region({ expected_assets: [{ ...region().expected_assets[0], width: 91 }] });
-  const errors = check(current, output(91, 60));
+  const errors = check(current, output(69, 45));
   assert(errors.some((item) => item.includes("精确使用机器计算的最小尺寸")));
 });
 
@@ -63,14 +63,14 @@ test("max_dpr 缺失失败并包含完整定位上下文", () => {
   const current = region({ scene_asset_usage: { ...structuredClone(BASE_USAGE), max_dpr: undefined } });
   delete current.scene_asset_usage.max_dpr;
   const errors = check(current);
-  assert(errors.some((item) => item.includes("max_dpr 必须固定为 2") && item.includes("annotation_number=7") && item.includes("component_id=hero") && item.includes("state_id=default") && item.includes("asset_id=hero-default")));
+  assert(errors.some((item) => item.includes("max_dpr 必须严格为生产上限 1.5") && item.includes("annotation_number=7") && item.includes("component_id=hero") && item.includes("state_id=default") && item.includes("asset_id=hero-default")));
 });
 
-test("max_dpr 只能为数字 2，拒绝 0.5、1、3 和字符串 2", () => {
-  for (const maxDpr of [0.5, 1, 3, "2"]) {
+test("max_dpr 表示生产上限，只能为数字 1.5", () => {
+  for (const maxDpr of [0.5, 1, 2, 3, "1.5"]) {
     const current = region({ scene_asset_usage: { ...structuredClone(BASE_USAGE), max_dpr: maxDpr } });
     const errors = check(current);
-    assert(errors.some((item) => item.includes("max_dpr 必须固定为 2")), `max_dpr=${maxDpr}: ${errors}`);
+    assert(errors.some((item) => item.includes("max_dpr 必须严格为生产上限 1.5")), `max_dpr=${maxDpr}: ${errors}`);
   }
 });
 
@@ -91,9 +91,9 @@ test("同一 component 的多 placement 按各轴最大值计算", () => {
     { placement_id: "hero-2", bounds: { x: 20, y: 0, width: 30, height: 9 }, interaction_required: false },
   ];
   current.scene_asset_usage.target_display_size = { width: 30, height: 20 };
-  current.expected_assets[0].width = 90;
-  current.expected_assets[0].height = 60;
-  assert.deepEqual(check(current, output(90, 60)), []);
+  current.expected_assets[0].width = 68;
+  current.expected_assets[0].height = 45;
+  assert.deepEqual(check(current, output(68, 45)), []);
 });
 
 test("placement bounds 缺失失败", () => {
@@ -110,9 +110,9 @@ test("非 ImageGen 方法不受尺寸门影响", () => {
 
 test("actual output 尺寸漂移被尺寸门拒绝", () => {
   const current = region();
-  const errors = check(current, output(90, 60), current);
+  const errors = check(current, output(68, 45), current);
   assert.deepEqual(errors, []);
-  const drift = validateImageGenerationSizeContract(null, current, { stage: "V4", annotation_number: 7, region_id: current.id, component_id: "hero", state_id: "default", asset_id: "hero-default" }, { expectedAsset: current.expected_assets[0], region: current, actualAsset: { width: 91, height: 60 } });
+  const drift = validateImageGenerationSizeContract(null, current, { stage: "V4", annotation_number: 7, region_id: current.id, component_id: "hero", state_id: "default", asset_id: "hero-default" }, { expectedAsset: current.expected_assets[0], region: current, actualAsset: { width: 69, height: 45 } });
   assert(drift.some((item) => item.includes("实际输出尺寸漂移")));
 });
 
@@ -120,8 +120,8 @@ test("manifest 尺寸门核对 V4 actual_assets，且不依赖 human_review", ()
   const current = region();
   const manifest = {
     coverage_audit: { regions: [current] },
-    assets: [{ id: "hero-default", width: 90, height: 60 }],
-    production_contract_audit: { units: [{ annotation_number: 7, region_id: "region-hero", actual_assets: [{ asset_id: "hero-default", width: 91, height: 60 }] }] },
+    assets: [{ id: "hero-default", width: 68, height: 45 }],
+    production_contract_audit: { units: [{ annotation_number: 7, region_id: "region-hero", actual_assets: [{ asset_id: "hero-default", width: 69, height: 45 }] }] },
   };
   const errors = validateImageGenerationSizeManifest(manifest, { stage: "V4" });
   assert(errors.some((item) => item.includes("V4 actual_assets 实际输出尺寸漂移")));

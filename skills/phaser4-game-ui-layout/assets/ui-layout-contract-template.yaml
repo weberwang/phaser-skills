@@ -30,8 +30,8 @@
       "canvas": "logical",
       "css_size": "viewport",
       "render_resolution": "device_pixel_ratio",
-      "dpr": 2,
-      "dpr_policy": "fixed-2"
+      "dpr_policy": "dynamic-capped-1.5",
+      "max_dpr": 1.5
     }
   },
   "coordinate_spaces": [
