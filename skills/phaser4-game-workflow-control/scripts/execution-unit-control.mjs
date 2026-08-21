@@ -112,6 +112,12 @@ export function executionStatePath(work) {
   return `${String(work.evidenceRoot).replace(/\/$/, '')}/execution-state.json`;
 }
 
+/** 校验 Work Item 可选的 V2→V3 合同声明；内容证据仍在推进时复算。 */
+export function validateV2ToV3ContractShape(contract) {
+  if (contract === undefined) return;
+  if (!contract || typeof contract !== 'object' || Array.isArray(contract) || Object.keys(contract).some((key) => !['status', 'contractId', 'evidenceFile', 'evidenceSha256'].includes(key)) || !['PASS', 'BLOCKED', 'PENDING'].includes(contract.status) || typeof contract.contractId !== 'string' || !contract.contractId || typeof contract.evidenceFile !== 'string' || !contract.evidenceFile || !/^sha256:[a-f0-9]{64}$/.test(contract.evidenceSha256 ?? '')) throw new Error('Work Item.v2ToV3Contract V2→V3 合同状态或证据绑定无效');
+}
+
 /** 复核唯一 V2→V3 合同回对记录，并绑定证据文件内容哈希后才允许推进。 */
 function v2ToV3ContractPassed(work, repo, io) {
   const contract = work.v2ToV3Contract;
@@ -286,6 +292,18 @@ export function completeExecutionUnit(work, pkg, unit, result, resultPath, repo,
   validateExecutionState(state, loaded.statePath, work, pkg, repo, io);
   io.writeJson(loaded.statePath, state);
   return { state, statePath: loaded.statePath };
+}
+
+/** 校验当前 Result 和 READY 状态后执行唯一完成迁移，供 CLI 避免拆散硬门顺序。 */
+export function validateAndCompleteExecutionUnit(result, resultPath, work, pkg, unit, repo, io) {
+  validateUnitResult(result, resultPath, work, pkg, unit, repo, io);
+  assertUnitReady(unit, work, pkg, repo, io);
+  return completeExecutionUnit(work, pkg, unit, result, resultPath, repo, io);
+}
+
+/** 生成命令行稳定输出，确保 unit-check 与 status 对下一任务使用同一字段集合。 */
+export function executionStateSummary(work, state) {
+  return { stateId: state.stateId, path: executionStatePath(work), workflowState: state.workflowState, unitSequenceState: state.unitSequenceState, completedUnitIds: state.units.filter((item) => item.state === 'COMPLETE').map((item) => item.unitId), currentUnitIds: state.units.filter((item) => item.state === 'IN_PROGRESS').map((item) => item.unitId), nextTask: state.nextTask };
 }
 
 /** 要求当前状态已进入最终 COMPLETE；VALIDATING、Evidence 和完成门不得只看结果文件。 */
