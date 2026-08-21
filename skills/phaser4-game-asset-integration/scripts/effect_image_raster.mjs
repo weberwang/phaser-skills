@@ -81,45 +81,26 @@ const MAX_VISIBLE_TEXT_UNITS = 48;
 
 /** 返回右栏需要展示的全部行；先建模再绘制，避免小画布静默丢失状态或部件。 */
 export function deriveVisibleAnnotationRows(regions = [], metadata = {}) {
-  const metadataByRegion = new Map((metadata?.regions ?? []).map((item) => [item.region_id, item]));
   const rows = [];
   for (const region of regions.slice().sort((a, b) => a.annotation_number - b.annotation_number)) {
-    const entry = metadataByRegion.get(region.id) ?? {};
-    const components = Array.isArray(region.component_inventory?.components) ? region.component_inventory.components : [];
-    const placements = components.flatMap((component) => (component.placements ?? []).map((placement) => ({ ...placement, component_id: component.component_id })));
-    const requirements = Array.isArray(entry.atomic_image_requirements) ? entry.atomic_image_requirements : [];
-    const stateCount = new Set(requirements.map((requirement) => requirement.state_id)).size;
     const production = annotationProductionContract(region);
-    // 摘要必须是每个编号在右栏的第一可见文本，不能让结构字段挤掉中文说明。
-    rows.push({ kind: "summary", region_id: region.id, annotation_number: region.annotation_number, text: visibleSummaryText(region.implementation_plan?.summary, { annotation_number: region.annotation_number, component_count: components.length, placement_count: placements.length, state_count: stateCount }) });
-    rows.push({ kind: "production", region_id: region.id, annotation_number: region.annotation_number, production_method: production.production_method, production_origin: production.production_origin, delivery_kind: production.delivery_kind, production_label: production.label, text: `${production.label} METHOD ${asciiText(production.production_method)} ORIGIN ${asciiText(production.production_origin)} DELIVERY ${asciiText(production.delivery_kind)}` });
-    rows.push({ kind: "region", region_id: region.id, annotation_number: region.annotation_number, text: `REGION N${region.annotation_number} ID ${asciiText(region.id)}` });
-    rows.push({ kind: "mode", region_id: region.id, annotation_number: region.annotation_number, text: `MODE ${asciiPlanLabel(region.implementation_plan?.mode)} COMPONENTS ${components.length} PLACEMENTS ${placements.length} STATES ${stateCount}` });
-    for (const component of components) {
-      rows.push({ kind: "component", region_id: region.id, annotation_number: region.annotation_number, component_id: component.component_id, text: `COMPONENT ID ${asciiText(component.component_id)} KEY ${asciiText(component.atomic_visual_key)} ROLE ${asciiText(component.role)} REUSABLE ${component.reusable ? "YES" : "NO"}` });
-      for (const placement of component.placements ?? []) rows.push({ kind: "placement", region_id: region.id, annotation_number: region.annotation_number, component_id: component.component_id, placement_id: placement.placement_id, text: `PLACEMENT ID ${asciiText(placement.placement_id)} COMPONENT ${asciiText(component.component_id)} BOUNDS ${asciiBounds(placement.bounds)} INTERACTION ${placement.interaction_required ? "YES" : "NO"}` });
-    }
-    for (const requirement of requirements) rows.push({ kind: "requirement", region_id: region.id, annotation_number: region.annotation_number, component_id: requirement.component_id, state_id: requirement.state_id, requirement_id: requirement.requirement_id, placement_ids: [...(requirement.placement_ids ?? [])].sort(), asset_id: requirement.asset_id, text: `REQUIREMENT ID ${asciiText(requirement.requirement_id)} COMPONENT ${asciiText(requirement.component_id)} STATE ${asciiText(requirement.state_id)} ASSET ${asciiText(requirement.asset_id)} PLACEMENTS ${asciiText((requirement.placement_ids ?? []).slice().sort().join(","))}` });
+    // 右栏是给用户确认范围的简明说明；坐标、部件、状态和资产映射统一保存在 proposal 技术文件。
+    rows.push({ kind: "summary", region_id: region.id, annotation_number: region.annotation_number, text: visibleSummaryText(region.implementation_plan?.summary, { annotation_number: region.annotation_number }) });
+    // 标签只保留用户能直接理解的中文，不把 production_method 等合同字段暴露到图示。
+    rows.push({ kind: "label", region_id: region.id, annotation_number: region.annotation_number, label: production.label, text: production.label });
   }
-  // 详细组件行保持“一部件一行”，只对可能出现长中文的首要摘要换行。
+  // 只对可能出现长中文的用户摘要换行；标签保持一行，便于人工快速扫描。
   return rows.flatMap((row) => row.kind === "summary" ? wrapVisibleAnnotationRow(row) : [row]);
 }
 
-/** 将编号、中文摘要和原子资源数量合成为右栏首要说明。 */
+/** 将稳定编号和中文摘要合成为右栏首要说明，不显示任何技术数量或 ID。 */
 export function visibleSummaryText(value, context = {}) {
-  const componentCount = Number.isInteger(context.component_count) ? context.component_count : 0;
-  const placementCount = Number.isInteger(context.placement_count) ? context.placement_count : 0;
   const annotationNumber = Number.isInteger(context.annotation_number) ? String(context.annotation_number) : "?";
   const summary = String(value ?? "").trim() || "未提供摘要";
-  const suffix = componentCount > 1
-    ? `（${componentCount} 个原子资源）`
-    : placementCount > 1
-      ? `（1 个原子资源，${placementCount} 个实例）`
-      : "";
-  return `${annotationNumber} ${summary}${suffix}`;
+  return `${annotationNumber} ${summary}`;
 }
 
-/** 规范右栏生产标识；“新生成/复用”必须由正式生产合同决定，不能由文案自声明。 */
+/** 规范右栏用户标签；生产方法仍由正式合同校验，图示只展示中文结果。 */
 export function annotationProductionContract(region = {}) {
   const nested = region.production_contract ?? region.productionContract ?? {};
   const read = (field, fallback) => nested?.[field] ?? region?.[field] ?? fallback;
@@ -129,7 +110,7 @@ export function annotationProductionContract(region = {}) {
   // 只有明确的 reuse 方法、reuse-existing 计划和完整来源对象同时成立时，右栏才可显示“复用”。
   const reuseSnapshot = region.reuse_snapshot;
   const reuseBound = production_method === "reuse" && region.implementation_plan?.mode === "reuse-existing" && isObject(reuseSnapshot) && reuseSnapshot.schema === "asset-reuse-snapshot/1.0" && reuseSnapshot.source_status === "accepted";
-  const label = reuseBound ? "复用" : production_method === "runtime-program" ? "非图片逻辑" : "新生成";
+  const label = reuseBound ? "复用既有资源" : production_method === "runtime-program" ? "程序实现" : "本次生成";
   return { production_method, production_origin, delivery_kind, label };
 }
 
@@ -156,20 +137,21 @@ function wrapVisibleAnnotationRow(row) {
 /** 将冻结原图与原子框、编号和完整右侧说明栏合成为确定性 PNG。 */
 export function renderRasterAnnotation(originalBytes, canvas, regions, metadata, planColors, planLabels) {
   const source = decodePngRgba(originalBytes); if (source.width !== canvas.width || source.height !== canvas.height) throw new Error("冻结原图尺寸与目标画布不一致");
-  const rows = deriveVisibleAnnotationRows(regions, metadata); const fontSize = Math.max(1, Math.min(3, Math.floor(canvas.height / 28))); const lineHeight = Math.max(18, fontSize * 18); const headerLines = 3 + Object.keys(planColors).length; const maxTextWidth = Math.max(24 * 6 * fontSize, textVisualWidth("VISUAL ATOMIC ASSET PLAN", fontSize), ...Object.entries(planColors).map(([mode]) => textVisualWidth(asciiPlanLabel(mode), fontSize)), ...rows.map((row) => textVisualWidth(row.text, fontSize)));
+  const rows = deriveVisibleAnnotationRows(regions, metadata); const fontSize = Math.max(1, Math.min(3, Math.floor(canvas.height / 28))); const lineHeight = Math.max(18, fontSize * 18); const headerLines = 3 + Object.keys(planColors).length; const maxTextWidth = Math.max(24 * 6 * fontSize, textVisualWidth("效果图拆解说明", fontSize), ...Object.entries(planColors).map(([mode]) => textVisualWidth(userPlanLabel(mode, planLabels), fontSize)), ...rows.map((row) => textVisualWidth(row.text, fontSize)));
   // 面板尺寸由完整行内容推导，换行后的每一行都能落在 PNG 内，不静默裁掉中文摘要。
   const panelWidth = Math.max(200, maxTextWidth + 24); const width = canvas.width + panelWidth; const height = Math.max(canvas.height, (headerLines + rows.length + 2) * lineHeight); const pixels = Buffer.alloc(width * height * 4, 255);
   for (let y = 0; y < canvas.height; y += 1) source.pixels.copy(pixels, y * width * 4, y * canvas.width * 4, (y + 1) * canvas.width * 4);
   fillRect(pixels, width, height, canvas.width, 0, panelWidth, height, [255, 255, 255, 255]); strokeRect(pixels, width, height, canvas.width, 0, panelWidth, height, [17, 24, 39, 255], 1);
-  let line = 1; drawText(pixels, width, height, canvas.width + 8, line * lineHeight, "VISUAL ATOMIC ASSET PLAN", [17, 24, 39, 255], fontSize); line += 2;
-  for (const [mode, color] of Object.entries(planColors)) { const y = line * lineHeight; fillRect(pixels, width, height, canvas.width + 8, y - 5, 6, 6, parseColor(color)); drawText(pixels, width, height, canvas.width + 18, y, asciiPlanLabel(mode), parseColor(color), fontSize); line += 1; }
+  let line = 1; drawText(pixels, width, height, canvas.width + 8, line * lineHeight, "效果图拆解说明", [17, 24, 39, 255], fontSize); line += 2;
+  for (const [mode, color] of Object.entries(planColors)) { const y = line * lineHeight; fillRect(pixels, width, height, canvas.width + 8, y - 5, 6, 6, parseColor(color)); drawText(pixels, width, height, canvas.width + 18, y, userPlanLabel(mode, planLabels), parseColor(color), fontSize); line += 1; }
   const markerRadius = Math.max(2, Math.min(12, Math.floor(canvas.width / 30), Math.floor(canvas.height / 16)));
   for (const region of regions.slice().sort((a, b) => a.annotation_number - b.annotation_number)) {
     const color = parseColor(planColors[region.implementation_plan?.mode] ?? "#111827"); const components = region.component_inventory?.components ?? []; const placements = components.flatMap((component) => component.placements ?? []); const markerX = clampInt((region.bounds?.x ?? 0) + markerRadius, markerRadius, canvas.width - markerRadius); const markerY = clampInt((region.bounds?.y ?? 0) + markerRadius, markerRadius, canvas.height - markerRadius);
     // 固定视觉一旦有 placement，只画可复用原子框；父框会误导为组合资产。
     if (!(region.owner_type === "fixed-production-visual" && placements.length > 0)) strokeRect(pixels, width, height, region.bounds.x, region.bounds.y, region.bounds.width, region.bounds.height, color, 2);
     fillCircle(pixels, width, height, markerX, markerY, markerRadius, color); drawTextCentered(pixels, width, height, markerX, markerY, String(region.annotation_number), [255, 255, 255, 255], fontSize);
-    for (const placement of placements) { const bounds = placement.bounds ?? region.bounds; strokeRect(pixels, width, height, bounds.x, bounds.y, bounds.width, bounds.height, color, 1); drawText(pixels, width, height, Math.max(0, bounds.x + 2), Math.max(7, bounds.y + 7), asciiText(placement.placement_id), color, fontSize); }
+    // 原子框只表达视觉范围；placement_id 等技术身份留在 PNG 元数据和 proposal 技术文件中。
+    for (const placement of placements) { const bounds = placement.bounds ?? region.bounds; strokeRect(pixels, width, height, bounds.x, bounds.y, bounds.width, bounds.height, color, 1); }
   }
   rows.forEach((row, index) => { const region = regions.find((item) => item.id === row.region_id); const color = parseColor(planColors[region?.implementation_plan?.mode] ?? "#111827"); drawText(pixels, width, height, canvas.width + 8, (line + index) * lineHeight, row.text, color, fontSize); row.row_index = index; row.baseline = (line + index) * lineHeight; row.top = row.baseline - EFFECT_IMAGE_FONT_CELL_SIZE * fontSize; row.bottom = row.baseline; });
   const regionFrameModes = regions.map((region) => ({ region_id: region.id, parent_frame_drawn: !(region.owner_type === "fixed-production-visual" && (region.component_inventory?.components ?? []).some((component) => (component.placements ?? []).length > 0)) }));
@@ -246,10 +228,8 @@ function textVisualUnits(value) { return [...String(value ?? "")].reduce((sum, c
 function glyphAdvance(character, scale) { if (isCjkCharacter(character) || (!FONT[character] && EFFECT_IMAGE_FONT_INDEX.has(character))) return (EFFECT_IMAGE_FONT_CELL_SIZE + 2) * scale; if (FONT[character]) return 6 * scale; throw new Error(`右栏文字包含未收录字符：${character}`); }
 /** 按当前字号计算混合文本的像素宽度，供面板扩展和居中绘制共用。 */
 function textVisualWidth(value, scale) { return [...mixedText(value)].reduce((sum, character) => sum + glyphAdvance(character, scale), 0); }
-/** 将生产模式转换为右栏可读的稳定标签。 */
-function asciiPlanLabel(mode) { return { "generate-now": "GENERATE", "reuse-existing": "REUSE", "runtime-program": "RUNTIME" }[mode] ?? asciiText(mode); }
-/** 将矩形编码进右栏文本，确保 placement 边界也可追溯。 */
-function asciiBounds(bounds = {}) { return [bounds.x, bounds.y, bounds.width, bounds.height].map((value) => Number.isFinite(value) ? String(value) : "?").join(","); }
+/** 将生产模式转换为右栏可读的稳定中文标签；未知模式仍保留可审计的 ASCII 值。 */
+function userPlanLabel(mode, planLabels = {}) { return planLabels?.[mode] ?? { "generate-now": "本次生成", "reuse-existing": "复用既有资源", "runtime-program": "程序实现" }[mode] ?? asciiText(mode); }
 /** 在确定性位图上绘制中英文混合文本；中文直接落入像素，不能只依赖 iTXt。 */
 function drawText(pixels, width, height, x, baseline, value, color, scale) {
   let cursor = Math.round(x);

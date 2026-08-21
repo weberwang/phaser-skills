@@ -28,6 +28,20 @@ export function reviewerSummary(review) {
   return `${String(type)}/${String(id)}/${String(status)}`;
 }
 
+/**
+ * 机器/AI 审阅允许使用的结构化身份类型。
+ *
+ * 视觉流程只保留一次 V2 真人方向审批；后续阶段的检查可以由机器或
+ * AI 产出，但仍必须带可追溯身份和证据，不能把裸 PASS 当作审阅记录。
+ */
+export const STRUCTURED_REVIEWER_TYPES = Object.freeze([
+  "human",
+  "ai",
+  "agent",
+  "model",
+  "automated",
+]);
+
 /** V2 唯一审批不采集 reviewer 身份；身份字段若出现也不能改变审批语义。 */
 const VISUAL_APPROVAL_REVIEWER_FIELDS = Object.freeze([
   "reviewer_type",
@@ -100,6 +114,40 @@ export function humanReviewError(context = {}, message, details = {}) {
   return `[${stage}] scene/state=${scene}/${state} annotation_number=${annotation} region_id=${region} component_id=${component} asset_id=${asset} 根因=${rootCause} 预期 human reviewer=${expected} 实际 reviewer=${actual} ${message} 应退回阶段=${returnStage}`;
 }
 
+/** 校验一个结构化人工审阅身份。 */
+export function validateHumanReview(review, context = {}, options = {}) {
+  const errors = [];
+  const fail = (message, expected, actual = reviewerSummary(review)) => errors.push(humanReviewError({ ...context, review }, message, { expected, actual, review, returnStage: options.returnStage, rootCause: options.rootCause }));
+  if (!isObject(review)) {
+    fail("缺少结构化人工审阅身份", "reviewer_type=human, reviewer_id, reviewed_at, evidence, status", "missing");
+    return errors;
+  }
+  if (review.reviewer_type !== "human") fail("reviewer_type 必须为 human，自动/AI/agent/model reviewer 不得通过", "reviewer_type=human", reviewerSummary(review));
+  if (!nonEmptyString(review.reviewer_id)) fail("缺少非空 reviewer_id；仅 reviewer 字符串不能作为人工身份", "reviewer_id=non-empty", reviewerSummary(review));
+  if (!nonEmptyString(review.reviewed_at) || Number.isNaN(Date.parse(review.reviewed_at))) fail("缺少可解析 reviewed_at", "reviewed_at=ISO-8601", reviewerSummary(review));
+  if (!isReviewEvidence(review.evidence)) fail("缺少有效人工审阅 evidence", "evidence=non-empty path/object/list", reviewerSummary(review));
+  if (!["passed", "PASS", "failed", "FAIL"].includes(String(review.status))) fail("人工审阅 status 必须为 passed 或 failed", "status=passed|failed", reviewerSummary(review));
+  if (options.requirePassed === true && !["passed", "PASS"].includes(String(review.status))) fail("人工审阅必须通过", "status=passed", reviewerSummary(review));
+  return errors;
+}
+
+/** 校验不要求真人的机器/AI 结构化检查；身份和证据字段仍不可省略。 */
+export function validateStructuredReview(review, context = {}, options = {}) {
+  const errors = [];
+  const fail = (message, expected, actual = reviewerSummary(review)) => errors.push(humanReviewError({ ...context, review }, message, { expected, actual, review, returnStage: options.returnStage, rootCause: options.rootCause }));
+  if (!isObject(review)) {
+    fail("缺少结构化机器/AI 审阅记录", "reviewer_type、reviewer_id、reviewed_at、evidence、status", "missing");
+    return errors;
+  }
+  if (!STRUCTURED_REVIEWER_TYPES.includes(review.reviewer_type)) fail("reviewer_type 必须为 human|ai|agent|model|automated", "reviewer_type=human|ai|agent|model|automated");
+  if (!nonEmptyString(review.reviewer_id)) fail("缺少非空 reviewer_id；机器审阅也必须可追溯", "reviewer_id=non-empty");
+  if (!nonEmptyString(review.reviewed_at) || Number.isNaN(Date.parse(review.reviewed_at))) fail("缺少可解析 reviewed_at", "reviewed_at=ISO-8601");
+  if (!isReviewEvidence(review.evidence)) fail("缺少有效结构化审阅 evidence", "evidence=non-empty path/object/list");
+  if (!["passed", "PASS", "failed", "FAIL"].includes(String(review.status))) fail("结构化审阅 status 必须为 passed 或 failed", "status=passed|failed");
+  if (options.requirePassed === true && !["passed", "PASS"].includes(String(review.status))) fail("结构化审阅必须通过", "status=passed");
+  return errors;
+}
+
 /**
  * 校验唯一 V2 真人方向审批及其不可变身份绑定。
  *
@@ -151,6 +199,34 @@ export function validateVisualHumanApproval(approval, binding = {}, context = {}
   for (const [label, value] of [["target_sha256", actualTarget], ["candidate_sha256", actualCandidate], ["baseline_sha256", actualBaseline], ["evidence_sha256", actualEvidenceHash]]) {
     if (nonEmptyString(value) && !/^sha256:[a-f0-9]{64}$/i.test(value)) fail(`${label} 必须是合法 SHA-256`, `${label}=sha256:<64 hex>`, value);
   }
+  return errors;
+}
+
+/** 读取候选身份中的 code/build SHA，支持合同已经确定的等价命名。 */
+export function readCandidateSha(identity) {
+  if (!isObject(identity)) return undefined;
+  return identity.code_sha256 ?? identity.codeSha256 ?? identity.build_sha256 ?? identity.buildSha256 ?? identity.sha256 ?? identity.candidate_sha256 ?? identity.candidateSha256;
+}
+
+/** 校验人工审阅是否绑定当前目标、候选和 diff 身份。 */
+export function validateHumanReviewIdentity(review, identity = {}, context = {}, options = {}) {
+  const errors = [];
+  if (!isObject(review)) return errors;
+  const expectedTarget = options.targetSha ?? identity.target_sha256 ?? identity.targetSha256 ?? identity.target;
+  const expectedCandidate = options.candidateSha ?? identity.candidate ?? readCandidateSha(identity.candidate_identity ?? identity.candidateIdentity ?? identity);
+  const expectedDiff = options.diffIdentity ?? identity.diff_fingerprint ?? identity.diffFingerprint ?? identity.diff_identity ?? identity.diffIdentity ?? identity.diff;
+  const reviewedTarget = review.reviewed_target_identity ?? review.reviewedTargetIdentity;
+  const reviewedCandidate = review.reviewed_candidate_identity ?? review.reviewedCandidateIdentity;
+  const actualTarget = review.target_sha256 ?? review.targetSha256 ?? (isObject(reviewedTarget) ? (reviewedTarget.target_sha256 ?? reviewedTarget.targetSha256 ?? readCandidateSha(reviewedTarget)) : undefined);
+  const actualCandidate = review.candidate_sha256 ?? review.candidateSha256 ?? review.code_sha256 ?? review.codeSha256 ?? review.build_sha256 ?? review.buildSha256 ?? (isObject(reviewedCandidate) ? readCandidateSha(reviewedCandidate) : undefined);
+  const actualDiff = review.diff_fingerprint ?? review.diffFingerprint ?? review.diff_identity ?? review.diffIdentity ?? (isObject(reviewedCandidate) ? reviewedCandidate.diff_fingerprint ?? reviewedCandidate.diffFingerprint ?? reviewedCandidate.diff_identity ?? reviewedCandidate.diffIdentity : undefined);
+  const fail = (message, expected, actual) => errors.push(humanReviewError({ ...context, review }, message, { expected, actual: `${reviewerSummary(review)}; binding=${String(actual ?? "missing")}`, review, returnStage: options.returnStage, rootCause: options.rootCause }));
+  if (options.requireTarget === true && !nonEmptyString(actualTarget)) fail("人工审阅缺少 target SHA 绑定", String(expectedTarget ?? "target_sha256"), actualTarget);
+  else if (nonEmptyString(expectedTarget) && nonEmptyString(actualTarget) && actualTarget !== expectedTarget) fail("人工审阅 target SHA 与当前冻结目标不一致", expectedTarget, actualTarget);
+  if (options.requireCandidate === true && !nonEmptyString(actualCandidate)) fail("人工审阅缺少 candidate code/build SHA 绑定", String(expectedCandidate ?? "candidate_sha256/code_sha256/build_sha256"), actualCandidate);
+  else if (nonEmptyString(expectedCandidate) && nonEmptyString(actualCandidate) && actualCandidate !== expectedCandidate) fail("人工审阅 candidate code/build SHA 与当前候选不一致", expectedCandidate, actualCandidate);
+  if (options.requireDiff === true && !nonEmptyString(actualDiff)) fail("人工审阅缺少 diff identity 绑定", String(expectedDiff ?? "diff_fingerprint/diff_identity"), actualDiff);
+  else if (nonEmptyString(expectedDiff) && nonEmptyString(actualDiff) && actualDiff !== expectedDiff) fail("人工审阅 diff identity 与当前候选不一致", expectedDiff, actualDiff);
   return errors;
 }
 

@@ -63,6 +63,7 @@ function parseArgs(argv) {
     else throw new Error(`不支持的参数：${token}`);
   }
   for (const field of ["manifest", "sceneId", "stateId", "output"]) if (!nonEmptyString(args[field])) throw new Error(`缺少参数：${field}`);
+  if (!nonEmptyString(args.proposal)) throw new Error("缺少参数：proposal；正式效果图拆解必须提供用于拆解分析技术文件的 --proposal JSON");
   if (!args.output.toLowerCase().endsWith(".png")) throw new Error("标注输出必须使用 .png；正式流程不生成 SVG/JPG");
   return args;
 }
@@ -139,13 +140,119 @@ function confirmationRegionSnapshot(region) {
   };
 }
 
-/** 生成绑定目标、区域定义和编号标注图 SHA 的提案 JSON。 */
-function buildProposal(args, manifest, outputRelative, annotationSha, regions) {
+/** 复制 JSON 合同值，避免技术文件与运行时清单共享可变引用。 */
+function cloneJson(value) { return value === undefined ? undefined : JSON.parse(JSON.stringify(value)); }
+
+/** 收集一个区域的完整技术拆解，用户图示不展示的坐标、状态和资源映射都在这里留档。 */
+export function technicalRegionSnapshot(region) {
+  const production = resolveProductionContract(region);
+  const displayProduction = annotationProductionContract(region);
+  const requirements = deriveAtomicImageRequirements(region);
+  const inventory = cloneJson(region.component_inventory ?? production.component_inventory ?? null);
+  const components = Array.isArray(inventory?.components) ? inventory.components : [];
+  const placements = components.flatMap((component) => (Array.isArray(component?.placements) ? component.placements : []).map((placement) => ({
+    ...cloneJson(placement),
+    component_id: component.component_id,
+  })));
+  const expectedAssets = cloneJson(region.expected_assets ?? production.expected_assets ?? []);
+  const stateAnalysis = region.state_analysis ?? region.stateAnalysis;
+  const assetIds = [...new Set([
+    ...(Array.isArray(region.asset_ids) ? region.asset_ids : []),
+    region.asset_id,
+    ...(Array.isArray(production.asset_ids) ? production.asset_ids : []),
+    production.asset_id,
+    ...(Array.isArray(expectedAssets) ? expectedAssets.map((asset) => asset?.asset_id) : []),
+  ].filter(nonEmptyString))].sort();
+  const stateIds = [...new Set([
+    region.state_id,
+    ...(Array.isArray(stateAnalysis?.states) ? stateAnalysis.states.map((state) => state?.state_id) : []),
+    ...components.flatMap((component) => (Array.isArray(component?.state_coverage) ? component.state_coverage : []).map((state) => state?.state_id)),
+    ...requirements.map((requirement) => requirement.state_id),
+  ].filter(nonEmptyString))].sort();
+  // confirmation 文件会在写入 proposal 后补齐 SHA；技术快照排除这组可变证据字段，避免确认落盘反向改写区域合同。
+  const { confirmation: _confirmation, ...technicalDefinition } = region;
+  return {
+    annotation_number: region.annotation_number,
+    region_id: region.id,
+    scene_id: region.scene_id,
+    state_id: region.state_id,
+    layer: region.layer,
+    bounds: cloneJson(region.bounds),
+    owner_type: region.owner_type,
+    owner_id: region.owner_id,
+    implementation_plan: cloneJson(region.implementation_plan),
+    state_analysis: cloneJson(stateAnalysis),
+    state_ids: stateIds,
+    component_inventory: inventory,
+    components: cloneJson(components),
+    placements,
+    interaction_hotspots: cloneJson(region.interaction_hotspots ?? []),
+    production_contract: {
+      production_origin: production.production_origin ?? displayProduction.production_origin ?? null,
+      production_method: production.production_method ?? displayProduction.production_method ?? "",
+      delivery_kind: production.delivery_kind ?? displayProduction.delivery_kind ?? "",
+      image_generation_required: production.image_generation_required,
+      generation_record_required: production.generation_record_required,
+      substitution_policy: production.substitution_policy,
+      runtime_implementation: cloneJson(production.runtime_implementation ?? region.runtime_implementation),
+      asset_id: production.asset_id ?? region.asset_id,
+      asset_ids: cloneJson(production.asset_ids ?? region.asset_ids ?? []),
+      expected_assets: cloneJson(expectedAssets),
+    },
+    expected_assets: expectedAssets,
+    resource_mapping: {
+      asset_id: production.asset_id ?? region.asset_id ?? null,
+      asset_ids: assetIds,
+      expected_assets: cloneJson(expectedAssets),
+      component_assets: requirements.map((requirement) => ({
+        requirement_id: requirement.requirement_id,
+        component_id: requirement.component_id,
+        state_id: requirement.state_id,
+        asset_id: requirement.asset_id,
+        source_file: requirement.source_file,
+        runtime_file: requirement.runtime_file,
+      })),
+    },
+    atomic_image_requirements: cloneJson(requirements),
+    region_definition_sha256: computeRegionDefinitionSha256(region),
+    // 保留原始区域合同快照，确保新增技术字段不会因图示精简而丢失。
+    technical_definition: cloneJson(technicalDefinition),
+  };
+}
+
+/** 生成绑定目标、区域定义和编号标注图 SHA 的拆解分析技术文件。 */
+function buildProposal(args, manifest, canvas, outputRelative, annotationSha, regions) {
   const targetSha = manifest.reference_target.target_sha256; const proposalId = args.proposalId ?? `annotation-${args.sceneId}-${args.stateId}-${targetSha.slice(-12)}`;
   const createdAt = args.createdAt ?? manifest.reference_target.frozen_at;
   if (!nonEmptyString(createdAt) || Number.isNaN(Date.parse(createdAt))) throw new Error("proposal created_at 必须通过 --created-at 提供可解析时间，或使用可解析冻结时间");
   const visualRegions = regions.map((region) => { const production = annotationProductionContract(region); return { region_id: region.id, annotation_number: region.annotation_number, mode: region.implementation_plan.mode, summary: region.implementation_plan.summary, production_method: production.production_method, production_origin: production.production_origin, delivery_kind: production.delivery_kind, production_label: production.label, ownership_evidence: region.ownership_evidence, atomic_image_requirements: deriveAtomicImageRequirements(region), region_definition_sha256: computeRegionDefinitionSha256(region) }; });
-  return { schema_version: "1.5", proposal_id: proposalId, created_at: createdAt, target_sha256: targetSha, scene_id: args.sceneId, state_id: args.stateId, annotation_file: outputRelative, annotation_mime: "image/png", annotation_sha256: annotationSha, numbered_image_file: outputRelative, numbered_image_mime: "image/png", numbered_image_sha256: annotationSha, region_ids: regions.map((region) => region.id), regions: regions.map(confirmationRegionSnapshot), visual_regions: visualRegions };
+  const canvasSnapshot = { scene_id: canvas.scene_id, state_id: canvas.state_id, width: canvas.width, height: canvas.height };
+  const technicalRegions = regions.map(technicalRegionSnapshot);
+  return {
+    schema_version: "1.5",
+    proposal_kind: "effect-image-decomposition-technical-analysis",
+    proposal_id: proposalId,
+    created_at: createdAt,
+    target_sha256: targetSha,
+    scene_id: args.sceneId,
+    state_id: args.stateId,
+    canvas: canvasSnapshot,
+    annotation_file: outputRelative,
+    annotation_mime: "image/png",
+    annotation_sha256: annotationSha,
+    numbered_image_file: outputRelative,
+    numbered_image_mime: "image/png",
+    numbered_image_sha256: annotationSha,
+    region_ids: regions.map((region) => region.id),
+    // regions/visual_regions 保持原确认链快照字段；完整技术资料使用独立命名空间。
+    regions: regions.map(confirmationRegionSnapshot),
+    visual_regions: visualRegions,
+    technical_analysis: {
+      schema_version: "1",
+      canvas: canvasSnapshot,
+      regions: technicalRegions,
+    },
+  };
 }
 
 /** 运行标注图生成流程。 */
@@ -160,7 +267,7 @@ export async function main(argv = process.argv.slice(2)) {
     if (dimensions.width !== canvas.width || dimensions.height !== canvas.height) throw new Error("冻结原图 PNG 尺寸必须与选定 scene/state 画布一致");
     const outputPath = projectPath(projectRoot, args.output); await mkdir(dirname(outputPath), { recursive: true }); const pngBytes = renderEffectImageAnnotation(originalBytes, manifest.reference_target.original_file, canvas, regions); await writeFile(outputPath, pngBytes);
     const outputRelative = relative(projectRoot, outputPath).replace(/\\/g, "/"); const result = { annotation_file: outputRelative, annotation_mime: "image/png", annotation_sha256: sha256Bytes(pngBytes), target_sha256: manifest.reference_target.target_sha256, scene_id: args.sceneId, state_id: args.stateId, regions: regions.map((region) => { const production = annotationProductionContract(region); return { region_id: region.id, annotation_number: region.annotation_number, mode: region.implementation_plan.mode, summary: region.implementation_plan.summary, production_method: production.production_method, production_origin: production.production_origin, delivery_kind: production.delivery_kind, production_label: production.label, ownership_evidence: region.ownership_evidence, region_definition_sha256: computeRegionDefinitionSha256(region) }; }) };
-    if (args.proposal) { const proposal = buildProposal(args, manifest, outputRelative, result.annotation_sha256, regions); const proposalPath = projectPath(projectRoot, args.proposal); await mkdir(dirname(proposalPath), { recursive: true }); const proposalBytes = Buffer.from(`${JSON.stringify(proposal, null, 2)}\n`); await writeFile(proposalPath, proposalBytes); result.proposal_file = relative(projectRoot, proposalPath).replace(/\\/g, "/"); result.proposal_sha256 = sha256Bytes(proposalBytes); result.proposal_id = proposal.proposal_id; }
+    const proposal = buildProposal(args, manifest, canvas, outputRelative, result.annotation_sha256, regions); const proposalPath = projectPath(projectRoot, args.proposal); await mkdir(dirname(proposalPath), { recursive: true }); const proposalBytes = Buffer.from(`${JSON.stringify(proposal, null, 2)}\n`); await writeFile(proposalPath, proposalBytes); result.proposal_file = relative(projectRoot, proposalPath).replace(/\\/g, "/"); result.proposal_sha256 = sha256Bytes(proposalBytes); result.proposal_id = proposal.proposal_id;
     console.log(JSON.stringify(result)); return 0;
   } catch (error) { console.error(`效果图标注生成失败：${error.message}`); return 1; }
 }

@@ -14,9 +14,11 @@ description: Phaser 4 游戏仓库的唯一全局工作流控制面。基于任�
 3. 把用户当前明确请求冻结为 `taskAuthorization`，绑定原文、目标和范围。A0、A1、A2 及安全 A3 以此为任务授权，不生成 Approval Ledger 记录，也不得称为“自动批准”。
 4. 在任何写入、命令副作用或外部操作前运行 `preflight`。只有无法从用户请求、代码、配置、权威工件或确定性证据判断，且会改变产品范围、用户可见行为、视觉方向、预算、合规或数据边界时才请求决定；首次模块或边界本身不是触发器。
 5. A3 进入 `IMPLEMENTING` 前冻结 Implementation Package，包括任务授权 ID、基线、范围、实施单元及其数组顺序、并行组、文件/状态所有权、输出、验证与退出条件；数组顺序由计划制定者预设并作为唯一执行顺序，控制面只校验和执行，不从依赖图推导顺序。模块和场景均须逐单元标注，A2 不要求 A3 包。
-6. 主动识别安全并行。READY 只按 `executionUnits` 数组位置校验当前有效的 PASS Execution Unit Result：串行单元等待其前面全部单元；并行单元等待其并行组首项之前全部单元，同组 peer 不互相等待。同一非空并行组必须在数组中连续出现，且 READY 模块/场景单元必须组成完整 Parallel Delegation Batch，并一次运行 `parallel-check`，不能逐委派放行。批次必须冻结排序后的委派路径及逐文件哈希，并记录从内容推导的排序唯一实施单元和代理数组；批次后委派变化或历史批次损坏一律阻断。A0-A2 委派不携带实施单元字段，A3 委派必须绑定实施单元；A4-A6 操作批准不能转换成委派授权。
+6. 主动识别安全并行。READY 只按 `executionUnits` 数组位置校验当前有效的 PASS Execution Unit Result：串行单元等待其前面全部单元；并行单元等待其并行组首项之前全部单元，同组 peer 不互相等待。同一非空并行组必须在数组中连续出现，且 READY 模块/场景单元必须组成完整 Parallel Delegation Batch，并一次运行 `parallel-check`，不能逐委派放行。批次必须冻结排序后的委派路径及逐文件哈希，并记录从内容推导的排序唯一实施单元和代理数组；批次后委派变化或历史批次损坏一律阻断。A0-A2 委派不携带实施单元字段，A3 委派必须绑定实施单元；A4-A6 操作批准不能转换成委派授权。进入 `IMPLEMENTING` 时必须同时初始化 `evidence/<workItemId>/execution-state.json`；之后仅 `unit-check` 可推进该状态，当前单元完成即为 `COMPLETE`，下一串行单元或下一并行组立即为 `IN_PROGRESS`，并行组未齐不得提前推进。
 7. 先运行 `route` 自动推导通道、缺失工件和下一条命令。实施后运行 `diff-audit`：A1/A2 或仅外部回执可用真实 `--artifact` 哈希，A3/A4 必须有真实 Git diff；验证后生成 Evidence Manifest。
 8. 使用 `advance` 一次最多推进一个状态。A1/A2 在审计和证据满足后闭环；安全 A3 在 F0-F3 通过后由 `PASSED` 直接 `COMPLETE`，不强制 A4/F4。正式入口替换、迁移、删除旧实现和跨模块高影响集成进入 A4。
+
+任务状态硬门：`delegate-check`、`parallel-check`、`unit-check`、`evidence-check` 以及进入 `VALIDATING` 的迁移都必须读取并复核当前 Execution State；缺失、过期、篡改或与 Work Item/Package/基线/`executionUnits` 顺序不一致时 fail closed。V2 单元序列完成后必须在机器输出中给出下一任务 `V3-PRODUCTION-PLANNING`；只有唯一 `v2ToV3Contract` 同时绑定 `status=PASS`、`contractId`、evidenceRoot 内的 `evidenceFile` 和复算一致的 `evidenceSha256` 后才可标记 `IN_PROGRESS`，否则保持 `BLOCKED`。
 
 ## 硬限制
 

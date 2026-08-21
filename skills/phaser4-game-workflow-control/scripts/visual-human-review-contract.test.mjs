@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateVisualHumanApproval, validateVisualPostApprovalReviewFields } from "./visual-human-review-contract.mjs";
+import { validateHumanReview, validateVisualHumanApproval, validateVisualPostApprovalReviewFields } from "./visual-human-review-contract.mjs";
 import { validateVisualF2MachineGate } from "./visual-production-contract.mjs";
 
 const SHA = `sha256:${"a".repeat(64)}`;
@@ -15,6 +15,10 @@ function machineReview() {
   return { status: "passed", evidence: "evidence/v2-machine.json", reviewed_target_identity: { sha256: SHA }, reviewed_candidate_identity: { sha256: SHA, diff_fingerprint: "diff-1" }, full_viewport_comparison: "evidence/v2-full.png", per_region_review: [{ region_id: "main", result: "passed" }], composition_review: {}, geometry_review: {}, color_material_review: {}, typography_review: {}, decoration_density_review: {}, responsive_review: {} };
 }
 
+test("AI reviewer 即使 PASS 也被通用人工审阅硬门拒绝", () => {
+  const errors = validateHumanReview({ reviewer_type: "automation", reviewer_id: "robot", reviewed_at: "2026-08-18T00:00:00Z", evidence: "review.json", status: "passed" }, { stage: "V5" }, { requirePassed: true });
+  assert(errors.some((value) => value.includes("reviewer_type 必须为 human")));
+});
 test("唯一 V2 真人审批不要求 reviewer 身份且绑定冻结身份", () => {
   assert.deepEqual(validateVisualHumanApproval(approval(), { targetSha: SHA, candidateSha: SHA, diffIdentity: "diff-1", baselineSha: SHA }, { stage: "V2" }, { requirePassed: true }), []);
 });

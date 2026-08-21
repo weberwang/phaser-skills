@@ -6,6 +6,7 @@ import { deflateSync } from "node:zlib";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import { technicalRegionSnapshot } from "./generate_effect_image_annotation.mjs";
 import { checkManifestFiles as runManifestFileCheck, computeRegionDefinitionSha256, main, readPngDimensions, validateManifest } from "./validate_visual_manifest.mjs";
 import { annotationProductionContract, decodePngRgba } from "./effect_image_raster.mjs";
 import { renderEffectImageAnnotation } from "./effect_image_annotation_core.mjs";
@@ -397,7 +398,8 @@ async function writeConfirmationFixtureFiles(root, manifest, annotationBytes = n
     const annotationIdentitySha = sha256Bytes(Buffer.from(canonicalJson({ annotation_sha256: annotationSha, width: decodedAnnotation.width, height: decodedAnnotation.height, metadata_sha256: metadataSha, schema: metadata?.schema, layout: metadata?.layout }), "utf8"));
     const regionsSnapshot = groupRegions.map(snapshot);
     const visualRegions = groupRegions.map((region) => { const production = annotationProductionContract(region); return { region_id: region.id, annotation_number: region.annotation_number, mode: region.implementation_plan?.mode, summary: region.implementation_plan?.summary, production_method: production.production_method, production_origin: production.production_origin, delivery_kind: production.delivery_kind, production_label: production.label, ownership_evidence: region.ownership_evidence, region_definition_sha256: computeRegionDefinitionSha256(region), atomic_image_requirements: Array.isArray(region.atomic_image_requirements) ? region.atomic_image_requirements : deriveAtomicImageRequirements(region) }; });
-    const proposal = { schema_version: "1.5", proposal_id: confirmation.proposal_id, created_at: "2026-08-15T00:15:00Z", target_sha256: manifest.reference_target.target_sha256, scene_id: first.scene_id, state_id: first.state_id, annotation_file: confirmation.annotation_file, annotation_mime: "image/png", annotation_sha256: annotationSha, regions: regionsSnapshot, visual_regions: visualRegions };
+    const canvasSnapshot = { scene_id: canvas.scene_id, state_id: canvas.state_id, width: canvas.width, height: canvas.height };
+    const proposal = { schema_version: "1.5", proposal_kind: "effect-image-decomposition-technical-analysis", proposal_id: confirmation.proposal_id, created_at: "2026-08-15T00:15:00Z", target_sha256: manifest.reference_target.target_sha256, scene_id: first.scene_id, state_id: first.state_id, canvas: canvasSnapshot, annotation_file: confirmation.annotation_file, annotation_mime: "image/png", annotation_sha256: annotationSha, regions: regionsSnapshot, visual_regions: visualRegions, technical_analysis: { schema_version: "1", canvas: canvasSnapshot, regions: groupRegions.map(technicalRegionSnapshot) } };
     const proposalBytes = Buffer.from(`${JSON.stringify(proposal, null, 2)}\n`);
     const proposalPath = join(root, confirmation.proposal_file);
     await mkdir(dirname(proposalPath), { recursive: true });
