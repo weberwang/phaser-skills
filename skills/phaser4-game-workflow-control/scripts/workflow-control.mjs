@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import process from 'node:process';
-import { assertCompletedUnits, assertUnitReady, validateUnitResult } from './execution-unit-control.mjs';
+import { assertCompletedUnits, assertExecutionWorkflowComplete, assertUnitReady, executionStateSummary, initializeExecutionState, loadExecutionState, validateAndCompleteExecutionUnit, validateV2ToV3ContractShape } from './execution-unit-control.mjs';
 import { validateParallelBatch } from './parallel-batch-control.mjs';
 import { validateDelegationBinding, validateExecutionPlan } from './parallel-plan.mjs';
 import { repositoryLint } from './repository-lint.mjs';
@@ -134,7 +134,7 @@ function validateWorkItem(work) {
   if (['A0', 'A1', 'A2', 'A3'].includes(work.pendingApprovalActionLevel) && pendingEffects) fail('A0-A3 Phaser pending 不得声明外部、破坏、真机、发布或删除副作用');
   if (work.pendingApprovalActionLevel === 'A5' && (!work.pendingApprovalExternalWrite || !work.pendingApprovalExternalTargets.length)) fail('A5 Phaser pending 必须冻结外部写入与精确游戏目标');
   if (work.pendingApprovalActionLevel === 'A6' && !(work.pendingApprovalExternalWrite || work.pendingApprovalPhysicalDevice || work.pendingApprovalRelease || work.pendingApprovalDestructive)) fail('A6 Phaser pending 必须冻结高风险副作用');
-  if (work.requiredGates.some((gate) => !GATES.includes(gate))) fail('Work Item.requiredGates 含未知 F 门');
+  if (work.requiredGates.some((gate) => !GATES.includes(gate))) fail('Work Item.requiredGates 含未知 F 门'); try { validateV2ToV3ContractShape(work.v2ToV3Contract); } catch (error) { fail(error.message); }
   if (work.legacyReadOnly) fail('旧记录只能只读迁移，不能驱动新任务');
   if (!work.workItemId || !work.pendingApprovalId || !work.pendingApprovalObject || !work.pendingApprovalActionType || !work.validationBatchId) fail('Work Item 关键标识不能为空');
   return work;
@@ -574,7 +574,7 @@ function validateDelegationForWork(delegation, work, repo) {
 
 /** 组装实施单元证据模块所需的只读能力。 */
 function unitIo() {
-  return { git, fileHash, hashText, resolve, existsSync, readdirSync, readFileSync, normalizeRepoPath };
+  return { git, fileHash, hashText, resolve, existsSync, readdirSync, readFileSync, normalizeRepoPath, writeJson };
 }
 
 /** 验证串行委派；并行 A3 必须转入原子批次命令。 */
@@ -600,14 +600,14 @@ function delegateCheck(args) {
 /** 校验一个实施单元的当前完成证据。 */
 function unitCheck(args) {
   const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
-  const pkg = validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work, resolve(String(args.repo ?? process.cwd())));
+  const repo = resolve(String(args.repo ?? process.cwd()));
+  const pkg = validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work, repo);
   const resultPath = resolve(String(args.result));
   const result = readJson(resultPath, 'Execution Unit Result');
   const unit = pkg.executionUnits.find((item) => item.unitId === result.unitId);
   if (!unit) fail(`Execution Unit Result 引用未知单元：${result.unitId}`);
-  visualStageGate({ ...work, implementationPackage: pkg }, { command: 'unit-check', actionLevel: work.pendingApprovalActionLevel, projectRoot: resolve(String(args.repo ?? process.cwd())), pendingSnapshot: work.pendingVisualPrerequisiteSnapshot });
-  try { validateUnitResult(result, resultPath, work, pkg, unit, resolve(String(args.repo ?? process.cwd())), unitIo()); } catch (error) { fail(error.message); }
-  process.stdout.write(JSON.stringify({ ok: true, command: 'unit-check', unitId: unit.unitId, resultId: result.resultId }, null, 2));
+  visualStageGate({ ...work, implementationPackage: pkg }, { command: 'unit-check', actionLevel: work.pendingApprovalActionLevel, projectRoot: repo, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot });
+  try { const updated = validateAndCompleteExecutionUnit(result, resultPath, work, pkg, unit, repo, unitIo()); process.stdout.write(JSON.stringify({ ok: true, command: 'unit-check', unitId: unit.unitId, resultId: result.resultId, executionState: executionStateSummary(work, updated.state) }, null, 2)); } catch (error) { fail(error.message); }
 }
 
 /** 原子校验同一并行组的完整 A3 委派批次。 */
@@ -620,8 +620,7 @@ function parallelCheck(args) {
   const delegations = Array.isArray(batchValue.delegationFiles) ? batchValue.delegationFiles.map((path) => readJson(resolve(repo, path), 'Delegation Package')) : [];
   const pkg = validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work, repo, delegations);
   const io = { readJson, resolve, normalizeRepoPath, existsSync, readdirSync, readFileSync, validateDelegation, validateDelegationForWork, validateDelegationBinding: (delegation, value) => validateDelegationBinding(delegation, value, pathMatches, fail), assertUnitReady: (unit, currentWork, value, currentRepo) => assertUnitReady(unit, currentWork, value, currentRepo, unitIo()) };
-  let result;
-  try { result = validateParallelBatch(batchValue, batchPath, work, pkg, repo, io); } catch (error) { fail(error.message); }
+  let result; try { result = validateParallelBatch(batchValue, batchPath, work, pkg, repo, io); } catch (error) { fail(error.message); }
   process.stdout.write(JSON.stringify({ ok: true, command: 'parallel-check', ...result }, null, 2));
 }
 
@@ -795,12 +794,11 @@ function evidenceCheck(args, silent = false) {
   }
   if (evidence.verdict !== 'PASS' || evidence.uncoveredItems.length) fail('证据不是完整 PASS，或仍有未覆盖项');
   const audit = verifyDiffAudit(work, repo, work.diffAuditRecord);
-  let visualPackage = null;
+  let visualPackage = null, executionPackage = null;
   const packagePath = work.implementationPackageRecord ?? args['implementation-package'];
   if (audit.actionLevel === 'A3') {
     const implementationPackage = validateImplementationPackage(readJson(resolve(repo, packagePath), 'Implementation Package'), work, repo);
-    if (isVisualProductionWork(work)) visualPackage = implementationPackage;
-    try { assertCompletedUnits(evidence, work, implementationPackage, repo, unitIo()); } catch (error) { fail(error.message); }
+    executionPackage = implementationPackage; if (isVisualProductionWork(work)) visualPackage = implementationPackage;
   } else if (isVisualProductionWork(work)) {
     if (!packagePath) fail('V4/V5 视觉 Evidence 必须绑定 Implementation Package');
     visualPackage = validateImplementationPackage(readJson(resolve(repo, packagePath), 'Implementation Package'), work, repo);
@@ -827,6 +825,7 @@ function evidenceCheck(args, silent = false) {
     if (!['SELF', 'INDEPENDENT'].includes(reviewMode)) fail('A1/A2 F2 必须声明 SELF 或 INDEPENDENT reviewMode');
     if (reviewMode === 'SELF' && reviewer !== work.assignedAgent) fail('SELF reviewer 必须是 Work Item.assignedAgent');
   } else if (reviewMode !== 'INDEPENDENT' || reviewer === work.assignedAgent || work.delegatedAgents.includes(reviewer)) fail('A3-A6 F2 必须由独立 reviewer 审查');
+  if (audit.actionLevel === 'A3') try { assertCompletedUnits(evidence, work, executionPackage, repo, unitIo()); } catch (error) { fail(error.message); }
   if (!silent) process.stdout.write(JSON.stringify({ ok: true, command: 'evidence-check', evidenceId: evidence.evidenceId, fingerprint: evidence.diffFingerprint }, null, 2));
   return evidence;
 }
@@ -845,10 +844,10 @@ function transition(args) {
     if (!['A2', 'A3'].includes(level)) fail('进入 IMPLEMENTING 仅允许 A2/A3');
     if (isVisualProductionWork(work) && String(work.stageId).toUpperCase() === 'V3' && level === 'A2') fail('V3 拆解分析进入 IMPLEMENTING 前必须完成并人工接受 visual-decomposition-confirmation/1.0');
     if (level === 'A3') {
-      validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work, repo);
+      const packagePath = args['implementation-package'] ?? work.implementationPackageRecord; const pkg = validateImplementationPackage(readJson(packagePath, 'Implementation Package'), work, repo); initializeExecutionState(work, pkg, repo, unitIo()); work.implementationPackageRecord = normalizeRepoPath(repo, packagePath);
     }
   }
-  if (target === 'VALIDATING') verifyDiffAudit(work, repo, work.diffAuditRecord);
+  if (target === 'VALIDATING') { verifyDiffAudit(work, repo, work.diffAuditRecord); if (work.pendingApprovalActionLevel === 'A3') { const packagePath = args['implementation-package'] ?? work.implementationPackageRecord; const pkg = validateImplementationPackage(readJson(packagePath, 'Implementation Package'), work, repo); try { assertExecutionWorkflowComplete(work, pkg, repo, unitIo()); } catch (error) { fail(error.message); } } }
   if (target === 'PASSED') evidenceCheck(args, true);
   if (target === 'INTEGRATING') {
     if (work.pendingApprovalState !== 'PASSED') fail('进入 INTEGRATING 必须使用在 PASSED 准备的新审批点');
@@ -944,9 +943,9 @@ function handoff(args) {
 /** 输出工作项关键状态。 */
 function status(args) {
   const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
-  const visualGate = visualStageGate(work, { command: 'status', actionLevel: work.pendingApprovalActionLevel, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, projectRoot: resolve(String(args.repo ?? process.cwd())) });
+  const visualGate = visualStageGate(work, { command: 'status', actionLevel: work.pendingApprovalActionLevel, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, projectRoot: resolve(String(args.repo ?? process.cwd())) }); const repo = resolve(String(args.repo ?? process.cwd())); const packagePath = args['implementation-package'] ?? work.implementationPackageRecord; let executionState = null; if (packagePath) { const pkg = validateImplementationPackage(readJson(packagePath, 'Implementation Package'), work, repo); try { executionState = executionStateSummary(work, loadExecutionState(work, pkg, repo, unitIo()).state); } catch (error) { fail(error.message); } }
   if (args.ledger) readLedger(args.ledger);
-  process.stdout.write(JSON.stringify({ workItemId: work.workItemId, projectId: work.projectId, moduleIds: work.moduleIds, domain: work.domain, stageId: work.stageId, visualStage: work.visualStage ?? null, visualStageState: work.visualStageState ?? null, visualStageGate: visualGate.required ? { ok: visualGate.ok, errorCode: visualGate.errors?.[0]?.errorCode ?? null, missingStages: visualGate.missingStages, missingEvidence: visualGate.missingEvidence, invalidatedDependencies: visualGate.invalidatedDependencies, nextAction: visualGate.nextAction } : { required: false }, globalState: work.globalState, nextGate: work.nextGate, baselineId: work.baselineId, baselineVersion: work.baselineVersion, baselineHash: work.baselineHash, approvalRecord: work.approvalRecord, pendingApprovalId: work.pendingApprovalId, pendingApprovalState: work.pendingApprovalState, pendingApprovalStatus: work.pendingApprovalStatus ?? null, pendingApprovalContext: work.pendingApprovalContext, pendingApprovalPresentedId: work.pendingApprovalPresentedId, pendingApprovalPresentedAt: work.pendingApprovalPresentedAt, diffAuditRecord: work.diffAuditRecord ?? null, nextCommand: `node <skill-dir>/scripts/workflow-control.mjs route --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'}` }, null, 2));
+  process.stdout.write(JSON.stringify({ workItemId: work.workItemId, projectId: work.projectId, moduleIds: work.moduleIds, domain: work.domain, stageId: work.stageId, visualStage: work.visualStage ?? null, visualStageState: work.visualStageState ?? null, visualStageGate: visualGate.required ? { ok: visualGate.ok, errorCode: visualGate.errors?.[0]?.errorCode ?? null, missingStages: visualGate.missingStages, missingEvidence: visualGate.missingEvidence, invalidatedDependencies: visualGate.invalidatedDependencies, nextAction: visualGate.nextAction } : { required: false }, globalState: work.globalState, nextGate: work.nextGate, baselineId: work.baselineId, baselineVersion: work.baselineVersion, baselineHash: work.baselineHash, approvalRecord: work.approvalRecord, pendingApprovalId: work.pendingApprovalId, pendingApprovalState: work.pendingApprovalState, pendingApprovalStatus: work.pendingApprovalStatus ?? null, pendingApprovalContext: work.pendingApprovalContext, pendingApprovalPresentedId: work.pendingApprovalPresentedId, pendingApprovalPresentedAt: work.pendingApprovalPresentedAt, diffAuditRecord: work.diffAuditRecord ?? null, executionState, nextCommand: `node <skill-dir>/scripts/workflow-control.mjs route --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'}` }, null, 2));
 }
 
 /** 仅在控制目录不存在时创建空账本、目录和首个 Work Item。 */

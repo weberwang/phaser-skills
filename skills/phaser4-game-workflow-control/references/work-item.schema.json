@@ -523,6 +523,9 @@
     "implementationPackageRecord": {
       "type": "string"
     },
+    "v2ToV3Contract": {
+      "$ref": "#/$defs/v2ToV3Contract"
+    },
     "previousApprovalRecord": {
       "type": [
         "string",
@@ -757,6 +760,17 @@
       }
     },
     "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "v2ToV3Contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "contractId", "evidenceFile", "evidenceSha256"],
+      "properties": {
+        "status": {"enum": ["PASS", "BLOCKED", "PENDING"]},
+        "contractId": {"type": "string", "minLength": 1},
+        "evidenceFile": {"type": "string", "minLength": 1},
+        "evidenceSha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
     "referenceTechnicalConflicts": {"type": "array", "items": {"type": "object", "minProperties": 1}},
     "artifactIdentity": {
       "type": "object",
