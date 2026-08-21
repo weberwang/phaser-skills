@@ -31,7 +31,7 @@ V0-V5、G0-G3 与领域阶段是 `stageId`，不是另一套状态机。只有�
 | --- | --- | --- |
 | V0 | `not-started`/`in-progress` 等过程状态 | 分流对象与范围 |
 | V1 | `in-progress`/过程状态 | 视觉契约、布局和容差 |
-| V2 | `v2-direction-frozen` | 代表画面、动态样片、人工视觉审查、独立 F2 审查 |
+| V2 | `v2-direction-frozen` | 代表画面、动态样片、结构化机器证据，以及绑定当前 target/candidate/diff/哈希的一条唯一真人 `visual_human_approval` |
 | V3 | `v3-production-planning-complete` | 生产规划、逐部件合同、候选与基线身份 |
 | V4 | `v4-formal-acceptance-complete` | 正式资产、组件状态、同屏组合验收 |
 | V5 | `v5-runtime-integration-candidate` | runtime replay、fresh fidelity、正式 Scene 消费、无替代 |
@@ -61,7 +61,7 @@ V0-V5、G0-G3 与领域阶段是 `stageId`，不是另一套状态机。只有�
 3. **V2→V3**：以上字段任一缺失均拒绝进入 V3，根因标记 `方案缺失`，退回最早阶段 `V1/PROPOSAL`。
 4. **V3/IMPLEMENTING**：绑定 `visualProductionUnits`、状态/部件合同、预声明 tolerance ID 和正式 Scene 实现计划；运行时 owner 也必须承担 fidelity obligations。
 5. **V4/VALIDATING**：逐资源执行 production contract audit，并完成 `combination_preacceptance` 与每个固定视觉单元的 `scene_asset_usage`；偏差属于 `执行问题`，退回 V3/V4。
-6. **V5/PASSED**：必须显式执行真实文件门，F2 双审、F3 runtime replay、fresh fidelity cases、逐区域差异证据和正式 Scene consumption 全部通过。候选身份漂移、证据缺失或错误 PASS 属于 `验收问题`，退回 `VALIDATING` 或最早受影响阶段。
+6. **V5/PASSED**：必须显式执行真实文件门，F2 结构化机器/AI 检查、F3 runtime replay、fresh fidelity cases、逐区域差异证据和正式 Scene consumption 全部通过；不重复要求真人审阅。候选身份漂移、证据缺失或错误 PASS 属于 `验收问题`，退回 `VALIDATING` 或最早受影响阶段。
 
 结构化 fidelity 的 `normalization_equivalence` 必须同时证明 viewport、有效 DPR（target/candidate 均在 (0,1.5]、彼此相等且 `equivalent=true`）和逻辑坐标；`difference_evidence` 只能是有效证据，或 `not-applicable` 且附 reason。逐区域 `target_measurement`、`candidate_measurement`、`delta`、`tolerance_reference`、`result`、`evidence` 和 `exception_ids` 缺一不可；数值差异按场景预声明 tolerance 判定，非数值差异只允许精确批准例外。
 
@@ -76,4 +76,4 @@ V0-V5、G0-G3 与领域阶段是 `stageId`，不是另一套状态机。只有�
 
 视觉生产硬门：V3 必须完成逐 region 状态分析（普通、selected/active、disabled、pressed/hover 及 victory/defeat/paused；不适用项必须写 reason），绑定分析证据 SHA、冻结目标 SHA、分析 ID 和完成时间后，才能声明 `component_inventory`。`annotation_number` 只是审阅区域编号，不是资产数量单位；唯一原子部件由 `component_id/atomic_visual_key` 标识，重复实例用 `placements` 表达。ImageGen 的每个唯一 `component_id × required state_id` 必须绑定一个独立位图，并强制 `delivery_mode=individual`、`atlas_allowed=false`，不能使用图集；其尺寸由验证器按逻辑像素 `ceil(max placement width/height × intended_scale_range.max × 1.5)` 自动计算，`expected_assets.width/height` 必须精确等于该最小值，`max_dpr=1.5` 和 `padding_policy=none` 必须存在；这里的 1.5 是最大生产 DPR，运行时实际 DPR 动态封顶，不改变资产尺寸合同，该数值合同不进入人工审阅门。只有 authored-raster/authored-svg/reuse 等非 ImageGen 方法，才可在显式 `delivery_mode=atlas`、`atlas_allowed=true` 时绑定完整图集切片。每个 placement 显式声明 `interaction_required`，真实热区通过 `interaction_hotspots` 逐 placement 一一绑定且不得计入资产。Implementation Package `visualProductionUnits` 必须复制这套状态/部件映射；V4 `production_contract_audit` 必须逐部件核对实际输出和 `component_usages`；F2 `production_contract_review.component_reviews` 必须逐部件逐状态审阅；V5 还必须绑定 F3 runtime replay、非空 freshness-bound fidelity cases、运行时实际消费及无未批准替换。任何 `image_generation_required=true` 的区域缺少 imagegen 位图或生成/提示词记录时，不能以 SVG、Graphics、CanvasTexture 或 runtime drawing 放行，横向组合图也不能冒充多个原子部件。
 
-视觉人工审阅是上述阶段的附加硬门，不改变非视觉 A0-A6/F0-F4 语义：V2 候选/动态样片/结构化 review、V4 actual asset 与 combination preacceptance、V5 全屏/overlay/diff/逐区域结果和 F2 双 reviewer 必须均为 `reviewer_type=human`，且具备非空 `reviewer_id`、`reviewed_at`、`evidence`、`status`。runtime 可见区域不因 owner 类型豁免；根节点 PASS 或 `all_visual_artifacts_human_reviewed=true` 不得代替逐资产/逐区域记录。自动身份、过期 candidate/target、漏覆盖均按根因分类返回最早受影响阶段。
+视觉人工审阅是上述阶段的附加硬门，不改变非视觉 A0-A6/F0-F4 语义：整条 V0→V5 链只要求 V2 视觉方向冻结的一条唯一 `visual_human_approval`，不采集 reviewer_type/reviewer_id/reviewer 字符串，仅要求非空 `review_id`、`reviewed_at`、`evidence`、`evidence_sha256`、`status=PASS`，并绑定冻结 target、V2 candidate、diff、基线和审批证据哈希。V2 代表画面/动态样片/结构化 review 与 V4 actual asset、combination preacceptance、V5 fidelity、F2 component/contract 检查均需当前身份绑定的机器/AI 证据和 PASS，不再重复要求 `human_review` 或第二 reviewer；AI reviewer 字段不能替代 V2 真人通过事件。审批绑定或其哈希漂移即失效；根节点 PASS、裸批准文本或 `all_visual_artifacts_human_reviewed=true` 不得代替结构化证据。缺少机器证据、过期 candidate/target、漏覆盖均按根因分类返回最早受影响阶段。

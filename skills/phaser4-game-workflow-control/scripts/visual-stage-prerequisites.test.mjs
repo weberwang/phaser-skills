@@ -27,7 +27,7 @@ function evidenceSet(root, overrides = {}) {
   const outputHash = sha(outputPath);
   const common = { workItemId: 'WI-VISUAL', baselineHash: SHA, contentHash: HASH2, diffFingerprint: HASH2, files: [outputFile], fileHashes: { [outputFile]: outputHash }, candidateIdentity: { sha256: HASH2, diff_fingerprint: HASH2 } };
   const values = {
-    V2: { resultId: 'RESULT-V2', packageId: 'PKG-V2', unitId: 'UNIT-V2', codeFingerprint: `git:${'c'.repeat(40)}`, completedAt: '2026-08-20T00:02:00.000Z', commands: [{ command: 'node --test visual-proof', exitCode: 0, outputFile, outputHash }], verdict: 'PASS', representativeFrames: ['frame.png'], dynamicSample: 'dynamic.mp4', humanReview: { reviewer_type: 'human', reviewer_id: 'artist-1', reviewed_at: '2026-08-20T00:00:00Z', evidence: 'human.json', status: 'PASS' }, independentReview: { reviewer_type: 'human', reviewer_id: 'reviewer-2', reviewed_at: '2026-08-20T00:01:00Z', evidence: 'independent.json', status: 'PASS' }, ...common },
+    V2: { resultId: 'RESULT-V2', packageId: 'PKG-V2', unitId: 'UNIT-V2', codeFingerprint: `git:${'c'.repeat(40)}`, completedAt: '2026-08-20T00:02:00.000Z', commands: [{ command: 'node --test visual-proof', exitCode: 0, outputFile, outputHash }], verdict: 'PASS', representativeFrames: ['frame.png'], dynamicSample: 'dynamic.mp4', v2StructuredReview: { status: 'PASS', evidence: 'machine-v2-review.json', reviewed_target_identity: { sha256: SHA }, reviewed_candidate_identity: { sha256: HASH2, diff_fingerprint: HASH2 } }, targetHash: SHA, visualHumanApproval: { review_id: 'V2-APPROVAL', reviewed_at: '2026-08-20T00:00:00Z', evidence: 'human.json', evidence_sha256: HASH2, status: 'PASS', target_sha256: SHA, candidate_sha256: HASH2, diff_fingerprint: HASH2, baseline_sha256: SHA }, ...common },
     V3: { evidenceType: 'v3-production-plan', planId: 'PLAN-V3', status: 'PASS', productionPlan: { units: ['unit'] }, visualProductionContract: { contractId: 'CONTRACT-V3' }, ...common },
     V4: { evidenceType: 'v4-formal-acceptance', acceptanceId: 'ACCEPT-V4', status: 'PASS', formalAssets: [{ id: 'asset-1', status: 'accepted' }], components: [{ id: 'component-1', status: 'accepted' }], combinationPreacceptance: { status: 'PASS' }, ...common },
     V5: { evidenceType: 'v5-runtime-integration-candidate', candidateId: 'CANDIDATE-V5', status: 'PASS', ...common },
@@ -142,10 +142,10 @@ test('上游证据文件、基线或候选哈希变化使 pending stale', () => 
   assert.equal(result.ok, false); assert(errorCodes(result).includes('VISUAL_PENDING_STALE')); assert(result.invalidatedDependencies.includes('V3ReferenceHash'));
 });
 
-test('缺人工视觉审查或独立 F2 时拒绝', () => {
-  const f = tempFixture({ evidence: { V2: { humanReview: null, independentReview: null } } });
+test('缺唯一 V2 真人审批时拒绝', () => {
+  const f = tempFixture({ evidence: { V2: { visualHumanApproval: null } } });
   const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root });
-  assert.equal(result.ok, false); assert(result.missingEvidence.includes('V2 human visual review')); assert(result.missingEvidence.includes('V2 independent F2 review'));
+  assert.equal(result.ok, false); assert(result.missingEvidence.includes('V2 unique visual_human_approval'));
 });
 
 test('planned/pending 正式资产或未批准替代时拒绝', () => {

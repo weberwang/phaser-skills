@@ -28,7 +28,7 @@ V1 前登记参考身份、版本、权属、原始文件指纹和适用状态�
 
 V1 冻结功能契约、参考身份、目标状态、布局合同、视觉事实、忠实度矩阵结构和项目容差。参考证据明确且不存在可见偏差或实质取舍时记录 `AUTO` 决策依据并进入 V2；存在冲突或取舍时只请求一次精确确认。
 
-V2 必须产出关键状态和动态可玩样片，并完成 V2a、V2b 与独立美术 F2。严格复刻可免三方向探索，但不能免除 V2a/V2b、动态样片、独立美术 F2、同条件参考/候选证据、逐项差异说明或忠实度矩阵。独立美术在忠实还原模式中判断候选是否忠于冻结视觉目标，不得把个人审美或“更专业”当作偏离依据。
+V2 必须产出关键状态和动态可玩样片，并完成 V2a、V2b 机器检查与唯一一次真人视觉方向审批。严格复刻可免三方向探索，但不能免除 V2a/V2b、动态样片、机器检查、唯一真人审批、同条件参考/候选证据、逐项差异说明或忠实度矩阵。真人审批在忠实还原模式中只判断候选是否忠于冻结视觉目标，不得把个人审美或“更专业”当作偏离依据。
 
 冻结前的候选图、临时提示词和评审草稿仅为 transient，不写入正式工件。冻结后把原图、候选 ID、SHA-256、冻结时间以及适用 scene/state 写入 `visual-assets.json.reference_target`。
 
@@ -38,7 +38,7 @@ V2 必须产出关键状态和动态可玩样片，并完成 V2a、V2b 与独立
 
 ### ownership-first 覆盖审计
 
-对冻结图从后向前逐区域登记 layer、scene/state、owner ID 和三类 owner：`runtime-data`、`runtime-rendered`、`fixed-production-visual`，并登记同一 scene/state 内唯一的正整数 `annotation_number`、`implementation_plan` 和已有 coverage/ownership 审阅文件 `ownership_evidence`。先依据已有 coverage/ownership 审阅和独立美术 F2 确定 owner/实现分类，验证器不从像素臆测 owner。随后先完成状态分析，再按唯一原子部件登记 placements；最后在冻结效果图左侧框选、编号，右侧 PNG 说明栏集中写简要说明和需求，三类实现计划仍为 `generate-now`、`reuse-existing`、`runtime-program`。
+对冻结图从后向前逐区域登记 layer、scene/state、owner ID 和三类 owner：`runtime-data`、`runtime-rendered`、`fixed-production-visual`，并登记同一 scene/state 内唯一的正整数 `annotation_number`、`implementation_plan` 和已有 coverage/ownership 机器证据 `ownership_evidence`。先依据 coverage/ownership 机器证据和 V2 已冻结方向确定 owner/实现分类，验证器不从像素臆测 owner。随后先完成状态分析，再按唯一原子部件登记 placements；最后在冻结效果图左侧框选、编号，右侧 PNG 说明栏集中写简要说明和需求，三类实现计划仍为 `generate-now`、`reuse-existing`、`runtime-program`。
 
 固定视觉必须映射正式资源，并声明 `production_origin`：`bitmap-decomposition` 是效果图拆位图，只对其中 `generate-now` 区域先生成绑定冻结目标 SHA、region ID 和区域定义 SHA 的 PNG 提案并暂停等待一次精确 `USER_DECISION`；`reuse-existing` 和 `runtime-program` 不触发位图拆解确认，但必须在同一 PNG 标注图中可见。确认必须绑定 `proposal_id`、`reference_target_sha256`、`region_id`、区域定义 SHA、提案/决定记录文件及 SHA、PNG 文件/MIME/版本/SHA 和 `decision_id`，决定记录还要绑定实际用户消息的 `decision_source=user-message`、消息 SHA、thread/work item 和时间。开始任何裁切、抠图、分层、AI 分割/补全或生产派生位图前，必须运行 `node scripts/validate_visual_manifest.mjs docs/visual-assets.json --stage V3 --check-files --project-root .`，只有结构与文件证据均通过才可执行；bitmap-decomposition 的默认 PNG 必须由共享无依赖确定性栅格渲染器生成，左侧保持原图尺寸，摘要、图例和 atomic requirements 全部在右侧说明栏，文件检查会校验 PNG 魔数/MIME/尺寸/元数据并重新渲染逐字节核对。正式流程不生成或接受 SVG 标注。`reuse-existing` 的 `source_manifest` 必须是不可变 `asset-reuse-snapshot/1.0`，不能自引用当前清单，并精确绑定 `source_file`、`source_manifest_sha256`、`source_sha256`、`compatibility_evidence_sha256`；文件检查会确认快照资源为 `accepted`、基线/许可/scene/shared 归属和证据完整并复算文件 SHA。`independent-production` 才可按既有条件记录 `AUTO`，且不得使用 `effect-image-extraction` 原因；source_file/source_files 的真实路径或内容 SHA 也不得等于冻结效果图 `original_file`。运行数据和运行渲染不得映射为生产位图，也不得声明 `production_origin`。效果图清单根节点使用单一 camelCase `workItemId` 和 `candidateVersion`，并由实施包绑定当前工作项/候选，不读取 snake_case 别名。提案、目标或区域定义变化使确认失效并重新请求；确认只授权拆解范围，不授权改变玩法、布局或视觉事实。`visual-assets.json` 是唯一机器权威，不建立第二份拆图清单。
 
@@ -56,7 +56,7 @@ V3 的每个 annotation/region 必须先完成 `state_analysis` 再拆解 `compo
 
 ImageGen 源文件、运行时文件和实际输出只能使用 `image/png` 或 `image/jpeg`，路径扩展名只能为 `.png`、`.jpg`、`.jpeg`；通用 authored-raster 可依其合同使用其他位图。
 
-实施包的 `visualProductionUnits` 必须与覆盖区域按 annotation number 和 region ID 一一绑定，并校验输出共享、路径、所有权与格式。V4 记录 `production_contract_audit`；F2 必须同时通过 `visual_fidelity_review` 与 `production_contract_review`，且 `overall_status` 通过。V5 还必须具备 V3、实施包、V4、F2 双审、F3 runtime replay、非空且 freshness-bound 的 fidelity cases、运行时消费证据及无未批准替换。生产方法变更只能由绑定区域、工作项、候选版本、用户原文和时间的 `ACCEPTED` Change Request 批准。
+实施包的 `visualProductionUnits` 必须与覆盖区域按 annotation number 和 region ID 一一绑定，并校验输出共享、路径、所有权与格式。V4 记录 `production_contract_audit`；F2 必须同时通过 `visual_fidelity_review` 与 `production_contract_review` 两类机器证据，且 `overall_status` 通过。V5 还必须具备 V3、实施包、V4、F2 两类机器证据、F3 runtime replay、非空且 freshness-bound 的 fidelity cases、运行时消费证据及无未批准替换。生产方法变更只能由绑定区域、工作项、候选版本、用户原文和时间的 `ACCEPTED` Change Request 批准。
 
 ### 原子拆解与标注版式
 
@@ -80,11 +80,11 @@ V1 灰盒、V2 可玩视觉切片与 V5 正式场景沿用同一生产 Scene 入
 - 缺少同条件参考证据或候选证据；
 - 偏离冻结视觉事实却没有绑定适用的已批准例外 ID；
 - 只有“很像”“更美观”“已专业修复”等主观结论；
-- 缺少完整 viewport、动态样片、独立美术 F2 或适用的响应式证据。
+- 缺少完整 viewport、动态样片、V2 唯一真人方向审批或适用的响应式证据。
 
-### 可见产物人工审阅
+### 唯一真人方向审批
 
-效果图还原的候选、样片、正式资产、组合画面和运行时可见区域全部走人工审阅硬门。每条记录必须包含 `reviewer_type: human`、非空 `reviewer_id`、`reviewed_at`、`evidence` 和 `status`；禁止用 AI、agent、automation、model 或裸 `reviewer` 字段冒充。V2 三类工件绑定同一冻结 target、candidate code/build SHA 与 diff identity；V4 的每个 actual asset/component×state 及同屏组合预验收必须逐项覆盖；V5 的完整 viewport、overlay、diff、每个 fidelity region（含 runtime owner）和 F2 双审必须逐项通过。根节点 PASS 或 `all_visual_artifacts_human_reviewed=true` 不能替代逐项证据，漏项按最早受影响阶段退回。
+效果图还原只在 V2 冻结视觉方向时要求一次真人审批。唯一 `visual_human_approval` 不采集 reviewer_type/reviewer_id，仅以 reviewed_at、evidence/evidence_sha256、PASS、review_id 及冻结 target、V2 candidate code/build SHA、diff identity、baseline SHA 表达人工通过事件。V2 代表画面、动态样片和结构化机器检查必须先齐全；V4/V5 的正式资产、同屏组合、完整 viewport、overlay、diff、逐区域 fidelity 及 F2 两类检查由可追溯机器/AI 证据完成，不再逐项登记 `human_review` 或要求第二位真人。根节点 PASS、说明文字、AI reviewer 字段和重复审批均不能替代唯一 V2 审批。
 # 场景还原合同（强制）
 
 `effect-image` 表示冻结效果图对应的完整正式 Scene，而不是独立 PNG 生产。进入 V3 前必须存在 `scene_reconstruction_contract`，并绑定 `reference_target.target_sha256`、scene/state、原始像素尺寸、viewport、实际有效 DPR（(0,1.5]）、locale、seed、input trace、稳定帧、visual baseline 与 layout contract 版本。
@@ -107,5 +107,5 @@ V3 实施包把每个 region 与正式 Scene 的实现、owner、状态/部件�
 失败：node scripts/validate_visual_manifest.mjs docs/visual-assets.json --stage V5
 输出：current_stage=V5 未执行真实文件门，V5 FAIL。
 成功：node scripts/validate_visual_manifest.mjs docs/visual-assets.json --stage V5 --check-files --project-root .
-输出：scene contract、F2 双审、逐区域 fidelity、runtime replay 和文件门通过（exit 0）。
+输出：scene contract、F2 两类机器证据、逐区域 fidelity、runtime replay 和文件门通过（exit 0）。
 ```

@@ -34,6 +34,29 @@ export function reviewerSummary(review) {
   return `${String(type)}/${String(id)}/${String(status)}`;
 }
 
+/**
+ * 机器/AI 审阅允许使用的结构化身份类型。
+ *
+ * 视觉流程只保留一次 V2 真人方向审批；后续阶段的检查可以由机器或
+ * AI 产出，但仍必须带可追溯身份和证据，不能把裸 PASS 当作审阅记录。
+ */
+export const STRUCTURED_REVIEWER_TYPES = Object.freeze([
+  "human",
+  "ai",
+  "agent",
+  "model",
+  "automated",
+]);
+
+/** V2 唯一审批不采集 reviewer 身份；身份字段若出现也不能改变审批语义。 */
+const VISUAL_APPROVAL_REVIEWER_FIELDS = Object.freeze([
+  "reviewer_type",
+  "reviewerType",
+  "reviewer_id",
+  "reviewerId",
+  "reviewer",
+]);
+
 /** 计算视觉问题最早应退回的阶段。 */
 export function earliestVisualReturnStage(stage, fallback = "V1/PROPOSAL") {
   const normalized = String(stage ?? "V1").toUpperCase();
@@ -77,6 +100,76 @@ export function validateHumanReview(review, context = {}, options = {}) {
   return errors;
 }
 
+/** 校验不要求真人的机器/AI 结构化检查；身份和证据字段仍不可省略。 */
+export function validateStructuredReview(review, context = {}, options = {}) {
+  const errors = [];
+  const fail = (message, expected, actual = reviewerSummary(review)) => errors.push(humanReviewError({ ...context, review }, message, { expected, actual, review, returnStage: options.returnStage, rootCause: options.rootCause }));
+  if (!isObject(review)) {
+    fail("缺少结构化机器/AI 审阅记录", "reviewer_type、reviewer_id、reviewed_at、evidence、status", "missing");
+    return errors;
+  }
+  if (!STRUCTURED_REVIEWER_TYPES.includes(review.reviewer_type)) fail("reviewer_type 必须为 human|ai|agent|model|automated", "reviewer_type=human|ai|agent|model|automated");
+  if (!nonEmptyString(review.reviewer_id)) fail("缺少非空 reviewer_id；机器审阅也必须可追溯", "reviewer_id=non-empty");
+  if (!nonEmptyString(review.reviewed_at) || Number.isNaN(Date.parse(review.reviewed_at))) fail("缺少可解析 reviewed_at", "reviewed_at=ISO-8601");
+  if (!isReviewEvidence(review.evidence)) fail("缺少有效结构化审阅 evidence", "evidence=non-empty path/object/list");
+  if (!['passed', 'PASS', 'failed', 'FAIL'].includes(String(review.status))) fail("结构化审阅 status 必须为 passed 或 failed", "status=passed|failed");
+  if (options.requirePassed === true && !['passed', 'PASS'].includes(String(review.status))) fail("结构化审阅必须通过", "status=passed");
+  return errors;
+}
+
+/**
+ * 校验唯一 V2 真人方向审批及其不可变身份绑定。
+ *
+ * 该审批是整条 V0→V5 链唯一的人工作品方向确认；V4/V5 只复核机器证据，
+ * 不再复制 human_review。候选、目标、diff 或基线发生漂移时必须重新审批。
+ */
+export function validateVisualHumanApproval(approval, binding = {}, context = {}, options = {}) {
+  const errors = [];
+  const fail = (message, expected, actual) => errors.push(humanReviewError({ ...context, review: approval }, message, {
+    expected,
+    actual: `${reviewerSummary(approval)}; binding=${String(actual ?? "missing")}`,
+    review: approval,
+    returnStage: options.returnStage,
+    rootCause: options.rootCause,
+  }));
+  if (!isObject(approval)) {
+    fail("缺少结构化 visual_human_approval", "review_id、reviewed_at、evidence、evidence_sha256、status、target/candidate/diff/baseline SHA", "missing");
+    return errors;
+  }
+  // 人工审批由记录语义和证据表达，不接收 reviewer_type/reviewer_id/reviewer 字段，
+  // 避免 AI 或手写身份被误当成真人审批真值；旧字段不能参与回退判断。
+  for (const field of VISUAL_APPROVAL_REVIEWER_FIELDS) if (Object.hasOwn(approval, field)) fail(`visual_human_approval 禁止使用 ${field}，真人身份不通过 reviewer 字段推断`, "不得包含 reviewer_type/reviewer_id/reviewer", approval[field]);
+  if (!nonEmptyString(approval.reviewed_at) || Number.isNaN(Date.parse(approval.reviewed_at))) fail("唯一视觉真人审批缺少可解析 reviewed_at", "reviewed_at=ISO-8601", approval.reviewed_at);
+  if (!isReviewEvidence(approval.evidence)) fail("唯一视觉真人审批缺少有效 evidence", "evidence=non-empty path/object/list", approval.evidence);
+  if (!['passed', 'PASS'].includes(String(approval.status))) fail("唯一视觉真人审批必须为 PASS", "status=passed|PASS", approval.status);
+  if (!nonEmptyString(approval.review_id ?? approval.reviewId)) fail("唯一视觉真人审批缺少 review_id", "review_id=non-empty", undefined);
+
+  const expectedTarget = binding.targetSha ?? binding.target_sha256 ?? binding.target;
+  const expectedCandidate = binding.candidateSha ?? binding.candidate_sha256 ?? binding.candidate;
+  const expectedDiff = binding.diffIdentity ?? binding.diff_fingerprint ?? binding.diff;
+  const expectedBaseline = binding.baselineSha ?? binding.baseline_sha256 ?? binding.baseline;
+  const actualTarget = approval.target_sha256 ?? approval.targetSha256 ?? approval.reviewed_target_sha256 ?? approval.reviewedTargetSha256;
+  const actualCandidate = approval.candidate_sha256 ?? approval.candidateSha256 ?? approval.content_sha256 ?? approval.contentSha256;
+  const actualDiff = approval.diff_fingerprint ?? approval.diffFingerprint ?? approval.diff_identity ?? approval.diffIdentity;
+  const actualBaseline = approval.baseline_sha256 ?? approval.baselineSha256 ?? approval.baselineHash ?? approval.baseline_hash;
+  const actualEvidenceHash = approval.evidence_sha256 ?? approval.evidenceSha256 ?? approval.approval_evidence_sha256 ?? approval.approvalEvidenceSha256;
+  if (!nonEmptyString(actualTarget)) fail("唯一视觉真人审批缺少冻结目标 SHA 绑定", "target_sha256=sha256", actualTarget);
+  else if (nonEmptyString(expectedTarget) && actualTarget !== expectedTarget) fail("唯一视觉真人审批 target SHA 与当前冻结目标不一致", expectedTarget, actualTarget);
+  if (!nonEmptyString(actualCandidate)) fail("唯一视觉真人审批缺少 V2 candidate/content SHA 绑定", "candidate_sha256=sha256", actualCandidate);
+  else if (nonEmptyString(expectedCandidate) && actualCandidate !== expectedCandidate) fail("唯一视觉真人审批 candidate/content SHA 与 V2 候选不一致", expectedCandidate, actualCandidate);
+  if (!nonEmptyString(actualDiff)) fail("唯一视觉真人审批缺少 V2 diff identity 绑定", "diff_fingerprint=non-empty", actualDiff);
+  else if (nonEmptyString(expectedDiff) && actualDiff !== expectedDiff) fail("唯一视觉真人审批 diff identity 与 V2 候选不一致", expectedDiff, actualDiff);
+  if (nonEmptyString(expectedBaseline)) {
+    if (!nonEmptyString(actualBaseline)) fail("唯一视觉真人审批缺少冻结基线 SHA 绑定", "baseline_sha256=sha256:<64 hex>", actualBaseline);
+    else if (actualBaseline !== expectedBaseline) fail("唯一视觉真人审批 baseline SHA 与当前冻结基线不一致", expectedBaseline, actualBaseline);
+  }
+  if (!nonEmptyString(actualEvidenceHash)) fail("唯一视觉真人审批缺少审批证据 SHA 绑定", "evidence_sha256=sha256:<64 hex>", actualEvidenceHash);
+  for (const [label, value] of [["target_sha256", actualTarget], ["candidate_sha256", actualCandidate], ["baseline_sha256", actualBaseline], ["evidence_sha256", actualEvidenceHash]]) {
+    if (nonEmptyString(value) && !/^sha256:[a-f0-9]{64}$/i.test(value)) fail(`${label} 必须是合法 SHA-256`, `${label}=sha256:<64 hex>`, value);
+  }
+  return errors;
+}
+
 /** 读取候选身份中的 code/build SHA，支持合同已经确定的等价命名。 */
 export function readCandidateSha(identity) {
   if (!isObject(identity)) return undefined;
@@ -111,46 +204,26 @@ export function validateVisualHumanReviewCompletion(manifest, options = {}) {
   const stage = options.stage ?? "V5";
   const scene = manifest?.scene_reconstruction_contract ?? manifest?.sceneReconstructionContract;
   const contextFor = (extra = {}) => ({ stage, ...extra });
+  if (!isObject(scene)) return [humanReviewError(contextFor(), "缺少 scene_reconstruction_contract，无法校验唯一 V2 真人审批", { missing: "scene_reconstruction_contract", returnStage: "V1/PROPOSAL", rootCause: "方案缺失" })];
   const targetSha = manifest?.reference_target?.target_sha256 ?? scene?.target_conditions?.target_sha256;
-  const candidateIdentity = manifest?.candidate_identity ?? scene?.v2_scene_candidate?.identity ?? {};
+  // 唯一真人审批冻结的是 V2 方向候选；V3-V5 正常生产会产生新的运行时候选，
+  // 不能拿后续候选 SHA 反向要求重复真人审批。
+  const candidateIdentity = scene?.v2_scene_candidate?.identity ?? manifest?.v2_candidate_identity ?? {};
+  const candidateSha = candidateIdentity.sha256 ?? candidateIdentity.code_sha256 ?? candidateIdentity.build_sha256 ?? candidateIdentity.candidate_sha256;
   const diffIdentity = candidateIdentity.diff_fingerprint ?? candidateIdentity.diffFingerprint ?? candidateIdentity.diff_identity ?? candidateIdentity.diffIdentity;
-  const bindingIdentity = { target_sha256: targetSha, candidate_identity: candidateIdentity, diff_fingerprint: diffIdentity };
-  const check = (review, context, label, reviewOptions = {}) => {
-    errors.push(...validateHumanReview(review, context, { requirePassed: reviewOptions.requirePassed ?? true, returnStage: reviewOptions.returnStage }));
-    errors.push(...validateHumanReviewIdentity(review, bindingIdentity, context, { requireTarget: true, requireCandidate: true, requireDiff: true, returnStage: reviewOptions.returnStage, rootCause: "验收问题" }));
-  };
-  if (!isObject(scene)) return [humanReviewError(contextFor(), "缺少 scene_reconstruction_contract，无法推导全部视觉产物人工覆盖", { missing: "scene_reconstruction_contract", returnStage: "V1/PROPOSAL", rootCause: "方案缺失" })];
-  check(scene.v2_scene_candidate?.human_review, contextFor({ scene_id: scene.target_conditions?.scene_id, state_id: scene.target_conditions?.state_id }), "V2 完整场景候选");
-  check(scene.v2_dynamic_sample?.human_review, contextFor({ scene_id: scene.target_conditions?.scene_id, state_id: scene.target_conditions?.state_id }), "V2 动态样片");
-  check(scene.v2_structured_review, contextFor({ scene_id: scene.target_conditions?.scene_id, state_id: scene.target_conditions?.state_id }), "V2 结构化审查");
-  if (["V4", "V5"].includes(String(stage).toUpperCase())) check(scene.combination_preacceptance, contextFor({ scene_id: scene.target_conditions?.scene_id, state_id: scene.target_conditions?.state_id }), "V4 同屏组合预验收");
-
-  const units = Array.isArray(manifest.production_contract_audit?.units)
-    ? manifest.production_contract_audit.units
-    : Array.isArray(manifest.production_contract_audit?.audit_units) ? manifest.production_contract_audit.audit_units : [];
-  for (const unit of units) {
-    const region = manifest.coverage_audit?.regions?.find((item) => item?.id === (unit?.region_id ?? unit?.regionId));
-    for (const [index, asset] of (Array.isArray(unit?.actual_assets) ? unit.actual_assets.entries() : [])) {
-      check(asset?.human_review, contextFor({
-        annotation_number: unit?.annotation_number ?? region?.annotation_number,
-        region_id: unit?.region_id ?? unit?.regionId ?? region?.id,
-        scene_id: region?.scene_id,
-        state_id: region?.state_id,
-        component_id: asset?.component_id,
-        asset_id: asset?.asset_id,
-      }), `V4 actual_assets[${index}]`);
-    }
-  }
-  if (String(stage).toUpperCase() === "V5") {
-    const f2 = manifest.f2_review ?? manifest.f2_reviews;
-    for (const field of ["visual_fidelity_review", "production_contract_review"]) check(f2?.[field], contextFor(), `F2 ${field}`);
-    const componentReviews = f2?.component_reviews ?? f2?.componentReviews ?? f2?.production_contract_review?.component_reviews ?? f2?.production_contract_review?.componentReviews;
-    for (const [index, record] of (Array.isArray(componentReviews) ? componentReviews.entries() : [])) check(record?.human_review, contextFor({ annotation_number: record?.annotation_number, region_id: record?.region_id, component_id: record?.component_id, asset_id: record?.asset_id }), `F2 component_reviews[${index}]`);
-    for (const [index, item] of (Array.isArray(manifest.fidelity_cases) ? manifest.fidelity_cases.entries() : [])) {
-      check(item?.human_review, contextFor({ scene_id: item?.scene_id, state_id: item?.state_id }), `V5 fidelity_cases[${index}]`);
-      for (const [regionIndex, result] of (Array.isArray(item?.per_region_results) ? item.per_region_results.entries() : [])) check(result?.human_review, contextFor({ scene_id: item?.scene_id, state_id: item?.state_id, region_id: result?.region_id }), `V5 per_region_results[${regionIndex}]`);
-    }
-    if (manifest.all_visual_artifacts_human_reviewed !== true) errors.push(humanReviewError(contextFor(), "V5 COMPLETE 必须声明 all_visual_artifacts_human_reviewed=true；该标记仅在逐项覆盖校验通过后有效", { expected: "all_visual_artifacts_human_reviewed=true", actual: String(manifest.all_visual_artifacts_human_reviewed ?? "missing"), returnStage: "V4/F2", rootCause: "验收问题" }));
+  const baselineSha = manifest?.baseline_sha256 ?? manifest?.baselineHash ?? manifest?.visual_baseline?.sha256 ?? manifest?.visual_baseline?.baseline_sha256;
+  const approvals = [
+    manifest?.visual_human_approval,
+    manifest?.visualHumanApproval,
+    scene?.visual_human_approval,
+    scene?.visualHumanApproval,
+  ].filter(isObject);
+  const approval = approvals[0];
+  if (!approval) errors.push(humanReviewError(contextFor(), "缺少唯一 V2 visual_human_approval；后续阶段不能自行产生人工审批", { missing: "visual_human_approval", returnStage: "V1/PROPOSAL", rootCause: "方案缺失" }));
+  else {
+    errors.push(...validateVisualHumanApproval(approval, { targetSha, candidateSha, diffIdentity, baselineSha }, contextFor({ scene_id: scene.target_conditions?.scene_id, state_id: scene.target_conditions?.state_id }), { requirePassed: true, returnStage: "V1/PROPOSAL", rootCause: "方案缺失" }));
+    const approvalId = approval.review_id ?? approval.reviewId;
+    for (const other of approvals.slice(1)) errors.push(humanReviewError(contextFor(), "检测到重复或冲突的 visual_human_approval，必须只有一个唯一审批记录", { expected: `唯一 review_id=${approvalId}`, actual: reviewerSummary(other), review: other, returnStage: "V1/PROPOSAL", rootCause: "方案缺失" }));
   }
   return errors;
 }

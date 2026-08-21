@@ -186,6 +186,7 @@ function attachSceneReconstructionContract(manifest) {
       decoration_density_review: { status: "passed", evidence: "evidence/f2/decoration.json" },
       responsive_review: { status: "passed", evidence: "evidence/f2/responsive.json" },
     },
+    visual_human_approval: { review_id: "v2-approval", reviewed_at: "2026-08-15T00:11:00Z", evidence: "evidence/f2/v2-direction-approval.json", evidence_sha256: candidateSha, status: "passed", target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint, baseline_sha256: targetSha },
     target_conditions: {
       target_sha256: targetSha,
       original_pixel_size: { width: 390, height: 844 },
@@ -219,7 +220,7 @@ function attachSceneReconstructionContract(manifest) {
     },
     predeclared_tolerances: [{ id: "layout-tolerance", rules: { geometry: { unit: "logical-px", value: 2 } } }],
     implementation_plan: { resources: ["hero-idle"], layout: ["target-bound-layout"], runtime_objects: ["scene-background", "score-state"], composition: ["main-gameplay-scene"] },
-    combination_preacceptance: { reviewer_type: "human", reviewer_id: "v4-combination-human", reviewed_at: "2026-08-15T00:15:00Z", status: "passed", formal_scene_structure: "MainGameplayScene/ContainerGraph", layout_calculation_identity: "layout:main-gameplay:1", evidence: ["evidence/visual/combined.png"], target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
+    combination_preacceptance: { status: "passed", formal_scene_structure: "MainGameplayScene/ContainerGraph", layout_calculation_identity: "layout:main-gameplay:1", evidence: ["evidence/visual/combined.png"], target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
   };
   const fidelity = manifest.fidelity_cases[0];
   Object.assign(fidelity, {
@@ -590,7 +591,7 @@ test("V4 主入口拒绝错误 Work Item 或过期 candidateVersion 的 Change R
   assert(validateManifest(stale, { stage: "V4" }).some((item) => item.includes("candidateVersion") && item.includes("不一致")));
 });
 test("V5 complete 必须有全部通过的 fidelity case", () => { const missing = validManifest(); missing.fidelity_cases = []; assert(validateManifest(missing).some((item) => item.includes("fidelity_cases 必须是非空数组"))); const failed = validManifest(); failed.fidelity_cases[0].conclusion = "failed"; assert(validateManifest(failed).some((item) => item.includes("必须全部 passed"))); });
-test("V5 F2 双审拒绝旧 candidate SHA 或旧 diff 身份", () => {
+test("V5 F2 两类机器证据拒绝旧 candidate SHA 或旧 diff 身份", () => {
   for (const reviewField of ["visual_fidelity_review", "production_contract_review"]) {
     for (const identityField of ["candidate_sha256", "diff_fingerprint"]) {
       const manifest = validManifest();

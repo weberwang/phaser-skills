@@ -10,6 +10,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
+import { validateVisualHumanApproval } from './visual-human-review-contract.mjs';
 
 export const VISUAL_STAGE_IDS = Object.freeze(['V0', 'V1', 'V2', 'V3', 'V4', 'V5']);
 export const VISUAL_STAGE_STATES = Object.freeze([
@@ -213,6 +214,7 @@ function collectHashes(subject, evidence, ...objects) {
 export function visualPrerequisiteSnapshot(subject = {}, options = {}) {
   const { evidence, v2, v3, v4, v5, refs } = evidenceObjects(subject, options);
   const hashes = collectHashes(subject, evidence, v2, v3, v4, v5);
+  const approval = readVisualHumanApproval(subject, v2);
   const identity = {
     workItemId: firstValue(subject.workItemId, subject.work_item_id, evidence.workItemId, evidence.work_item_id),
     unitResultId: firstValue(v2?.resultId, v2?.unitResultId, v2?.executionUnitResultId),
@@ -224,6 +226,8 @@ export function visualPrerequisiteSnapshot(subject = {}, options = {}) {
     artifactHash: firstValue(hashes.artifactHash),
     dependencyHash: firstValue(hashes.dependencyHash),
     visualManifestHash: firstValue(subject.visualManifestSha256, subject.visual_manifest_sha256, evidence.visualManifestSha256, evidence.visual_manifest_sha256),
+    V2ApprovalId: firstValue(approval?.review_id, approval?.reviewId),
+    V2ApprovalEvidenceHash: firstValue(approval?.evidence_sha256, approval?.evidenceSha256, approval?.approval_evidence_sha256, approval?.approvalEvidenceSha256),
     V2ReferenceHash: refs?.V2?.sha256,
     V3ReferenceHash: refs?.V3?.sha256,
     V4ReferenceHash: refs?.V4?.sha256,
@@ -257,14 +261,60 @@ function collectPendingEvidence(value, path = '', output = []) {
   return output;
 }
 
-/** 校验人工审查身份、时间、证据和 PASS 结论是否完整。 */
-function reviewIsHumanPass(value, label, missingEvidence) {
-  if (!isObject(value)) { missingEvidence.push(label); return false; }
-  const reviewerType = textStatus(value.reviewer_type ?? value.reviewerType);
-  const result = textStatus(value.status ?? value.verdict ?? value.result);
-  if (reviewerType !== 'human' || !nonEmpty(value.reviewer_id ?? value.reviewerId) || !nonEmpty(value.reviewed_at ?? value.reviewedAt) || !nonEmpty(value.evidence)) { missingEvidence.push(label); return false; }
-  if (!statusPass(result)) { missingEvidence.push(label); return false; }
-  return true;
+/** 从 V2 结果或工作项读取唯一真人方向审批，拒绝重复独立 reviewer 语义。 */
+function readVisualHumanApprovals(subject, v2) {
+  return [
+    v2?.visualHumanApproval,
+    v2?.visual_human_approval,
+    subject?.visualHumanApproval,
+    subject?.visual_human_approval,
+  ].filter(isObject);
+}
+
+function readVisualHumanApproval(subject, v2) {
+  return readVisualHumanApprovals(subject, v2)[0] ?? null;
+}
+
+/** 校验唯一 V2 真人审批与当前冻结目标、候选、diff 和基线绑定。 */
+function validateV2VisualHumanApproval(subject, v2, missingEvidence) {
+  const approvals = readVisualHumanApprovals(subject, v2);
+  const approval = approvals[0];
+  if (!approval) { missingEvidence.push('V2 unique visual_human_approval'); return; }
+  if (approvals.length > 1) missingEvidence.push('V2 duplicate visual_human_approval records');
+  const candidate = v2?.candidateIdentity ?? v2?.candidate_identity ?? {};
+  const candidateSha = v2?.contentHash ?? v2?.content_hash ?? v2?.candidateHash ?? v2?.candidate_sha256 ?? candidate.sha256;
+  const diffIdentity = v2?.diffFingerprint ?? v2?.diff_fingerprint ?? candidate.diffFingerprint ?? candidate.diff_fingerprint;
+  const targetSha = v2?.targetHash ?? v2?.target_sha256 ?? subject?.targetHash ?? subject?.target_sha256;
+  const approvalErrors = validateVisualHumanApproval(approval, {
+    targetSha,
+    candidateSha,
+    diffIdentity,
+    baselineSha: v2?.baselineHash ?? v2?.baseline_hash ?? subject?.baselineHash,
+  }, { stage: 'V2', scene_id: subject?.sceneId, state_id: subject?.stateId }, { requirePassed: true, returnStage: 'V1/PROPOSAL', rootCause: '方案缺失' });
+  if (approvalErrors.length) missingEvidence.push(...approvalErrors.map((item) => item));
+}
+
+/** 校验 V2 的机器结构化视觉检查；唯一真人审批不能被裸 PASS 或截图替代。 */
+function validateV2MachineStructuredReview(v2, missingEvidence) {
+  const review = firstObject(v2?.v2StructuredReview, v2?.v2_structured_review, v2?.visualStructuredReview, v2?.visual_structured_review);
+  if (!review) {
+    missingEvidence.push('V2 structured machine review');
+    return;
+  }
+  if (!statusPass(review.status ?? review.verdict ?? review.result)) missingEvidence.push('V2 structured machine review PASS');
+  const evidence = firstValue(review.evidence, review.evidencePath, review.evidence_path, review.fullViewportComparison, review.full_viewport_comparison);
+  if (!(nonEmpty(evidence) || (Array.isArray(evidence) && evidence.length > 0) || isObject(evidence))) missingEvidence.push('V2 structured machine review evidence');
+  const expectedTarget = firstValue(v2.targetHash, v2.target_hash, v2.targetSha256, v2.target_sha256);
+  const expectedCandidate = firstValue(v2.contentHash, v2.content_hash, v2.candidateHash, v2.candidate_sha256, v2.candidateIdentity?.sha256, v2.candidate_identity?.sha256);
+  const expectedDiff = firstValue(v2.diffFingerprint, v2.diff_fingerprint, v2.candidateIdentity?.diffFingerprint, v2.candidateIdentity?.diff_fingerprint, v2.candidate_identity?.diffFingerprint, v2.candidate_identity?.diff_fingerprint);
+  const reviewedTarget = firstObject(review.reviewedTargetIdentity, review.reviewed_target_identity, review.targetIdentity, review.target_identity);
+  const reviewedCandidate = firstObject(review.reviewedCandidateIdentity, review.reviewed_candidate_identity, review.candidateIdentity, review.candidate_identity);
+  const actualTarget = firstValue(review.targetHash, review.target_hash, review.targetSha256, review.target_sha256, reviewedTarget?.sha256, reviewedTarget?.target_sha256, reviewedTarget?.targetSha256);
+  const actualCandidate = firstValue(review.candidateHash, review.candidate_hash, review.candidateSha256, review.candidate_sha256, reviewedCandidate?.sha256, reviewedCandidate?.candidate_sha256, reviewedCandidate?.candidateSha256);
+  const actualDiff = firstValue(review.diffFingerprint, review.diff_fingerprint, review.diffIdentity, review.diff_identity, reviewedCandidate?.diffFingerprint, reviewedCandidate?.diff_fingerprint, reviewedCandidate?.diffIdentity, reviewedCandidate?.diff_identity);
+  if (!hashValue(actualTarget) || (hashValue(expectedTarget) && actualTarget !== expectedTarget)) missingEvidence.push('V2 structured machine review target identity');
+  if (!hashValue(actualCandidate) || (hashValue(expectedCandidate) && actualCandidate !== expectedCandidate)) missingEvidence.push('V2 structured machine review candidate identity');
+  if (!nonEmpty(actualDiff) || (nonEmpty(expectedDiff) && actualDiff !== expectedDiff)) missingEvidence.push('V2 structured machine review diff identity');
 }
 
 /**
@@ -365,11 +415,9 @@ export function validateVisualStagePrerequisites(subject = {}, options = {}) {
   if (isObject(v2)) {
     if (!(v2.representativeFrame || v2.representativeFrames || v2.representative_screen || v2.representativeScreens)) missingEvidence.push('V2 representative-frame');
     if (!(v2.dynamicSample || v2.dynamicSamples || v2.dynamic_sample || v2.dynamicClip)) missingEvidence.push('V2 dynamic-sample');
-    const human = v2.humanReview ?? v2.human_review ?? v2.visualReview;
-    const independent = v2.independentReview ?? v2.independent_review ?? v2.f2Review ?? v2.f2_review;
-    reviewIsHumanPass(human, 'V2 human visual review', missingEvidence);
-    reviewIsHumanPass(independent, 'V2 independent F2 review', missingEvidence);
-    if (human && independent && (human.reviewer_id ?? human.reviewerId) === (independent.reviewer_id ?? independent.reviewerId)) missingEvidence.push('V2 independent reviewer identity');
+    validateV2MachineStructuredReview(v2, missingEvidence);
+    validateV2VisualHumanApproval(subject, v2, missingEvidence);
+    // independentReview 是历史双审字段；它不再参与 V2 放行，也不能制造第二次真人审批。
   }
   if (!isObject(v3) || v3.evidenceType !== 'v3-production-plan' || !statusPass(v3.status ?? v3.verdict ?? v3.result)) missingEvidence.push('V3 production plan PASS');
   if (isObject(v3)) {

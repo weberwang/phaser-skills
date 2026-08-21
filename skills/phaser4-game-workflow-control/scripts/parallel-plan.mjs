@@ -1,5 +1,5 @@
-/** Implementation Package 中实施单元的必填字段。 */
-const UNIT_FIELDS = ['unitId', 'unitType', 'scopeId', 'moduleId', 'sceneId', 'owner', 'dependsOn', 'parallelMode', 'parallelGroup', 'ownedPaths', 'stateOwnership', 'acceptanceCommands', 'serializationReason'];
+/** Implementation Package 中实施单元的必填字段。数组位置就是计划制定者冻结的执行顺序。 */
+const UNIT_FIELDS = ['unitId', 'unitType', 'scopeId', 'moduleId', 'sceneId', 'owner', 'parallelMode', 'parallelGroup', 'ownedPaths', 'stateOwnership', 'acceptanceCommands', 'serializationReason'];
 
 /** 判断两个路径范围是否相交。 */
 function rangesOverlap(left, right, pathMatches) {
@@ -10,25 +10,12 @@ function rangesOverlap(left, right, pathMatches) {
   return Boolean(leftPrefix && rightPrefix && (leftPrefix === rightPrefix || leftPrefix.startsWith(`${rightPrefix}/`) || rightPrefix.startsWith(`${leftPrefix}/`)));
 }
 
-/** 返回依赖闭包，用于拒绝伪装成并行的间接依赖。 */
-function dependencyClosure(unitId, unitsById) {
-  const visited = new Set();
-  const pending = [...unitsById.get(unitId).dependsOn];
-  while (pending.length) {
-    const dependency = pending.pop();
-    if (visited.has(dependency)) continue;
-    visited.add(dependency);
-    pending.push(...unitsById.get(dependency).dependsOn);
-  }
-  return visited;
-}
-
 /** 判断两个状态命名空间是否相交。 */
 function statesOverlap(left, right) {
   return left === right || left.startsWith(`${right}.`) || right.startsWith(`${left}.`) || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
 }
 
-/** 校验实施单元结构、依赖图、并行组和文件/状态所有权。 */
+/** 校验实施单元结构、预设顺序、并行组和文件/状态所有权。 */
 export function validateExecutionPlan(pkg, pathMatches, fail) {
   if (!Array.isArray(pkg.executionUnits) || !pkg.executionUnits.length) fail('Implementation Package.executionUnits 必须为非空数组');
   const unitsById = new Map();
@@ -40,7 +27,7 @@ export function validateExecutionPlan(pkg, pathMatches, fail) {
     if (!unit.unitId || unitsById.has(unit.unitId)) fail(`execution unit ID 为空或重复：${unit.unitId ?? '<empty>'}`);
     if (!['MODULE', 'SCENE', 'SHARED', 'INTEGRATION'].includes(unit.unitType) || !unit.scopeId || !unit.moduleId || !unit.owner) fail(`execution unit ${unit.unitId} 的类型、范围、模块或负责人无效`);
     if ((unit.unitType === 'SCENE' && (typeof unit.sceneId !== 'string' || !unit.sceneId)) || (unit.unitType !== 'SCENE' && unit.sceneId !== null)) fail(`execution unit ${unit.unitId}.sceneId 与类型不一致`);
-    for (const field of ['dependsOn', 'ownedPaths', 'stateOwnership', 'acceptanceCommands']) {
+    for (const field of ['ownedPaths', 'stateOwnership', 'acceptanceCommands']) {
       if (!Array.isArray(unit[field]) || unit[field].some((item) => typeof item !== 'string' || !item.trim())) fail(`execution unit ${unit.unitId}.${field} 必须为非空字符串数组`);
       if (new Set(unit[field]).size !== unit[field].length) fail(`execution unit ${unit.unitId}.${field} 不得重复`);
     }
@@ -55,9 +42,6 @@ export function validateExecutionPlan(pkg, pathMatches, fail) {
   }
 
   for (const unit of pkg.executionUnits) {
-    for (const dependency of unit.dependsOn) {
-      if (dependency === unit.unitId || !unitsById.has(dependency)) fail(`execution unit ${unit.unitId} 存在自依赖或未知依赖：${dependency}`);
-    }
     for (const ownedPath of unit.ownedPaths) {
       if (!pkg.allowedPaths.some((pattern) => pathMatches(ownedPath, pattern)) || pkg.forbiddenPaths.some((pattern) => pathMatches(ownedPath, pattern))) fail(`execution unit ${unit.unitId} 写范围超出 Implementation Package：${ownedPath}`);
       const ownership = Object.entries(pkg.fileOwnership).filter(([pattern]) => rangesOverlap(ownedPath, pattern, pathMatches));
@@ -74,15 +58,15 @@ export function validateExecutionPlan(pkg, pathMatches, fail) {
     if (units.length !== 1) fail(`Implementation Package 预期增删文件未唯一绑定 execution unit：${expectedPath}`);
   }
 
-  // 依赖闭包包含自身即存在环；并行组内任何直接或间接依赖都会造成虚假并行。
-  for (const unit of pkg.executionUnits) if (dependencyClosure(unit.unitId, unitsById).has(unit.unitId)) fail(`execution unit 依赖图存在环：${unit.unitId}`);
+  // 数组是计划制定者冻结的唯一执行顺序；同组并行单元必须占据连续位置，避免控制面重新推导阶段。
   const groups = Map.groupBy(pkg.executionUnits.filter((unit) => unit.parallelMode === 'PARALLEL'), (unit) => unit.parallelGroup);
   for (const [group, units] of groups) {
     if (units.length < 2) fail(`并行组至少需要两个实施单元：${group}`);
+    const indexes = units.map((unit) => pkg.executionUnits.indexOf(unit)).sort((left, right) => left - right);
+    if (indexes[indexes.length - 1] - indexes[0] + 1 !== indexes.length) fail(`并行组 ${group} 必须在 executionUnits 中连续出现`);
     for (let leftIndex = 0; leftIndex < units.length; leftIndex += 1) {
       for (let rightIndex = leftIndex + 1; rightIndex < units.length; rightIndex += 1) {
         const left = units[leftIndex]; const right = units[rightIndex];
-        if (dependencyClosure(left.unitId, unitsById).has(right.unitId) || dependencyClosure(right.unitId, unitsById).has(left.unitId)) fail(`并行组 ${group} 内单元存在依赖：${left.unitId}/${right.unitId}`);
         if (left.ownedPaths.some((path) => right.ownedPaths.some((peer) => rangesOverlap(path, peer, pathMatches)))) fail(`并行组 ${group} 写范围冲突：${left.unitId}/${right.unitId}`);
         if (left.stateOwnership.some((state) => right.stateOwnership.some((peer) => statesOverlap(state, peer)))) fail(`并行组 ${group} 状态所有权冲突：${left.unitId}/${right.unitId}`);
       }

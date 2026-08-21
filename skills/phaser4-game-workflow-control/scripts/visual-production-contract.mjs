@@ -651,7 +651,7 @@ export function validateProductionAuditShape(manifest, options = {}) {
   if (regions.some((region) => !keys.has(`${region.annotation_number}\0${region.id}`))) errors.push("[V4] annotation_number=* region_id=* expected_method=visual-production observed_method=missing 缺失=production_contract_audit.units：未覆盖全部固定视觉区域");
   return errors;
 }
-/** 校验 V5 运行态硬门，要求审计、双审、重放、freshness 和实际消费全部存在。 */
+/** 校验 V5 运行态硬门，要求审计、F2 双证据、重放、freshness 和实际消费全部存在。 */
 export function validateV5ProductionGate(manifest, options = {}) {
   const errors = [];
   errors.push(...validateVisualConfirmationGate(manifest, { ...options, stage: "V5", requireManualConfirmation: true }));
@@ -662,7 +662,7 @@ export function validateV5ProductionGate(manifest, options = {}) {
   if (!["passed", "PASS"].includes(String(gate.status))) error("V5 production gate status 必须为 passed");
   const audit = manifest?.production_contract_audit ?? gate.production_contract_audit;
   if (!isObject(audit) || !["passed", "PASS"].includes(String(audit.status))) error("V5 缺少通过的 production_contract_audit", "production_contract_audit");
-  for (const [field, label] of [["v3_status", "V3"], ["implementation_package_status", "Implementation Package"], ["v4_status", "V4 production_contract_audit"], ["f2_status", "F2 双审"], ["f3_status", "F3 runtime replay"]]) if (!["passed", "PASS"].includes(String(gate[field]))) error(`${label} 未通过`, field);
+  for (const [field, label] of [["v3_status", "V3"], ["implementation_package_status", "Implementation Package"], ["v4_status", "V4 production_contract_audit"], ["f2_status", "F2 双证据"], ["f3_status", "F3 runtime replay"]]) if (!["passed", "PASS"].includes(String(gate[field]))) error(`${label} 未通过`, field);
   if (gate.f2_status && !["passed", "PASS"].includes(String(gate.f2_visual_fidelity_status))) error("F2 visual_fidelity_review 未通过", "f2_visual_fidelity_status");
   if (gate.f2_status && !["passed", "PASS"].includes(String(gate.f2_production_contract_status))) error("F2 production_contract_review 未通过", "f2_production_contract_status");
   const replay = gate.runtime_replay ?? gate.f3_runtime_replay;
@@ -694,7 +694,7 @@ export function validateV5ProductionGate(manifest, options = {}) {
   else if (currentTarget && gate.target_sha256 !== currentTarget) error("V5 target_sha256 与冻结目标不一致");
   return errors;
 }
-/** V5 总入口：把 V3 coverage、V4 审计、F2 双审和 V5 运行态门收敛为一个不可绕过的结果。 */
+/** V5 总入口：把 V3 coverage、V4 审计、F2 双证据和 V5 运行态门收敛为一个不可绕过的结果。 */
 export async function validateV5VisualManifest(manifest, options = {}) {
   const fileGateError = productionFileGateError(manifest, options, "V5");
   if (fileGateError) return [fileGateError];
@@ -947,7 +947,7 @@ export function validateVisualEvidence(evidence, pkg, options = {}) {
   errors.push(...auditProductionContract(manifest, { projectRoot: options.projectRoot, checkFiles: Boolean(options.projectRoot), targetSha: identity.target, targetFrozenAt: manifest?.reference_target?.frozen_at, candidateSha: identity.candidate, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority }));
   const evidenceOptions = { requireEvidenceIdentity: true, identity, projectRoot: options.projectRoot, checkFiles: Boolean(options.projectRoot), targetFrozenAt: manifest?.reference_target?.frozen_at, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority };
   errors.push(...validateF2ProductionReviews(evidence?.gateResults?.F2, { stage: "F2" }, { ...evidenceOptions, requireVisualStructure: true }));
-  // Evidence 的 F2 可能独立于 manifest 重新提交；必须再次逐 component×state 绑定 V3 expected_assets，不能只验证双审摘要。
+  // Evidence 的 F2 可能独立于 manifest 重新提交；必须再次逐 component×state 绑定 V3 expected_assets，不能只验证双证据摘要。
   errors.push(...validateComponentReviewCoverage(manifest, evidence?.gateResults?.F2, "F2"));
   const replay = evidence?.gateResults?.F3?.runtime_replay ?? evidence?.runtime_replay;
   if (!isObject(replay) || !["passed", "PASS"].includes(String(replay.status)) || !nonEmptyString(replay.evidence)) errors.push("[F3] annotation_number=* region_id=* expected_method=runtime-replay observed_method=missing 缺失=runtime_replay：视觉候选必须绑定通过的 runtime replay"); else errors.push(...validateEvidenceIdentity(replay, { stage: "F3", annotation_number: "*", region_id: "runtime-replay" }, identity, evidenceOptions));

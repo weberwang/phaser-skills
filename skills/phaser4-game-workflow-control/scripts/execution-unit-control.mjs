@@ -24,7 +24,7 @@ export function validateUnitResult(result, resultPath, work, pkg, unit, repo, io
   const extra = keys.filter((field) => !RESULT_FIELDS.includes(field));
   if (missing.length || extra.length) throw new Error(`Execution Unit Result 字段不严格：缺少 ${missing.join('、') || '无'}；多余 ${extra.join('、') || '无'}`);
   if (!result.resultId || result.workItemId !== work.workItemId || result.packageId !== pkg.packageId || result.unitId !== unit.unitId || result.baselineHash !== work.baselineHash) throw new Error(`Execution Unit Result 未绑定当前工作项、实施包、单元或基线：${unit.unitId}`);
-  if (result.verdict !== 'PASS') throw new Error(`Execution Unit Result 只有 PASS 可满足依赖：${unit.unitId}`);
+  if (result.verdict !== 'PASS') throw new Error(`Execution Unit Result 只有 PASS 可满足预设顺序前序门：${unit.unitId}`);
   if (Number.isNaN(Date.parse(result.completedAt))) throw new Error(`Execution Unit Result.completedAt 无效：${unit.unitId}`);
   const relativeResult = io.normalizeRepoPath(repo, resultPath);
   const unitRoot = `${work.evidenceRoot.replace(/\/$/, '')}/units`;
@@ -65,11 +65,21 @@ export function findValidUnitResult(work, pkg, unit, repo, io) {
   return null;
 }
 
-/** 由前置单元的当前有效 PASS Result 推导 READY。 */
+/** 按 executionUnits 的预设位置计算目标单元需要等待的前序单元。 */
+function precedingUnitsForReady(unit, pkg) {
+  const units = pkg.executionUnits;
+  const index = units.findIndex((item) => item.unitId === unit.unitId);
+  if (index < 0) throw new Error(`实施单元不在当前 Implementation Package 的预设顺序中：${unit.unitId}`);
+  if (unit.parallelMode !== 'PARALLEL') return units.slice(0, index);
+  const groupStart = units.findIndex((item) => item.parallelMode === 'PARALLEL' && item.parallelGroup === unit.parallelGroup);
+  if (groupStart < 0) throw new Error(`并行单元未找到预设顺序阶段：${unit.unitId}`);
+  return units.slice(0, groupStart);
+}
+
+/** 只按预设数组位置和当前有效 PASS Result 判定 READY，不推导依赖图。 */
 export function assertUnitReady(unit, work, pkg, repo, io) {
-  for (const dependencyId of unit.dependsOn) {
-    const dependency = pkg.executionUnits.find((item) => item.unitId === dependencyId);
-    if (!dependency || !findValidUnitResult(work, pkg, dependency, repo, io)) throw new Error(`实施单元尚未 READY，缺少当前 PASS 前置证据：${unit.unitId} <- ${dependencyId}`);
+  for (const preceding of precedingUnitsForReady(unit, pkg)) {
+    if (!findValidUnitResult(work, pkg, preceding, repo, io)) throw new Error(`实施单元尚未 READY，缺少预设顺序前序证据：${unit.unitId} <- ${preceding.unitId}`);
   }
 }
 

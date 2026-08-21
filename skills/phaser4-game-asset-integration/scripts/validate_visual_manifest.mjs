@@ -16,7 +16,7 @@ import { validateFormalAnnotationPng } from "./visual-annotation-evidence.mjs";
 import { auditProductionContractByGroups, confirmationAuthorityBase, validateConfirmationGroups, validateImplementationPlan as validateImplementationPlanContract, validateManualConfirmationEvidence, validateReusePlanRelation, validateV5ProductionGateByGroups } from "./visual-manifest-confirmation.mjs";
 import { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, isSha256, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateComponentReviewCoverage, validateEvidenceIdentity, validateF2ProductionReviews, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
 import { validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "../../phaser4-game-workflow-control/scripts/scene-reconstruction-contract.mjs";
-import { validateHumanReview, validateVisualHumanReviewCompletion } from "../../phaser4-game-workflow-control/scripts/visual-human-review-contract.mjs";
+import { validateVisualHumanReviewCompletion } from "../../phaser4-game-workflow-control/scripts/visual-human-review-contract.mjs";
 import { validateImageGenerationSizeManifest } from "../../phaser4-game-workflow-control/scripts/visual-generation-size-contract.mjs";
 import { isWorkflowDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
 import { VISUAL_STAGE_IDS, VISUAL_STAGE_STATES } from "../../phaser4-game-workflow-control/scripts/visual-stage-prerequisites.mjs";
@@ -229,7 +229,6 @@ function validateFidelityCases(cases, target, candidate, baseline, errors, { req
   cases.forEach((item, index) => {
     const label = `fidelity_cases[${index}]`;
     if (!isObject(item)) { errors.push(`${label} 必须是对象`); return; }
-    errors.push(...validateHumanReview(item.human_review, { stage: requireCompleteCoverage ? "V5" : "V3", scene_id: item.scene_id, state_id: item.state_id, returnStage: requireCompleteCoverage ? "V4/F2" : "V2/V3", rootCause: "验收问题" }, { requirePassed: requireCompleteCoverage, returnStage: requireCompleteCoverage ? "V4/F2" : "V2/V3", rootCause: "验收问题" }));
     for (const field of ["id", "target_sha256", "candidate_sha256", "scene_id", "state_id", "language", "input_trace", "animation_sample", "layout_contract_version", "visual_baseline_version", "conclusion"]) if (!nonEmptyString(item[field])) errors.push(`${label}.${field} 必须是非空字符串`);
     if (nonEmptyString(item.scene_id) && !target?.scene_ids?.includes(item.scene_id)) errors.push(`${label}.scene_id 不在 reference_target.scene_ids 范围内`);
     if (nonEmptyString(item.state_id) && !target?.state_ids?.includes(item.state_id)) errors.push(`${label}.state_id 不在 reference_target.state_ids 范围内`);

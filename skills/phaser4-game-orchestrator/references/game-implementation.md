@@ -7,7 +7,7 @@
 1. G0 冻结全部授权需求、功能、模块、场景、正式资源和验收证据清单，建立“需求 → 功能 → 模块 → 场景 → 正式资源 → 测试证据”追踪；不得只冻结首个可玩切片。
 2. 先实现公共基础：启动/加载、Scene 生命周期、输入、音频/存档接口、资源注册、统一布局入口、平台适配和测试支撑。公共代码或正式资源仅在至少两个已确认场景稳定复用，或属于运行必需时提取；禁止无边界 `common`、`utils` 和公共素材库。
 3. Boot/Preload 只实现支撑后续场景的最小版本；其完整视觉、交互和异常状态按所属 supporting 场景闭环后置。
-4. 按依赖顺序逐个完成全部 `gameplay` 场景，再逐个完成菜单、教程、结算、设置等 `supporting` 场景；核心循环主场景优先，场景不得绕过公开契约直接访问其他场景状态。
+4. 按计划制定者冻结的预设顺序逐个完成全部 `gameplay` 场景，再逐个完成菜单、教程、结算、设置等 `supporting` 场景；Implementation Package 的 `executionUnits` 数组是实施顺序的唯一权威，控制面只校验/执行数组，不通过依赖关系推导排序。核心循环主场景优先，场景不得绕过公开契约直接访问其他场景状态。
 5. 关闭跨场景导航、存档、音频、状态连续性和异常恢复，确认所有授权功能均有归属场景或跨场景所有者。
 6. 只有全部授权场景、功能和正式视觉闭环关闭后才允许退出 G1，进入 G2 完整集成与回归。首个可玩切片只是 G1 中间里程碑，不是 G1 出口。
 
@@ -21,8 +21,8 @@
 
 1. 冻结玩家行为、模块契约、所有权、验收、服务复用和 V0 类型。模块边界变化先查事实，仅实质取舍触发模块门和 grilling。F4 只做 A4-A6 决定。
 2. 适用 V1 时定义状态、输入、规则、反馈和必要低保真草图/灰盒。指定效果图还原须先冻结参考身份、目标视口/状态、对比条件和可观察视觉事实；静态图无法证明的玩法、交互或动画标为待定义。只有不改变冻结视觉事实且处于项目预定义容差内的适配可 `AUTO`，可见偏差或实质取舍请求一次精确确认并绑定已批准例外。
-3. 纯玩法规则可与 V2-V4 并行，但必须在实施计划中分别登记模块/场景单元、前置依赖、并行组、互斥写范围与状态所有权；READY 由前置单元的当前候选完成证据派生而非手工填写，只有 READY 且同组无冲突的单元才可并行委派，不得消费未验收资源或从效果图裁切正式资源。
-4. V2 把关键画面装入当前场景的可运行切片并提供动态轨迹；独立美术 F2 检查识别、预警、反馈、遮挡和小屏表现。首个可玩切片只证明核心链路。严格复刻可免三方向探索，但不得免 V2a/V2b、动态样片、独立美术 F2、同条件证据和逐状态/逐区域忠实度矩阵；专业质量修复不得自动改变冻结视觉目标。
+3. 纯玩法规则可与 V2-V4 并行，但必须在实施计划中按 `executionUnits` 数组登记模块/场景单元的预设顺序、并行组、互斥写范围与状态所有权；数组由计划制定者冻结为权威顺序，READY 只按数组位置和当前候选完成证据校验而非手工填写或依赖推导。SERIAL 单元等待所有前序数组项，PARALLEL 单元等待其组首项之前所有数组项，同组 peer 不互相等待；只有 READY 且同组无冲突的单元才可并行委派，不得消费未验收资源或从效果图裁切正式资源。
+4. V2 把关键画面装入当前场景的可运行切片并提供动态轨迹；结构化机器检查覆盖识别、预警、反馈、遮挡和小屏表现，随后只进行一次真人视觉方向审批。首个可玩切片只证明核心链路。严格复刻可免三方向探索，但不得免 V2a/V2b、动态样片、机器检查、唯一真人方向审批、同条件证据和逐状态/逐区域忠实度矩阵；专业质量修复不得自动改变冻结视觉目标。
 5. 普通资产在 schema 1.5 明确 `not-applicable`。效果图冻结后、进入 V3 前完成合同回对与 coverage，标记 `v3-ready`；拆解固定为“先状态分析、后组件清单”：每个区域必须为 default、selected、active、disabled、pressed、hover、victory、defeat、paused 写 `required` 或 `not-applicable+reason`，再以 `component_inventory.component_count` 登记可复用部件。`annotation_number` 只是审阅区域编号，不是资产数量；`expected_assets` 必须逐 `component_id × required state_id` 映射。ImageGen 无条件使用 `delivery_mode=individual`、`atlas_allowed=false` 的独立位图，禁止横向组图和图集；固定视觉图片只允许 imagegen/authored-raster 或有证据的 reuse，交付 PNG/JPG 位图；authored-svg、Phaser Graphics、Canvas/CanvasTexture、runtime-program 和 runtime drawing 只能用于非图片逻辑、交互热区、碰撞或布局。之后再依据 ownership/F2 事实生成编号 PNG（左原图+右侧说明栏），展示本次生成、复用既有资源和程序实现。所有带 `annotation_number` 的区域（本次生成、复用既有资源、非图片逻辑）必须在同一 `annotation/proposal` 集合中冻结完整的 production_label、component/state/asset requirements；先提交绑定冻结目标 SHA/region ID/区域定义 SHA 的提案，并在 `visual-decomposition-confirmation/1.0` 中记录 proposal/annotation/decision SHA、场景/状态、每个编号、用户原文、accepted_at、work item 和 candidate identity。确认必须是 `status=accepted`、`confirmation_mode=manual`，禁止 AUTO、pending 和旧记录；Implementation Package 必须冻结同一确认 ID/SHA，确认缺失或漏编号不得从分析阶段进入实施。`reuse-existing` 必须通过不可变 `asset-reuse-snapshot/1.0` 文件检查，精确绑定 `source_file`、`source_manifest_sha256`、`source_sha256`、`compatibility_evidence_sha256`，冻结原图必须是与目标画布同尺寸的完整合法 PNG。程序实现区域不生产图片，但仍必须进入上述完整人工确认集合。开始任何拆解生产前必须运行带 `--check-files --project-root .` 的校验且结构和文件证据均通过，确认前不得裁切、抠图、分层、AI 分割/补全或生产派生位图；V3/V4 可暂无 fidelity，V5 验证完成才改为 `v5-complete` 且全部 case 通过。验证器不从像素臆测 owner_type。
 6. V4 生产并验证资源。只有机器清单状态为 `accepted` 且来源或生成记录、授权、运行时输出、Phaser 和玩法视觉证据完整时可集成。效果图区域还必须逐 `annotation_number/region_id` 显式声明七个生产合同字段以及状态/部件映射；V4 逐部件逐状态核对实际文件、图集切片和运行时 `component_usages`。固定视觉图片只允许 `imagegen`、`authored-raster`、`reuse`，必须是正式 PNG/JPG 位图或有证据的 existing-asset；`authored-svg`、`phaser-graphics`、`runtime-program`、Canvas/CanvasTexture 和 runtime drawing 不得作为图片 component 或运行时图片消费。只有 `image_generation_required=true` 才额外要求 `imagegen+raster-image`、独立位图、完整提示词/生成记录和运行时消费；拆解区域还必须通过人工确认身份门。
 
@@ -32,7 +32,7 @@
 
 ## 受控并行实现
 
-共享契约、事件/状态接口和基础设施以及集成单元强制串行。冻结后，模块与场景必须用当前 PASS Unit Result 推导依赖是否满足；同组至少两个单元，且文件写范围、玩法/场景状态所有权不得相交。跨模块或跨场景装配、共享入口替换与最终集成保持串行。串行 A3 用 `delegate-check`；并行 A3 必须把完整同组委派组成不可变批次并用 `parallel-check` 原子校验。
+共享契约、事件/状态接口和基础设施以及集成单元强制串行。冻结后，模块与场景必须遵循 `executionUnits` 数组中的预设顺序；同一非空并行组必须连续出现，至少包含两个单元，且文件写范围、玩法/场景状态所有权不得相交。控制面只校验并执行该顺序，不计算依赖闭包或拓扑排序；READY 只检查目标位置之前的有效 PASS（并行组从组首项计算），同组 peer 不互相等待。跨模块或跨场景装配、共享入口替换与最终集成保持串行。串行 A3 用 `delegate-check`；并行 A3 必须把完整同组委派组成不可变批次并用 `parallel-check` 原子校验。
 
 ## UI 与背景
 

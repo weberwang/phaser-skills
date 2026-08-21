@@ -1,33 +1,33 @@
 /**
- * F2 视觉双审合同校验。
+ * F2 视觉双证据合同校验。
  *
- * F2 的生产审计与视觉保真审查职责不同；本模块只处理双 reviewer、整屏
- * 视觉结构、逐区域结果和 findings 严重级别，避免总生产合同继续膨胀。
+ * F2 的生产审计与视觉保真审查职责不同；本模块只处理两类机器证据、整屏
+ * 视觉结构、逐区域结果和 findings 严重级别。V2 唯一真人方向审批之外，
+ * F2 不再强制第二位 reviewer 或重复人工身份。
  */
 import { isObject, nonEmptyString, productionContractError, validateEvidenceIdentity } from "./visual-production-contract.mjs";
-import { validateHumanReview, validateHumanReviewIdentity } from "./visual-human-review-contract.mjs";
+import { validateHumanReviewIdentity, validateStructuredReview } from "./visual-human-review-contract.mjs";
 
-/** 校验 F2 必须同时完成视觉一致性和生产合同双审。 */
+/** 校验 F2 必须同时完成视觉一致性和生产合同两类机器证据。 */
 export function validateF2ProductionReviews(f2, context = {}, options = {}) {
   const errors = [];
   const label = context.stage ?? "F2";
   const error = (message, missing = "") => errors.push(productionContractError({ stage: label, annotation_number: context.annotation_number ?? "*", region_id: context.region_id ?? "*", expectedMethod: "dual-review", observedMethod: "missing" }, message, { missing }));
   if (!isObject(f2)) { error("F2 gateResult 缺失", "F2"); return errors; }
-  const reviews = [];
   for (const field of ["visual_fidelity_review", "production_contract_review"]) {
     const review = f2[field];
     if (!isObject(review)) { error(`缺少 ${field}`, field); continue; }
-    reviews.push(review);
-    errors.push(...validateHumanReview(review, { stage: label, annotation_number: context.annotation_number ?? "*", region_id: context.region_id ?? "*", scene_id: context.scene_id ?? "*", state_id: context.state_id ?? "*" }, { requirePassed: true, returnStage: "V4/F2", rootCause: "验收问题" }));
+    // reviewer 字段若出现则按结构化机器/AI身份校验；F2 不要求第二位真人身份。
+    if (review.reviewer_type !== undefined || review.reviewer_id !== undefined || review.reviewed_at !== undefined) {
+      errors.push(...validateStructuredReview(review, { stage: label, annotation_number: context.annotation_number ?? "*", region_id: context.region_id ?? "*", scene_id: context.scene_id ?? "*", state_id: context.state_id ?? "*" }, { requirePassed: true, returnStage: "V4/F2", rootCause: "验收问题" }));
+    }
     if (options.requireEvidenceIdentity) errors.push(...validateHumanReviewIdentity(review, options.identity ?? {}, { stage: label, annotation_number: context.annotation_number ?? "*", region_id: context.region_id ?? field, scene_id: context.scene_id ?? "*", state_id: context.state_id ?? "*" }, { requireTarget: true, requireCandidate: true, requireDiff: true, returnStage: "V4/F2", rootCause: "验收问题" }));
     if (!["passed", "PASS"].includes(String(review.status))) error(`${field}.status 必须为 passed`);
     if (!nonEmptyString(review.review_id ?? review.reviewId)) error(`${field} 缺少 review_id`, `${field}.review_id`);
-    if (!nonEmptyString(review.reviewer)) error(`${field} 缺少 reviewer`, `${field}.reviewer`);
-    if (!nonEmptyString(review.evidence)) error(`${field} 缺少 evidence`, `${field}.evidence`);
+    if (!nonEmptyString(review.evidence) && !(Array.isArray(review.evidence) && review.evidence.length > 0) && !(isObject(review.evidence) && Object.keys(review.evidence).length > 0)) error(`${field} 缺少 evidence`, `${field}.evidence`);
     if (options.requireEvidenceIdentity) errors.push(...validateEvidenceIdentity(review, { stage: label, annotation_number: context.annotation_number ?? "*", region_id: context.region_id ?? field }, options.identity ?? {}, options));
   }
-  if (reviews.length === 2 && (reviews[0].reviewer_id === reviews[1].reviewer_id || reviews[0].reviewer === reviews[1].reviewer)) error("visual_fidelity_review 与 production_contract_review 必须由独立 reviewer 完成");
-  if (!["passed", "PASS"].includes(String(f2.overall_status ?? f2.overallStatus))) error("F2 overall_status 必须为 passed，双审不能只靠单一 reviewer");
+  if (!["passed", "PASS"].includes(String(f2.overall_status ?? f2.overallStatus))) error("F2 overall_status 必须为 passed，机器视觉与生产证据均需通过");
   if (options.requireVisualStructure === true) {
     const review = f2.visual_fidelity_review;
     // PASS 字符串不能替代对整屏构图和每个 coverage region 的结构化审查。

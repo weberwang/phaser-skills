@@ -9,12 +9,31 @@
     "visualStage": {"enum": ["V0", "V1", "V2", "V3", "V4", "V5"]},
     "visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "global-static-baseline-frozen", "v2-direction-frozen", "v3-production-planning-complete", "v4-formal-acceptance-complete", "v5-runtime-integration-candidate"]},
     "globalStaticBaselineState": {"const": "global-static-baseline-frozen"},
+    "visualHumanApproval": {"$ref": "#/$defs/visualHumanApproval"},
+    "visual_human_approval": {"$ref": "#/$defs/visualHumanApproval"},
     "visualStageEvidenceRefs": {
       "type": "object",
       "additionalProperties": {"$ref": "#/$defs/evidenceReference"}
     }
   },
   "$defs": {
+    "visualHumanApproval": {
+      "type": "object",
+      "required": ["review_id", "reviewed_at", "evidence", "evidence_sha256", "status", "target_sha256", "candidate_sha256", "diff_fingerprint", "baseline_sha256"],
+      "properties": {
+        "review_id": {"type": "string", "minLength": 1},
+        "reviewed_at": {"type": "string", "format": "date-time"},
+        "evidence": {"type": ["string", "array", "object"]},
+        "evidence_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "status": {"enum": ["passed", "PASS"]},
+        "target_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "candidate_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "diff_fingerprint": {"type": "string", "minLength": 1},
+        "baseline_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+      },
+      "not": {"anyOf": [{"required": ["reviewer_type"]}, {"required": ["reviewerType"]}, {"required": ["reviewer_id"]}, {"required": ["reviewerId"]}, {"required": ["reviewer"]}]},
+      "additionalProperties": true
+    },
     "evidenceReference": {
       "type": "object",
       "additionalProperties": false,

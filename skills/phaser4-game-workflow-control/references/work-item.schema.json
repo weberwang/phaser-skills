@@ -101,6 +101,8 @@
       },
       "additionalProperties": false
     },
+    "visualHumanApproval": {"$ref": "#/$defs/visualHumanApproval"},
+    "visual_human_approval": {"$ref": "#/$defs/visualHumanApproval"},
     "visualIntegration": {
       "type": "object",
       "properties": {
@@ -771,17 +773,18 @@
     },
     "evidenceValue": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "array", "minItems": 1, "items": {"type": ["string", "object"]}}, {"type": "object", "minProperties": 1}]},
     "humanReview": {"type": "object", "required": ["reviewer_type", "reviewer_id", "reviewed_at", "evidence", "status"], "properties": {"reviewer_type": {"const": "human"}, "reviewer_id": {"type": "string", "minLength": 1}, "reviewed_at": {"type": "string", "format": "date-time"}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "status": {"enum": ["passed", "PASS", "failed", "FAIL"]}, "target_sha256": {"$ref": "#/$defs/sha256"}, "candidate_sha256": {"$ref": "#/$defs/sha256"}, "code_sha256": {"$ref": "#/$defs/sha256"}, "build_sha256": {"$ref": "#/$defs/sha256"}, "diff_fingerprint": {"type": "string", "minLength": 1}, "diff_identity": {"type": "string", "minLength": 1}}, "additionalProperties": true},
+    "visualHumanApproval": {"type": "object", "required": ["review_id", "reviewed_at", "evidence", "evidence_sha256", "status", "target_sha256", "candidate_sha256", "diff_fingerprint", "baseline_sha256"], "properties": {"review_id": {"type": "string", "minLength": 1}, "reviewed_at": {"type": "string", "format": "date-time"}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "evidence_sha256": {"$ref": "#/$defs/sha256"}, "status": {"enum": ["passed", "PASS"]}, "target_sha256": {"$ref": "#/$defs/sha256"}, "candidate_sha256": {"$ref": "#/$defs/sha256"}, "diff_fingerprint": {"type": "string", "minLength": 1}, "baseline_sha256": {"$ref": "#/$defs/sha256"}}, "not": {"anyOf": [{"required": ["reviewer_type"]}, {"required": ["reviewerType"]}, {"required": ["reviewer_id"]}, {"required": ["reviewerId"]}, {"required": ["reviewer"]}]}, "additionalProperties": true},
     "v2Artifact": {
       "type": "object",
-      "required": ["identity", "evidence", "human_review"],
-      "properties": {"identity": {"$ref": "#/$defs/artifactIdentity"}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "human_review": {"$ref": "#/$defs/humanReview"}},
+      "required": ["identity", "evidence"],
+      "properties": {"identity": {"$ref": "#/$defs/artifactIdentity"}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "visual_human_approval_id": {"type": "string", "minLength": 1}, "visual_human_approval_sha256": {"$ref": "#/$defs/sha256"}},
       "additionalProperties": true
     },
     "v2StructuredReview": {
       "type": "object",
-      "required": ["reviewer_type", "reviewer_id", "reviewed_at", "evidence", "status", "reviewed_target_identity", "reviewed_candidate_identity", "full_viewport_comparison", "per_region_review", "composition_review", "geometry_review", "color_material_review", "typography_review", "decoration_density_review", "responsive_review"],
+      "required": ["evidence", "status", "reviewed_target_identity", "reviewed_candidate_identity", "full_viewport_comparison", "per_region_review", "composition_review", "geometry_review", "color_material_review", "typography_review", "decoration_density_review", "responsive_review"],
       "properties": {
-        "reviewer_type": {"const": "human"}, "reviewer_id": {"type": "string", "minLength": 1}, "reviewed_at": {"type": "string", "format": "date-time"}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "status": {"enum": ["passed", "PASS", "failed", "FAIL"]},
+        "evidence": {"$ref": "#/$defs/evidenceValue"}, "status": {"enum": ["passed", "PASS", "failed", "FAIL"]},
         "reviewed_target_identity": {"type": "object", "minProperties": 1}, "reviewed_candidate_identity": {"type": "object", "minProperties": 1}, "full_viewport_comparison": {"$ref": "#/$defs/evidenceValue"}, "per_region_review": {"type": "array", "minItems": 1}, "composition_review": {"type": "object", "minProperties": 1}, "geometry_review": {"type": "object", "minProperties": 1}, "color_material_review": {"type": "object", "minProperties": 1}, "typography_review": {"type": "object", "minProperties": 1}, "decoration_density_review": {"type": "object", "minProperties": 1}, "responsive_review": {"type": "object", "minProperties": 1}
       }
     },
@@ -803,7 +806,7 @@
       }],
       "additionalProperties": true
     },
-    "combinationPreacceptance": {"type": "object", "required": ["status", "formal_scene_structure", "layout_calculation_identity", "evidence", "target_sha256", "candidate_sha256", "diff_fingerprint", "reviewer_type", "reviewer_id", "reviewed_at"], "properties": {"status": {"enum": ["passed", "PASS"]}, "reviewer_type": {"const": "human"}, "reviewer_id": {"type": "string", "minLength": 1}, "reviewed_at": {"type": "string", "format": "date-time"}, "formal_scene_structure": {"type": "string", "minLength": 1}, "layout_calculation_identity": {"type": "string", "minLength": 1}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "target_sha256": {"$ref": "#/$defs/sha256"}, "candidate_sha256": {"$ref": "#/$defs/sha256"}, "diff_fingerprint": {"type": "string", "minLength": 1}}},
+    "combinationPreacceptance": {"type": "object", "required": ["status", "formal_scene_structure", "layout_calculation_identity", "evidence", "target_sha256", "candidate_sha256", "diff_fingerprint"], "properties": {"status": {"enum": ["passed", "PASS"]}, "formal_scene_structure": {"type": "string", "minLength": 1}, "layout_calculation_identity": {"type": "string", "minLength": 1}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "target_sha256": {"$ref": "#/$defs/sha256"}, "candidate_sha256": {"$ref": "#/$defs/sha256"}, "diff_fingerprint": {"type": "string", "minLength": 1}}},
     "sceneAssetUsage": {"type": "object", "required": ["target_display_size", "intended_scale_range", "origin", "anchor", "nine_slice", "material", "composition_region", "required_neighbors", "typography_ownership", "runtime_foreground_ownership"], "properties": {"target_display_size": {"type": "object", "required": ["width", "height"], "properties": {"width": {"type": "number", "exclusiveMinimum": 0}, "height": {"type": "number", "exclusiveMinimum": 0}}}, "intended_scale_range": {"type": "object", "required": ["min", "max"], "properties": {"min": {"type": "number", "exclusiveMinimum": 0}, "max": {"type": "number", "exclusiveMinimum": 0}}}, "max_dpr": {"const": 1.5, "description": "最大生产 DPR 固定为 1.5；运行时实际 DPR 动态取值并封顶为 1.5。"}, "padding_policy": {"type": "string", "description": "ImageGen individual 必须为 none；非 ImageGen 可不声明该字段。"}, "origin": {"type": ["object", "string"]}, "anchor": {"type": ["object", "string"]}, "nine_slice": {"type": ["object", "string"]}, "material": {"type": ["object", "string"]}, "composition_region": {"type": ["object", "string"]}, "required_neighbors": {"type": "array"}, "typography_ownership": {"type": ["object", "string"]}, "runtime_foreground_ownership": {"type": ["object", "string"]}}, "additionalProperties": true},
     "visualExpectedAsset": {"type": "object", "required": ["asset_id", "asset_scope", "atomic_visual_key", "component_id", "state_id"], "properties": {"asset_id": {"type": "string", "minLength": 1}, "asset_scope": {"const": "atomic-component"}, "atomic_visual_key": {"type": "string", "minLength": 1}, "component_id": {"type": "string", "minLength": 1}, "state_id": {"type": "string", "minLength": 1}, "mime_type": {"type": "string"}, "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1}}},
     "imageGenerationExpectedAsset": {"allOf": [{"$ref": "#/$defs/visualExpectedAsset"}, {"type": "object", "required": ["source_file", "runtime_file", "mime_type", "width", "height"], "properties": {"mime_type": {"enum": ["image/png", "image/jpeg"]}, "source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "runtime_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}}}]},

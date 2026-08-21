@@ -21,6 +21,7 @@
     "executionUnits": {
       "type": "array",
       "minItems": 1,
+      "description": "数组顺序由计划制定者预设并作为唯一执行顺序；串行单元各占一个位置，同一并行组必须连续出现。",
       "items": {"$ref": "#/$defs/executionUnit"}
     },
     "allowedPaths": {"$ref": "#/$defs/nonEmptyStrings"},
@@ -70,7 +71,7 @@
     "executionUnit": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["unitId", "unitType", "scopeId", "moduleId", "sceneId", "owner", "dependsOn", "parallelMode", "parallelGroup", "ownedPaths", "stateOwnership", "acceptanceCommands", "serializationReason"],
+      "required": ["unitId", "unitType", "scopeId", "moduleId", "sceneId", "owner", "parallelMode", "parallelGroup", "ownedPaths", "stateOwnership", "acceptanceCommands", "serializationReason"],
       "properties": {
         "unitId": {"type": "string", "minLength": 1},
         "unitType": {"enum": ["MODULE", "SCENE", "SHARED", "INTEGRATION"]},
@@ -78,7 +79,6 @@
         "moduleId": {"type": "string", "minLength": 1},
         "sceneId": {"type": ["string", "null"], "minLength": 1},
         "owner": {"type": "string", "minLength": 1},
-        "dependsOn": {"$ref": "#/$defs/strings"},
         "parallelMode": {"enum": ["PARALLEL", "SERIAL"]},
         "parallelGroup": {"type": ["string", "null"], "minLength": 1},
         "ownedPaths": {"$ref": "#/$defs/nonEmptyStrings"},
@@ -330,41 +330,19 @@
         {"type": "object", "minProperties": 1}
       ]
     },
-    "humanReview": {
-      "type": "object",
-      "required": ["reviewer_type", "reviewer_id", "reviewed_at", "evidence", "status"],
-      "properties": {
-        "reviewer_type": {"const": "human"},
-        "reviewer_id": {"type": "string", "minLength": 1},
-        "reviewed_at": {"type": "string", "format": "date-time"},
-        "evidence": {"$ref": "#/$defs/evidenceValue"},
-        "status": {"enum": ["passed", "PASS", "failed", "FAIL"]},
-        "target_sha256": {"$ref": "#/$defs/sha256"},
-        "candidate_sha256": {"$ref": "#/$defs/sha256"},
-        "code_sha256": {"$ref": "#/$defs/sha256"},
-        "build_sha256": {"$ref": "#/$defs/sha256"},
-        "diff_fingerprint": {"type": "string", "minLength": 1},
-        "diff_identity": {"type": "string", "minLength": 1}
-      },
-      "additionalProperties": true
-    },
     "v2Artifact": {
       "type": "object",
-      "required": ["identity", "evidence", "human_review"],
+      "required": ["identity", "evidence"],
       "properties": {
         "identity": {"$ref": "#/$defs/artifactIdentity"},
-        "evidence": {"$ref": "#/$defs/evidenceValue"},
-        "human_review": {"$ref": "#/$defs/humanReview"}
+        "evidence": {"$ref": "#/$defs/evidenceValue"}
       },
       "additionalProperties": true
     },
     "v2StructuredReview": {
       "type": "object",
-      "required": ["reviewer_type", "reviewer_id", "reviewed_at", "evidence", "status", "reviewed_target_identity", "reviewed_candidate_identity", "full_viewport_comparison", "per_region_review", "composition_review", "geometry_review", "color_material_review", "typography_review", "decoration_density_review", "responsive_review"],
+      "required": ["evidence", "status", "reviewed_target_identity", "reviewed_candidate_identity", "full_viewport_comparison", "per_region_review", "composition_review", "geometry_review", "color_material_review", "typography_review", "decoration_density_review", "responsive_review"],
       "properties": {
-        "reviewer_type": {"const": "human"},
-        "reviewer_id": {"type": "string", "minLength": 1},
-        "reviewed_at": {"type": "string", "format": "date-time"},
         "evidence": {"$ref": "#/$defs/evidenceValue"},
         "status": {"enum": ["passed", "PASS", "failed", "FAIL"]},
         "reviewed_target_identity": {"type": "object", "minProperties": 1},
@@ -417,11 +395,8 @@
     },
     "combinationPreacceptance": {
       "type": "object",
-      "required": ["status", "formal_scene_structure", "layout_calculation_identity", "evidence", "target_sha256", "candidate_sha256", "diff_fingerprint", "reviewer_type", "reviewer_id", "reviewed_at"],
+      "required": ["status", "formal_scene_structure", "layout_calculation_identity", "evidence", "target_sha256", "candidate_sha256", "diff_fingerprint"],
       "properties": {
-        "reviewer_type": {"const": "human"},
-        "reviewer_id": {"type": "string", "minLength": 1},
-        "reviewed_at": {"type": "string", "format": "date-time"},
         "status": {"enum": ["passed", "PASS"]},
         "formal_scene_structure": {"type": "string", "minLength": 1},
         "layout_calculation_identity": {"type": "string", "minLength": 1},
@@ -474,7 +449,7 @@
     },
     "fidelityRegionResult": {
       "type": "object",
-      "required": ["region_id", "target_measurement", "candidate_measurement", "delta", "tolerance_reference", "result", "evidence", "exception_ids", "human_review"],
+      "required": ["region_id", "target_measurement", "candidate_measurement", "delta", "tolerance_reference", "result", "evidence", "exception_ids"],
       "properties": {
         "region_id": {"type": "string", "minLength": 1},
         "target_measurement": {"type": ["number", "string", "boolean", "object", "array"], "minItems": 1},
@@ -484,12 +459,11 @@
         "result": {"enum": ["passed", "PASS", "failed", "FAIL"]},
         "evidence": {"$ref": "#/$defs/evidenceValue"},
         "exception_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
-        ,"human_review": {"$ref": "#/$defs/humanReview"}
       }
     },
     "structuredFidelityCase": {
       "type": "object",
-      "required": ["target_identity", "candidate_identity", "scene_id", "state_id", "viewport", "dpr", "locale", "random_seed", "input_trace", "animation_sample", "original_target_size", "original_candidate_size", "normalization_transform", "normalization_equivalence", "normalized_comparison_canvas", "full_viewport_reference", "full_viewport_candidate", "side_by_side_evidence", "overlay_evidence", "difference_evidence", "tolerance_set", "per_region_results", "conclusion", "human_review"],
+      "required": ["target_identity", "candidate_identity", "scene_id", "state_id", "viewport", "dpr", "locale", "random_seed", "input_trace", "animation_sample", "original_target_size", "original_candidate_size", "normalization_transform", "normalization_equivalence", "normalized_comparison_canvas", "full_viewport_reference", "full_viewport_candidate", "side_by_side_evidence", "overlay_evidence", "difference_evidence", "tolerance_set", "per_region_results", "conclusion"],
       "properties": {
         "target_identity": {"type": "object", "required": ["sha256"], "properties": {"sha256": {"$ref": "#/$defs/sha256"}}},
         "candidate_identity": {"$ref": "#/$defs/artifactIdentity"},
@@ -513,8 +487,7 @@
         "difference_evidence": {"$ref": "#/$defs/differenceEvidence"},
         "tolerance_set": {"type": ["object", "array"], "minItems": 1},
         "per_region_results": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/fidelityRegionResult"}},
-        "conclusion": {"enum": ["passed", "PASS", "failed", "FAIL"]},
-        "human_review": {"$ref": "#/$defs/humanReview"}
+        "conclusion": {"enum": ["passed", "PASS", "failed", "FAIL"]}
       }
     },
     "sceneAssetUsage": {

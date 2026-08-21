@@ -42,11 +42,11 @@ F2 必须由非作者执行。V2a/V2b 必须由独立美术给出专业视觉结
 
 ## V2 视觉探索与动态可玩样片
 
-V1 的 `AUTO` 或 `USER_DECISION` 有效后进入 V2。V2 必须执行 V2a、V2b、动态样片与独立美术 F2；用户选择仍按条件只记录一次。
+V1 的 `AUTO` 或 `USER_DECISION` 有效后进入 V2。V2 必须执行 V2a、V2b、动态样片、结构化机器检查与唯一一次真人视觉方向审批。
 
 ### V2a 方向基准
 
-1. 重做、重新设计、提升游戏感或替换整套 UI 时，正式基准前至少提交 3 个实质差异方向。各方向必须在构图、场景容器、核心焦点、材质或情绪上形成差异，且分别说明玩家幻想、核心玩具、主要交互、奖励表达和状态扩展；不得只换色。严格参考复刻可免三方向，但必须提交同条件参考/候选对比、逐项差异说明和忠实度矩阵；不得免 V2a/V2b、动态样片或独立美术 F2。
+1. 重做、重新设计、提升游戏感或替换整套 UI 时，正式基准前至少提交 3 个实质差异方向。各方向必须在构图、场景容器、核心焦点、材质或情绪上形成差异，且分别说明玩家幻想、核心玩具、主要交互、奖励表达和状态扩展；不得只换色。严格参考复刻可免三方向，但必须提交同条件参考/候选对比、逐项差异说明和忠实度矩阵；不得免 V2a/V2b、动态样片、结构化机器检查或唯一真人方向审批。
 2. 每个候选必须引用截图、具体区域和可观察事实，证明玩家幻想、核心玩具、行动召唤、反馈强度、奖励期待、情绪峰值、移除文字后的场景用途与狐狸主题、视觉一致性、页面场景差异和沉浸完整性。
 3. 独立美术执行 F2。任一核心项缺证、失败或只有主观声明时不得通过；选定方向完成 V2a 决策记录后，才制作完整关键状态与动态样片。`USER_DECISION` 不能替代专业结论。
 4. V2a 或对应 F2 发现 V1 构图、信息层级、资源槽、页面模板或布局几何无法支持游戏感时，提交包含标注截图、失败事实、待修订结构、保持不变的功能语义/业务状态和新验收条件的结构修订包，退回 V1。不得在候选图中静默改玩法或勉强套用灰盒。
@@ -61,11 +61,11 @@ V1 的 `AUTO` 或 `USER_DECISION` 有效后进入 V2。V2 必须执行 V2a、V2b
 
 ### V2 条件门：高保真专业验证与决策记录
 
-V2a/V2b 和独立美术 F2 通过后，明确参考/基线且不存在可见偏差或实质取舍时写入 `AUTO` 决策记录。专业修复不会自动获得改变冻结视觉目标的权限；可见差异必须提出一次精确选择问题并记录 `USER_DECISION` 与已批准例外。
+V2a/V2b 机器证据通过后，明确参考/基线且不存在可见偏差或实质取舍时写入 `AUTO` 决策记录，并形成唯一 V2 真人方向审批。专业修复不会自动获得改变冻结视觉目标的权限；可见差异必须提出一次精确选择问题并记录 `USER_DECISION` 与已批准例外。
 
 视觉可交付绑定当前 `AUTO` 或 `USER_DECISION` 记录后进入 V3。需要用户选择时，记录明确选择、影响与权威工件版本；沉默与旧决定无效。
 
-“修改后重提”重跑受影响 F0-F3，并重新执行条件分类。A4-A6 另行重跑集成/发布操作批准门。`USER_DECISION` 不能替代独立美术 F2、动态样片或缺陷修复。
+“修改后重提”重跑受影响 F0-F3，并重新执行条件分类。A4-A6 另行重跑集成/发布操作批准门。`USER_DECISION` 不能替代 V2 机器检查、唯一真人方向审批、动态样片或缺陷修复。
 
 ## V3 生产设计与机器清单
 
@@ -108,15 +108,15 @@ V4 以文件、性能、加载、响应式、`production_contract_audit` 和一�
 4. 清除低保真纹理、占位纹理键、临时路径、fallback、代码分支和运行时引用；保留调试工具必须与正式运行隔离。
 5. 所有路径在 V5 后由 F3 绑定当前候选工程证据；只有实际 A4-A6 集成/发布操作在 F4 请求精确操作批准。资源执行偏差返回 V4，生产设计或基线绑定问题返回 V3，方向漂移返回 V2，结构问题返回 V1；冻结基线变更后使旧决策记录、操作批准与证据失效。
 6. 忠实还原在冻结目标视口/状态以同条件完整 viewport 为主证据，逐项验证忠实度矩阵；ROI、叠加和像素差仅作补充，动画/VFX 不得只看像素差。其他视口按布局合同验证视觉意图与关系不变量。未解释或超容差差异、缺同条件双方证据、缺已批准例外或仅有主观结论均不得通过。
-7. V5 硬门必须同时绑定 V3、`visualProductionUnits` 实施包、V4 production contract audit、F2 `visual_fidelity_review` 与 `production_contract_review` 双审、F3 runtime replay、非空 freshness-bound fidelity cases、运行时实际消费和无未批准替换；任一项缺失或候选/区域身份漂移都不得声明完成。
+7. V5 硬门必须同时绑定 V3、`visualProductionUnits` 实施包、V4 production contract audit、F2 `visual_fidelity_review` 与 `production_contract_review` 两类机器证据、F3 runtime replay、非空 freshness-bound fidelity cases、运行时实际消费和无未批准替换；任一项缺失或候选/区域身份漂移都不得声明完成。
 
 ## 完成条件
 
 当前场景只有在功能代码、V3 规划、全部正式资源 V4 `accepted`、V5 正式接入、占位清理，以及功能、视觉、响应式和性能联合证据全部有效后才能报告完成。全部授权场景和功能关闭前不得据此宣称 G1 完成。
 
-### 人工审阅覆盖（视觉硬门）
+### 唯一真人视觉审批（视觉硬门）
 
-所有产生可见内容的视觉阶段都必须绑定结构化人工 reviewer：`reviewer_type=human`、`reviewer_id`、`reviewed_at`、`evidence`、`status`。V2 的完整候选、动态样片和结构化审查、V4 每个 fixed asset/component×state 与同屏组合、V5 full viewport/overlay/diff/逐区域 fidelity 结果及 F2 两位独立 reviewer 均必须逐项人工通过。runtime-program、runtime-rendered、runtime-data 可见区域不豁免。验证器从实际资产和 region 记录交叉推导 COMPLETE 覆盖，不能相信单独的根节点 PASS 或布尔标记。
+V2 完成代表画面、动态样片和结构化机器检查后，只需一条唯一的 `visual_human_approval` 冻结视觉方向。该记录不采集 reviewer_type/reviewer_id/reviewer 字符串，仅以 review_id、reviewed_at、evidence、evidence_sha256、PASS 绑定 target SHA、V2 candidate SHA、diff fingerprint、baseline SHA；这些 V2 冻结身份变化才需要重新进行一次真人审批。V4/V5 的 fixed asset、component×state、同屏组合、full viewport/overlay/diff、逐区域 fidelity 与 F2 检查继续由机器/AI 证据交叉推导，不要求第二位真人或逐项重复人工审阅。后续生产候选的正常演进不会单独触发真人审批，但任何机器证据缺失、过期或不一致仍不得通过。
 
 ### 原子视觉拆解补充
 
@@ -129,7 +129,7 @@ V4 除逐资产生产合同外必须完成同屏组合预验收，使用正式 S
 
 ### 场景还原硬门与 CLI 回执
 
-效果图路线按 `V1 → V2 → V3 → V4 → V5` 单向推进：V1 冻结 `reference_technical_conflicts`、整屏构图、布局/响应式关系、逐区域事实和项目 tolerance；V2 绑定完整场景候选、动态样片、候选 code/build SHA + diff identity 及结构化 F2；V2→V3 缺字段直接以 `方案缺失` 回 `V1/PROPOSAL`。V3 绑定实施包和正式 Scene 结构；V4 通过 `combination_preacceptance`、`scene_asset_usage` 与资源合同；V5 执行真实文件门、F2 双审、F3 runtime replay 和正式 Scene consumption。
+效果图路线按 `V1 → V2 → V3 → V4 → V5` 单向推进：V1 冻结 `reference_technical_conflicts`、整屏构图、布局/响应式关系、逐区域事实和项目 tolerance；V2 绑定完整场景候选、动态样片、候选 code/build SHA + diff identity、结构化机器检查及唯一真人方向审批；V2→V3 缺字段直接以 `方案缺失` 回 `V1/PROPOSAL`。V3 绑定实施包和正式 Scene 结构；V4 通过 `combination_preacceptance`、`scene_asset_usage` 与资源合同；V5 执行真实文件门、F2 两类机器证据、F3 runtime replay 和正式 Scene consumption。
 
 每个 fidelity case 必须带 viewport/DPR/逻辑坐标 `normalization_equivalence` 和非空 `difference_evidence`（不适用时必须附 reason）。每个 region 必须记录 target/candidate、delta、预声明 `tolerance_reference`、result、evidence 和 `exception_ids`；局部临时 tolerance 不具备合同效力。超出数值容差属于验收失败；非数值差异没有精确例外 ID 时也不得 PASS。合同字段缺失是 `方案缺失`，Scene/资源执行偏差是 `执行问题`，证据或错误放行是 `验收问题`，退回最早受影响阶段。
 

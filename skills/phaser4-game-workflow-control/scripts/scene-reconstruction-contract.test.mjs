@@ -68,6 +68,7 @@ function contract() {
     v2_structured_review: {
       ...humanReview("v2-structured"), reviewed_target_identity: { sha256: SHA }, reviewed_candidate_identity: { sha256: SHA, diff_fingerprint: "diff-1" }, full_viewport_comparison: "evidence/v2/compare.png", per_region_review: [{ region_id: "hud", result: "passed" }], composition_review: { status: "passed" }, geometry_review: { status: "passed" }, color_material_review: { status: "passed" }, typography_review: { status: "passed" }, decoration_density_review: { status: "passed" }, responsive_review: { status: "passed" },
     },
+    visual_human_approval: { review_id: "v2-approval", reviewed_at: "2026-08-18T00:00:00Z", evidence: "evidence/human/v2-approval.json", evidence_sha256: SHA, status: "passed", target_sha256: SHA, candidate_sha256: SHA, diff_fingerprint: "diff-1", baseline_sha256: SHA },
     composition: {
       vertical_order: ["hud", "board"],
       inter_region_spacing: { hud_board: 12 },
@@ -86,7 +87,7 @@ function contract() {
     },
     predeclared_tolerances: [{ id: "layout-tolerance", rules: { geometry: { unit: "logical-px", value: 2 } } }],
     implementation_plan: { resources: ["board-surface"], layout: ["target-bound-layout"], runtime_objects: ["hud", "board"], composition: ["main-scene-stack"] },
-    combination_preacceptance: { ...humanReview("v4-combination"), status: "passed", formal_scene_structure: "MainScene/ContainerGraph", layout_calculation_identity: "layout:main:1", evidence: ["evidence/scene/combined.png"], target_sha256: SHA },
+    combination_preacceptance: { ...humanReview("v4-combination"), status: "passed", formal_scene_structure: "MainScene/ContainerGraph", layout_calculation_identity: "layout:main:1", evidence: ["evidence/scene/combined.png"], target_sha256: SHA, candidate_sha256: SHA, diff_fingerprint: "diff-1" },
   };
 }
 
@@ -197,7 +198,7 @@ test("V5 fidelity 拒绝字符串 tolerance、尺寸不等价和缺逐区域矩�
   assert(validateStructuredFidelityCases([complete], manifest(), { stage: "V5" }).every((value) => !value.includes("逐区域结果矩阵")));
 });
 
-test("两个 PASS reviewer 但逐区域 FAIL 或构图审查缺失时 F2 失败", () => {
+test("F2 两类机器证据均 PASS 但逐区域 FAIL 或构图检查缺失时仍失败", () => {
   const base = { status: "passed", review_id: "review", reviewer: "art", reviewer_type: "human", reviewer_id: "human-art", reviewed_at: "2026-08-18T00:00:00Z", evidence: "review.json" };
   const f2 = { overall_status: "passed", visual_fidelity_review: { ...base, reviewed_target_identity: {}, reviewed_candidate_identity: {}, full_viewport_comparison: {}, per_region_review: [{ region_id: "hud", result: "failed" }], composition_review: {}, geometry_review: {}, color_material_review: {}, typography_review: {}, decoration_density_review: {}, responsive_review: {}, unresolved_differences: [], findings: [] }, production_contract_review: { ...base, reviewer: "qa" } };
   const errors = validateF2ProductionReviews(f2, { stage: "F2" }, { requireVisualStructure: true });
@@ -289,13 +290,13 @@ test("完整参考图和候选图但缺逐区域矩阵必须失败", () => {
   assert(errors.some((value) => value.includes("逐区域结果矩阵")));
 });
 
-test("两个 reviewer 都 PASS 但逐区域 FAIL 时 F2 必须失败", () => {
+test("F2 两类机器证据都 PASS 但逐区域 FAIL 时仍失败", () => {
   const review = { status: "passed", review_id: "review", reviewer: "art", reviewer_type: "human", reviewer_id: "human-art", reviewed_at: "2026-08-18T00:00:00Z", evidence: "review.json", reviewed_target_identity: {}, reviewed_candidate_identity: {}, full_viewport_comparison: {}, per_region_review: [{ region_id: "hud", result: "failed" }], composition_review: {}, geometry_review: {}, color_material_review: {}, typography_review: {}, decoration_density_review: {}, responsive_review: {}, unresolved_differences: [], findings: [] };
   const f2 = { overall_status: "passed", visual_fidelity_review: review, production_contract_review: { ...review, reviewer: "qa", review_id: "review-qa" } };
   assert(validateF2ProductionReviews(f2, { stage: "F2" }, { requireVisualStructure: true }).some((value) => value.includes("逐区域 FAIL")));
 });
 
-test("两个 reviewer 都 PASS 但缺构图或材质审查时 F2 必须失败", () => {
+test("F2 两类机器证据都 PASS 但缺构图或材质检查时仍失败", () => {
   const review = { status: "passed", review_id: "review", reviewer: "art", reviewer_type: "human", reviewer_id: "human-art", reviewed_at: "2026-08-18T00:00:00Z", evidence: "review.json", reviewed_target_identity: {}, reviewed_candidate_identity: {}, full_viewport_comparison: {}, per_region_review: [{ region_id: "hud", result: "passed" }], geometry_review: {}, typography_review: {}, decoration_density_review: {}, responsive_review: {}, unresolved_differences: [], findings: [] };
   const f2 = { overall_status: "passed", visual_fidelity_review: review, production_contract_review: { ...review, reviewer: "qa", review_id: "review-qa" } };
   const errors = validateF2ProductionReviews(f2, { stage: "F2" }, { requireVisualStructure: true });
