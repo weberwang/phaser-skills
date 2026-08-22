@@ -1,5 +1,7 @@
 # V0-V5 视觉生产管线
 
+effect-image ImageGen 的完整提示词与实际参考输入合同统一见[Effect-image ImageGen 忠实还原提示词合同](effect-image-prompt-contract.md)；管线只引用该合同，不重复维护模板正文。
+
 ## V0 分流
 
 先记录范围、视觉方向是否冻结、结构/交互/布局是否变化、正式资源数量与跨域风险，再选择且只选择一条路径。Work Item 指定效果图或参考截图为还原目标时启用[忠实还原模式](visual-reconstruction.md)，指定参考是冻结视觉目标而非可自由优化的灵感输入。

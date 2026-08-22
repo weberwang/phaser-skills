@@ -23,11 +23,13 @@ import { getVisualRegionDefinitionAliasConflicts, normalizeVisualRegionDefinitio
 import { validateSceneAssetUsageContract, validateSceneCombinationPreacceptance, validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "./scene-reconstruction-contract.mjs";
 import { validateImageGenerationSizeContract } from "./visual-generation-size-contract.mjs";
 import { validateVisualPostApprovalReviewFields } from "./visual-human-review-contract.mjs";
+import { isEffectImageGeneration, validateEffectImagePromptContract } from "./effect-image-prompt-contract.mjs";
 export { atomicImageRequirementsEqual, canonicalStateId, deriveAtomicImageRequirements, hasRuntimeImplementationField, normalizeAtomicImageRequirements, normalizeProjectRelativePath, validateComponentAuditEvidence, validateVisualComponentContract, normalizeComponentExpectedAsset, visualComponentContractDifferences } from "./visual-component-contract.mjs";
 export { FIXED_VISUAL_IMAGE_METHODS, PROGRAM_VISUAL_METHODS, manualDecompositionRegions, requiresManualVisualDecomposition, validateFixedVisualProductionMethod, validateVisualDecompositionConfirmationBinding, validateVisualDecompositionConfirmationRecord, validateVisualDecompositionConfirmations, validateVisualProductionUnitConfirmation } from "./visual-decomposition-confirmation.mjs";
 export { REUSE_SCHEMA, validateProductionMethodChangeRequest, validateReuseProductionGate, validateVisualConfirmationGate } from "./visual-confirmation-reuse-gates.mjs";
 export { normalizeProductionExpectedAssets as normalizeExpectedAssets } from "./visual-atomic-contract.mjs";
 export { isPngOrJpegMagic, isRasterDelivery, resolveOutputMetadata } from "./visual-raster-contract.mjs";
+export { CANONICAL_EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, CANONICAL_EFFECT_IMAGE_NEGATIVE_PROMPT, EFFECT_IMAGE_ASSET_PROMPT_FACTS, EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, EFFECT_IMAGE_NEGATIVE_PROMPT, EFFECT_IMAGE_PIXEL_REUSE_POLICY, EFFECT_IMAGE_RECONSTRUCTION_MODE, EFFECT_IMAGE_REFERENCE_INPUT_MODE, buildEffectImageAssetPrompt, buildEffectImageFullPrompt, containsPositiveRedesignInstruction, hasFullReferenceInput, isEffectImageGeneration, validateEffectImageAssetPrompt, validateEffectImagePromptContract } from "./effect-image-prompt-contract.mjs";
 /** 视觉生产合同允许的固定来源。来源不决定生产方法。 */
 export { validateSceneAssetUsageContract, validateSceneCombinationPreacceptance, validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "./scene-reconstruction-contract.mjs";
 export const PRODUCTION_ORIGINS = new Set(["bitmap-decomposition", "independent-production"]);
@@ -196,10 +198,13 @@ export function validateProductionContract(contract, context = {}, options = {})
 export function validateImageGenerationContract(asset, contract, context = {}, options = {}) {
   const errors = [];
   const label = contractContext(context.region ?? context, context.stage ?? "V3", context);
+  const effectImage = isEffectImageGeneration({ asset, contract, context, options });
   const error = (message, details = {}) => errors.push(productionContractError(label, message, {
     expectedMethod: "imagegen",
     observedMethod: observedProductionMethod(contract),
     missing: details.missing,
+    rootCause: effectImage ? "执行问题" : details.rootCause,
+    returnStage: effectImage ? "V3/V4" : details.returnStage,
   }));
   const rawGeneration = asset?.generation_record;
   const expectedComponent = options.expectedAsset ? normalizeComponentExpectedAsset(options.expectedAsset) : null;
@@ -230,12 +235,13 @@ export function validateImageGenerationContract(asset, contract, context = {}, o
   if (!generator.includes("imagegen") && !generator.includes("image_gen")) error("generation_record.generator 必须明确为 ImageGen");
   for (const field of IMAGEGEN_TEXT_FIELDS) if (!nonEmptyString(generation[field]) && !nonEmptyString(generation.prompt)) error(`generation_record.${field} 缺失，必须保留提示词合同`, { missing: `generation_record.${field}` });
   if (!(Number.isInteger(generation.seed) || nonEmptyString(generation.seed))) error("generation_record.seed 缺失", { missing: "generation_record.seed" });
-  if (!Array.isArray(generation.reference_inputs) || generation.reference_inputs.length === 0 || !generation.reference_inputs.every(nonEmptyString)) error("generation_record.reference_inputs 必须是非空来源列表", { missing: "generation_record.reference_inputs" });
+  const referenceInputValid = effectImage ? (item) => nonEmptyString(item) || isObject(item) : nonEmptyString;
+  if (!Array.isArray(generation.reference_inputs) || generation.reference_inputs.length === 0 || !generation.reference_inputs.every(referenceInputValid)) error("generation_record.reference_inputs 必须是非空来源列表", { missing: "generation_record.reference_inputs" });
   if (!Array.isArray(generation.postprocess) || generation.postprocess.length === 0 || !generation.postprocess.every(nonEmptyString)) error("generation_record.postprocess 必须是非空处理记录", { missing: "generation_record.postprocess" });
   const generationOperation = JSON.stringify({ operation: generation.operation, source_operation: generation.source_operation, reference_operation: generation.reference_operation, crop_reference: generation.crop_reference, reference_crop: generation.reference_crop, postprocess: generation.postprocess });
   if (generation.crop_reference === true || generation.reference_crop === true || /crop[-_ ]?reference|裁切参考|裁剪参考/i.test(generationOperation)) error("禁止裁切参考图，ImageGen 只能把参考图作为输入约束");
   const referenceTarget = options.referenceOriginalFile;
-  if (nonEmptyString(referenceTarget) && Array.isArray(generation.reference_inputs) && generation.reference_inputs.some((item) => item === referenceTarget || item.endsWith(`/${referenceTarget}`) || item.endsWith(`\\${referenceTarget}`))) error("generation_record.reference_inputs 不得直接把冻结效果图作为可裁切源文件");
+  if (effectImage) errors.push(...validateEffectImagePromptContract(asset, contract, generation, context, { ...options, referenceOriginalFile: referenceTarget, referenceTargetSha: options.referenceTargetSha ?? options.identity?.target, region: options.region ?? context.region }).map((message) => productionContractError(label, message, { expectedMethod: "imagegen", observedMethod: observedProductionMethod(contract), rootCause: "执行问题", returnStage: "V3/V4" })));
   const sources = [...collectImageGenerationPathValues(asset), ...collectImageGenerationPathValues(generation)].filter(nonEmptyString);
   if (sources.length === 0) error("缺少独立生成源文件或输出文件", { missing: "source_file" });
   if (expectedComponent) {
@@ -292,6 +298,8 @@ export function validateVisualProductionCoverage(manifest, options = {}) {
   const errors = [];
   const stage = options.stage ?? "V3";
   const regions = Array.isArray(manifest?.coverage_audit?.regions) ? manifest.coverage_audit.regions : [];
+  const effectImage = manifest?.effect_image_reconstruction?.applicability === "effect-image";
+  const reconstructionRegions = new Map((manifest?.scene_reconstruction_contract?.coverage_regions ?? manifest?.scene_reconstruction_contract?.coverageRegions ?? []).filter(isObject).flatMap((region) => [region.id, region.region_id, region.regionId].filter(nonEmptyString).map((id) => [id, region])));
   // 默认把人工确认作为 V3 coverage 硬门；只有明确声明结构扫描才允许暂不消费确认。
   if (options.requireManualConfirmation !== false) errors.push(...validateVisualConfirmationGate(manifest, { ...options, stage, requireManualConfirmation: true }));
   const assets = new Map((Array.isArray(manifest?.assets) ? manifest.assets : []).filter(isObject).map((asset) => [asset.id, asset]));
@@ -343,7 +351,8 @@ export function validateVisualProductionCoverage(manifest, options = {}) {
           errors.push(productionContractError(componentContext, "ImageGen expected asset 缺少对应 manifest asset", { missing: `assets.${expectedComponent.asset_id}` }));
           continue;
         }
-        errors.push(...validateImageGenerationContract(componentAsset, { ...contract, expected_assets: [expectedComponent] }, componentContext, { expectedAsset: expectedComponent, recordIdRegistry: generationRecordIds, referenceOriginalFile: manifest?.reference_target?.original_file, identity: manifestEvidenceIdentity(manifest), projectRoot: options.projectRoot }));
+        const regionId = region.id ?? region.region_id ?? region.regionId;
+        errors.push(...validateImageGenerationContract(componentAsset, { ...contract, expected_assets: [expectedComponent] }, { ...componentContext, region: { ...region, ...(reconstructionRegions.get(regionId) ?? {}) } }, { expectedAsset: expectedComponent, recordIdRegistry: generationRecordIds, effectImage, referenceOriginalFile: manifest?.reference_target?.original_file, identity: manifestEvidenceIdentity(manifest), candidateVersion: manifest?.candidateVersion, projectRoot: options.projectRoot }));
       }
     } else if (contract.generation_record_required === true) {
       for (const registeredAsset of contractAssets) if (!isObject(registeredAsset.generation_record)) errors.push(productionContractError(context, "合同要求 generation_record，但原子资产缺少生成记录", { missing: `assets.${registeredAsset.id}.generation_record` }));
@@ -481,6 +490,7 @@ export function auditProductionContract(manifest, options = {}) {
   const requests = [...(Array.isArray(manifest?.change_requests) ? manifest.change_requests : []), ...(Array.isArray(manifest?.production_method_change_requests) ? manifest.production_method_change_requests : []), ...(isObject(manifest?.production_method_change_request) ? [manifest.production_method_change_request] : [])];
   const requestById = new Map(requests.filter(isObject).map((request) => [request.changeRequestId ?? request.change_request_id ?? request.id, request]));
   const reconstructionRegions = new Map((manifest?.scene_reconstruction_contract?.coverage_regions ?? manifest?.scene_reconstruction_contract?.coverageRegions ?? []).filter(isObject).map((region) => [region.region_id ?? region.regionId ?? region.id, region]));
+  const effectImage = manifest?.effect_image_reconstruction?.applicability === "effect-image";
   const identity = manifestEvidenceIdentity(manifest); const generationRecordIds = new Map(); const rasterFingerprints = new Map();
   if (!nonEmptyString(manifest?.workItemId)) errors.push("[V4] effect-image 清单缺少根 workItemId，无法绑定当前 Work Item");
   if (!nonEmptyString(manifest?.candidateVersion)) errors.push("[V4] effect-image 清单缺少根 candidateVersion，无法绑定当前候选版本");
@@ -518,7 +528,7 @@ export function auditProductionContract(manifest, options = {}) {
         const componentContext = { ...context, region, component_id: expectedComponent.component_id, state_id: expectedComponent.canonical_state_id || canonicalStateId(expectedComponent.state_id) };
         const componentAsset = assets.get(expectedComponent.asset_id);
         if (!componentAsset) errors.push(productionContractError(componentContext, "V4 ImageGen expected asset 缺少对应 manifest asset", { missing: `assets.${expectedComponent.asset_id}` }));
-        else errors.push(...validateImageGenerationContract(componentAsset, { ...expected, expected_assets: [expectedComponent] }, componentContext, { expectedAsset: expectedComponent, recordIdRegistry: generationRecordIds, referenceOriginalFile: manifest?.reference_target?.original_file, identity, projectRoot: options.projectRoot }));
+        else errors.push(...validateImageGenerationContract(componentAsset, { ...expected, expected_assets: [expectedComponent] }, { ...componentContext, region: { ...region, ...(reconstructionRegions.get(region.id) ?? {}) } }, { expectedAsset: expectedComponent, recordIdRegistry: generationRecordIds, effectImage, referenceOriginalFile: manifest?.reference_target?.original_file, identity, candidateVersion: manifest?.candidateVersion, projectRoot: options.projectRoot }));
       }
     }
     const observed = unit.observed_method ?? unit.production_method;
@@ -818,6 +828,8 @@ export function validateVisualProductionUnits(pkg, manifest = null, options = {}
   if (!Array.isArray(units) || units.length === 0) return ["[V3] annotation_number=* region_id=* expected_method=visual-production observed_method=missing 缺失=visualProductionUnits：必须是非空数组"];
   const regions = manualDecompositionRegions(manifest);
   const regionByKey = new Map(regions.map((region) => [`${region.annotation_number}\0${region.id}`, region]));
+  const effectImage = manifest?.effect_image_reconstruction?.applicability === "effect-image";
+  const reconstructionRegions = new Map((manifest?.scene_reconstruction_contract?.coverage_regions ?? manifest?.scene_reconstruction_contract?.coverageRegions ?? []).filter(isObject).flatMap((item) => [item.id, item.region_id, item.regionId].filter(nonEmptyString).map((id) => [id, item])));
   const seen = new Set(); const seenAnnotations = new Set(); const outputs = new Map(); const crossUnitPaths = new Map(); const generationRecordIds = new Map();
   for (const [index, unit] of units.entries()) {
     const context = contractContext(unit ?? {}, "V3", { annotation_number: unit?.annotation_number ?? "?", region_id: unit?.region_id ?? "?", observedMethod: unit?.production_method ?? "missing" });
@@ -858,7 +870,10 @@ export function validateVisualProductionUnits(pkg, manifest = null, options = {}
           const manifestAsset = manifestAssets.get(expectedAsset.asset_id);
           const componentContext = { ...context, component_id: expectedAsset.component_id, state_id: expectedAsset.canonical_state_id || canonicalStateId(expectedAsset.state_id) };
           if (!manifestAsset) errors.push(productionContractError(componentContext, "Implementation Package ImageGen 部件缺少 manifest asset", { missing: `assets.${expectedAsset.asset_id}` }));
-          else errors.push(...validateImageGenerationContract(manifestAsset, { ...unit, expected_assets: [expectedAsset] }, componentContext, { expectedAsset, recordIdRegistry: generationRecordIds, referenceOriginalFile: manifest.reference_target?.original_file, identity: manifestEvidenceIdentity(manifest), projectRoot: options.projectRoot }));
+          else {
+            const regionId = region.id ?? region.region_id ?? region.regionId;
+            errors.push(...validateImageGenerationContract(manifestAsset, { ...unit, expected_assets: [expectedAsset] }, { ...componentContext, region: { ...region, ...(reconstructionRegions.get(regionId) ?? {}) } }, { expectedAsset, recordIdRegistry: generationRecordIds, effectImage, referenceOriginalFile: manifest.reference_target?.original_file, identity: manifestEvidenceIdentity(manifest), candidateVersion: manifest?.candidateVersion, projectRoot: options.projectRoot }));
+          }
         }
       }
     }

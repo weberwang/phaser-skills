@@ -11,7 +11,7 @@ import { checkManifestFiles as runManifestFileCheck, computeRegionDefinitionSha2
 import { annotationProductionContract, decodePngRgba } from "./effect_image_raster.mjs";
 import { renderEffectImageAnnotation } from "./effect_image_annotation_core.mjs";
 import { deriveAtomicImageRequirements } from "../../phaser4-game-workflow-control/scripts/visual-atomic-contract.mjs";
-import { resolveProductionContract } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
+import { buildEffectImageAssetPrompt, buildEffectImageFullPrompt, EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, EFFECT_IMAGE_NEGATIVE_PROMPT, resolveProductionContract } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
 import { loadVisualConfirmationAuthority } from "../../phaser4-game-workflow-control/scripts/visual-confirmation-authority.mjs";
 import { CORE_TEMPLATES, OPTIONAL_TEMPLATES } from "../../phaser4-game-orchestrator/scripts/project_doc_templates.mjs";
 
@@ -144,6 +144,13 @@ function attachSceneReconstructionContract(manifest) {
       tolerance_reference: "layout-tolerance",
       approved_exception_ids: [],
       ...(runtimeOwner !== "fixed-production-visual" ? { fidelity_obligations: { geometry: "target-bound", typography: "target-bound", color: "target-bound", material: "target-bound" } } : {}),
+      visual_category: runtimeOwner === "fixed-production-visual" ? (region.component_inventory?.components?.[0]?.role ?? "fixed visual component") : runtimeOwner,
+      graphic_semantics: runtimeOwner === "fixed-production-visual" ? (region.component_inventory?.components?.[0]?.atomic_visual_key ?? region.id) : region.id,
+      contour_structure: { bounds: { ...region.bounds }, layer: region.layer },
+      orientation_perspective: "target-bound orientation and perspective",
+      excluded_objects: "同屏其他对象、背景和运行时文字不烘焙进该资产",
+      runtime_ownership: "文字、数值、热区和状态由正式 Scene 运行时持有",
+      ...(runtimeOwner === "fixed-production-visual" ? { production_method: region.production_method, image_generation_required: region.image_generation_required === true } : {}),
       ...(runtimeOwner === "fixed-production-visual" ? {
         scene_asset_usage: {
           target_display_size: { width: region.bounds.width, height: region.bounds.height },
@@ -220,7 +227,7 @@ function attachSceneReconstructionContract(manifest) {
     },
     predeclared_tolerances: [{ id: "layout-tolerance", rules: { geometry: { unit: "logical-px", value: 2 } } }],
     implementation_plan: { resources: ["hero-idle"], layout: ["target-bound-layout"], runtime_objects: ["scene-background", "score-state"], composition: ["main-gameplay-scene"] },
-    combination_preacceptance: { status: "passed", formal_scene_structure: "MainGameplayScene/ContainerGraph", layout_calculation_identity: "layout:main-gameplay:1", evidence: ["evidence/visual/combined.png"], target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
+    combination_preacceptance: { status: "passed", formal_scene_structure: "MainGameplayScene/ContainerGraph", formal_assets: manifest.assets.map((asset) => asset.id), formal_layout_structure: "MainGameplayScene/ContainerGraph", visual_fidelity: { contour: "passed", proportion: "passed", pose: "passed", icon_semantics: "passed", full_scene_composition: "passed" }, redesign_check: "none", layout_calculation_identity: "layout:main-gameplay:1", evidence: ["evidence/visual/combined.png"], target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
   };
   const fidelity = manifest.fidelity_cases[0];
   Object.assign(fidelity, {
@@ -258,7 +265,11 @@ function validOrdinaryManifest() {
 function validAiManifest() {
   const manifest = validManifest(); const asset = manifest.assets[0]; const region = manifest.coverage_audit.regions[1]; const width = 96; const height = 144; region.expected_assets[0].width = width; region.expected_assets[0].height = height; asset.expected_assets[0].width = width; asset.expected_assets[0].height = height; manifest.production_contract_audit.units[0].expected_assets[0].width = width; manifest.production_contract_audit.units[0].expected_assets[0].height = height; manifest.production_contract_audit.units[0].actual_assets[0].width = width; manifest.production_contract_audit.units[0].actual_assets[0].height = height; asset.route = "ai-composite-raster"; asset.production_method = "imagegen"; asset.delivery_kind = "raster-image"; asset.image_generation_required = true; asset.generation_record_required = true; asset.source_file = "art/hero.png"; region.expected_assets[0].source_file = "art/hero.png"; asset.expected_assets[0].source_file = "art/hero.png"; asset.output_file = "public/assets/hero.png"; asset.mime_type = "image/png"; asset.width = width; asset.height = height; asset.alpha = true; asset.sha256 = sha256Bytes(minimalPng(width, height)); asset.runtime_consumption.runtime_sha256 = asset.sha256; asset.runtime_consumption.component_usages[0].runtime_sha256 = asset.sha256; manifest.production_contract_audit.units[0].actual_assets[0].sha256 = asset.sha256;
   region.expected_assets[0].mime_type = "image/png"; asset.expected_assets[0].mime_type = "image/png"; manifest.production_contract_audit.units[0].expected_assets[0].mime_type = "image/png"; manifest.production_contract_audit.units[0].expected_assets[0].source_file = "art/hero.png";
-  asset.generation_record = { record_id: "gen-hero-1", generator: "imagegen", generator_version: "1", created_at: "2026-08-15T00:00:00Z", command_or_recipe: "render hero-idle", input_sources: ["prompt:hero-idle"], parameters: { size: `${width}x${height}` }, global_prompt_prefix: "冻结前缀", asset_prompt: "主角", state_prompt: "待机", negative_prompt: "禁止写实", model: "image-model", model_version: "1", seed: 42, reference_inputs: ["evidence/visual/ai-reference.png"], postprocess: ["清理边缘"], output_file: "public/assets/hero.png", annotation_number: 2, region_id: "region-hero", component_id: "hero-component", state_id: "default", asset_id: "hero-idle", source_file: "art/hero.png", runtime_file: "public/assets/hero.png" };
+  const promptRegion = manifest.scene_reconstruction_contract.coverage_regions.find((item) => item.region_id === "region-hero");
+  const assetPrompt = buildEffectImageAssetPrompt({ region: promptRegion, component: promptRegion ? { component_id: "hero-component", role: "visual-component", atomic_visual_key: "hero-component-atomic" } : undefined, state: "default" }).prompt;
+  const statePrompt = "状态段：default；严格保持冻结区域状态，不新增文字、数值或运行时热区。";
+  const fullPrompt = buildEffectImageFullPrompt({ assetPrompt, statePrompt });
+  asset.generation_record = { record_id: "gen-hero-1", generator: "imagegen", generator_version: "1", created_at: "2026-08-15T00:00:00Z", command_or_recipe: "render hero-idle", input_sources: ["prompt:hero-idle"], parameters: { size: `${width}x${height}` }, reconstruction_mode: "reference-faithful", reference_input_mode: "full-reference-guidance", pixel_reuse_policy: "forbid-output-reuse", global_prompt_prefix: EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, asset_prompt: assetPrompt, state_prompt: statePrompt, negative_prompt: EFFECT_IMAGE_NEGATIVE_PROMPT, full_prompt: fullPrompt, model: "image-model", model_version: "1", seed: 42, reference_inputs: [manifest.reference_target.original_file], style_reference_inputs: ["evidence/visual/ai-reference.png"], postprocess: ["清理边缘"], output_file: "public/assets/hero.png", annotation_number: 2, region_id: "region-hero", component_id: "hero-component", state_id: "default", asset_id: "hero-idle", target_sha256: manifest.reference_target.target_sha256, candidate_sha256: manifest.candidate_identity.sha256, diff_fingerprint: manifest.candidate_identity.diff_fingerprint, candidate_version: manifest.candidateVersion, source_file: "art/hero.png", runtime_file: "public/assets/hero.png" };
   asset.substitution_policy = "user-change-request-only";
   Object.assign(manifest.coverage_audit.regions[1], { production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
   manifest.coverage_audit.regions[1].atomic_image_requirements = deriveAtomicImageRequirements(manifest.coverage_audit.regions[1]);
@@ -266,6 +277,7 @@ function validAiManifest() {
   addManualConfirmationRecords(manifest);
   manifest.coverage_audit.regions[1].confirmation.region_definition_sha256 = computeRegionDefinitionSha256(manifest.coverage_audit.regions[1]);
   Object.assign(manifest.production_contract_audit.units[0], { observed_method: "imagegen", observed_delivery_kind: "raster-image", atomic_image_requirements: manifest.coverage_audit.regions[1].atomic_image_requirements });
+  manifest.scene_reconstruction_contract.combination_preacceptance.prompt_contract_binding = [{ record_id: asset.generation_record.record_id, target_sha256: manifest.reference_target.target_sha256, region_id: "region-hero", candidate_sha256: manifest.candidate_identity.sha256, diff_fingerprint: manifest.candidate_identity.diff_fingerprint, generation_record: asset.generation_record }];
   return manifest;
 }
 

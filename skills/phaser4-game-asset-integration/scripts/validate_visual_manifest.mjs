@@ -472,7 +472,19 @@ export function validateManifest(data, options = {}) {
     if (Object.keys(assetContract).length > 0) {
       const assetContext = { stage: "V3", annotation_number: asset.coverage_annotation_number ?? "?", region_id: asset.coverage_region_id ?? asset.id, observedMethod: assetContract.production_method ?? "unspecified" };
       errors.push(...validateProductionContract(asset, assetContext, { requireComplete: true }));
-      if (assetContract.image_generation_required === true) errors.push(...validateImageGenerationContract(asset, assetContract, assetContext, { referenceOriginalFile: data.reference_target?.original_file }));
+      if (assetContract.image_generation_required === true) {
+        const regionId = asset.coverage_region_id ?? asset.coverageRegionId ?? asset.coverage_region_ids?.[0] ?? asset.coverageRegionIds?.[0];
+        const coverageRegion = data.coverage_audit?.regions?.find((item) => (item?.region_id ?? item?.regionId ?? item?.id) === regionId);
+        const reconstructionRegion = data.scene_reconstruction_contract?.coverage_regions?.find((item) => (item?.region_id ?? item?.regionId ?? item?.id) === regionId);
+        const promptRegion = { ...(coverageRegion ?? {}), ...(reconstructionRegion ?? {}) };
+        errors.push(...validateImageGenerationContract(asset, assetContract, { ...assetContext, region: promptRegion }, {
+          effectImage: strictProductionContract,
+          referenceOriginalFile: data.reference_target?.original_file,
+          referenceTargetSha: data.reference_target?.target_sha256,
+          identity: manifestEvidenceIdentity(data),
+          candidateVersion: data.candidateVersion,
+        }));
+      }
     }
     validateAssetOwnership(asset, label, errors);
     if (nonEmptyString(asset.route) && !ALLOWED_ROUTES.has(asset.route)) errors.push(`${label}.route 不在允许列表中：${asset.route}`);

@@ -4,6 +4,8 @@
 
 视觉领域规则只能收紧 [`phaser4-game-workflow-control`](../../phaser4-game-workflow-control/SKILL.md)。V0-V5 是 `stageId`；全局状态、审批与 F0-F4 语义不得改写。
 
+effect-image ImageGen 的 canonical 提示词与生成记录合同统一引用[Effect-image ImageGen 忠实还原提示词合同](../../phaser4-game-asset-integration/references/effect-image-prompt-contract.md)，本门只消费其校验结果。
+
 正式可见视觉集成还必须声明 `visualStage`/`visualStageState` 并通过全局 `visual-stage-prerequisites.mjs`。静态基线只允许 `global-static-baseline-frozen`；V2/V3/V4/V5 的唯一完成状态分别为 `v2-direction-frozen`、`v3-production-planning-complete`、`v4-formal-acceptance-complete`、`v5-runtime-integration-candidate`。阶段依赖只能从带 path+sha256 的不可变文件引用加载和复算，内联 PASS、根布尔值、Ledger 记录和 stageId 文本没有证明力。
 
 ## 路径

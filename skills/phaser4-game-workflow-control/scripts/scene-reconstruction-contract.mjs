@@ -289,8 +289,67 @@ function validateCompositionAndResponsive(contract, targetInfo, stage, errors) {
   return Array.isArray(tolerances) ? new Set(tolerances.map((item) => item?.id ?? item?.tolerance_id ?? item?.toleranceId).filter(nonEmptyString)) : new Set();
 }
 
+/** 判断组合验收字段是否表达确定性通过，而不是只写一句 PASS。 */
+function passedCombinationFact(value) {
+  if (value === true) return true;
+  if (typeof value === "string") return ["passed", "pass", "unchanged", "preserved", "none", "no-redesign", "not-detected"].includes(value.trim().toLowerCase());
+  if (isObject(value)) return [value.status, value.result, value.verdict, value.conclusion].some((item) => typeof item === "string" && ["passed", "pass", "unchanged", "preserved", "none", "no-redesign", "not-detected"].includes(item.trim().toLowerCase())) || value.passed === true || value.unchanged === true;
+  return false;
+}
+
+/** 读取 V4 同屏组合中的正式资产、布局、视觉事实和提示词绑定。 */
+function validateEffectImageCombinationFacts(contract, preacceptance, stage, errors, manifest = null) {
+  const target = field(contract, "target_conditions", "targetConditions") ?? {};
+  const candidate = field(contract, "v2_scene_candidate", "v2SceneCandidate", "v2_candidate", "v2Candidate") ?? {};
+  const candidateIdentity = field(candidate, "identity", "candidate_identity", "candidateIdentity") ?? candidate;
+  const targetSha = field(target, "target_sha256", "targetSha256", "sha256");
+  const candidateSha = field(candidateIdentity, "sha256", "candidate_sha256", "candidateSha256", "code_sha256", "build_sha256");
+  const diff = field(candidateIdentity, "diff_fingerprint", "diffFingerprint", "diff_identity", "diffIdentity");
+  const formalAssets = field(preacceptance, "formal_assets", "formalAssets", "formal_asset_ids", "formalAssetIds", "actual_formal_assets", "actualFormalAssets");
+  if (!(Array.isArray(formalAssets) && formalAssets.length > 0 || isObject(formalAssets) && Object.keys(formalAssets).length > 0)) errors.push(contractError(stage, contract, preacceptance, "V4 同屏组合必须使用当前正式资产清单", { missing: "formal_assets", returnStage: "V3/V4", rootCause: "执行问题" }));
+  const currentAssetIds = new Set((Array.isArray(manifest?.assets) ? manifest.assets : []).map((asset) => field(asset, "id", "asset_id", "assetId")).filter(nonEmptyString));
+  if (currentAssetIds.size > 0 && Array.isArray(formalAssets)) {
+    const declaredAssetIds = formalAssets.map((asset) => isObject(asset) ? field(asset, "id", "asset_id", "assetId") : asset).filter(nonEmptyString);
+    if (declaredAssetIds.length === 0 || declaredAssetIds.some((assetId) => !currentAssetIds.has(assetId))) errors.push(contractError(stage, contract, preacceptance, "V4 同屏组合 formal_assets 未绑定当前正式资产身份", { missing: "formal_assets.current_asset_ids", returnStage: "V3/V4", rootCause: "执行问题" }));
+  }
+  const formalLayout = field(preacceptance, "formal_layout_structure", "formalLayoutStructure", "formal_layout", "formalLayout", "layout_structure", "layoutStructure");
+  if (!(nonEmptyString(formalLayout) || isObject(formalLayout))) errors.push(contractError(stage, contract, preacceptance, "V4 同屏组合必须使用正式布局结构", { missing: "formal_layout_structure", returnStage: "V3/V4", rootCause: "执行问题" }));
+
+  const fidelity = field(preacceptance, "visual_fidelity", "visualFidelity", "fidelity_checks", "fidelityChecks", "visual_checks", "visualChecks") ?? {};
+  const fidelityNames = [
+    ["contour", "轮廓"], ["proportion", "比例"], ["pose", "姿态"], ["icon_semantics", "图标语义"], ["full_scene_composition", "整屏构图"],
+  ];
+  for (const [names, label] of fidelityNames) {
+    const value = field(fidelity, names, names === "icon_semantics" ? "iconSemantics" : names === "full_scene_composition" ? "fullSceneComposition" : names);
+    if (!passedCombinationFact(value)) errors.push(contractError(stage, contract, preacceptance, `V4 同屏组合缺少${label}未偏离冻结目标的确定性事实`, { missing: `visual_fidelity.${names}`, returnStage: "V3/V4", rootCause: "执行问题" }));
+  }
+  const redesign = field(preacceptance, "redesign_check", "redesignCheck", "redesign_status", "redesignStatus", "unapproved_redesign", "unapprovedRedesign", "redesign_detected", "redesignDetected");
+  if (redesign === undefined) errors.push(contractError(stage, contract, preacceptance, "V4 同屏组合缺少未经批准重新设计检查", { missing: "redesign_check", returnStage: "V3/V4", rootCause: "执行问题" }));
+  else if (!passedCombinationFact(redesign) && !(isObject(redesign) && redesign.approved === true && nonEmptyString(redesign.change_request_id ?? redesign.changeRequestId))) errors.push(contractError(stage, contract, preacceptance, "V4 同屏组合存在未经批准的重新设计", { missing: "approved_change_request", returnStage: "V3/V4", rootCause: "执行问题" }));
+
+  const coverageRegions = field(contract, "coverage_regions", "coverageRegions", "regions") ?? [];
+  const hasImageGen = Array.isArray(coverageRegions) && coverageRegions.some((region) => field(region, "production_method", "productionMethod") === "imagegen" || field(region, "image_generation_required", "imageGenerationRequired") === true);
+  const binding = field(preacceptance, "prompt_contract_binding", "promptContractBinding", "prompt_contract_audit", "promptContractAudit", "generation_record_bindings", "generationRecordBindings");
+  const bindings = Array.isArray(binding) ? binding : isObject(binding) ? [binding] : [];
+  if (hasImageGen && bindings.length === 0) errors.push(contractError(stage, contract, preacceptance, "V4 同屏组合缺少提示词合同与实际生成记录绑定", { missing: "prompt_contract_binding", returnStage: "V3/V4", rootCause: "执行问题" }));
+  const knownRegions = new Set(coverageRegions.map((item) => field(item, "region_id", "regionId", "id")).filter(nonEmptyString));
+  for (const [index, item] of bindings.entries()) {
+    const record = field(item, "generation_record", "generationRecord", "actual_generation_record", "actualGenerationRecord") ?? item;
+    const bindingTarget = field(item, "target_sha256", "targetSha256", "reference_target_sha256", "referenceTargetSha256") ?? field(record, "target_sha256", "targetSha256", "reference_target_sha256", "referenceTargetSha256");
+    const bindingCandidate = field(item, "candidate_sha256", "candidateSha256", "candidate_identity", "candidateIdentity") ?? field(record, "candidate_sha256", "candidateSha256", "candidate_identity", "candidateIdentity");
+    const bindingCandidateSha = isObject(bindingCandidate) ? field(bindingCandidate, "sha256", "candidate_sha256", "candidateSha256") : bindingCandidate;
+    const bindingRegion = field(item, "region_id", "regionId", "region_ids", "regionIds") ?? field(record, "region_id", "regionId", "region_ids", "regionIds");
+    const hasRegion = Array.isArray(bindingRegion) ? bindingRegion.length > 0 && bindingRegion.every((regionId) => knownRegions.size === 0 || knownRegions.has(regionId)) : nonEmptyString(bindingRegion) && (knownRegions.size === 0 || knownRegions.has(bindingRegion));
+    if (bindingTarget !== targetSha) errors.push(contractError(stage, contract, preacceptance, `提示词合同绑定[${index}] 未绑定当前 target SHA`, { missing: `prompt_contract_binding[${index}].target_sha256`, returnStage: "V3/V4", rootCause: "执行问题" }));
+    if (bindingCandidateSha !== candidateSha) errors.push(contractError(stage, contract, preacceptance, `提示词合同绑定[${index}] 未绑定当前候选身份`, { missing: `prompt_contract_binding[${index}].candidate_sha256`, returnStage: "V3/V4", rootCause: "执行问题" }));
+    if (!hasRegion) errors.push(contractError(stage, contract, preacceptance, `提示词合同绑定[${index}] 缺少当前 region ID`, { missing: `prompt_contract_binding[${index}].region_id`, returnStage: "V3/V4", rootCause: "执行问题" }));
+    if (diff !== undefined && field(item, "diff_fingerprint", "diffFingerprint", "diff_identity", "diffIdentity") !== diff && field(record, "diff_fingerprint", "diffFingerprint", "diff_identity", "diffIdentity") !== diff) errors.push(contractError(stage, contract, preacceptance, `提示词合同绑定[${index}] 未绑定当前候选 diff`, { missing: `prompt_contract_binding[${index}].diff_fingerprint`, returnStage: "V3/V4", rootCause: "执行问题" }));
+    if (!nonEmptyString(field(item, "record_id", "recordId", "generation_record_id", "generationRecordId")) && !nonEmptyString(field(record, "record_id", "recordId"))) errors.push(contractError(stage, contract, preacceptance, `提示词合同绑定[${index}] 缺少实际 generation_record 身份`, { missing: `prompt_contract_binding[${index}].record_id`, returnStage: "V3/V4", rootCause: "执行问题" }));
+  }
+}
+
 /** 验证 V4 同屏组合预验收必须使用正式 Scene 结构。 */
-export function validateSceneCombinationPreacceptance(contract, stage = "V4") {
+export function validateSceneCombinationPreacceptance(contract, stage = "V4", options = {}) {
   const errors = [];
   const preacceptance = field(contract, "combination_preacceptance", "combinationPreacceptance", "same_screen_preacceptance", "sameScreenPreacceptance");
   if (!isObject(preacceptance)) {
@@ -312,6 +371,8 @@ export function validateSceneCombinationPreacceptance(contract, stage = "V4") {
   if (isSha256(targetSha) && field(preacceptance, "target_sha256", "targetSha256") !== targetSha) errors.push(contractError(stage, contract, preacceptance, "同屏组合预验收 target SHA 与冻结目标不一致", { expected: targetSha, actual: field(preacceptance, "target_sha256", "targetSha256"), returnStage: "V3/V4" }));
   if (isSha256(candidateSha) && field(preacceptance, "candidate_sha256", "candidateSha256") !== candidateSha) errors.push(contractError(stage, contract, preacceptance, "同屏组合预验收 candidate SHA 与当前 V2 候选不一致", { expected: candidateSha, actual: field(preacceptance, "candidate_sha256", "candidateSha256"), returnStage: "V3/V4" }));
   if (nonEmptyString(candidateDiff) && field(preacceptance, "diff_fingerprint", "diffFingerprint", "diff_identity", "diffIdentity") !== candidateDiff) errors.push(contractError(stage, contract, preacceptance, "同屏组合预验收 diff identity 与当前候选不一致", { expected: candidateDiff, actual: field(preacceptance, "diff_fingerprint", "diffFingerprint", "diff_identity", "diffIdentity"), returnStage: "V3/V4" }));
+  const effectImage = options.effectImage === true || contract?.effect_image_reconstruction?.applicability === "effect-image" || (Array.isArray(field(contract, "coverage_regions", "coverageRegions", "regions")) && field(contract, "coverage_regions", "coverageRegions", "regions").some((region) => field(region, "production_method", "productionMethod") === "imagegen" || field(region, "image_generation_required", "imageGenerationRequired") === true));
+  if (effectImage) validateEffectImageCombinationFacts(contract, preacceptance, stage, errors, options.manifest);
   return errors;
 }
 
@@ -393,7 +454,7 @@ export function validateSceneReconstructionContract(contract, manifest = null, o
     const lifecycle = field(contract, "status", "lifecycle", "stage_status", "stageStatus");
     if (lifecycle === "proposal-missing" || lifecycle === "missing") errors.push(contractError(stage, contract, null, "还原方案缺失，不能进入生产", { actual: lifecycle, returnStage: "V1/PROPOSAL" }));
   }
-  if (stage === "V4" || stage === "V5") errors.push(...validateSceneCombinationPreacceptance(contract, "V4"));
+  if (stage === "V4" || stage === "V5") errors.push(...validateSceneCombinationPreacceptance(contract, "V4", { effectImage: manifest?.effect_image_reconstruction?.applicability === "effect-image" || contract?.effect_image_reconstruction?.applicability === "effect-image", manifest }));
   return errors;
 }
 
