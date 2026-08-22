@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -132,6 +132,17 @@ function writeExecutionState(fixture) {
 /** 执行控制 CLI 并返回子进程结果。 */
 function run(command, args, repo) {
   return spawnSync(process.execPath, [CLI, command, ...args], { cwd: repo, encoding: 'utf8' });
+}
+
+/** 并行启动两个独立 CLI 进程，验证 Execution State 的跨进程锁而非顺序调用。 */
+function runConcurrent(command, args, repo) {
+  return new Promise((resolveResult) => {
+    const child = spawn(process.execPath, [CLI, command, ...args], { cwd: repo, encoding: 'utf8' });
+    let stdout = ''; let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.on('close', (status, signal) => resolveResult({ status, signal, stdout, stderr }));
+  });
 }
 
 /** 断言命令被风险门拒绝。 */
@@ -829,6 +840,85 @@ test('V2→V3 状态合同：V2 完成后只输出 V3 生产规划，合同回�
     const result = run('unit-check', ['--work-item', passed.workPath, '--implementation-package', passed.packagePath, '--result', join(passed.root, 'evidence', 'WI-1', 'units', `${unitId}.json`)], passed.repo); assert.equal(result.status, 0, result.stderr);
     if (unitId === 'SCENE-1') { const output = JSON.parse(result.stdout).executionState; assert.equal(output.nextTask.kind, 'V3_PRODUCTION_PLANNING'); assert.equal(output.nextTask.state, 'IN_PROGRESS'); assert.equal(output.nextTask.gateStatus, 'PASS'); }
   }
+});
+
+test('V2→V3 合同门：BLOCKED 后只能通过正式刷新命令按当前证据解锁', () => {
+  const f = setup({ visualStage: 'V2', visualStageState: 'v2-direction-frozen' });
+  writeJson(f.packagePath, makeSerialPackage()); writeExecutionState(f); writeUnitResults(f, {}, { completeState: false });
+  completeUnits(f, ['SHARED-1', 'MODULE-1', 'SCENE-1']);
+  const statePath = join(f.root, 'evidence', 'WI-1', 'execution-state.json');
+  const blockedBytes = readFileSync(statePath, 'utf8');
+  const contractPath = join(f.root, 'evidence', 'WI-1', 'v2-v3-contract.json'); writeJson(contractPath, { contractId: 'V2-V3-REFRESH', verdict: 'PASS' });
+  const work = JSON.parse(readFileSync(f.workPath, 'utf8'));
+  for (const contract of [
+    { status: 'PENDING', contractId: 'V2-V3-REFRESH', evidenceFile: '.workflow-control/evidence/WI-1/v2-v3-contract.json', evidenceSha256: hashFile(contractPath) },
+    { status: 'PASS', contractId: 'V2-V3-REFRESH', evidenceFile: '../outside.json', evidenceSha256: hashFile(contractPath) },
+    { status: 'PASS', contractId: 'V2-V3-REFRESH', evidenceFile: '.workflow-control/evidence/WI-1/v2-v3-contract.json', evidenceSha256: `sha256:${'c'.repeat(64)}` }
+  ]) {
+    work.v2ToV3Contract = contract; writeJson(f.workPath, work);
+    rejects(run('refresh-v2-v3', ['--work-item', f.workPath, '--implementation-package', f.packagePath], f.repo), /合同证据|evidenceRoot|SHA-256|不匹配|越出仓库/);
+    assert.equal(readFileSync(statePath, 'utf8'), blockedBytes);
+  }
+  work.v2ToV3Contract.evidenceSha256 = hashFile(contractPath); writeJson(f.workPath, work);
+  const refreshed = run('refresh-v2-v3', ['--work-item', f.workPath, '--implementation-package', f.packagePath], f.repo);
+  assert.equal(refreshed.status, 0, refreshed.stderr);
+  const output = JSON.parse(refreshed.stdout).executionState;
+  assert.equal(output.workflowState, 'IN_PROGRESS'); assert.equal(output.nextTask.kind, 'V3_PRODUCTION_PLANNING'); assert.equal(output.nextTask.state, 'IN_PROGRESS'); assert.equal(output.nextTask.gateStatus, 'PASS');
+  const unlockedBytes = readFileSync(statePath, 'utf8'); assert.notEqual(unlockedBytes, blockedBytes);
+  rejects(run('refresh-v2-v3', ['--work-item', f.workPath, '--implementation-package', f.packagePath], f.repo), /不是待刷新|nextTask.*不一致/);
+  assert.equal(readFileSync(statePath, 'utf8'), unlockedBytes);
+});
+
+test('V2→V3 合同 PASS：VALIDATING 迁移消费显式交接，不被 COMPLETE 门永久阻断', () => {
+  const f = setup({ visualStage: 'V2', visualStageState: 'v2-direction-frozen' });
+  writeJson(f.packagePath, makeSerialPackage());
+  const contractPath = join(f.root, 'evidence', 'WI-1', 'v2-v3-contract.json'); writeJson(contractPath, { contractId: 'V2-V3-CLOSE', verdict: 'PASS' });
+  const work = JSON.parse(readFileSync(f.workPath, 'utf8'));
+  work.v2ToV3Contract = { status: 'PASS', contractId: 'V2-V3-CLOSE', evidenceFile: '.workflow-control/evidence/WI-1/v2-v3-contract.json', evidenceSha256: hashFile(contractPath) }; writeJson(f.workPath, work);
+  writeExecutionState(f);
+  const { audit } = auditA3(f);
+  const evidencePath = join(f.root, 'evidence', 'WI-1', 'v2-close-evidence.json'); writeJson(evidencePath, makeEvidence(f, audit));
+  const validating = run('transition', ['--work-item', f.workPath, '--to', 'VALIDATING'], f.repo);
+  assert.equal(validating.status, 0, validating.stderr);
+  assert.equal(JSON.parse(readFileSync(f.workPath, 'utf8')).globalState, 'VALIDATING');
+});
+
+test('并行 unit-check：两个独立进程并发完成同组单元时保留双 COMPLETE', async () => {
+  const { f } = prepareParallelFixture();
+  writeUnitResults(f, {}, { completeState: false });
+  const sharedResult = join(f.root, 'evidence', 'WI-1', 'units', 'SHARED-1.json');
+  const shared = run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', sharedResult], f.repo);
+  assert.equal(shared.status, 0, shared.stderr);
+  const moduleResult = join(f.root, 'evidence', 'WI-1', 'units', 'MODULE-1.json');
+  const sceneResult = join(f.root, 'evidence', 'WI-1', 'units', 'SCENE-1.json');
+  const [moduleCheck, sceneCheck] = await Promise.all([
+    runConcurrent('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', moduleResult], f.repo),
+    runConcurrent('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', sceneResult], f.repo)
+  ]);
+  assert.equal(moduleCheck.status, 0, moduleCheck.stderr); assert.equal(sceneCheck.status, 0, sceneCheck.stderr);
+  const state = JSON.parse(readFileSync(join(f.root, 'evidence', 'WI-1', 'execution-state.json'), 'utf8'));
+  assert.deepEqual(state.units.map((unit) => [unit.unitId, unit.state]), [['SHARED-1', 'COMPLETE'], ['MODULE-1', 'COMPLETE'], ['SCENE-1', 'COMPLETE']]);
+  assert.equal(state.workflowState, 'COMPLETE'); assert.equal(state.nextTask.kind, 'WORKFLOW_COMPLETE');
+});
+
+test('unit-check 状态门：BLOCKED、RETURN、VALIDATING 均拒绝且 Execution State 字节不变', () => {
+  for (const globalState of ['BLOCKED', 'RETURN', 'VALIDATING']) {
+    const f = setup(); const statePath = join(f.root, 'evidence', 'WI-1', 'execution-state.json');
+    writeUnitResults(f, {}, { completeState: false });
+    const work = JSON.parse(readFileSync(f.workPath, 'utf8')); work.globalState = globalState; writeJson(f.workPath, work);
+    const resultPath = join(f.root, 'evidence', 'WI-1', 'units', 'SHARED-1.json'); const before = readFileSync(statePath, 'utf8');
+    rejects(run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', resultPath], f.repo), /仅允许 IMPLEMENTING|禁止动作|生产实现只能在 IMPLEMENTING/);
+    assert.equal(readFileSync(statePath, 'utf8'), before);
+  }
+});
+
+test('unit-check 重复 Result：已 COMPLETE 的单元拒绝重放且状态不变', () => {
+  const f = setup(); writeUnitResults(f, {}, { completeState: false });
+  const resultPath = join(f.root, 'evidence', 'WI-1', 'units', 'SHARED-1.json');
+  assert.equal(run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', resultPath], f.repo).status, 0);
+  const statePath = join(f.root, 'evidence', 'WI-1', 'execution-state.json'); const before = readFileSync(statePath, 'utf8');
+  rejects(run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', resultPath], f.repo), /不是 IN_PROGRESS/);
+  assert.equal(readFileSync(statePath, 'utf8'), before);
 });
 
 test('lint：当前仓库策略、Schema 和 Markdown 链接一致', () => {

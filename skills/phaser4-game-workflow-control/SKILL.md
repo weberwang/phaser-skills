@@ -18,7 +18,7 @@ description: Phaser 4 游戏仓库的唯一全局工作流控制面。基于任�
 7. 先运行 `route` 自动推导通道、缺失工件和下一条命令。实施后运行 `diff-audit`：A1/A2 或仅外部回执可用真实 `--artifact` 哈希，A3/A4 必须有真实 Git diff；验证后生成 Evidence Manifest。
 8. 使用 `advance` 一次最多推进一个状态。A1/A2 在审计和证据满足后闭环；安全 A3 在 F0-F3 通过后由 `PASSED` 直接 `COMPLETE`，不强制 A4/F4。正式入口替换、迁移、删除旧实现和跨模块高影响集成进入 A4。
 
-任务状态硬门：`delegate-check`、`parallel-check`、`unit-check`、`evidence-check` 以及进入 `VALIDATING` 的迁移都必须读取并复核当前 Execution State；缺失、过期、篡改或与 Work Item/Package/基线/`executionUnits` 顺序不一致时 fail closed。V2 单元序列完成后必须在机器输出中给出下一任务 `V3-PRODUCTION-PLANNING`；只有唯一 `v2ToV3Contract` 同时绑定 `status=PASS`、`contractId`、evidenceRoot 内的 `evidenceFile` 和复算一致的 `evidenceSha256` 后才可标记 `IN_PROGRESS`，否则保持 `BLOCKED`。
+任务状态硬门：`delegate-check`、`parallel-check`、`unit-check`、`evidence-check` 以及进入 `VALIDATING` 的迁移都必须读取并复核当前 Execution State；缺失、过期、篡改或与 Work Item/Package/基线/`executionUnits` 顺序不一致时 fail closed。V2 单元序列完成后必须在机器输出中给出下一任务 `V3-PRODUCTION-PLANNING`；只有唯一 `v2ToV3Contract` 同时绑定 `status=PASS`、`contractId`、evidenceRoot 内的 `evidenceFile` 和复算一致的 `evidenceSha256` 后才可标记 `IN_PROGRESS`，否则保持 `BLOCKED`。合同补齐必须通过正式 `refresh-v2-v3` 命令在排他锁内刷新，V2 合同 PASS 后允许当前工作项进入 `VALIDATING → PASSED → COMPLETE`，V3 规划由后续工作项执行。
 
 ## 硬限制
 

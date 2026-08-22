@@ -63,7 +63,7 @@
       "additionalProperties": false,
       "required": ["type", "unitId", "resultId"],
       "properties": {
-        "type": {"enum": ["INITIALIZE", "UNIT_COMPLETE", "WORKFLOW_COMPLETE"]},
+        "type": {"enum": ["INITIALIZE", "UNIT_COMPLETE", "WORKFLOW_COMPLETE", "V2_TO_V3_CONTRACT_REFRESH"]},
         "unitId": {"type": ["string", "null"]},
         "resultId": {"type": ["string", "null"]}
       }

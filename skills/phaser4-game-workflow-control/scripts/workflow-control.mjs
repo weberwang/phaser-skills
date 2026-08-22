@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import process from 'node:process';
-import { assertCompletedUnits, assertExecutionWorkflowComplete, assertUnitReady, executionStateSummary, initializeExecutionState, loadExecutionState, validateAndCompleteExecutionUnit, validateV2ToV3ContractShape } from './execution-unit-control.mjs';
+import { assertCompletedUnits, assertExecutionWorkflowComplete, assertUnitReady, executionStateSummary, initializeExecutionState, loadExecutionState, refreshV2ToV3Contract, validateAndCompleteExecutionUnit, validateV2ToV3ContractShape } from './execution-unit-control.mjs';
 import { validateParallelBatch } from './parallel-batch-control.mjs';
 import { validateDelegationBinding, validateExecutionPlan } from './parallel-plan.mjs';
 import { repositoryLint } from './repository-lint.mjs';
@@ -597,10 +597,9 @@ function delegateCheck(args) {
   }
   process.stdout.write(JSON.stringify({ ok: true, command: 'delegate-check', assignedAgent: delegation.assignedAgent }, null, 2));
 }
-
 /** 校验一个实施单元的当前完成证据。 */
 function unitCheck(args) {
-  const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
+  const work = validateWorkItem(readJson(args['work-item'], 'Work Item')); requireResolvedUserInput(work); validateActionState(work, 'A3', {});
   const repo = resolve(String(args.repo ?? process.cwd()));
   const pkg = validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work, repo);
   const resultPath = resolve(String(args.result));
@@ -613,7 +612,12 @@ function unitCheck(args) {
     process.stdout.write(JSON.stringify({ ok: true, command: 'unit-check', unitId: unit.unitId, resultId: result.resultId, executionState: executionStateSummary(work, updated.state) }, null, 2));
   } catch (error) { fail(error.message); }
 }
-
+/** 通过正式命令复核 V2→V3 合同证据，并持久化解除已有 BLOCKED 门。 */
+function refreshV2V3(args) {
+  const work = validateWorkItem(readJson(args['work-item'], 'Work Item')); requireResolvedUserInput(work); validateActionState(work, 'A3', {});
+  const repo = resolve(String(args.repo ?? process.cwd())); const pkg = validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work, repo);
+  try { const updated = refreshV2ToV3Contract(work, pkg, repo, unitIo()); process.stdout.write(JSON.stringify({ ok: true, command: 'refresh-v2-v3', executionState: executionStateSummary(work, updated.state) }, null, 2)); } catch (error) { fail(error.message); }
+}
 /** 原子校验同一并行组的完整 A3 委派批次。 */
 function parallelCheck(args) {
   const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
@@ -970,14 +974,10 @@ function status(args) {
   const visualGate = visualStageGate(work, { command: 'status', actionLevel: work.pendingApprovalActionLevel, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, projectRoot: repo });
   const packagePath = args['implementation-package'] ?? work.implementationPackageRecord;
   let executionState = null;
-  if (packagePath) {
-    const pkg = validateImplementationPackage(readJson(packagePath, 'Implementation Package'), work, repo);
-    try { executionState = executionStateSummary(work, loadExecutionState(work, pkg, repo, unitIo()).state); } catch (error) { fail(error.message); }
-  }
+  if (packagePath) { const pkg = validateImplementationPackage(readJson(packagePath, 'Implementation Package'), work, repo); try { executionState = executionStateSummary(work, loadExecutionState(work, pkg, repo, unitIo()).state); } catch (error) { fail(error.message); } }
   if (args.ledger) readLedger(args.ledger);
   process.stdout.write(JSON.stringify({ workItemId: work.workItemId, projectId: work.projectId, moduleIds: work.moduleIds, domain: work.domain, stageId: work.stageId, visualStage: work.visualStage ?? null, visualStageState: work.visualStageState ?? null, visualStageGate: visualGate.required ? { ok: visualGate.ok, errorCode: visualGate.errors?.[0]?.errorCode ?? null, missingStages: visualGate.missingStages, missingEvidence: visualGate.missingEvidence, invalidatedDependencies: visualGate.invalidatedDependencies, nextAction: visualGate.nextAction } : { required: false }, globalState: work.globalState, nextGate: work.nextGate, baselineId: work.baselineId, baselineVersion: work.baselineVersion, baselineHash: work.baselineHash, approvalRecord: work.approvalRecord, pendingApprovalId: work.pendingApprovalId, pendingApprovalState: work.pendingApprovalState, pendingApprovalStatus: work.pendingApprovalStatus ?? null, pendingApprovalContext: work.pendingApprovalContext, pendingApprovalPresentedId: work.pendingApprovalPresentedId, pendingApprovalPresentedAt: work.pendingApprovalPresentedAt, diffAuditRecord: work.diffAuditRecord ?? null, executionState, nextCommand: `node <skill-dir>/scripts/workflow-control.mjs route --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'}` }, null, 2));
 }
-
 /** 仅在控制目录不存在时创建空账本、目录和首个 Work Item。 */
 function init(args) {
   const repo = resolve(String(args.repo ?? process.cwd()));
@@ -1020,10 +1020,10 @@ function lint(args) {
 
 /** 输出命令帮助。 */
 function help() {
-  process.stdout.write('用法：node <skill-dir>/scripts/workflow-control.mjs <init|route|advance|prepare-approval|handoff|preflight|approve|delegate-check|parallel-check|unit-check|diff-audit|evidence-check|transition|status|lint> [选项]\n');
+  process.stdout.write('用法：node <skill-dir>/scripts/workflow-control.mjs <init|route|advance|prepare-approval|handoff|preflight|approve|delegate-check|parallel-check|unit-check|refresh-v2-v3|diff-audit|evidence-check|transition|status|lint> [选项]\n');
 }
 
 const [command, ...rest] = process.argv.slice(2);
 const args = parseArgs(rest);
 if (!command || args.help === true || command === 'help') help();
-else ({ init, route, advance, 'prepare-approval': prepareApproval, handoff, preflight, approve, 'delegate-check': delegateCheck, 'parallel-check': parallelCheck, 'unit-check': unitCheck, 'diff-audit': diffAudit, 'evidence-check': evidenceCheck, transition, status, lint }[command] ?? (() => fail(`未知命令 ${command}`)))(args);
+else ({ init, route, advance, 'prepare-approval': prepareApproval, handoff, preflight, approve, 'delegate-check': delegateCheck, 'parallel-check': parallelCheck, 'unit-check': unitCheck, 'refresh-v2-v3': refreshV2V3, 'diff-audit': diffAudit, 'evidence-check': evidenceCheck, transition, status, lint }[command] ?? (() => fail(`未知命令 ${command}`)))(args);
