@@ -1,30 +1,46 @@
 # Spine Atlas 重建约束
 
-## Page 与 Region 字段
+## Page 与 Region 输入审计
 
-- 一个 `.atlas` 可以有多个 Page；每个 Page 以图片名和 `size/format/filter/repeat/pma/scale` 等字段开始，空行后列出该页的 Region/Cell。
-- Region 常见字段为 `rotate`、`xy`、`size`、`orig`、`offset`、`index`；新格式可能使用 `bounds: x,y,w,h` 与 `offsets: offsetX,offsetY,origW,origH`。解析器应保留未知字段和原字段形式，不能仅凭第一行或单个 Page 推断总数。
-- `xy`/`size` 是 Page 像素矩形；`orig` 是未裁剪尺寸，`offset` 是裁剪矩形在未裁剪图中的偏移，`index` 不能重排。保留 Region 名称与顺序，Skeleton Attachment 和 Mesh UV 才能继续引用原数据。
+- 一个 `.atlas` 可包含多个 Page；每个 Page 以图片名和 `size/format/filter/repeat/pma/scale` 等字段开始，后面列出 Region/Cell。
+- 初始化必须核对 Page 声明尺寸与实际图片尺寸。Page 名称、同 Page Region 名称不能重复；Region `xy/size` 必须为正整数并完全位于 Page 内。
+- 同一 Page 的 Region 矩形不得有面积交集。`orig` 必须为正数；`offset` 不得为负，且 `offset + 正向 size` 不能超出 `orig`。
+- `bounds: x,y,w,h` 与 `offsets: offsetX,offsetY,origW,origH` 等价于传统字段；未知字段和字段顺序保留到输出 Atlas。
+- 所有 Page 输出名统一规范为 `.png`；不同源 Page 映射到同一输出名时初始化失败，避免静默覆盖。
 
 ## trim、offset 与 rotate
 
-生成器可以返回正向的 `orig` 图，或已经裁剪到正向 `size` 的图。对于 `orig` 图，按 `offset` 提取原裁剪矩形；Y 偏移按 Spine 从底部计数转换为顶端坐标：`crop_y = orig_h - offset_y - region_h`。缺少一致尺寸时失败，不缩放、不猜测。
+生成器可以返回未裁剪的正向 `orig` 图，或已经裁剪到正向 `size` 的图。对于 `orig` 图，按 `offset` 提取裁剪矩形；Y 偏移按 Spine 从底部计数转换为顶端坐标：`crop_y = orig_h - offset_y - region_h`。缺少一致尺寸时失败，不缩放、不猜测。
 
-Atlas 中 `rotate: true` 通常表示矩形顺时针旋转 90° 存放；数值旋转按 90° 倍数处理。生成图先按正向尺寸裁剪，再只在写入 Page 时旋转回原方向，输出仍使用原 `xy/size`，因此 UV 不需要改动。非 90° 倍数或旋转后尺寸不符必须失败。
+Atlas 中 `rotate: true` 通常表示矩形顺时针旋转 90° 存放；数值旋转只接受 90° 倍数。生成图先按正向尺寸裁剪，再由打包器旋回 Atlas 方向，输出仍使用原 `xy/size`，所以 Skeleton 与 Mesh UV 不需改动。
 
-## 透明空白页、padding 与 extrusion
+## 透明空白 Page、padding 与 extrusion
 
-每个新 Page 必须从与原 Page 相同尺寸的全透明 RGBA 画布开始。只能粘贴当前成功生成的 Cell，不能复制源 Page、源 Cell 或任何非 Region 像素；源图最多作为结构参考/蒙版。未被 Cell 覆盖的像素必须保持透明。
+每个新 Page 必须从与原 Page 相同尺寸的全透明 RGBA 画布开始。只能粘贴对应生成图，不能复制源 Page、源 Cell 或任何非 Region 像素；未被 Cell 覆盖的像素保持透明。
 
-`padding` 是原 Region 矩形内预留的透明边框，`extrusion` 是从当前生成图边缘向该边框复制的像素。两者只能在原 `xy/size` 矩形内执行，不能扩展矩形或移动 Region；若生成图和 padding 后的目标尺寸不符，应报错。不要为“容纳”新图而重新打包坐标。
+`padding` 是 Region 矩形内的透明预留边框，`extrusion` 是从当前生成图边缘复制到该边框的像素；两者不能扩展矩形或移动 Region。完整 `orig/size` 生成图只能使用零 `padding/extrusion`；要启用边缘扩展，必须提供 `size - 2*padding` 的核心图。无论输入尺寸如何，都要校验 `extrusion <= padding`，不允许静默忽略参数。
 
 ## PMA 与格式
 
-Page 的 `pma: true` 时，把新图的 straight-alpha RGB 按 alpha 预乘（`rgb = rgb * alpha / 255`），完全透明像素的 RGB 应为 0；`pma: false` 保持 straight alpha。输出采用可表达透明度的 PNG，保留 `format/filter/repeat/scale` 元数据，不能用 JPEG 作为新 Page。
+Page `pma: true` 时，把 straight-alpha RGB 按 `rgb = rgb * alpha / 255` 预乘一次；完全透明像素的 RGB 清零。`pma: false` 保持 straight alpha。新 Page 内容必须真实编码为 PNG，不能只改扩展名。
 
-## 交付前不变量
+## 受约束换皮结果
 
-1. 所有 Page 都有对应新文件，Page 尺寸和顺序不变。
-2. 所有 Region 的名称、`xy/size/orig/offset/rotate/index`（或等价字段）和顺序不变。
-3. 每个 Region 的像素都来自对应生成图；透明空白区及非 Region 原像素不回退。
-4. Atlas、Page、进度清单和生成图的哈希绑定同一候选；任一 Cell 失败则整套候选不可交付。
+- `constrained-redraw` 保留方向、锚点、轮廓、尺寸和 UV 语义，重做配色、材质、明暗与装饰。
+- `palette-refresh` 仅作低改动色板/材质调整。
+- `mesh-safe` 锁定 Mesh 顶点顺序、变形关键点、连接点和透明边缘。
+
+先通过保守基线覆盖全部动画，再增强刚体主体。生成图路径必须在候选目录内；源参考只能用于轮廓、比例、蒙版与结构审阅，不能成为结果像素或失败回退。
+
+工具将 alpha 合同阈值固定为：`palette-refresh` 掩码差异 `0`；`mesh-safe` IoU 至少 `0.85` 且包围盒漂移不超过 `0.10`；`constrained-redraw` IoU 至少 `0.45` 且质心漂移不超过 `0.35`。比较前会先处理 trim、offset、rotate 和 padding。
+
+## 输出提交与恢复
+
+`pack --force` 会把旧输出目录重命名为带随机后缀的备份，再将阶段目录重命名为正式目录；任何阶段失败都尝试恢复备份。输出目录不得等于或成为源 Atlas、Page、Skeleton、清单、生成图和证据的祖先，也不能通过符号链接绕过保护。
+
+完成前必须验证：
+
+1. 每个 Page 的尺寸、顺序和 PNG 文件存在；
+2. 每个 Region 的名称、`xy/size/orig/offset/rotate/index` 与源一致；
+3. 所有生成图、源参考、审阅证据、运行态证据和输出 Atlas/Page 哈希绑定同一候选；
+4. Phaser 运行态加载所有 Skin、Attachment、动画和 Mesh 变形无缺图、错位、翻转、PMA 黑边或 UV 断裂。

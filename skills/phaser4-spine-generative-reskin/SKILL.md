@@ -1,78 +1,106 @@
 ---
 name: phaser4-spine-generative-reskin
-description: 对 Phaser 4 Spine Atlas/纹理图集的全部 Region/Cell 逐项生成替换图、断点续作、重建全新纹理或验证无旧纹理回退时使用；要求保留 Skeleton、Attachment 与 Mesh UV，并能在任何 Cell 失败时安全恢复。
+description: 对 Phaser 4 Spine Atlas/纹理图集执行可审计、受约束的生成式换皮、断点续作、空白 Page 重建与运行态验收时使用；要求保留 Skeleton、Attachment、锚点和 Mesh UV 语义。
 ---
 
 # Phaser 4 Spine 生成式换皮
 
-## 全局控制接入
+本 Skill 只在已建立且授权有效的游戏 Work Item 内使用。换皮必须回到全局工作流控制记录输入、生成、审阅、重建和运行态证据；不得用旧 Page 或旧 Cell 像素作为失败回退。
 
-控制面边界：可提议、可审查、可在已建立且任务授权有效的 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审计和状态迁移；仅实际 A4-A6 操作请求批准。
+## 控制面边界
 
-Spine 换皮是资源生产域，不得旁路全局控制。只在已建立且任务授权有效的 Work Item、冻结 Implementation Package、A 等级和 Atlas/输出路径内修改；每次恢复、生成、重建与验证都按 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 提交证据和状态，仅实际 A4-A6 操作请求批准。
+本 Skill 的换皮工作可在 `phaser4-game-workflow-control` 中提议和审阅；仅在任务授权有效且范围明确时修改工件，完成后回到 `phaser4-game-workflow-control` 提交状态与证据。
 
-先将 `<skill-dir>` 解析为本 `SKILL.md` 所在的 Skill 根目录；以下所有工具命令都使用 `node <skill-dir>/scripts/spine_reskin_progress.mjs`，不依赖当前工作目录。复制安装器会在该 Skill 目录安装 Sharp，不会修改目标游戏项目的依赖清单。
-
-按以下顺序完成整套换皮。任何一个 Cell 未完成、校验失败或状态不明，都不得宣称交付完成。
-
-## 1. 审计输入并建立候选目录
-
-1. 找到 `.atlas`、所有 Page 图片和配套 Skeleton JSON/Binary；记录 Phaser 4、Spine runtime 版本、纹理加载器、PMA 约定和运行入口。
-2. 运行 `node <skill-dir>/scripts/spine_reskin_progress.mjs init --atlas <source.atlas> --output <candidate>/progress.json`。默认把候选写入新目录，禁止覆盖原 Atlas、Page 或 Skeleton；需要源 Cell 参考时增加 `--reference-dir <candidate>/source-cells`。
-3. 审核清单中的每一页尺寸、格式、filter、repeat、pma、scale，以及每个 Region 的 `xy/size/orig/offset/index/rotate` 或 `bounds/offsets`。发现重复 ID、缺页、越界或字段无法解析时立即停止。
-4. 用清单列出全部 Cell，不以 Attachment 数量、首个 Page 或可见角色数量代替总数。记录源 Atlas、全部 Page 和配套 Skeleton 文件的 SHA-256，确保后续不会误用旧候选。
-
-详细的多 Page、trim/offset/UV、padding/extrusion、PMA 和透明空白页规则见 [references/atlas-rebuild.md](references/atlas-rebuild.md)。
-
-## 2. 冻结全局风格与结构参考
-
-1. 在清单中登记全局角色/材质/光照/色彩/轮廓参考和排除项；每个 Cell 同时传入原 Cell 参考图与同一份全局参考。
-2. 原 Cell 只能用于结构、比例、透明轮廓、裁剪边界和 Mesh 语义参考，或作为生成模型的蒙版。禁止复制原图 RGB、抠取原图像素、以原 Page 作为输出底图或在失败时回退到原纹理。
-3. 对每个 Cell 标注是否为刚体、可变形 Mesh、附件点缀、阴影/高光或透明特效。不要改变 Attachment 名称、Skeleton 绑定、Mesh 顶点顺序或 UV 语义。
-
-## 3. 逐 Cell 生成并持久化
-
-1. 先把 Cell 标为 `generating`：
-   `node <skill-dir>/scripts/spine_reskin_progress.mjs mark --manifest <candidate>/progress.json --cell <cell-id> --status generating`。
-2. 使用当前可用的图片生成能力逐 Cell 生图。每次请求都传入该 Cell 的原图参考、全局风格/角色参考和清单中的 `orig`/`size`/`rotate` 约束；保持同一角色跨 Cell 的脸、材质、光向、颜色和透明边缘一致。不要在初始化 Skill 时实际生图。
-3. 让输出图符合清单的结构契约：可提供未裁剪的 `orig` 尺寸（工具会按 `offset`/`size` 提取），或直接提供正向的裁剪 `size` 尺寸；旋转 Cell 必须按正向尺寸提供，再由打包器旋回 Atlas 方向。保留真实透明度，不用纯色背景填充。
-4. 生成后立即写入不可变候选路径并标记：
-   `node <skill-dir>/scripts/spine_reskin_progress.mjs mark --manifest <candidate>/progress.json --cell <cell-id> --status generated --image <candidate>/generated/<file>.png`。
-   工具会记录 SHA-256、尝试次数和状态历史；不要手改 JSON。失败则用 `--status failed --error <原因>`，修复后从 `failed` 重新进入 `generating`。
-5. 每批生成后运行 `status`，需要审阅完整字段时运行 `read`；进程中断时运行 `recover`，把 `generating/validating/packing` 安全退回 `pending`，再继续，禁止把旧图冒充新图。
-
-## 4. 逐 Cell 透明度、形状和 Mesh 语义检查
-
-1. 对照原 Cell 参考检查可见轮廓、透明边缘、锚点、方向、阴影层级和可读性；检查生成图的 alpha 是否有意外背景、孔洞或裁切。
-2. 对 Mesh/九宫格/变形附件，确认关键形状、透明区域和局部细节仍落在原 `orig`/`offset` 语义内；不要通过改 Atlas 坐标“修图”。
-3. 将 Cell 标为 `validating`；不通过就标为 `failed` 并记录原因。只有所有 Cell 都通过，才允许进入 `packing`。
-
-## 5. 从透明空白 Page 重建
-
-1. 使用 `node <skill-dir>/scripts/spine_reskin_progress.mjs pack --manifest <candidate>/progress.json --output-dir <candidate>/atlas`。工具会为每个原 Page 创建全透明 RGBA 空白页，只将已生成图按原 `xy/size` 放回；不会读取源 Page 像素。
-2. 保留原 Region 名称、Page 顺序、坐标、trim/orig/offset、rotate、index、filter、repeat、scale 和 Skeleton 所需字段。按原旋转方向写回；根据 Page 的 `pma` 将生成图做 straight-alpha 到 premultiplied-alpha 转换。
-3. 按项目约定设置 `--padding` 与 `--extrusion`；填充和边缘扩展只能来自当前生成图，且必须落在原 Region 矩形内，不能改变 UV 坐标。多 Page 必须逐页输出并在新 Atlas 中保持对应 Page 引用。
-4. 任一 Cell 缺图、尺寸不符、旋转/裁剪越界、Sharp 不可用或写盘失败，都保持候选不完成，记录 `failed`，修复后重试。不要发布部分 Page。
-
-## 6. 完成门与 Phaser 运行态验证
-
-1. 打包成功后工具将 Cell 标为 `completed` 并记录候选 Page/Atlas 哈希。运行 `node <skill-dir>/scripts/spine_reskin_progress.mjs verify --manifest <candidate>/progress.json`；未完成、哈希不匹配或产物缺失必须返回非零。
-2. 在隔离的 Phaser 4 候选场景加载新 Atlas 与原 Skeleton，逐一播放待测动画、Attachment 和 Mesh 变形；检查无缺图、错位、翻转、PMA 黑边、透明底色、UV 断裂和跨 Page 问题。至少保留整体预览截图/录屏和控制台日志。
-3. 运行态验证失败时保留失败候选，创建新的进度清单并从受影响 Cell 重新生成、验证和打包；禁止修改已 `completed` 的清单或把失败状态覆盖掉。不得只改运行时代码或宣称“视觉上差不多”。手工比较原 Skeleton 文件 SHA-256 及 Skeleton/Attachment/Mesh UV 是否保持不变；工具 `verify` 不自动校验 Skeleton。只有新清单全 Cell `completed`、验证证据绑定当前候选哈希且手工比较通过，才可交付。
-
-## 7. 最终工件与恢复
-
-交付新 `.atlas`、全部新 Page PNG、进度清单、生成图/参考图索引、全局参考、哈希清单、整体预览和 Phaser 运行态验证记录。保留原 Atlas 与原 Page 只作回滚对照；任何 Cell 失败都公开报告 ID、原因、重试次数和下一步，不得静默跳过。
-
-进度状态和字段约束见 [references/progress-state.md](references/progress-state.md)。
-
-## 工具命令
-
-在仓库根目录运行：
+工具入口是：
 
 ```powershell
 node <skill-dir>/scripts/spine_reskin_progress.mjs --help
+```
+
+进度清单使用 schema v2。`init` 必须接收至少一个 `--skeleton`，并为源 Atlas、全部 Page、Skeleton、style reference 和源 Cell 参考记录 SHA-256。所有会修改清单的命令使用跨进程锁；锁文件超过陈旧阈值后才可回收。
+
+## 1. 审计输入并建立候选
+
+先确认 Phaser 4、Spine runtime、纹理加载器、PMA 约定、Skeleton 文件和全部 Atlas Page。初始化时，Page 声明尺寸必须等于实际图片尺寸；重复 Region、非正尺寸、越界、矩形重叠、非法 `orig/offset`、重复输出 Page 名都会立即失败。
+
+```powershell
+node <skill-dir>/scripts/spine_reskin_progress.mjs init `
+  --atlas <source.atlas> `
+  --output <candidate>/progress.json `
+  --skeleton <character.json> `
+  --style-reference <style.png>
+```
+
+可以重复 `--skeleton`、`--style-reference`。源 Cell 结构参考默认写入 `<candidate>/source-cells`，也可以显式传 `--reference-dir`。生成候选必须放在清单目录内的 `generated/` 等目录；不要把源 Page、Skeleton 或参考图复制到生成结果路径。
+
+## 2. 冻结结构与换皮模式
+
+默认模式是 `constrained-redraw`，表示在原 `orig/offset/size/rotate`、透明轮廓、朝向、锚点和 Mesh UV 语义内重做配色、材质、明暗和细节。三种模式分别是：
+
+- `constrained-redraw`：保留结构合同，重做完整视觉表面，适合普通刚体附件。
+- `palette-refresh`：低改动换色和材质，适合风险较高或极小的 Cell。
+- `mesh-safe`：锁定变形关键点、连接点和透明轮廓，主要重做色彩与材质。
+
+验证时先把 `orig/offset/rotate/padding` 归一化到正向裁剪图，再比较 alpha 掩码。当前结构合同阈值固定为：`palette-refresh` 可见 alpha 掩码差异必须为 0；`mesh-safe` alpha IoU 至少 0.85 且包围盒漂移不超过 0.10；`constrained-redraw` alpha IoU 至少 0.45 且 alpha 质心漂移不超过 0.35。阈值由工具中的具名常量维护，不能按 Cell 临时放宽。
+
+模式必须通过命令登记，不能手改状态伪造验证：
+
+```powershell
+node <skill-dir>/scripts/spine_reskin_progress.mjs configure `
+  --manifest <candidate>/progress.json --cell <cell-id> --mode constrained-redraw
+```
+
+先做一套保守基线，再逐个增强头部、服装主体、武器等刚体 Cell。Mesh、关节、脸部、阴影和透明特效采用 `mesh-safe` 或保守 `palette-refresh`。所有 Cell 使用同一全局角色参考、光向、色板和材质规则；生成图不能复制原图 RGB。
+
+## 3. 生成并持久化
+
+```powershell
+node <skill-dir>/scripts/spine_reskin_progress.mjs mark --manifest <candidate>/progress.json --cell <cell-id> --status generating
+node <skill-dir>/scripts/spine_reskin_progress.mjs mark --manifest <candidate>/progress.json --cell <cell-id> --status generated --image <candidate>/generated/<file>.png
+```
+
+生成图可以是未裁剪的 `orig` 尺寸，也可以是旋转还原前的正向 `size` 尺寸；若启用 `padding/extrusion`，必须提供扣除 padding 后的核心尺寸。工具会按 `offset`、`padding`、`extrusion` 和 `rotate` 严格处理，不缩放、不猜测。`mark` 只能写 `pending/generating/generated/failed`，失败只能回到 `pending` 或 `generating` 后重试，不能直达 `generated`。
+
+## 4. Cell 审阅验证
+
+每个 Cell 必须执行正式 `validate`，不能手工把状态写成 `validating`：
+
+```powershell
+node <skill-dir>/scripts/spine_reskin_progress.mjs validate `
+  --manifest <candidate>/progress.json --cell <cell-id> `
+  --evidence <candidate>/evidence/<cell>-review.png
+```
+
+验证会检查生成图位于候选目录且未引用源文件、哈希仍匹配、尺寸符合 `orig/size/padding`、alpha 非空、源结构参考和换皮模式有效，并要求至少一个可哈希的审阅证据。审阅需确认轮廓、朝向、锚点、透明边缘、光向连续性、Mesh 关键点和相邻 Cell 接缝。
+
+## 5. 从透明空白 Page 重建
+
+所有 Cell 进入 `validating` 后执行：
+
+```powershell
+node <skill-dir>/scripts/spine_reskin_progress.mjs pack `
+  --manifest <candidate>/progress.json --output-dir <candidate>/atlas `
+  --padding 2 --extrusion 1
+```
+
+每个 Page 从同尺寸全透明 RGBA 画布开始，只粘贴当前生成像素；未覆盖区域保持透明。输出 Page 一律是真实 PNG，Atlas 保留原 Page 顺序、Region 名称、`xy/size/orig/offset/rotate/index` 和未知字段。`extrusion <= padding` 始终检查，即使输入已经是完整尺寸也不会静默吞掉非法参数。`--force` 会先安全备份旧输出；输出目录不得等于或成为源 Atlas、Page、Skeleton、清单、生成图或证据的祖先，提交失败时恢复备份。
+
+pack 成功后状态是 `packed`，不是 `completed`。运行：
+
+```powershell
+node <skill-dir>/scripts/spine_reskin_progress.mjs finalize `
+  --manifest <candidate>/progress.json --evidence <candidate>/evidence/phaser-runtime.png
+```
+
+`finalize` 先检查当前候选全部 Atlas/Page 哈希、源文件哈希，再记录至少一个 Phaser 运行态截图、录屏或控制台日志的 SHA-256，推进 `packed -> runtime_validating -> completed`。运行态证据需覆盖全部动画、Skin、Attachment、Mesh 变形和多 Page 加载风险；失败时保留证据并重新建立候选，不修改已完成清单。
+
+## 6. 最终验证与交付
+
+```powershell
+node <skill-dir>/scripts/spine_reskin_progress.mjs verify --manifest <candidate>/progress.json
 node --test <skill-dir>/scripts/spine_reskin_progress.test.mjs
 ```
 
-工具缺少 Sharp 时会由 Node.js 给出依赖解析错误并返回非零；通过官方复制安装器安装时依赖会放在 Skill 自身目录。
+`verify` 检查所有 Cell 状态、生成图和审阅证据哈希、运行态证据哈希、源 Atlas/Page/Skeleton/style reference/源 Cell 参考哈希，以及重建 Atlas/Page 哈希。任何 Cell 未完成、证据缺失、源文件漂移、PNG 不存在或哈希不匹配都返回非零。交付物至少包含新 Atlas、全部 Page PNG、v2 清单、生成图、结构参考、审阅证据、运行态证据和哈希索引。
+
+状态字段、恢复规则和锁语义见 [references/progress-state.md](references/progress-state.md)；多 Page、trim/offset/rotate、padding/extrusion 和 PMA 规则见 [references/atlas-rebuild.md](references/atlas-rebuild.md)。
