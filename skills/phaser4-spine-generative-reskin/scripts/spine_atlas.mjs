@@ -192,7 +192,7 @@ export function atlasText(document) {
     const order = [...(page.field_order ?? [])];
     if (!order.some((key) => key.toLowerCase() === "size")) order.unshift("size");
     for (const key of order) lines.push(`${key}: ${key.toLowerCase() === "size" ? pair([page.width, page.height]) : field(page.fields ?? {}, key, "") ?? ""}`);
-    lines.push("");
+    // Atlas 运行时允许 Page 与 Region 之间紧邻；空行只用于分隔不同 Page。
     for (const cell of document.cells.filter((item) => item.page_index === page.index)) {
       lines.push(cell.name);
       const order2 = [...(cell.field_order ?? [])];
@@ -215,8 +215,8 @@ export function atlasText(document) {
         else if (lower === "index") value = String(cell.index);
         lines.push(`  ${key}: ${value}`);
       }
-      lines.push("");
     }
+    if (page !== document.atlas.pages.at(-1)) lines.push("");
   }
   return `${lines.join("\n").trimEnd()}\n`;
 }

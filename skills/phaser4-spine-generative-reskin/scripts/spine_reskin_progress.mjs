@@ -3,13 +3,21 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { access, mkdir, mkdtemp, open, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import sharp from "sharp";
 import { atlasText, parseAtlas, ReskinError } from "./spine_atlas.mjs";
 import { blankRgba, cropRgba, decodeRgba, encodePng, extractReferences, hasVisibleAlpha, normalizeCellImage, outputPageName, pasteRgba, prepareCellImage, validateCellImageDimensions } from "./spine_images.mjs";
+import { auditSkeleton } from "./spine_skeleton.mjs";
+import { acceptanceFingerprint, assertCurrentBatch, batchCells, validateEffectSequence } from "./spine_batch.mjs";
+import { buildRuntimeBinding, readRuntimeReport, validateRuntimeReport, validateVerification, writeFinalReport } from "./spine_runtime.mjs";
+import { assertProductionReady, createBatchCommands } from "./spine_batch_commands.mjs";
+import { prepareSpineAsset } from "./spine_assets.mjs";
+import { assertSpineControlBinding, readSpineControlBinding } from "./spine_control.mjs";
+import { createSkeletonAuditIntegrity } from "./spine_integrity.mjs";
+import { createAlphaContract } from "./spine_alpha.mjs";
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const LOCK_TIMEOUT_MS = 30_000;
 const LOCK_STALE_MS = 120_000;
 export const MODES = ["palette-refresh", "mesh-safe", "constrained-redraw"];
@@ -26,11 +34,11 @@ const MARKABLE_STATUSES = new Set(["pending", "generating", "generated", "failed
 const ALLOWED_TRANSITIONS = {
   pending: new Set(["pending", "generating", "generated", "failed"]),
   generating: new Set(["pending", "generating", "generated", "failed"]),
-  generated: new Set(["generated", "validating", "failed"]),
+  generated: new Set(["pending", "generated", "validating", "failed"]),
   validating: new Set(["pending", "validating", "packing", "failed"]),
-  packing: new Set(["pending", "packing", "packed", "failed"]),
+  packing: new Set(["pending", "validating", "packing", "packed", "failed"]),
   packed: new Set(["packed", "runtime_validating", "failed"]),
-  runtime_validating: new Set(["pending", "runtime_validating", "completed", "failed"]),
+  runtime_validating: new Set(["pending", "packed", "runtime_validating", "completed", "failed"]),
   completed: new Set(["completed"]),
   failed: new Set(["failed", "pending", "generating"]),
 };
@@ -115,13 +123,22 @@ async function withManifestLock(manifestPath, action) {
   try { return await action(); } finally { await release(); }
 }
 
-/** 读取并检查 v2 清单根结构。 */
+/** 读取并检查 schema v3 清单根结构；旧版清单不提供兼容路径。 */
 export async function readManifest(path) {
   let document;
   try { document = JSON.parse(await readFile(path, "utf8")); } catch (error) { throw new ReskinError(`无法读取进度清单 ${path}：${error.message}`); }
   if (!document || typeof document !== "object" || document.schema_version !== SCHEMA_VERSION) throw new ReskinError(`进度清单必须使用 schema_version=${SCHEMA_VERSION}`);
   if (!Array.isArray(document.cells) || !document.atlas || typeof document.atlas !== "object") throw new ReskinError("进度清单缺少 atlas 或 cells");
   if (!Array.isArray(document.skeletons) || document.skeletons.length < 1) throw new ReskinError("进度清单至少需要一个 Skeleton SHA-256 记录");
+  if (!document.target_runtime || typeof document.target_runtime !== "string") throw new ReskinError("进度清单缺少 target_runtime");
+  if (!document.skeleton_audit || typeof document.skeleton_audit !== "object") throw new ReskinError("进度清单缺少 skeleton_audit");
+  if (!document.visual_contract || typeof document.visual_contract !== "object") throw new ReskinError("进度清单缺少 visual_contract");
+  if (!document.control_binding || typeof document.control_binding !== "object") throw new ReskinError("进度清单缺少 control_binding");
+  if (!Array.isArray(document.batches)) throw new ReskinError("进度清单缺少 batches 数组");
+  if (![
+    "independent-validation-candidate",
+    "integrated-main-game",
+  ].includes(document.delivery_mode ?? "independent-validation-candidate")) throw new ReskinError("delivery_mode 必须是 independent-validation-candidate 或 integrated-main-game");
   return document;
 }
 
@@ -197,8 +214,8 @@ async function sourceRecord(path, label) {
   return { path: resolved, sha256: await sha256(resolved) };
 }
 
-/** 从 Atlas 建立完整初始 v2 清单，并核对所有 Page 的声明尺寸。 */
-export async function buildManifest(atlasPath, outputPath, styleReferences = [], skeletonPaths = []) {
+/** 从 Atlas 建立完整初始 schema v3 清单，并核对 Skeleton、Page 与视觉合同输入。 */
+export async function buildManifest(atlasPath, outputPath, styleReferences = [], skeletonPaths = [], options = {}) {
   if (!Array.isArray(skeletonPaths) || skeletonPaths.length < 1) throw new ReskinError("init 必须提供一个或多个 --skeleton");
   const parsed = await parseAtlas(atlasPath);
   if (!parsed.cells.length) throw new ReskinError("Atlas 没有可换皮的 Region");
@@ -228,14 +245,63 @@ export async function buildManifest(atlasPath, outputPath, styleReferences = [],
     seenStyles.add(recordValue.path);
     style.push(recordValue);
   }
+  const targetRuntime = String(options.targetRuntime ?? "4.3.13");
+  const skeletonAudit = await auditSkeleton(skeletons[0].path, parsed, targetRuntime);
+  if (skeletonAudit.missing_atlas_regions.length || skeletonAudit.unused_atlas_regions.length || skeletonAudit.duplicate_atlas_regions.length) throw new ReskinError(`Skeleton/Atlas Region 映射不完整：missing=${skeletonAudit.missing_atlas_regions.join(",") || "none"}；unused=${skeletonAudit.unused_atlas_regions.join(",") || "none"}；duplicate=${skeletonAudit.duplicate_atlas_regions.join(",") || "none"}`);
+  const attachmentByPath = new Map();
+  for (const attachment of skeletonAudit.attachments) attachmentByPath.set(attachment.path, { ...(attachmentByPath.get(attachment.path) ?? attachment), is_mesh: Boolean(attachmentByPath.get(attachment.path)?.is_mesh || attachment.is_mesh), mesh_sha256: attachment.mesh_sha256 ?? attachmentByPath.get(attachment.path)?.mesh_sha256 ?? null });
   const timestamp = now();
-  const cells = parsed.cells.map((cell) => ({ ...cell, status: "pending", mode: "constrained-redraw", generated_image: null, result_sha256: null, attempts: 0, history: [], last_error: null, source_reference: null, source_reference_sha256: null, validation_evidence: [] }));
-  return { schema_version: SCHEMA_VERSION, created_at: timestamp, updated_at: timestamp, atlas: { path: resolve(atlasPath), sha256: await sha256(atlasPath), pages }, skeletons, style_references: style, packing: { padding: 0, extrusion: 0 }, build: null, runtime_evidence: [], cells, candidate_dir: resolve(dirname(outputPath)) };
+  const visualContract = {
+    character: options.character ?? null,
+    direction: options.visualDirection ?? "dark",
+    palette: {
+      primary_armor: options.primaryArmor ?? null,
+      secondary_structure: options.secondaryStructure ?? null,
+      dark_mechanical: options.darkMechanical ?? null,
+      glow: options.glow ?? null,
+      accent: options.accent ?? null,
+      effects: options.effects ?? null,
+    },
+    material_language: options.materialLanguage ?? null,
+    light_direction: options.lightDirection ?? null,
+    strict_alpha: options.strictAlpha !== false,
+    frozen: Boolean(options.visualContractFrozen),
+    frozen_at: options.visualContractFrozen ? timestamp : null,
+  };
+  const cells = parsed.cells.map((cell) => {
+    const attachment = attachmentByPath.get(cell.name);
+    return { ...cell, attachment_type: attachment?.is_mesh ? "mesh" : "region", mesh_sha256: attachment?.mesh_sha256 ?? null, alpha_lock: visualContract.strict_alpha || attachment?.is_mesh === true, status: "pending", mode: attachment?.is_mesh ? "mesh-safe" : "palette-refresh", batch_id: null, generated_image: null, result_sha256: null, attempts: 0, history: [], last_error: null, source_reference: null, source_reference_sha256: null, validation_evidence: [] };
+  });
+  return {
+    schema_version: SCHEMA_VERSION,
+    created_at: timestamp,
+    updated_at: timestamp,
+    character: visualContract.character,
+    target_runtime: targetRuntime,
+    visual_contract: visualContract,
+    atlas: { path: resolve(atlasPath), sha256: await sha256(atlasPath), pages },
+    asset_input: options.assetInput ? { ...options.assetInput, source_dir: resolve(options.assetInput.source_dir ?? dirname(atlasPath)) } : { format: "independent", source_dir: dirname(resolve(atlasPath)), atlas_path: resolve(atlasPath), skeleton_path: skeletons[0].path },
+    control_binding: options.controlBinding ?? null,
+    skeletons,
+    skeleton_audit: skeletonAudit,
+    source_audit: skeletonAudit,
+    skeleton_upgrade: { status: skeletonAudit.requires_upgrade ? "REQUIRED" : "NOT_REQUIRED", source_sha256: skeletons[0].sha256, target_runtime: targetRuntime, candidate_path: null, candidate_sha256: null, comparison: null, runtime_parse_evidence: !skeletonAudit.requires_upgrade },
+    style_references: style,
+    packing: { padding: 0, extrusion: 0 },
+    build: null,
+    runtime_evidence: [],
+    runtime_validation: null,
+    batches: [],
+    current_batch_id: null,
+    cells,
+    candidate_dir: resolve(dirname(outputPath)),
+    delivery_mode: "independent-validation-candidate",
+  };
 }
 
 /** 收集所有源文件、参考图和证据路径，供输出目录保护使用。 */
 function protectedArtifactPaths(document, manifestPath) {
-  const paths = [manifestPath, document.atlas?.path, ...(document.atlas?.pages ?? []).map((page) => page.source_path), ...(document.skeletons ?? []).map((item) => item.path), ...(document.style_references ?? []).map((item) => typeof item === "string" ? item : item.path)];
+  const paths = [manifestPath, document.control_binding?.control_manifest_path, document.asset_input?.container_path, document.atlas?.path, ...(document.atlas?.pages ?? []).map((page) => page.source_path), ...(document.skeletons ?? []).map((item) => item.path), ...(document.style_references ?? []).map((item) => typeof item === "string" ? item : item.path)];
   for (const cell of document.cells ?? []) {
     paths.push(resolveArtifact(manifestPath, cell.generated_image), resolveArtifact(manifestPath, cell.source_reference));
     for (const evidence of cell.validation_evidence ?? []) paths.push(resolveArtifact(manifestPath, typeof evidence === "string" ? evidence : evidence.path));
@@ -251,7 +317,7 @@ function protectedArtifactPaths(document, manifestPath) {
 
 /** 返回不可作为生成结果来源的源纹理与结构参考路径（不含其他候选生成图）。 */
 function sourceArtifactPaths(document, manifestPath) {
-  const paths = [document.atlas?.path, ...(document.atlas?.pages ?? []).map((page) => page.source_path), ...(document.skeletons ?? []).map((item) => item.path), ...(document.style_references ?? []).map((item) => typeof item === "string" ? item : item.path)];
+  const paths = [document.control_binding?.control_manifest_path, document.asset_input?.container_path, document.atlas?.path, ...(document.atlas?.pages ?? []).map((page) => page.source_path), ...(document.skeletons ?? []).map((item) => item.path), ...(document.style_references ?? []).map((item) => typeof item === "string" ? item : item.path)];
   for (const cell of document.cells ?? []) paths.push(resolveArtifact(manifestPath, cell.source_reference));
   return paths.filter(Boolean).map((path) => resolve(path));
 }
@@ -292,7 +358,7 @@ async function validateGeneratedPath(document, manifestPath, imagePath, allowPat
 /** 校验源 Atlas、Page、Skeleton 和风格参考未发生漂移。 */
 export async function sourceIntegrityErrors(document, manifestPath) {
   const errors = [];
-  const sources = [{ label: "源 Atlas", path: document.atlas?.path, expected: document.atlas?.sha256 }, ...(document.atlas?.pages ?? []).map((page) => ({ label: `源 Page ${page.name}`, path: page.source_path, expected: page.sha256 })), ...(document.skeletons ?? []).map((item, index) => ({ label: `Skeleton ${index + 1}`, path: item.path, expected: item.sha256 })), ...(document.style_references ?? []).map((item, index) => ({ label: `style reference ${index + 1}`, path: typeof item === "string" ? item : item.path, expected: typeof item === "string" ? null : item.sha256 }))];
+  const sources = [{ label: "控制面 manifest", path: document.control_binding?.control_manifest_path, expected: document.control_binding?.control_manifest_sha256 }, ...(document.asset_input?.container_path ? [{ label: "原版资源容器", path: document.asset_input.container_path, expected: document.asset_input.source_container_sha256 }] : []), { label: "源 Atlas", path: document.atlas?.path, expected: document.atlas?.sha256 }, ...(document.atlas?.pages ?? []).map((page) => ({ label: `源 Page ${page.name}`, path: page.source_path, expected: page.sha256 })), ...(document.skeletons ?? []).map((item, index) => ({ label: `Skeleton ${index + 1}`, path: item.path, expected: item.sha256 })), ...(document.style_references ?? []).map((item, index) => ({ label: `style reference ${index + 1}`, path: typeof item === "string" ? item : item.path, expected: typeof item === "string" ? null : item.sha256 }))];
   for (const source of sources) {
     if (!source.path || !await isFile(resolve(source.path))) { errors.push(`${source.label} 不存在：${source.path ?? ""}`); continue; }
     if (!source.expected || source.expected !== await sha256(resolve(source.path))) errors.push(`${source.label} SHA-256 漂移`);
@@ -307,22 +373,43 @@ export async function sourceIntegrityErrors(document, manifestPath) {
 
 /** 把源完整性错误转换为命令失败。 */
 async function assertSourceIntegrity(document, manifestPath) {
+  await assertSpineControlBinding(document);
   const errors = await sourceIntegrityErrors(document, manifestPath);
   if (errors.length) throw new ReskinError(errors.join("；"));
 }
 
 /** 初始化清单并默认导出候选目录下的源 Cell 结构参考。 */
 async function commandInit(args) {
-  if (!args.atlas || !args.output) throw new ReskinError("init 需要 --atlas 与 --output");
-  const atlas = resolve(args.atlas);
+  if ((!args.atlas && !args.assetDir) || !args.output) throw new ReskinError("init 需要 --atlas 或 --asset-dir，以及 --output");
+  if (!args.controlManifest) throw new ReskinError("init 需要 --control-manifest，以绑定 Work Item、production contract 和 V2 approval");
   const output = resolve(args.output);
+  const assetInput = args.assetDir ? await prepareSpineAsset(args.assetDir, args.normalizedDir ?? join(dirname(output), "normalized-source")) : { format: "independent", source_dir: dirname(resolve(args.atlas)), atlas_path: resolve(args.atlas), skeleton_path: resolve(args.skeleton?.[0] ?? "") };
+  const atlas = resolve(assetInput.atlas_path);
+  const skeletonPaths = args.skeleton?.length ? args.skeleton : [assetInput.skeleton_path];
+  const controlBinding = await readSpineControlBinding(args.controlManifest);
   if (!await isFile(atlas)) throw new ReskinError(`找不到 Atlas：${atlas}`);
   await mkdir(dirname(output), { recursive: true });
   return withManifestLock(output, async () => {
     if (await exists(output) && !args.force) throw new ReskinError(`进度清单已存在，默认不覆盖：${output}（需要 --force）`);
-    const manifest = await buildManifest(atlas, output, args.styleReference ?? [], args.skeleton ?? []);
+    const manifest = await buildManifest(atlas, output, args.styleReference ?? [], skeletonPaths, {
+      targetRuntime: args.targetRuntime,
+      character: args.character,
+      visualDirection: args.visualDirection,
+      primaryArmor: args.primaryArmor,
+      secondaryStructure: args.secondaryStructure,
+      darkMechanical: args.darkMechanical,
+      glow: args.glow,
+      accent: args.accent,
+      effects: args.effects,
+      materialLanguage: args.materialLanguage,
+      lightDirection: args.lightDirection,
+      strictAlpha: args.strictAlpha,
+      visualContractFrozen: args.freezeVisualContract,
+      controlBinding,
+      assetInput,
+    });
     const referenceDir = resolve(args.referenceDir ?? join(dirname(output), "source-cells"));
-    const protectedSources = [manifest.atlas.path, ...manifest.atlas.pages.map((page) => page.source_path), ...manifest.skeletons.map((item) => item.path)];
+    const protectedSources = [manifest.atlas.path, ...manifest.atlas.pages.map((page) => page.source_path), ...manifest.skeletons.map((item) => item.path), manifest.asset_input?.container_path, controlBinding.control_manifest_path].filter(Boolean);
     if (protectedSources.some((source) => isWithin(referenceDir, source) || resolve(source) === referenceDir)) throw new ReskinError(`reference-dir 不能覆盖源文件：${referenceDir}`);
     await extractReferences(manifest, output, referenceDir, sha256);
     await writeJsonAtomic(output, manifest);
@@ -330,6 +417,11 @@ async function commandInit(args) {
     return 0;
   });
 }
+
+const assertSkeletonAuditIntegrity = createSkeletonAuditIntegrity({ isFile, sha256 });
+
+const batchCommands = createBatchCommands({ withManifestLock, readManifest, writeJsonAtomic, sha256, now, touch, resolveArtifact, relativePath, isFile, isWithin, validateCellArtifact, transition, record, assertSkeletonAuditIntegrity, assertControlBinding: assertSpineControlBinding });
+const { commandUpgradeCheck, commandFreezeContract, commandPlanBatches, commandBatchPrepare, commandBatchReview, commandBatchAccept, commandBatchReopen } = batchCommands;
 
 /** 汇总状态数量。 */
 async function commandStatus(args) {
@@ -348,13 +440,23 @@ async function commandRecover(args) {
   const path = resolve(args.manifest);
   return withManifestLock(path, async () => {
     const document = await readManifest(path);
+    await assertSpineControlBinding(document);
     let recovered = 0;
     for (const cell of document.cells) if (["generating", "validating", "packing", "runtime_validating"].includes(cell.status)) {
       const old = cell.status;
-      transition(document, cell, "pending", `从 ${old} 恢复`);
-      record(document, cell, "recovered", { from_status: old });
+      const batch = document.batches?.find((item) => item.id === cell.batch_id);
+      if (old === "validating" && batch?.status === "ACCEPTED" && batch.locked === true) {
+        // 已确认批次的 validating 是正式锁定回执的一部分，不能被恢复命令降级。
+        record(document, cell, "recovered_preserved", { from_status: old, batch_id: batch.id });
+        continue;
+      }
+      const target = old === "packing" ? "validating" : old === "runtime_validating" ? "packed" : "pending";
+      transition(document, cell, target, `从 ${old} 恢复`);
+      record(document, cell, "recovered", { from_status: old, to_status: target });
       recovered += 1;
     }
+    if (document.build?.status === "runtime_validating") document.build.status = "packed";
+    if (document.build?.status === "packing") document.build = null;
     await writeJsonAtomic(path, document);
     console.log(`已恢复 ${recovered} 个处理中 Cell`);
     return 0;
@@ -366,7 +468,12 @@ async function commandMark(args) {
   const path = resolve(args.manifest);
   return withManifestLock(path, async () => {
     const document = await readManifest(path);
+    await assertSpineControlBinding(document);
     const cell = getCell(document, args.cell);
+    if (document.batches?.length && ["generating", "generated"].includes(args.status)) {
+      const batch = assertCurrentBatch(document, cell.batch_id);
+      if (batch.status !== "PREPARED") throw new ReskinError(`批次 ${batch.id} 必须先执行当前 revision 的 batch prepare，当前为 ${batch.status}`);
+    } else if (["generating", "generated"].includes(args.status)) throw new ReskinError("必须先导入批次计划并执行 batch prepare，才能生成 Cell");
     if (!MARKABLE_STATUSES.has(args.status)) throw new ReskinError("mark 只能设置 pending、generating、generated 或 failed；validating/completed 必须使用正式命令");
     const requestedImage = args.image ? resolve(args.image) : null;
     const currentImage = cell.generated_image ? resolveArtifact(path, cell.generated_image) : null;
@@ -390,11 +497,17 @@ async function commandConfigure(args) {
   const path = resolve(args.manifest);
   return withManifestLock(path, async () => {
     const document = await readManifest(path);
+    await assertSpineControlBinding(document);
     const cell = getCell(document, args.cell);
+    if (document.batches?.length) throw new ReskinError("导入批次计划后禁止 configure；请在计划中固定 mode 与 alpha_lock");
     if (!MODES.includes(args.mode)) throw new ReskinError(`mode 必须是 ${MODES.join("、")}`);
+    if (cell.attachment_type === "mesh" && args.mode !== "mesh-safe") throw new ReskinError(`Mesh Cell ${cell.id} 必须使用 mesh-safe`);
+    const alphaLock = args.alphaLock == null ? cell.alpha_lock !== false : args.alphaLock === "true";
+    if (args.mode === "constrained-redraw" && alphaLock !== false) throw new ReskinError("constrained-redraw 只有显式 alpha_lock=false 才可使用");
     if (!["pending", "generating", "generated"].includes(cell.status)) throw new ReskinError(`Cell ${cell.id} 已进入 ${cell.status}，不能再修改换皮模式`);
     cell.mode = args.mode;
-    record(document, cell, "mode", { mode: args.mode });
+    cell.alpha_lock = alphaLock;
+    record(document, cell, "mode", { mode: args.mode, alpha_lock: alphaLock });
     await writeJsonAtomic(path, document);
     console.log(`${cell.id} mode -> ${args.mode}`);
     return 0;
@@ -413,71 +526,29 @@ async function evidenceRecord(document, manifestPath, evidencePath, generatedPat
   return { path: relativePath(path, dirname(manifestPath)), sha256: await sha256(path) };
 }
 
-/** 统计 alpha 可见掩码、包围盒和质心，避免 RGB 细节影响结构合同。 */
-function alphaStats(image) {
-  let visible = 0;
-  let minX = image.width;
-  let minY = image.height;
-  let maxX = -1;
-  let maxY = -1;
-  let sumX = 0;
-  let sumY = 0;
-  for (let y = 0; y < image.height; y += 1) for (let x = 0; x < image.width; x += 1) {
-    if (image.data[(y * image.width + x) * 4 + 3] === 0) continue;
-    visible += 1;
-    minX = Math.min(minX, x);
-    minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x);
-    maxY = Math.max(maxY, y);
-    sumX += x;
-    sumY += y;
-  }
-  return { visible, minX, minY, maxX, maxY, centroidX: visible ? sumX / visible : 0, centroidY: visible ? sumY / visible : 0 };
-}
-
-/** 在统一正向尺寸内计算 alpha IoU、掩码差异、包围盒漂移和质心漂移。 */
-function compareAlphaMasks(reference, generated) {
-  if (reference.width !== generated.width || reference.height !== generated.height) throw new ReskinError(`结构参考与生成图正向尺寸不一致：${reference.width},${reference.height} vs ${generated.width},${generated.height}`);
-  let intersection = 0;
-  let union = 0;
-  let mismatched = 0;
-  for (let index = 3; index < reference.data.length; index += 4) {
-    const sourceVisible = reference.data[index] > 0;
-    const generatedVisible = generated.data[index] > 0;
-    if (sourceVisible && generatedVisible) intersection += 1;
-    if (sourceVisible || generatedVisible) union += 1;
-    if (sourceVisible !== generatedVisible) mismatched += 1;
-  }
-  const source = alphaStats(reference);
-  const result = alphaStats(generated);
-  const width = Math.max(1, reference.width);
-  const height = Math.max(1, reference.height);
-  const bboxDrift = source.visible && result.visible ? Math.max(Math.abs(source.minX - result.minX) / width, Math.abs(source.minY - result.minY) / height, Math.abs(source.maxX - result.maxX) / width, Math.abs(source.maxY - result.maxY) / height) : 1;
-  const centroidDrift = source.visible && result.visible ? Math.max(Math.abs(source.centroidX - result.centroidX) / width, Math.abs(source.centroidY - result.centroidY) / height) : 1;
-  return { mismatched, iou: union ? intersection / union : 1, bboxDrift, centroidDrift, source, result };
-}
-
-/** 按 Cell 模式执行 alpha 结构合同，防止换皮整体漂移或破坏 Mesh 语义。 */
-function assertAlphaContract(cell, reference, generated) {
-  const metrics = compareAlphaMasks(reference, generated);
-  const thresholds = ALPHA_CONTRACT_THRESHOLDS;
-  if (cell.mode === "palette-refresh" && metrics.mismatched > thresholds.palette_refresh_max_mask_mismatch) throw new ReskinError(`Cell ${cell.id} palette-refresh alpha 掩码不一致（${metrics.mismatched} 像素）`);
-  if (cell.mode === "mesh-safe" && (metrics.iou < thresholds.mesh_safe_min_iou || metrics.bboxDrift > thresholds.mesh_safe_max_bbox_drift)) throw new ReskinError(`Cell ${cell.id} mesh-safe 结构重合不足（IoU=${metrics.iou.toFixed(3)}，包围范围漂移=${metrics.bboxDrift.toFixed(3)}）`);
-  if (cell.mode === "constrained-redraw" && (metrics.iou < thresholds.constrained_redraw_min_iou || metrics.centroidDrift > thresholds.constrained_redraw_max_centroid_drift)) throw new ReskinError(`Cell ${cell.id} constrained-redraw 结构重合或方向稳定性不足（IoU=${metrics.iou.toFixed(3)}，质心漂移=${metrics.centroidDrift.toFixed(3)}）`);
-}
+const assertAlphaContract = createAlphaContract(ALPHA_CONTRACT_THRESHOLDS);
 
 /** 校验单个 Cell 的尺寸、alpha、源参考、模式和生成哈希。 */
 async function validateCellArtifact(document, manifestPath, cell, padding) {
   if (!MODES.includes(cell.mode)) throw new ReskinError(`Cell ${cell.id} 缺少有效换皮模式`);
+  if (cell.mode === "constrained-redraw" && cell.alpha_lock !== false) throw new ReskinError(`Cell ${cell.id} constrained-redraw 必须显式 alpha_lock=false`);
+  if (cell.attachment_type === "mesh" && (cell.mode !== "mesh-safe" || cell.alpha_lock !== true)) throw new ReskinError(`Mesh Cell ${cell.id} 必须使用 mesh-safe 且 alpha_lock=true`);
   const imagePath = await validateGeneratedPath(document, manifestPath, resolveArtifact(manifestPath, cell.generated_image), resolveArtifact(manifestPath, cell.generated_image));
   if (!cell.result_sha256 || cell.result_sha256 !== await sha256(imagePath)) throw new ReskinError(`Cell ${cell.id} 生成图哈希不匹配`);
+  let metadata;
+  try { metadata = await sharp(imagePath).metadata(); } catch (error) { throw new ReskinError(`Cell ${cell.id} 生成图无法读取：${error.message}`); }
+  if (metadata.format !== "png") throw new ReskinError(`Cell ${cell.id} 生成图必须是实际 PNG`);
+  if (!(metadata.hasAlpha === true || Number(metadata.channels ?? 0) >= 4)) throw new ReskinError(`Cell ${cell.id} 生成图必须包含 alpha 通道`);
   const image = await decodeRgba(imagePath);
-  validateCellImageDimensions(cell, image, padding);
+  const expectedWidth = [90, 270].includes(cell.rotate_degrees) ? cell.size[1] : cell.size[0];
+  const expectedHeight = [90, 270].includes(cell.rotate_degrees) ? cell.size[0] : cell.size[1];
+  if (image.width !== expectedWidth || image.height !== expectedHeight) throw new ReskinError(`Cell ${cell.id} 正式生成图尺寸 ${image.width},${image.height} 必须等于正向 Region ${expectedWidth},${expectedHeight}`);
+  validateCellImageDimensions(cell, image, 0);
   if (!hasVisibleAlpha(image)) throw new ReskinError(`Cell ${cell.id} 生成图 alpha 为空`);
   const reference = resolveArtifact(manifestPath, cell.source_reference);
   if (!reference || !await isFile(reference) || !cell.source_reference_sha256 || cell.source_reference_sha256 !== await sha256(reference)) throw new ReskinError(`Cell ${cell.id} 源结构参考缺失或哈希不匹配`);
   const referenceImage = await decodeRgba(reference);
-  const normalized = normalizeCellImage(cell, image, padding, Number(document.packing?.extrusion ?? 0));
+  const normalized = normalizeCellImage(cell, image, 0, 0);
   // padding 核心图只与源 Region 的对应内框比较，避免把工具预留的透明边框误判成轮廓变化。
   const referenceForContract = normalized.kind === "core" ? cropRgba(referenceImage, padding, padding, normalized.coreImage.width, normalized.coreImage.height) : referenceImage;
   assertAlphaContract(cell, referenceForContract, normalized.coreImage);
@@ -564,6 +635,9 @@ async function buildArtifactErrors(document, manifestPath) {
   if (!atlas || !await isFile(atlas)) errors.push("已记录的重建 Atlas 不存在");
   else if (typeof build.atlas_sha256 !== "string" || await sha256(atlas) !== build.atlas_sha256) errors.push("重建 Atlas SHA-256 不匹配");
   const outputDir = resolveArtifact(manifestPath, build.output_dir);
+  const skeleton = resolveArtifact(manifestPath, build.output_skeleton);
+  if (!skeleton || !await isFile(skeleton)) errors.push("已记录的升级后 Skeleton 不存在");
+  else if (typeof build.skeleton_sha256 !== "string" || await sha256(skeleton) !== build.skeleton_sha256) errors.push("升级后 Skeleton SHA-256 不匹配");
   if (!build.page_sha256 || typeof build.page_sha256 !== "object" || Array.isArray(build.page_sha256)) errors.push("build.page_sha256 缺失或不是对象");
   else for (const page of document.atlas.pages ?? []) {
     const name = page.output_name ?? outputPageName(page);
@@ -585,6 +659,15 @@ async function commandPack(args) {
   return withManifestLock(manifestPath, async () => {
     const document = await readManifest(manifestPath);
     await assertSourceIntegrity(document, manifestPath);
+    await assertSkeletonAuditIntegrity(document);
+    assertProductionReady(document);
+    if (!document.batches.length || document.batches.some((batch) => batch.status !== "ACCEPTED" || batch.locked !== true)) throw new ReskinError("pack 要求全部批次 ACCEPTED+locked");
+    for (const batch of document.batches) {
+      validateEffectSequence(batch, false);
+      if (!batch.acceptance?.candidate_fingerprint || !batch.review_board) throw new ReskinError(`批次 ${batch.id} 缺少正式接受回执`);
+      const fingerprint = await acceptanceFingerprint(document, manifestPath, batch, batchCells(document, batch), batch.review_board, sha256, resolveArtifact);
+      if (fingerprint !== batch.acceptance.candidate_fingerprint) throw new ReskinError(`批次 ${batch.id} 候选、审阅图或连续特效报告已漂移`);
+    }
     const outputDir = resolve(args.outputDir);
     const protectedPaths = protectedArtifactPaths(document, manifestPath);
     await assertOutputDirectorySafe(outputDir, protectedPaths);
@@ -595,6 +678,7 @@ async function commandPack(args) {
     const padding = args.padding ?? Number(document.packing?.padding ?? 0);
     const extrusion = args.extrusion ?? Number(document.packing?.extrusion ?? 0);
     if (!Number.isInteger(padding) || !Number.isInteger(extrusion) || padding < 0 || extrusion < 0 || extrusion > padding) throw new ReskinError("padding 与 extrusion 必须为非负整数，且 extrusion <= padding");
+    if (padding !== 0 || extrusion !== 0) throw new ReskinError("正式 Spine 换皮固定使用 padding=0、extrusion=0");
     document.packing = { padding, extrusion };
     for (const cell of document.cells) transition(document, cell, "packing");
     await writeJsonAtomic(manifestPath, document);
@@ -630,18 +714,27 @@ async function commandPack(args) {
       const atlasOutput = safeOutputPage(stage, atlasName);
       await mkdir(dirname(atlasOutput), { recursive: true });
       await writeFile(atlasOutput, atlasText(document), "utf8");
+      const skeletonPath = document.skeleton_upgrade?.status === "PASSED" ? document.skeleton_upgrade.candidate_path : document.skeletons[0].path;
+      const skeletonName = basename(skeletonPath);
+      if (outputNames.has(skeletonName.toLowerCase()) || skeletonName.toLowerCase() === atlasName.toLowerCase()) throw new ReskinError(`Skeleton 输出名与 Atlas/Page 冲突：${skeletonName}`);
+      const stagedSkeleton = safeOutputPage(stage, skeletonName);
+      await writeFile(stagedSkeleton, await readFile(skeletonPath));
       await assertSourceIntegrity(document, manifestPath);
       await commitStage(stage, outputDir, args.force, protectedPaths);
       stage = null;
       const finalAtlas = join(outputDir, atlasName);
-      document.build = { status: "packed", output_dir: relativePath(outputDir, dirname(manifestPath)), output_atlas: relativePath(finalAtlas, dirname(manifestPath)), atlas_sha256: await sha256(finalAtlas), page_sha256: hashes, packed_at: now() };
+      const skeletonOutput = join(outputDir, skeletonName);
+      document.build = { status: "packed", output_dir: relativePath(outputDir, dirname(manifestPath)), output_atlas: relativePath(finalAtlas, dirname(manifestPath)), output_skeleton: relativePath(skeletonOutput, dirname(manifestPath)), atlas_sha256: await sha256(finalAtlas), page_sha256: hashes, skeleton_sha256: await sha256(skeletonOutput), batch_acceptance_fingerprints: document.batches.map((batch) => ({ id: batch.id, fingerprint: batch.acceptance.candidate_fingerprint })), packed_at: now() };
+      document.build.runtime_binding = buildRuntimeBinding(document.build);
       for (const cell of document.cells) transition(document, cell, "packed");
       await writeJsonAtomic(manifestPath, document);
       console.log(`已重建 ${document.atlas.pages.length} 个 Page，状态为 packed：${finalAtlas}`);
       return 0;
     } catch (error) {
       if (stage) await rm(stage, { recursive: true, force: true });
-      for (const cell of document.cells) if (cell.status === "packing") transition(document, cell, "failed", error.message);
+      // pack 是事务边界：阶段目录失败时保留 ACCEPTED+locked，并把 Cell 退回 validating 便于重试。
+      for (const cell of document.cells) if (cell.status === "packing") transition(document, cell, "validating", error.message);
+      document.build = null;
       await writeJsonAtomic(manifestPath, document);
       if (error instanceof ReskinError) throw error;
       throw new ReskinError(`重建失败：${error.message}`);
@@ -653,26 +746,93 @@ async function commandPack(args) {
 function sourceAtlasBase(path) { const name = path.split(/[\\/]/).at(-1); return name.slice(0, -extname(name).length); }
 
 /** 正式结束运行态验证，要求至少一个当前候选的运行证据。 */
+async function commandRuntimeValidate(args) {
+  if (!args.manifest || !args.runtimeReport) throw new ReskinError("runtime-validate 需要 --manifest 与 --runtime-report");
+  const manifestPath = resolve(args.manifest);
+  return withManifestLock(manifestPath, async () => {
+    const document = await readManifest(manifestPath);
+    if (!document.cells.length || document.cells.some((cell) => cell.status !== "packed")) throw new ReskinError("runtime-validate 要求所有 Cell 处于 packed");
+    await assertSourceIntegrity(document, manifestPath);
+    await assertSkeletonAuditIntegrity(document);
+    const buildErrors = await buildArtifactErrors(document, manifestPath);
+    if (buildErrors.length) throw new ReskinError(buildErrors.join("；"));
+    const reportPath = resolve(args.runtimeReport);
+    const report = await readRuntimeReport(reportPath);
+    if (document.runtime_validation?.validation_run_id && document.runtime_validation.validation_run_id === report.validation_run_id) throw new ReskinError("runtime 报告复用了已经验证过的 validation_run_id");
+    await validateRuntimeReport(document, manifestPath, report, resolveArtifact, sha256);
+    if (!await isWithin(dirname(manifestPath), reportPath) || !await isFile(reportPath)) throw new ReskinError("runtime 报告必须位于候选目录且为文件");
+    const runtimeEvidence = [{ path: relativePath(reportPath, dirname(manifestPath)), sha256: await sha256(reportPath), kind: "structured-runtime-report", validation_run_id: report.validation_run_id }];
+    for (const evidence of [report.screenshots.desktop, report.screenshots.mobile_390, report.browser_log, { path: report.target_runtime_parse.log_path, sha256: report.target_runtime_parse.log_sha256 }]) {
+      const evidencePath = resolveArtifact(manifestPath, evidence.path);
+      runtimeEvidence.push({ path: relativePath(evidencePath, dirname(manifestPath)), sha256: await sha256(evidencePath), kind: "runtime-evidence", validation_run_id: report.validation_run_id });
+    }
+    document.runtime_validation = { status: "PASS", report_path: relativePath(reportPath, dirname(manifestPath)), report_sha256: await sha256(reportPath), validation_run_id: report.validation_run_id, checked_at: now(), url: report.url, animation_count: report.animations.length };
+    document.runtime_evidence = runtimeEvidence;
+    document.build.runtime_validation = document.runtime_validation;
+    touch(document);
+    await writeJsonAtomic(manifestPath, document);
+    console.log(`runtime validation PASS：${report.animations.length} 个动画`);
+    return 0;
+  });
+}
+
+/** 正式结束运行态验证；未执行结构化 runtime-validate 时 fail closed。 */
 async function commandFinalize(args) {
   const manifestPath = resolve(args.manifest);
   return withManifestLock(manifestPath, async () => {
     const document = await readManifest(manifestPath);
     if (!document.cells.length || document.cells.some((cell) => cell.status !== "packed")) throw new ReskinError("finalize 要求所有 Cell 都处于 packed，pack 后不能直接 completed");
     await assertSourceIntegrity(document, manifestPath);
+    await assertSkeletonAuditIntegrity(document);
     const buildErrors = await buildArtifactErrors(document, manifestPath);
     if (buildErrors.length) throw new ReskinError(buildErrors.join("；"));
-    const evidence = [];
-    for (const item of args.evidence ?? []) evidence.push(await evidenceRecord(document, manifestPath, item, document.cells.map((cell) => resolveArtifact(manifestPath, cell.generated_image))));
-    if (!evidence.length && (!Array.isArray(document.runtime_evidence) || !document.runtime_evidence.length)) throw new ReskinError("finalize 至少需要一个运行态证据文件（--evidence）");
-    if (evidence.length) document.runtime_evidence = evidence;
+    if (document.runtime_validation?.status !== "PASS" || !document.runtime_validation.report_path || !document.runtime_validation.report_sha256) throw new ReskinError("finalize 必须先执行通过的 runtime-validate 结构化运行验证");
+    const reportPath = resolveArtifact(manifestPath, document.runtime_validation.report_path);
+    const report = await readRuntimeReport(reportPath);
+    if (document.runtime_validation.report_sha256 !== await sha256(reportPath)) throw new ReskinError("runtime validation 报告 SHA-256 漂移");
+    await validateRuntimeReport(document, manifestPath, report, resolveArtifact, sha256);
     for (const cell of document.cells) transition(document, cell, "runtime_validating");
     document.build.status = "runtime_validating";
     await writeJsonAtomic(manifestPath, document);
     for (const cell of document.cells) transition(document, cell, "completed");
     document.build.status = "completed";
     document.build.completed_at = now();
+    const deliveryMode = args.deliveryMode ?? document.delivery_mode ?? "independent-validation-candidate";
+    if (!["independent-validation-candidate", "integrated-main-game"].includes(deliveryMode)) throw new ReskinError("delivery_mode 必须是 independent-validation-candidate 或 integrated-main-game");
+    document.delivery_mode = deliveryMode;
     await writeJsonAtomic(manifestPath, document);
     console.log(`已完成运行态验证：${document.cells.length} 个 Cell`);
+    return 0;
+  });
+}
+
+/** 生成包含批次、完整性、升级、哈希、运行证据和交付模式的最终结构化报告。 */
+async function commandReport(args) {
+  if (!args.manifest || !args.output || !args.verification) throw new ReskinError("report 需要 --manifest、--output 与 --verification");
+  const manifestPath = resolve(args.manifest);
+  return withManifestLock(manifestPath, async () => {
+    const document = await readManifest(manifestPath);
+    if (document.build?.status !== "completed" || document.runtime_validation?.status !== "PASS") throw new ReskinError("report 要求完成 finalize 和 runtime validation");
+    await assertSourceIntegrity(document, manifestPath);
+    await assertSkeletonAuditIntegrity(document);
+    const reportPath = resolveArtifact(manifestPath, document.runtime_validation.report_path);
+    if (!reportPath || document.runtime_validation.report_sha256 !== await sha256(reportPath)) throw new ReskinError("runtime validation 报告 SHA-256 漂移");
+    const runtimeReport = await readRuntimeReport(reportPath);
+    await validateRuntimeReport(document, manifestPath, runtimeReport, resolveArtifact, sha256);
+    const outputPath = resolve(args.output);
+    if (!isWithin(dirname(manifestPath), outputPath)) throw new ReskinError("最终报告必须位于候选目录内");
+    const verificationPath = resolve(args.verification);
+    if (!isWithin(dirname(manifestPath), verificationPath) || !await isFile(verificationPath)) throw new ReskinError("verification 必须是候选目录内的 JSON 文件");
+    let verification;
+    try { verification = JSON.parse(await readFile(verificationPath, "utf8")); } catch (error) { throw new ReskinError(`无法读取 verification：${error.message}`); }
+    const verificationErrors = validateVerification(verification);
+    if (verificationErrors.length) throw new ReskinError(`verification 未通过：${verificationErrors.join("；")}`);
+    document.verification = verification;
+    const result = await writeFinalReport(outputPath, document, manifestPath, runtimeReport, sha256);
+    document.final_report = result;
+    touch(document);
+    await writeJsonAtomic(manifestPath, document);
+    console.log(`最终报告已生成：${outputPath}`);
     return 0;
   });
 }
@@ -681,11 +841,30 @@ async function commandFinalize(args) {
 export async function verifyDocument(document, manifestPath) {
   const errors = [];
   if (!document.cells.length) errors.push("Atlas 没有可验证的 Cell");
+  try { assertProductionReady(document); } catch (error) { errors.push(error.message); }
+  if (!document.batches?.length || document.batches.some((batch) => batch.status !== "ACCEPTED" || batch.locked !== true)) errors.push("存在未 ACCEPTED+locked 的批次");
+  for (const batch of document.batches ?? []) {
+    try {
+      validateEffectSequence(batch, false);
+      if (!batch.acceptance?.candidate_fingerprint || !batch.review_board) throw new ReskinError(`批次 ${batch.id} 缺少正式接受回执`);
+      const fingerprint = await acceptanceFingerprint(document, manifestPath, batch, batchCells(document, batch), batch.review_board, sha256, resolveArtifact);
+      if (fingerprint !== batch.acceptance.candidate_fingerprint) throw new ReskinError(`批次 ${batch.id} 候选、审阅图或连续特效报告已漂移`);
+    } catch (error) { errors.push(error.message); }
+  }
   errors.push(...await sourceIntegrityErrors(document, manifestPath));
+  try { await assertSkeletonAuditIntegrity(document); } catch (error) { errors.push(error.message); }
   if (!Array.isArray(document.runtime_evidence) || document.runtime_evidence.length < 1) errors.push("缺少运行态验证证据");
   else for (const evidence of document.runtime_evidence) {
     const path = resolveArtifact(manifestPath, typeof evidence === "string" ? evidence : evidence.path);
-    if (typeof evidence === "string" || !path || !await isFile(path) || !await isEvidencePathAllowed(document, manifestPath, path) || !evidence.sha256 || evidence.sha256 !== await sha256(path)) errors.push("运行态证据缺失或 SHA-256 不匹配");
+    if (typeof evidence === "string" || !path || !await isFile(path) || !await isEvidencePathAllowed(document, manifestPath, path) || !evidence.sha256 || evidence.sha256 !== await sha256(path) || evidence.validation_run_id !== document.runtime_validation?.validation_run_id) errors.push("运行态证据缺失、SHA-256 不匹配或未绑定当前 validation_run_id");
+  }
+  if (document.runtime_validation?.status !== "PASS" || !document.runtime_validation.report_path) errors.push("缺少结构化 runtime validation PASS");
+  else {
+    try {
+      const reportPath = resolveArtifact(manifestPath, document.runtime_validation.report_path);
+      if (document.runtime_validation.report_sha256 !== await sha256(reportPath)) errors.push("runtime validation 报告 SHA-256 不匹配");
+      else await validateRuntimeReport(document, manifestPath, await readRuntimeReport(reportPath), resolveArtifact, sha256);
+    } catch (error) { errors.push(error.message); }
   }
   for (const cell of document.cells) {
     if (cell.status !== "completed") { errors.push(`${cell.id} 状态为 ${cell.status}，未完成`); continue; }
@@ -702,6 +881,13 @@ export async function verifyDocument(document, manifestPath) {
   }
   errors.push(...await buildArtifactErrors(document, manifestPath));
   if (document.build?.status !== "completed") errors.push("build 尚未完成 runtime_validating -> completed 闭环");
+  const verificationErrors = validateVerification(document.verification);
+  errors.push(...verificationErrors);
+  if (!document.final_report?.path || !document.final_report.sha256) errors.push("缺少最终报告 SHA-256 绑定");
+  else {
+    const finalReportPath = resolveArtifact(manifestPath, document.final_report.path);
+    if (!finalReportPath || !isWithin(dirname(manifestPath), finalReportPath) || !await isFile(finalReportPath) || await sha256(finalReportPath) !== document.final_report.sha256) errors.push("最终报告缺失、越出候选目录或 SHA-256 漂移");
+  }
   return errors;
 }
 
@@ -715,17 +901,35 @@ async function commandVerify(args) {
   return 0;
 }
 
-const COMMANDS = { init: commandInit, status: commandStatus, read: commandRead, recover: commandRecover, mark: commandMark, configure: commandConfigure, "set-mode": commandConfigure, validate: commandValidate, "cell-validate": commandValidate, verify: commandVerify, pack: commandPack, finalize: commandFinalize };
-const FLAG_MAP = { "--atlas": "atlas", "--output": "output", "--reference-dir": "referenceDir", "--style-reference": "styleReference", "--skeleton": "skeleton", "--manifest": "manifest", "--cell": "cell", "--status": "status", "--image": "image", "--error": "error", "--evidence": "evidence", "--output-dir": "outputDir", "--atlas-name": "atlasName", "--padding": "padding", "--extrusion": "extrusion", "--mode": "mode" };
+/** 独立执行原版资产审计，输出 Skeleton/Atlas 统计和 Mesh 结构哈希。 */
+async function commandInspect(args) {
+  let atlasPath = args.atlas;
+  let skeletonPath = args.skeleton?.[0] ?? args.skeleton;
+  if (args.assetDir) {
+    const normalizedDir = args.normalizedDir ?? join(dirname(resolve(args.assetDir)), `${basename(resolve(args.assetDir))}-normalized`);
+    const asset = await prepareSpineAsset(args.assetDir, normalizedDir);
+    atlasPath = asset.atlas_path;
+    skeletonPath = asset.skeleton_path;
+  }
+  if (!atlasPath || !skeletonPath) throw new ReskinError("inspect 需要 --atlas/--skeleton 或 --asset-dir");
+  const atlas = await parseAtlas(resolve(atlasPath));
+  const audit = await auditSkeleton(resolve(skeletonPath), atlas, args.targetRuntime ?? "4.3.13");
+  console.log(JSON.stringify({ atlas: { page_count: atlas.pages.length, region_count: atlas.cells.length }, skeleton: audit }, null, 2));
+  return audit.runtime_compatible || audit.requires_upgrade ? 0 : 2;
+}
+
+const COMMANDS = { init: commandInit, inspect: commandInspect, "upgrade-check": commandUpgradeCheck, "freeze-contract": commandFreezeContract, "plan-batches": commandPlanBatches, "batch-prepare": commandBatchPrepare, "batch-review": commandBatchReview, "batch-accept": commandBatchAccept, "batch-reopen": commandBatchReopen, status: commandStatus, read: commandRead, recover: commandRecover, mark: commandMark, configure: commandConfigure, "set-mode": commandConfigure, validate: commandValidate, "cell-validate": commandValidate, verify: commandVerify, pack: commandPack, "runtime-validate": commandRuntimeValidate, finalize: commandFinalize, report: commandReport };
+const FLAG_MAP = { "--atlas": "atlas", "--asset-dir": "assetDir", "--normalized-dir": "normalizedDir", "--output": "output", "--reference-dir": "referenceDir", "--style-reference": "styleReference", "--skeleton": "skeleton", "--control-manifest": "controlManifest", "--manifest": "manifest", "--cell": "cell", "--status": "status", "--image": "image", "--error": "error", "--evidence": "evidence", "--output-dir": "outputDir", "--atlas-name": "atlasName", "--padding": "padding", "--extrusion": "extrusion", "--mode": "mode", "--alpha-lock": "alphaLock", "--target-runtime": "targetRuntime", "--character": "character", "--visual-direction": "visualDirection", "--primary-armor": "primaryArmor", "--secondary-structure": "secondaryStructure", "--dark-mechanical": "darkMechanical", "--glow": "glow", "--accent": "accent", "--effects": "effects", "--material-language": "materialLanguage", "--light-direction": "lightDirection", "--candidate-skeleton": "candidateSkeleton", "--runtime-evidence": "runtimeEvidence", "--contract": "contract", "--plan": "plan", "--batch": "batch", "--effect-report": "effectReport", "--user-text": "userText", "--review-sha": "reviewSha", "--fingerprint": "fingerprint", "--runtime-report": "runtimeReport", "--verification": "verification", "--delivery-mode": "deliveryMode" };
 
 /** 解析子命令参数，支持可重复的 Skeleton、style reference 和 evidence。 */
 function parseArgs(argv) {
   if (!argv.length || argv.includes("--help") || argv.includes("-h")) return { help: true };
   const nestedCellValidate = argv[0] === "cell" && argv[1] === "validate";
-  const command = nestedCellValidate ? "validate" : argv[0];
+  const nestedBatch = argv[0] === "batch" && ["prepare", "review", "accept", "reopen"].includes(argv[1]);
+  const command = nestedCellValidate ? "validate" : nestedBatch ? `batch-${argv[1]}` : argv[0];
   if (!(command in COMMANDS)) throw new ReskinError(`未知命令：${command}`);
   const args = { command, styleReference: [], skeleton: [], evidence: [] };
-  for (let index = nestedCellValidate ? 2 : 1; index < argv.length; index += 1) {
+  for (let index = nestedCellValidate || nestedBatch ? 2 : 1; index < argv.length; index += 1) {
     const token = argv[index];
     if (["--force"].includes(token)) { args.force = true; continue; }
     const key = FLAG_MAP[token];
@@ -741,7 +945,7 @@ function parseArgs(argv) {
 }
 
 /** 打印简洁帮助。 */
-function printHelp() { console.log("用法：node spine_reskin_progress.mjs <init|status|read|recover|mark|configure|validate|pack|finalize|verify> [参数]"); }
+function printHelp() { console.log("用法：node spine_reskin_progress.mjs <init|inspect|upgrade-check|freeze-contract|plan-batches|batch prepare|batch review|batch accept|batch reopen|status|read|recover|mark|configure|validate|pack|runtime-validate|finalize|report|verify> [参数]"); }
 
 /** 运行 CLI，并把预期失败转换为非零返回码。 */
 export async function main(argv = process.argv.slice(2)) {

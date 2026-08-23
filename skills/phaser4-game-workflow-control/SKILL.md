@@ -44,6 +44,8 @@ effect-image ImageGen 的 canonical 提示词、真实参考输入和 generation
 
 视觉人工确认是上述场景硬门的附加约束，不改变通用 A0-A6/F0-F4：整条 V0→V5 链只在 V2 视觉方向冻结时要求一条唯一的结构化 `visual_human_approval`。该记录不采集 `reviewer_type`、`reviewer_id` 或 reviewer 字符串，仅以 `review_id`、`reviewed_at`、`evidence`、`evidence_sha256`、`status: PASS` 及冻结 target、V2 candidate、diff、baseline 哈希表达一次人工通过事件。V2 的代表画面、动态样片和结构化机器验证，以及 V4/V5/F2 的资产、组合、全屏、overlay、diff、逐区域和组件检查，只使用当前身份绑定的确定性机器证据，不再重复要求 human_review 或第二 reviewer；AI reviewer 字段不能替代这条唯一真人审批。审批绑定的 target、candidate、diff、基线或审批证据哈希变化即失效，根 PASS、裸批准文本、自动布尔值或 `all_visual_artifacts_human_reviewed` 不能绕过校验。
 
+Spine 逐批换皮的 `spine_batch_acceptance` 是 V4 局部生产锁定回执，不是视觉方向审批：它绑定当前批次 revision、Region 顺序、唯一审阅图 SHA 和候选 Cell SHA，用于阻止未确认批次继续打包或进入下一批；它不进入全局 Approval Ledger，不计为第二次 `visual_human_approval`，也不能放宽 V2 唯一人工审批或 V5 运行态硬门。
+
 ## 命令
 
 首次使用先运行 `node <skill-dir>/scripts/workflow-control.mjs init ...`，它只在控制目录不存在时创建空账本、标准目录和首个 Work Item。`<skill-dir>` 必须解析为本 Skill 的实际根目录，不能按游戏项目当前工作目录猜测。之后运行 `node <skill-dir>/scripts/workflow-control.mjs <route|advance|prepare-approval|handoff|preflight|approve|delegate-check|parallel-check|unit-check|diff-audit|evidence-check|transition|status|lint> --help`。`approve --approval-id <id> --user-text "批准"` 会从当前已展示 pending 自动生成完整记录；否定或无关文本拒绝。命令只使用 Node.js 标准库，且绝不自动回滚、发布或执行外部动作。

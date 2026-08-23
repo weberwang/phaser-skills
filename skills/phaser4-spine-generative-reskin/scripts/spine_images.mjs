@@ -175,9 +175,9 @@ export async function extractReferences(manifest, manifestPath, referenceDir, ha
   }
 }
 
-/** 将任意源 Page 名称规范化为唯一的 PNG 输出名称。 */
+/** 保留 Atlas Page 名称；非 PNG Page 不允许静默改名，必须在 init 阶段 fail closed。 */
 export function outputPageName(page) {
   const name = page.name.replaceAll("\\", "/");
-  const extension = extname(name);
-  return extension ? `${name.slice(0, -extension.length)}.png` : `${name}.png`;
+  if (extname(name).toLowerCase() !== ".png") throw new ReskinError(`Page ${name} 不是 PNG；为保持 Page 名不能静默改名`);
+  return name;
 }

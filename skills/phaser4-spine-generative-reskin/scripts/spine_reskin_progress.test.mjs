@@ -1,290 +1,467 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, readFile, utimes, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import sharp from "sharp";
-import { ALPHA_CONTRACT_THRESHOLDS, isProcessAlive, main, parseAtlas, shouldReclaimLock } from "./spine_reskin_progress.mjs";
+import { atlasText, parseAtlas } from "./spine_atlas.mjs";
+import { candidateFingerprint } from "./spine_batch.mjs";
+import { discoverSpineAsset, prepareSpineAsset } from "./spine_assets.mjs";
+import { auditSkeleton } from "./spine_skeleton.mjs";
+import { ALPHA_CONTRACT_THRESHOLDS, isProcessAlive, main, shouldReclaimLock } from "./spine_reskin_progress.mjs";
 
-/** 创建指定颜色的 RGBA PNG。 */
-async function writeImage(path, width, height, fill = [0, 0, 0, 0], pixels = []) {
-  const data = Buffer.alloc(width * height * 4);
-  for (let index = 0; index < width * height; index += 1) for (let channel = 0; channel < 4; channel += 1) data[index * 4 + channel] = fill[channel];
-  for (const [x, y, color] of pixels) for (let channel = 0; channel < 4; channel += 1) data[(y * width + x) * 4 + channel] = color[channel];
-  await sharp(data, { raw: { width, height, channels: 4 } }).png().toFile(path);
+/** 创建真实 PNG，测试不使用扩展名伪装或内联占位图。 */
+async function image(path, width, height, background) {
+  await sharp({ create: { width, height, channels: 4, background: { r: background[0], g: background[1], b: background[2], alpha: background[3] / 255 } } }).png().toFile(path);
 }
 
-/** 读取 PNG 的尺寸和指定像素。 */
-async function readImage(path) {
-  const { data, info } = await sharp(path).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  return { data, width: info.width, height: info.height, pixel(x, y) { return [...data.subarray((y * info.width + x) * 4, (y * info.width + x + 1) * 4)]; } };
+/** 创建最小但真实可复算的控制面绑定，测试不得脱离 Work Item/V2 approval。 */
+async function controlManifest(root) {
+  const evidence = join(root, "v2-approval.txt");
+  await writeFile(evidence, "accepted spine visual direction");
+  const control = join(root, "control.json");
+  await writeFile(control, JSON.stringify({ workItemId: "spine-work-item", taskAuthorization: { authorizationId: "spine-task-auth" }, production_contract: { contract_version: "spine-production/1.0", status: "PASS", scope: ["spine-reskin"] }, visual_human_approval: { review_id: "v2-spine", reviewed_at: "2026-08-23T00:00:00Z", status: "PASS", target_sha256: "a".repeat(64), candidate_sha256: "b".repeat(64), diff_fingerprint: "spine-diff", baseline_sha256: "c".repeat(64), evidence: { path: "v2-approval.txt", sha256: await sha(evidence) }, evidence_sha256: await sha(evidence) } }));
+  return control;
 }
 
-/** 调用 mark 子命令。 */
-async function mark(fixture, cell, status, image, error) {
-  const args = ["mark", "--manifest", fixture.manifest, "--cell", cell, "--status", status];
-  if (image) args.push("--image", image);
-  if (error) args.push("--error", error);
-  return main(args);
-}
-
-/** 调用 Cell 正式验证命令。 */
-async function validate(fixture, cell, evidence) { const args = ["validate", "--manifest", fixture.manifest, "--cell", cell]; if (evidence) args.push("--evidence", evidence); return main(args); }
-
-/** 建立包含两个旋转/裁剪 Cell 的隔离候选目录。 */
-async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), "spine-reskin-v2-"));
-  await writeImage(join(root, "source.png"), 10, 8, [17, 29, 41, 255]);
+/** 创建 schema v3 的最小 Spine 资产，支持低版本升级和多 Region 批次门测试。 */
+async function fixture({ version = "4.3.13", names = ["body"] } = {}) {
+  const root = await mkdtemp(join(tmpdir(), "spine-reskin-v3-"));
+  await image(join(root, "page.png"), 12, 8, [0, 0, 0, 255]);
+  const lines = ["page.png", "size: 12, 8", "format: RGBA8888", "filter: Linear,Linear", "repeat: none", "pma: false", ""];
+  names.forEach((name, index) => lines.push(name, "rotate: false", `xy: ${index * 3}, 0`, "size: 2, 2", "orig: 2, 2", "offset: 0, 0", "index: -1", ""));
   const atlas = join(root, "source.atlas");
-  await writeFile(atlas, `source.png\nsize: 10, 8\nformat: RGBA8888\nfilter: Linear,Linear\nrepeat: none\npma: false\n\nhero\n  rotate: false\n  xy: 1, 1\n  size: 3, 2\n  orig: 5, 4\n  offset: 1, 1\n  index: -1\n\nrot\n  rotate: true\n  xy: 5, 1\n  size: 2, 3\n  orig: 3, 4\n  offset: 0, 0\n  index: -1\n`);
-  const skeleton = join(root, "hero.json");
-  await writeFile(skeleton, "{\"skeleton\":\"test\"}\n");
+  await writeFile(atlas, `${lines.join("\n")}\n`);
+  const skinSlots = Object.fromEntries(names.map((name) => [name, { type: name === "mesh" ? "mesh" : "region", path: name, ...(name === "mesh" ? { vertices: [0, 0, 1, 1, 0, 1], triangles: [0, 1, 2], uvs: [0, 0, 1, 1, 0, 1] } : {}) }]));
+  const skeleton = join(root, "character.json");
+  await writeFile(skeleton, JSON.stringify({ skeleton: { spine: version }, bones: [{ name: "root" }], slots: names.map((name) => ({ name: `${name}-slot`, bone: "root" })), skins: { default: { ...Object.fromEntries(names.map((name) => [`${name}-slot`, { [name]: skinSlots[name] }])) } }, animations: { Idle: {}, Attack: {} } }));
   const candidate = join(root, "candidate");
-  const generated = join(candidate, "generated");
-  const evidence = join(candidate, "evidence");
   const manifest = join(candidate, "progress.json");
-  assert.equal(await main(["init", "--atlas", atlas, "--output", manifest, "--skeleton", skeleton]), 0);
-  await mkdir(generated, { recursive: true });
-  await mkdir(evidence, { recursive: true });
-  const document = JSON.parse(await readFile(manifest, "utf8"));
-  assert.equal(document.schema_version, 2);
-  assert.equal(document.cells.length, 2);
-  assert.equal(document.cells[0].mode, "constrained-redraw");
-  return { root, atlas, skeleton, candidate, generated, evidence, manifest };
+  const control = await controlManifest(root);
+  assert.equal(await main(["init", "--atlas", atlas, "--output", manifest, "--skeleton", skeleton, "--control-manifest", control, "--character", "虎"]), 0);
+  return { root, atlas, skeleton, candidate, manifest, control, names };
 }
 
-/** 写入未裁剪 hero 和旋转 Cell 生成图。 */
-async function writeGenerated(fixtureValue) {
-  const hero = join(fixtureValue.generated, "hero.png");
-  const heroPixels = [];
-  for (let y = 1; y < 3; y += 1) for (let x = 1; x < 4; x += 1) heroPixels.push([x, y, [200, 20 + y, 30 + x, 255]]);
-  await writeImage(hero, 5, 4, [0, 0, 0, 0], heroPixels);
-  const rotated = join(fixtureValue.generated, "rot.png");
-  await writeImage(rotated, 3, 4, [0, 0, 0, 0], [[0, 2, [255, 0, 0, 255]], [1, 2, [0, 255, 0, 255]], [2, 2, [0, 0, 255, 255]], [0, 3, [255, 255, 0, 255]], [1, 3, [255, 0, 255, 255]], [2, 3, [0, 255, 255, 255]]]);
-  return [hero, rotated];
+/** 冻结统一暗黑合同，保证后续测试走正式生产前置门。 */
+async function freezeContract(value) {
+  const contract = join(value.root, "visual-contract.json");
+  await writeFile(contract, JSON.stringify({ character: "虎", direction: "dark", palette: { primary_armor: "#16181D", secondary_structure: "#3A2C24", dark_mechanical: "#080A0D", glow: "#FF7A1A", accent: "#8E1B2C", effects: "#4B2A70" }, material_language: "matte black metal", light_direction: "upper-left" }));
+  assert.equal(await main(["freeze-contract", "--manifest", value.manifest, "--contract", contract]), 0);
 }
 
-/** 生成审阅文件，避免把生成图本身冒充为证据。 */
-async function reviewFile(fixtureValue, name, content = "human review") {
-  const path = join(fixtureValue.evidence, name);
-  await writeFile(path, content);
-  return path;
+/** 导入一个批次计划。 */
+async function plan(value, batches) {
+  const path = join(value.root, "batches.json");
+  await writeFile(path, JSON.stringify({ batches }));
+  return main(["plan-batches", "--manifest", value.manifest, "--plan", path]);
 }
 
-/** 让所有 Cell 通过正式验证。 */
-async function validateAll(fixtureValue, images) {
-  for (let index = 0; index < images.length; index += 1) assert.equal(await mark(fixtureValue, index === 0 ? "p0:hero" : "p0:rot", "generated", images[index]), 0);
-  assert.equal(await validate(fixtureValue, "p0:hero", await reviewFile(fixtureValue, "hero-review.txt")), 0);
-  assert.equal(await validate(fixtureValue, "p0:rot", await reviewFile(fixtureValue, "rot-review.txt")), 0);
+/** 生成和登记一个当前批 Cell。 */
+async function generate(value, cellId, color = [220, 30, 20, 255], size = [2, 2]) {
+  const path = join(value.candidate, "generated", `${cellId.replaceAll(":", "-")}.png`);
+  await mkdir(join(value.candidate, "generated"), { recursive: true });
+  await image(path, size[0], size[1], color);
+  assert.equal(await main(["mark", "--manifest", value.manifest, "--cell", cellId, "--status", "generating"]), 0);
+  return { path, status: await main(["mark", "--manifest", value.manifest, "--cell", cellId, "--status", "generated", "--image", path]) };
 }
 
-test("v2 初始化要求 Skeleton、记录哈希并默认导出结构参考", async () => {
-  const fixtureValue = await fixture();
-  const document = JSON.parse(await readFile(fixtureValue.manifest, "utf8"));
-  assert.equal(document.skeletons.length, 1);
-  assert.ok(document.skeletons[0].sha256);
-  assert.ok(document.cells.every((cell) => cell.source_reference && cell.source_reference_sha256));
-  assert.equal(await main(["init", "--atlas", fixtureValue.atlas, "--output", join(fixtureValue.root, "missing.json")]), 2);
+/** 正式流程要求先生成当前批源参考板，再允许 Cell 进入 generating。 */
+async function prepare(value, batchId) {
+  assert.equal(await main(["batch", "prepare", "--manifest", value.manifest, "--batch", batchId]), 0);
+}
+
+/** 在所有当前批 Cell generated 后生成唯一审阅图。 */
+async function review(value, batchId) {
+  assert.equal(await main(["batch", "review", "--manifest", value.manifest, "--batch", batchId]), 0);
+  return JSON.parse(await readFile(value.manifest, "utf8"));
+}
+
+/** 返回字节哈希，用于构造运行报告。 */
+async function sha(path) { return createHash("sha256").update(await readFile(path)).digest("hex"); }
+
+/** 写入只改变一个 alpha 像素的候选图，用于回归结构合同而非颜色细节。 */
+async function partialImage(path) {
+  const data = Buffer.alloc(2 * 2 * 4, 255);
+  data[3] = 0;
+  await sharp(data, { raw: { width: 2, height: 2, channels: 4 } }).png().toFile(path);
+}
+
+test("failed 状态不能直接绕过当前批次生成门，恢复后才可 generated", async () => {
+  const value = await fixture();
+  await freezeContract(value);
+  await plan(value, [{ id: "b1", regions: ["p0:body"] }]);
+  assert.equal(await main(["mark", "--manifest", value.manifest, "--cell", "p0:body", "--status", "failed", "--error", "生成器超时"]), 0);
+  const imagePath = join(value.candidate, "generated", "retry.png");
+  await mkdir(join(value.candidate, "generated"), { recursive: true });
+  await image(imagePath, 2, 2, [220, 30, 20, 255]);
+  assert.equal(await main(["mark", "--manifest", value.manifest, "--cell", "p0:body", "--status", "generated", "--image", imagePath]), 2);
+  await prepare(value, "b1");
+  assert.equal(await main(["mark", "--manifest", value.manifest, "--cell", "p0:body", "--status", "generating"]), 0);
+  assert.equal(await main(["mark", "--manifest", value.manifest, "--cell", "p0:body", "--status", "generated", "--image", imagePath]), 0);
 });
 
-test("failed 不能直达 generated，且验证缺证据会失败", async () => {
-  const fixtureValue = await fixture();
-  const [hero] = await writeGenerated(fixtureValue);
-  assert.equal(await mark(fixtureValue, "p0:hero", "failed", null, "生成器超时"), 0);
-  assert.equal(await mark(fixtureValue, "p0:hero", "generated", hero), 2);
-  assert.equal(await mark(fixtureValue, "p0:hero", "generating"), 0);
-  assert.equal(await mark(fixtureValue, "p0:hero", "generated", hero), 0);
-  assert.equal(await validate(fixtureValue, "p0:hero", null), 2);
-  assert.equal(JSON.parse(await readFile(fixtureValue.manifest, "utf8")).cells[0].status, "failed");
-});
-
-test("并发 mark 不丢失 Cell 更新，三种模式可配置", async () => {
-  const fixtureValue = await fixture();
-  const [hero, rotated] = await writeGenerated(fixtureValue);
-  await Promise.all([mark(fixtureValue, "p0:hero", "generating"), mark(fixtureValue, "p0:rot", "generating")]);
-  await Promise.all([mark(fixtureValue, "p0:hero", "generated", hero), mark(fixtureValue, "p0:rot", "generated", rotated)]);
-  assert.equal(await main(["configure", "--manifest", fixtureValue.manifest, "--cell", "p0:hero", "--mode", "palette-refresh"]), 0);
-  assert.equal(await main(["set-mode", "--manifest", fixtureValue.manifest, "--cell", "p0:rot", "--mode", "mesh-safe"]), 0);
-  const document = JSON.parse(await readFile(fixtureValue.manifest, "utf8"));
-  assert.deepEqual(document.cells.map((cell) => cell.status), ["generated", "generated"]);
-  assert.deepEqual(document.cells.map((cell) => cell.mode), ["palette-refresh", "mesh-safe"]);
-});
-
-test("alpha 结构合同按模式生效：palette 严格，constrained 允许受控变化", async () => {
-  assert.equal(ALPHA_CONTRACT_THRESHOLDS.palette_refresh_max_mask_mismatch, 0);
-  const makePartial = async (fixtureValue) => {
-    const image = join(fixtureValue.generated, "partial.png");
-    const pixels = [];
-    for (let y = 1; y < 3; y += 1) for (let x = 1; x < 4; x += 1) if (!(x === 3 && y === 2)) pixels.push([x, y, [220, 90, 30, 255]]);
-    await writeImage(image, 5, 4, [0, 0, 0, 0], pixels);
-    return image;
-  };
+test("alpha 结构合同在 strict palette 和显式 constrained-redraw 下分别生效", async () => {
   const strict = await fixture();
-  const strictImage = await makePartial(strict);
-  await mark(strict, "p0:hero", "generated", strictImage);
-  await main(["configure", "--manifest", strict.manifest, "--cell", "p0:hero", "--mode", "palette-refresh"]);
-  assert.equal(await validate(strict, "p0:hero", await reviewFile(strict, "strict.txt")), 2);
-  assert.equal(JSON.parse(await readFile(strict.manifest, "utf8")).cells[0].status, "failed");
+  await freezeContract(strict);
+  await plan(strict, [{ id: "b1", regions: ["p0:body"] }]);
+  await prepare(strict, "b1");
+  const strictImage = join(strict.candidate, "generated", "partial.png");
+  await mkdir(join(strict.candidate, "generated"), { recursive: true });
+  await partialImage(strictImage);
+  await main(["mark", "--manifest", strict.manifest, "--cell", "p0:body", "--status", "generating"]);
+  await main(["mark", "--manifest", strict.manifest, "--cell", "p0:body", "--status", "generated", "--image", strictImage]);
+  const strictEvidence = join(strict.candidate, "evidence", "strict.txt");
+  await mkdir(join(strict.candidate, "evidence"), { recursive: true });
+  await writeFile(strictEvidence, "strict");
+  assert.equal(await main(["validate", "--manifest", strict.manifest, "--cell", "p0:body", "--evidence", strictEvidence]), 2);
 
   const constrained = await fixture();
-  const constrainedImage = await makePartial(constrained);
-  await mark(constrained, "p0:hero", "generated", constrainedImage);
-  await main(["configure", "--manifest", constrained.manifest, "--cell", "p0:hero", "--mode", "constrained-redraw"]);
-  assert.equal(await validate(constrained, "p0:hero", await reviewFile(constrained, "constrained.txt")), 0);
+  await freezeContract(constrained);
+  await plan(constrained, [{ id: "b1", regions: [{ id: "p0:body", mode: "constrained-redraw", alpha_lock: false }] }]);
+  await prepare(constrained, "b1");
+  const constrainedImage = join(constrained.candidate, "generated", "partial.png");
+  await mkdir(join(constrained.candidate, "generated"), { recursive: true });
+  await partialImage(constrainedImage);
+  await main(["mark", "--manifest", constrained.manifest, "--cell", "p0:body", "--status", "generating"]);
+  await main(["mark", "--manifest", constrained.manifest, "--cell", "p0:body", "--status", "generated", "--image", constrainedImage]);
+  const constrainedEvidence = join(constrained.candidate, "evidence", "constrained.txt");
+  await mkdir(join(constrained.candidate, "evidence"), { recursive: true });
+  await writeFile(constrainedEvidence, "constrained");
+  assert.equal(await main(["validate", "--manifest", constrained.manifest, "--cell", "p0:body", "--evidence", constrainedEvidence]), 0);
 });
 
-test("陈旧锁只回收已退出 PID，活锁不会被 mtime 误删", async () => {
+test("Skeleton 审计输出统计、Atlas 映射和 Mesh 顶点/三角形/UV 哈希", async () => {
+  const value = await fixture({ names: ["mesh"] });
+  const audit = await auditSkeleton(value.skeleton, { cells: [{ name: "mesh" }] }, "4.3.13");
+  assert.equal(audit.stats.bone_count, 1);
+  assert.equal(audit.stats.slot_count, 1);
+  assert.equal(audit.stats.skin_count, 1);
+  assert.equal(audit.stats.attachment_count, 1);
+  assert.equal(audit.stats.mesh_count, 1);
+  assert.deepEqual(audit.stats.animation_names, ["Attack", "Idle"]);
+  assert.equal(audit.missing_atlas_regions.length, 0);
+  assert.match(audit.mesh_signatures[0].mesh_sha256, /^[0-9a-f]{64}$/);
+  const arraySkeleton = join(value.root, "array-skins.json");
+  const arrayValue = JSON.parse(await readFile(value.skeleton, "utf8"));
+  arrayValue.skins = [{ name: "default", attachments: arrayValue.skins.default }];
+  await writeFile(arraySkeleton, JSON.stringify(arrayValue));
+  const arrayAudit = await auditSkeleton(arraySkeleton, { cells: [{ name: "mesh" }] }, "4.3.13");
+  assert.equal(arrayAudit.stats.attachment_count, 1);
+  assert.equal(arrayAudit.stats.mesh_count, 1);
+});
+
+test("低版本 Skeleton 需要外部升级候选，升级结构漂移被阻断", async () => {
+  const value = await fixture({ version: "3.8.99" });
+  assert.equal(JSON.parse(await readFile(value.manifest, "utf8")).skeleton_audit.requires_upgrade, true);
+  await freezeContract(value);
+  const batchPlan = await plan(value, [{ id: "b1", regions: ["p0:body"] }]);
+  assert.equal(batchPlan, 2);
+  const candidate = join(value.root, "upgraded.json");
+  const original = JSON.parse(await readFile(value.skeleton, "utf8"));
+  original.skeleton.spine = "4.3.13";
+  await writeFile(candidate, JSON.stringify(original));
+  const runtimeEvidence = join(value.root, "runtime-parse-evidence.json");
+  const runtimeLog = join(value.candidate, "runtime-parse.log");
+  await writeFile(runtimeLog, "Spine 4.3.13 external parser loaded candidate and parsed SkeletonData");
+  await writeFile(runtimeEvidence, JSON.stringify({ report_version: "spine-runtime-parse/1.0", producer: "external-spine-diagnostic", runtime_package: "@esotericsoftware/spine-core", runtime_version: "4.3.13", command: "external-project-spine-parse", target_runtime: "4.3.13", parsed: true, candidate_skeleton_sha256: await sha(candidate), log_path: "runtime-parse.log", log_sha256: await sha(runtimeLog) }));
+  assert.equal(await main(["upgrade-check", "--manifest", value.manifest, "--candidate-skeleton", candidate, "--runtime-evidence", runtimeEvidence]), 0);
+  assert.equal(await plan(value, [{ id: "b1", regions: ["p0:body"] }]), 0);
+  const drift = JSON.parse(JSON.stringify(original));
+  drift.bones.push({ name: "unexpected" });
+  const driftPath = join(value.root, "drift.json");
+  await writeFile(driftPath, JSON.stringify(drift));
+  const second = await fixture({ version: "3.8.99" });
+  const driftEvidence = join(value.root, "drift-runtime-evidence.json");
+  const driftLog = join(second.candidate, "runtime-parse.log");
+  await writeFile(driftLog, "external parser rejected structural drift");
+  await writeFile(driftEvidence, JSON.stringify({ report_version: "spine-runtime-parse/1.0", producer: "external-spine-diagnostic", runtime_package: "@esotericsoftware/spine-core", runtime_version: "4.3.13", command: "external-project-spine-parse", target_runtime: "4.3.13", parsed: true, candidate_skeleton_sha256: await sha(driftPath), log_path: "runtime-parse.log", log_sha256: await sha(driftLog) }));
+  assert.equal(await main(["upgrade-check", "--manifest", second.manifest, "--candidate-skeleton", driftPath, "--runtime-evidence", driftEvidence]), 2);
+});
+
+test("批次覆盖、重复和越序生成 fail closed", async () => {
+  const value = await fixture({ names: ["body", "head"] });
+  await freezeContract(value);
+  assert.equal(await plan(value, [{ id: "b1", regions: ["p0:body", "p0:body"] }]), 2);
+  assert.equal(await plan(value, [{ id: "b1", regions: ["p0:body"] }]), 2);
+  assert.equal(await plan(value, [{ id: "b1", regions: ["p0:body"] }, { id: "b2", regions: ["p0:head"] }]), 0);
+  assert.equal(await main(["mark", "--manifest", value.manifest, "--cell", "p0:head", "--status", "generating"]), 2);
+  await prepare(value, "b1");
+  assert.equal(await generate(value, "p0:body").then((result) => result.status), 0);
+});
+
+test("审阅图 SHA、确认文本和 alpha lock 绑定当前批次", async () => {
+  const value = await fixture();
+  await freezeContract(value);
+  await plan(value, [{ id: "b1", regions: ["p0:body"] }]);
+  await prepare(value, "b1");
+  await generate(value, "p0:body");
+  let document = await review(value, "b1");
+  const reviewSha = document.batches[0].review_board.sha256;
+  assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", "bad", "--user-text", "确认第1批"]), 2);
+  assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", reviewSha, "--user-text", "同意第1批"]), 2);
+  assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", reviewSha, "--user-text", "确认第1批"]), 0);
+  document = JSON.parse(await readFile(value.manifest, "utf8"));
+  assert.equal(document.batches[0].status, "ACCEPTED");
+  assert.equal(document.batches[0].locked, true);
+  assert.equal(document.batches[0].acceptance.review_board_sha256, reviewSha);
+});
+
+test("连续特效批次缺失颜色/亮度/轮廓/发光指标时不能导入", async () => {
+  const value = await fixture();
+  await freezeContract(value);
+  assert.equal(await plan(value, [{ id: "fx", regions: ["p0:body"], effect_sequence: { order: ["p0:body"] } }]), 0);
+  await prepare(value, "fx");
+  await generate(value, "p0:body");
+  const document = JSON.parse(await readFile(value.manifest, "utf8"));
+  const reportPath = join(value.candidate, "evidence", "effect-report.json");
+  await mkdir(join(value.candidate, "evidence"), { recursive: true });
+  await writeFile(reportPath, JSON.stringify({ report_version: "spine-effect-sequence/1.0", batch_id: "fx", revision: 0, candidate_fingerprint: candidateFingerprint(document.batches[0], [document.cells[0]]), color_consistency: { result: "PASS", metric: 1 }, brightness_continuity: { result: "PASS", metric: 1 }, contour_smoothness: { result: "PASS", metric: 1 }, glow_direction: { result: "PASS", metric: 1 } }));
+  assert.equal(await main(["batch", "review", "--manifest", value.manifest, "--batch", "fx", "--effect-report", reportPath]), 0);
+  const reviewed = JSON.parse(await readFile(value.manifest, "utf8"));
+  assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "fx", "--review-sha", reviewed.batches[0].review_board.sha256, "--user-text", "确认第1批"]), 0);
+});
+
+test("PNG、正向 Region 尺寸和 alpha lock 合同拒绝错误 Cell", async () => {
+  const value = await fixture();
+  await freezeContract(value);
+  await plan(value, [{ id: "b1", regions: ["p0:body"] }]);
+  await prepare(value, "b1");
+  await generate(value, "p0:body", [220, 30, 20, 255], [1, 1]);
+  await review(value, "b1");
+  const document = JSON.parse(await readFile(value.manifest, "utf8"));
+  assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", document.batches[0].review_board.sha256, "--user-text", "确认第1批"]), 2);
+});
+
+test("Atlas 序列化不在同 Page Header/Region 之间插入空行，仅分隔 Page", async () => {
+  const value = await fixture({ names: ["body", "head"] });
+  const parsed = await parseAtlas(value.atlas);
+  const document = { atlas: { pages: parsed.pages.map((page) => ({ ...page, output_name: page.name })) }, cells: parsed.cells };
+  const output = atlasText(document).split("\n");
+  assert.equal(output[1].startsWith("size:"), true);
+  assert.equal(output[output.indexOf("page.png") + 6], "body");
+  assert.equal(output.slice(0, -1).filter((line) => line === "").length, 0);
+});
+
+test("未接受批次或缺失 runtime 报告不能 pack/finalize，完整报告通过后可 verify", async () => {
+  const value = await fixture();
+  await freezeContract(value);
+  await plan(value, [{ id: "b1", regions: ["p0:body"] }]);
+  await prepare(value, "b1");
+  await generate(value, "p0:body");
+  assert.equal(await main(["pack", "--manifest", value.manifest, "--output-dir", join(value.candidate, "atlas")]), 2);
+  const document = await review(value, "b1");
+  assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", document.batches[0].review_board.sha256, "--user-text", "确认第1批"]), 0);
+  assert.equal(await main(["pack", "--manifest", value.manifest, "--output-dir", join(value.candidate, "atlas")]), 0);
+  assert.equal(await main(["finalize", "--manifest", value.manifest]), 2);
+  const evidenceDir = join(value.candidate, "evidence");
+  await mkdir(evidenceDir, { recursive: true });
+  const desktop = join(evidenceDir, "desktop.png");
+  const mobile = join(evidenceDir, "mobile-390.png");
+  await image(desktop, 4, 4, [1, 2, 3, 255]);
+  await image(mobile, 4, 4, [1, 2, 3, 255]);
+  const log = join(evidenceDir, "browser.log");
+  await writeFile(log, "all animations switched");
+  const report = join(value.candidate, "runtime-validation.json");
+  const packedDocument = JSON.parse(await readFile(value.manifest, "utf8"));
+  const validationRunId = "run-1";
+  await writeFile(report, JSON.stringify({ report_version: "spine-runtime-validation/1.0", validation_run_id: validationRunId, build_binding: packedDocument.build.runtime_binding, phaser_spine_game_object: true, animations_from_skeleton_data: true, target_runtime: "4.3.13", target_runtime_parse: { passed: true, producer: "external-phaser-spine-diagnostic", runtime_package: "phaser-spine-runtime", runtime_version: "4.3.13", command: "browser diagnostic page", log_path: "evidence/browser.log", log_sha256: await sha(log), validation_run_id: validationRunId }, default_animation: "Idle", animations: [{ name: "Idle", found: true, switch_passed: true, loop: true }, { name: "Attack", found: true, switch_passed: true, loop: false }], summary: { bone: 1, slot: 1, animation: 2, atlas_page: 1, atlas_region: 1 }, checks: { texture_missing: false, anchor_drift: false, mesh_stretch: false, flicker: false, bad_crop: false }, url: "/spine-validation.html", viewports: { desktop: { width: 1280, height: 720 }, mobile_390: { width: 390, height: 844 } }, screenshots: { desktop: { path: "evidence/desktop.png", sha256: await sha(desktop), validation_run_id: validationRunId }, mobile_390: { path: "evidence/mobile-390.png", sha256: await sha(mobile), validation_run_id: validationRunId } }, browser_log: { path: "evidence/browser.log", sha256: await sha(log), validation_run_id: validationRunId } }));
+  assert.equal(await main(["runtime-validate", "--manifest", value.manifest, "--runtime-report", report]), 0);
+  assert.equal(await main(["finalize", "--manifest", value.manifest]), 0);
+  const verification = join(value.candidate, "verification.json");
+  await writeFile(verification, JSON.stringify({ runtime_validation: "PASS", automated_tests: "PASS", typecheck: { status: "NOT_APPLICABLE", reason: "当前技能无独立类型检查脚本" }, build: { status: "NOT_APPLICABLE", reason: "候选资源由脚本直接重建，无独立构建步骤" } }));
+  assert.equal(await main(["report", "--manifest", value.manifest, "--output", join(value.candidate, "final-report.json"), "--verification", verification]), 0);
+  assert.equal(await main(["verify", "--manifest", value.manifest]), 0);
+  await writeFile(log, "tampered runtime log");
+  assert.equal(await main(["verify", "--manifest", value.manifest]), 1);
+});
+
+test("锁回收只允许已退出 PID", () => {
   assert.equal(isProcessAlive(process.pid), true);
   assert.equal(shouldReclaimLock({ pid: process.pid }, 0), false);
   assert.equal(shouldReclaimLock({ pid: 2147483647 }, 0), true);
-  const fixtureValue = await fixture();
-  const lockPath = `${fixtureValue.manifest}.lock`;
-  await writeFile(lockPath, JSON.stringify({ pid: 2147483647, token: "dead" }));
-  await utimes(lockPath, new Date(0), new Date(0));
-  assert.equal(await mark(fixtureValue, "p0:hero", "generating"), 0);
+  assert.equal(ALPHA_CONTRACT_THRESHOLDS.palette_refresh_max_mask_mismatch, 0);
 });
 
-test("空白多 Page 重建保持裁剪、旋转、PNG 和 packed 未完成闭环", async () => {
-  const fixtureValue = await fixture();
-  const [hero, rotated] = await writeGenerated(fixtureValue);
-  await validateAll(fixtureValue, [hero, rotated]);
-  const output = join(fixtureValue.candidate, "atlas");
-  assert.equal(await main(["pack", "--manifest", fixtureValue.manifest, "--output-dir", output]), 0);
-  let document = JSON.parse(await readFile(fixtureValue.manifest, "utf8"));
-  assert.deepEqual(document.cells.map((cell) => cell.status), ["packed", "packed"]);
-  assert.equal(await main(["verify", "--manifest", fixtureValue.manifest]), 1);
-  const image = await readImage(join(output, "source.png"));
-  assert.deepEqual(image.pixel(0, 0), [0, 0, 0, 0]);
-  assert.deepEqual(image.pixel(1, 1), [200, 21, 31, 255]);
-  assert.deepEqual(image.pixel(5, 1), [255, 255, 0, 255]);
-  assert.deepEqual(image.pixel(6, 3), [0, 0, 255, 255]);
-  const runtime = await reviewFile(fixtureValue, "runtime.png", "phaser runtime screenshot");
-  assert.equal(await main(["finalize", "--manifest", fixtureValue.manifest, "--evidence", runtime]), 0);
-  document = JSON.parse(await readFile(fixtureValue.manifest, "utf8"));
-  assert.ok(document.runtime_evidence[0].sha256);
-  assert.deepEqual(document.cells.map((cell) => cell.status), ["completed", "completed"]);
-  assert.equal(await main(["verify", "--manifest", fixtureValue.manifest]), 0);
+test("同一 Cell 的并发 mark 由清单锁串行化且不丢失更新", async () => {
+  const value = await fixture();
+  await freezeContract(value);
+  await plan(value, [{ id: "b1", regions: ["p0:body"] }]);
+  await prepare(value, "b1");
+  const generating = await Promise.all([main(["mark", "--manifest", value.manifest, "--cell", "p0:body", "--status", "generating"]), main(["mark", "--manifest", value.manifest, "--cell", "p0:body", "--status", "generating"])]);
+  assert.deepEqual(generating.sort(), [0, 0]);
+  const generated = join(value.candidate, "generated", "parallel.png");
+  await mkdir(join(value.candidate, "generated"), { recursive: true });
+  await image(generated, 2, 2, [220, 30, 20, 255]);
+  const results = await Promise.all([main(["mark", "--manifest", value.manifest, "--cell", "p0:body", "--status", "generated", "--image", generated]), main(["mark", "--manifest", value.manifest, "--cell", "p0:body", "--status", "generated", "--image", generated])]);
+  assert.deepEqual(results.sort(), [0, 0]);
+  assert.equal(JSON.parse(await readFile(value.manifest, "utf8")).cells[0].status, "generated");
 });
 
-test("多 Page Atlas 为每页生成独立 PNG 并保持 Page 顺序", async () => {
-  const root = await mkdtemp(join(tmpdir(), "spine-reskin-pages-"));
-  await writeImage(join(root, "page-a.png"), 6, 4, [10, 20, 30, 255]);
-  await writeImage(join(root, "page-b.png"), 6, 4, [40, 50, 60, 255]);
-  const skeleton = join(root, "skeleton.json");
-  await writeFile(skeleton, "skeleton");
+test("多 Page 重建保持 Page 顺序、PNG 和空白透明区域", async () => {
+  const root = await mkdtemp(join(tmpdir(), "spine-reskin-pages-v3-"));
+  await image(join(root, "page-a.png"), 6, 4, [0, 0, 0, 255]);
+  await image(join(root, "page-b.png"), 6, 4, [0, 0, 0, 255]);
   const atlas = join(root, "multi.atlas");
-  await writeFile(atlas, `page-a.png\nsize: 6, 4\nformat: RGBA8888\n\na\nxy: 0, 0\nsize: 2, 2\n\npage-b.png\nsize: 6, 4\nformat: RGBA8888\n\nb\nxy: 1, 1\nsize: 2, 2\n`);
-  const candidate = join(root, "candidate");
-  const manifest = join(candidate, "progress.json");
-  await main(["init", "--atlas", atlas, "--output", manifest, "--skeleton", skeleton]);
-  const generated = join(candidate, "generated");
-  const evidence = join(candidate, "evidence");
-  await mkdir(generated, { recursive: true });
-  await mkdir(evidence, { recursive: true });
-  const imageA = join(generated, "a.png");
-  const imageB = join(generated, "b.png");
-  await writeImage(imageA, 2, 2, [220, 10, 10, 255]);
-  await writeImage(imageB, 2, 2, [10, 220, 10, 255]);
-  const evidenceA = join(evidence, "a.txt");
-  const evidenceB = join(evidence, "b.txt");
-  await writeFile(evidenceA, "review a");
-  await writeFile(evidenceB, "review b");
-  await mark({ manifest }, "p0:a", "generated", imageA);
-  await mark({ manifest }, "p1:b", "generated", imageB);
-  await validate({ manifest }, "p0:a", evidenceA);
-  await validate({ manifest }, "p1:b", evidenceB);
-  const output = join(candidate, "atlas");
-  assert.equal(await main(["pack", "--manifest", manifest, "--output-dir", output]), 0);
-  assert.equal((await readImage(join(output, "page-a.png"))).width, 6);
-  assert.equal((await readImage(join(output, "page-b.png"))).height, 4);
+  const n = String.fromCharCode(10);
+  await writeFile(atlas, ["page-a.png", "size: 6, 4", "format: RGBA8888", "", "a", "xy: 0, 0", "size: 2, 2", "", "page-b.png", "size: 6, 4", "format: RGBA8888", "", "b", "xy: 1, 1", "size: 2, 2", ""].join(n));
+  const skeleton = join(root, "s.json");
+  await writeFile(skeleton, JSON.stringify({ skeleton: { spine: "4.3.13" }, bones: [{ name: "root" }], slots: [{ name: "a-slot", bone: "root" }, { name: "b-slot", bone: "root" }], skins: { default: { "a-slot": { a: { type: "region", path: "a" } }, "b-slot": { b: { type: "region", path: "b" } } } }, animations: { Idle: {} } }));
+  const value = { root, atlas, skeleton, candidate: join(root, "candidate"), manifest: join(root, "candidate", "progress.json") };
+  const control = await controlManifest(root);
+  assert.equal(await main(["init", "--atlas", atlas, "--output", value.manifest, "--skeleton", skeleton, "--control-manifest", control]), 0);
+  await freezeContract(value);
+  await plan(value, [{ id: "b1", regions: ["p0:a"] }, { id: "b2", regions: ["p1:b"] }]);
+  await prepare(value, "b1");
+  await generate(value, "p0:a", [220, 30, 20, 255]);
+  let document = await review(value, "b1");
+  assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", document.batches[0].review_board.sha256, "--user-text", "确认第1批"]), 0);
+  await prepare(value, "b2");
+  await generate(value, "p1:b", [20, 220, 30, 255]);
+  document = await review(value, "b2");
+  assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b2", "--review-sha", document.batches[1].review_board.sha256, "--user-text", "确认第2批"]), 0);
+  const output = join(value.candidate, "atlas");
+  assert.equal(await main(["pack", "--manifest", value.manifest, "--output-dir", output]), 0);
   const outputAtlas = await readFile(join(output, "multi.atlas"), "utf8");
   assert.ok(outputAtlas.indexOf("page-a.png") < outputAtlas.indexOf("page-b.png"));
+  assert.equal((await sharp(join(output, "page-a.png")).metadata()).format, "png");
+  assert.equal((await sharp(join(output, "page-b.png")).metadata()).format, "png");
 });
 
-test("路径祖先保护、源漂移和外部/旧纹理路径都被拒绝", async () => {
-  const fixtureValue = await fixture();
-  const [hero, rotated] = await writeGenerated(fixtureValue);
-  await validateAll(fixtureValue, [hero, rotated]);
-  assert.equal(await main(["pack", "--manifest", fixtureValue.manifest, "--output-dir", fixtureValue.candidate, "--force"]), 2);
-  const sourceImage = join(fixtureValue.root, "source.png");
-  assert.equal(await mark(fixtureValue, "p0:hero", "pending"), 0);
-  assert.equal(await mark(fixtureValue, "p0:hero", "generating"), 0);
-  assert.equal(await mark(fixtureValue, "p0:hero", "generated", sourceImage), 2);
-  await writeFile(fixtureValue.skeleton, "tampered");
-  assert.equal(await main(["pack", "--manifest", fixtureValue.manifest, "--output-dir", join(fixtureValue.candidate, "atlas-2")]), 2);
+test("输出目录祖先保护、源漂移和非零 padding/extrusion 都阻断 pack", async () => {
+  const value = await fixture();
+  await freezeContract(value);
+  await plan(value, [{ id: "b1", regions: ["p0:body"] }]);
+  await prepare(value, "b1");
+  await generate(value, "p0:body");
+  let document = await review(value, "b1");
+  await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", document.batches[0].review_board.sha256, "--user-text", "确认第1批"]);
+  assert.equal(await main(["pack", "--manifest", value.manifest, "--output-dir", value.candidate, "--force"]), 2);
+  assert.equal(await main(["pack", "--manifest", value.manifest, "--output-dir", join(value.candidate, "bad-padding"), "--padding", "1", "--extrusion", "0"]), 2);
+  assert.equal(await main(["pack", "--manifest", value.manifest, "--output-dir", join(value.candidate, "bad-extrusion") , "--padding", "1", "--extrusion", "2"]), 2);
+  await writeFile(value.skeleton, "tampered");
+  assert.equal(await main(["pack", "--manifest", value.manifest, "--output-dir", join(value.candidate, "atlas-2")]), 2);
 });
 
-test("Atlas 输入审计拒绝重复、越界、重叠、尺寸不符和 Page 输出名碰撞", async () => {
-  const root = await mkdtemp(join(tmpdir(), "spine-reskin-audit-"));
-  const skeleton = join(root, "skeleton.json");
-  await writeFile(skeleton, "skeleton");
-  const page = join(root, "page.png");
-  await writeImage(page, 8, 8, [0, 0, 0, 255]);
-  async function rejected(atlasText, expected = 2) {
-    const atlas = join(root, `${Math.random().toString(16).slice(2)}.atlas`);
-    await writeFile(atlas, atlasText);
-    assert.equal(await main(["init", "--atlas", atlas, "--output", join(root, "out", `${Math.random().toString(16).slice(2)}.json`), "--skeleton", skeleton]), expected);
-  }
-  const duplicate = `page.png\nsize: 8, 8\nformat: RGBA8888\n\na\nxy: 0, 0\nsize: 1, 1\n\na\nxy: 2, 0\nsize: 1, 1\n`;
-  const overlap = `page.png\nsize: 8, 8\nformat: RGBA8888\n\na\nxy: 0, 0\nsize: 2, 2\n\nb\nxy: 1, 1\nsize: 2, 2\n`;
-  const outOfBounds = `page.png\nsize: 8, 8\nformat: RGBA8888\n\na\nxy: 7, 7\nsize: 2, 2\n`;
-  const badOrig = `page.png\nsize: 8, 8\nformat: RGBA8888\n\na\nxy: 0, 0\nsize: 2, 2\norig: 2, 2\noffset: 2, 0\n`;
-  await rejected(duplicate);
-  await rejected(overlap);
-  await rejected(outOfBounds);
-  await rejected(badOrig);
-  const mismatch = `page.png\nsize: 7, 8\nformat: RGBA8888\n\na\nxy: 0, 0\nsize: 1, 1\n`;
-  await rejected(mismatch);
-  await writeImage(join(root, "foo.jpg"), 8, 8, [0, 0, 0, 255]);
-  await writeImage(join(root, "foo.png"), 8, 8, [0, 0, 0, 255]);
-  await rejected(`foo.jpg\nsize: 8, 8\nformat: RGBA8888\n\na\nxy: 0, 0\nsize: 1, 1\n\nfoo.png\nsize: 8, 8\nformat: RGBA8888\n\nb\nxy: 2, 0\nsize: 1, 1\n`);
-  await parseAtlas(join(root, "not-created.atlas")).catch(() => {});
+test("Atlas 初始化拒绝重复、重叠、越界和非法 orig/offset", async () => {
+  const root = await mkdtemp(join(tmpdir(), "spine-reskin-atlas-v3-"));
+  await image(join(root, "page.png"), 8, 8, [0, 0, 0, 255]);
+  const skeleton = join(root, "s.json");
+  await writeFile(skeleton, JSON.stringify({ skeleton: { spine: "4.3.13" }, bones: [{ name: "root" }], slots: [{ name: "slot", bone: "root" }], skins: { default: { slot: { a: { type: "region", path: "a" } } } }, animations: { Idle: {} } }));
+  const rejected = async (text, index) => { const atlas = join(root, `bad-${index}.atlas`); await writeFile(atlas, text); assert.equal(await main(["init", "--atlas", atlas, "--output", join(root, `candidate-${index}`, "progress.json"), "--skeleton", skeleton]), 2); };
+  await rejected("page.png\nsize: 8, 8\nformat: RGBA8888\n\na\nxy: 0, 0\nsize: 1, 1\n\na\nxy: 2, 0\nsize: 1, 1\n", "duplicate");
+  await rejected("page.png\nsize: 8, 8\nformat: RGBA8888\n\na\nxy: 0, 0\nsize: 2, 2\n\nb\nxy: 1, 1\nsize: 2, 2\n", "overlap");
+  await rejected("page.png\nsize: 8, 8\nformat: RGBA8888\n\na\nxy: 7, 7\nsize: 2, 2\n", "bounds");
+  await rejected("page.png\nsize: 8, 8\nformat: RGBA8888\n\na\nxy: 0, 0\nsize: 2, 2\norig: 2, 2\noffset: 2, 0\n", "offset");
 });
 
-test("init 直接拒绝绝对 Page、.. 逃逸和空 Page 名", async () => {
-  const root = await mkdtemp(join(tmpdir(), "spine-reskin-page-name-"));
-  await writeImage(join(root, "page.png"), 4, 4, [0, 0, 0, 255]);
-  const skeleton = join(root, "skeleton.json");
-  await writeFile(skeleton, "skeleton");
-  async function rejected(pageName, index) {
-    const atlas = join(root, `bad-${index}.atlas`);
-    await writeFile(atlas, `${pageName}\nsize: 4, 4\nformat: RGBA8888\n\na\nxy: 0, 0\nsize: 1, 1\n`);
-    assert.equal(await main(["init", "--atlas", atlas, "--output", join(root, `candidate-${index}`, "progress.json"), "--skeleton", skeleton]), 2);
-  }
-  await rejected("../page.png", 1);
-  await rejected("C:/page.png", 2);
-  await rejected("/tmp/page.png", 3);
-  await rejected("", 4);
+test("生成图 SHA 漂移和审阅/运行证据 SHA 漂移会使 verify 失败", async () => {
+  const value = await fixture();
+  await freezeContract(value);
+  await plan(value, [{ id: "b1", regions: ["p0:body"] }]);
+  await prepare(value, "b1");
+  const generated = await generate(value, "p0:body");
+  const document = await review(value, "b1");
+  assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", document.batches[0].review_board.sha256, "--user-text", "确认第1批"]), 0);
+  assert.equal(await main(["pack", "--manifest", value.manifest, "--output-dir", join(value.candidate, "atlas")]), 0);
+  await writeFile(generated.path, "tampered");
+  assert.equal(await main(["verify", "--manifest", value.manifest]), 1);
 });
 
-test("源 Cell 参考文件名在清洗冲突时仍保持唯一", async () => {
-  const root = await mkdtemp(join(tmpdir(), "spine-reskin-reference-name-"));
-  await writeImage(join(root, "page.png"), 8, 4, [0, 0, 0, 255]);
-  const skeleton = join(root, "skeleton.json");
-  await writeFile(skeleton, "skeleton");
-  const atlas = join(root, "reference.atlas");
-  await writeFile(atlas, `page.png\nsize: 8, 4\nformat: RGBA8888\n\na/b\nxy: 0, 0\nsize: 2, 2\n\na?b\nxy: 3, 0\nsize: 2, 2\n`);
-  const manifest = join(root, "candidate", "progress.json");
-  assert.equal(await main(["init", "--atlas", atlas, "--output", manifest, "--skeleton", skeleton]), 0);
-  const names = await readdir(join(root, "candidate", "source-cells"));
-  assert.equal(names.length, 2);
-  assert.notEqual(names[0], names[1]);
+test("确认后的 validating Cell 在 recover 后保持 ACCEPTED+locked 并可继续 pack", async () => {
+  const value = await fixture();
+  await freezeContract(value);
+  await plan(value, [{ id: "b1", regions: ["p0:body"] }]);
+  await prepare(value, "b1");
+  await generate(value, "p0:body");
+  let document = await review(value, "b1");
+  assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", document.batches[0].review_board.sha256, "--user-text", "确认第1批"]), 0);
+  assert.equal(await main(["recover", "--manifest", value.manifest]), 0);
+  document = JSON.parse(await readFile(value.manifest, "utf8"));
+  assert.equal(document.cells[0].status, "validating");
+  assert.equal(document.batches[0].status, "ACCEPTED");
+  assert.equal(document.batches[0].locked, true);
+  assert.equal(await main(["pack", "--manifest", value.manifest, "--output-dir", join(value.candidate, "atlas")]), 0);
 });
 
-test("padding 参数不会在完整尺寸输入时静默吞掉非法 extrusion", async () => {
-  const fixtureValue = await fixture();
-  const [hero, rotated] = await writeGenerated(fixtureValue);
-  await validateAll(fixtureValue, [hero, rotated]);
-  assert.equal(await main(["pack", "--manifest", fixtureValue.manifest, "--output-dir", join(fixtureValue.candidate, "bad-padding"), "--padding", "1", "--extrusion", "2"]), 2);
+test("返工只重开当前批，必须重新 prepare 并使用重启版确认文本", async () => {
+  const value = await fixture();
+  await freezeContract(value);
+  await plan(value, [{ id: "b1", regions: ["p0:body"] }]);
+  await prepare(value, "b1");
+  await generate(value, "p0:body");
+  let document = await review(value, "b1");
+  assert.equal(await main(["batch", "reopen", "--manifest", value.manifest, "--batch", "b1"]), 0);
+  document = JSON.parse(await readFile(value.manifest, "utf8"));
+  assert.equal(document.batches[0].status, "REWORK");
+  assert.equal(document.batches[0].revision, 1);
+  assert.equal(document.cells[0].status, "pending");
+  const imagePath = join(value.candidate, "generated", "rework.png");
+  await mkdir(join(value.candidate, "generated"), { recursive: true });
+  await image(imagePath, 2, 2, [20, 30, 220, 255]);
+  assert.equal(await main(["mark", "--manifest", value.manifest, "--cell", "p0:body", "--status", "generating"]), 2);
+  await prepare(value, "b1");
+  assert.equal(await main(["mark", "--manifest", value.manifest, "--cell", "p0:body", "--status", "generating"]), 0);
+  assert.equal(await main(["mark", "--manifest", value.manifest, "--cell", "p0:body", "--status", "generated", "--image", imagePath]), 0);
+  document = await review(value, "b1");
+  assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", document.batches[0].review_board.sha256, "--user-text", "确认重启版第1批"]), 0);
 });
 
-test("生成图、审阅证据和运行证据哈希漂移会使 verify 失败", async () => {
-  const fixtureValue = await fixture();
-  const [hero, rotated] = await writeGenerated(fixtureValue);
-  await validateAll(fixtureValue, [hero, rotated]);
-  assert.equal(await main(["pack", "--manifest", fixtureValue.manifest, "--output-dir", join(fixtureValue.candidate, "atlas")]), 0);
-  const runtime = await reviewFile(fixtureValue, "runtime.txt", "runtime");
-  assert.equal(await main(["finalize", "--manifest", fixtureValue.manifest, "--evidence", runtime]), 0);
-  await writeFile(runtime, "tampered");
-  assert.equal(await main(["verify", "--manifest", fixtureValue.manifest]), 1);
+test("pack 阶段 I/O 失败会恢复为 validating 且保留批次锁，可重试", async () => {
+  const value = await fixture();
+  await freezeContract(value);
+  await plan(value, [{ id: "b1", regions: ["p0:body"] }]);
+  await prepare(value, "b1");
+  await generate(value, "p0:body");
+  let document = await review(value, "b1");
+  assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", document.batches[0].review_board.sha256, "--user-text", "确认第1批"]), 0);
+  assert.equal(await main(["pack", "--manifest", value.manifest, "--output-dir", join(value.candidate, "atlas-failed"), "--atlas-name", "page.png"]), 2);
+  document = JSON.parse(await readFile(value.manifest, "utf8"));
+  assert.equal(document.cells[0].status, "validating");
+  assert.equal(document.batches[0].status, "ACCEPTED");
+  assert.equal(document.batches[0].locked, true);
+  assert.equal(await main(["pack", "--manifest", value.manifest, "--output-dir", join(value.candidate, "atlas-retry")]), 0);
+});
+
+test("控制面 manifest 漂移会阻断后续批次命令", async () => {
+  const value = await fixture();
+  await freezeContract(value);
+  await writeFile(value.control, JSON.stringify({ workItemId: "changed-work-item", taskAuthorization: { authorizationId: "spine-task-auth" }, production_contract: { contract_version: "spine-production/1.0", status: "PASS" }, visual_human_approval: { status: "PASS", evidence: { path: "v2-approval.txt", sha256: await sha(join(value.root, "v2-approval.txt")) }, evidence_sha256: await sha(join(value.root, "v2-approval.txt")) } }));
+  const planPath = join(value.root, "drifted-control-plan.json");
+  await writeFile(planPath, JSON.stringify({ batches: [{ id: "b1", regions: ["p0:body"] }] }));
+  assert.equal(await main(["plan-batches", "--manifest", value.manifest, "--plan", planPath]), 2);
+});
+
+test("资源目录发现支持独立资产和 Cocos sp.SkeletonData 确定性导出", async () => {
+  const root = await mkdtemp(join(tmpdir(), "spine-assets-discovery-v3-"));
+  await image(join(root, "page.png"), 2, 2, [0, 0, 0, 255]);
+  const skeletonValue = { skeleton: { spine: "4.3.13" }, bones: [{ name: "root" }], slots: [{ name: "body-slot", bone: "root" }], skins: { default: { "body-slot": { body: { type: "region", path: "body" } } } }, animations: { Idle: {} } };
+  const atlasValue = "page.png\nsize: 2, 2\nformat: RGBA8888\nfilter: Linear,Linear\nrepeat: none\n\nbody\nrotate: false\nxy: 0, 0\nsize: 2, 2\norig: 2, 2\noffset: 0, 0\nindex: -1\n";
+  const independentSkeleton = join(root, "character.json");
+  const independentAtlas = join(root, "character.atlas");
+  await writeFile(independentSkeleton, JSON.stringify(skeletonValue));
+  await writeFile(independentAtlas, atlasValue);
+  const independent = await discoverSpineAsset(root);
+  assert.equal(independent.format, "independent");
+  const cocosRoot = await mkdtemp(join(tmpdir(), "spine-cocos-assets-v3-"));
+  const cocosPage = join(cocosRoot, "page.png");
+  const cocosContainer = join(cocosRoot, "bundle.json");
+  await image(cocosPage, 2, 2, [0, 0, 0, 255]);
+  await writeFile(cocosContainer, JSON.stringify([{ _atlasText: atlasValue, _skeletonJson: JSON.stringify(skeletonValue), _textures: ["page.png"] }]));
+  const before = await sha(cocosContainer);
+  const discovered = await discoverSpineAsset(cocosRoot);
+  assert.equal(discovered.format, "cocos-skeleton-data");
+  const normalized = join(cocosRoot, "normalized");
+  const exported = await prepareSpineAsset(cocosRoot, normalized);
+  assert.equal(await sha(cocosContainer), before);
+  assert.ok(exported.atlas_path.endsWith("normalized-spine.atlas"));
+  assert.ok(exported.skeleton_path.endsWith("normalized-spine.json"));
+  assert.equal((await stat(join(normalized, "page.png"))).isFile(), true);
+  const control = await controlManifest(cocosRoot);
+  const manifest = join(cocosRoot, "candidate", "progress.json");
+  assert.equal(await main(["init", "--asset-dir", cocosRoot, "--normalized-dir", join(cocosRoot, "candidate", "normalized-source"), "--output", manifest, "--control-manifest", control, "--character", "虎"]), 0);
+  const normalizedManifest = JSON.parse(await readFile(manifest, "utf8"));
+  assert.equal(normalizedManifest.asset_input.format, "cocos-skeleton-data");
+  assert.equal(normalizedManifest.asset_input.source_container_sha256, before);
+  assert.equal(await main(["inspect", "--asset-dir", cocosRoot, "--normalized-dir", join(cocosRoot, "inspect-normalized")]), 0);
 });
