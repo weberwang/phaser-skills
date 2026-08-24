@@ -8,6 +8,16 @@
 
 import { validateVisualHumanApproval, validateVisualPostApprovalReviewFields } from "./visual-human-review-contract.mjs";
 import { isWorkflowDpr, workflowDprError } from "./workflow-dpr-contract.mjs";
+import {
+  isEffectImageContract,
+  validateEffectImageLayoutNodeFidelity,
+  validateLayoutDecomposition,
+  validateLayoutGeometryFacts,
+  validateLayoutBinding,
+  validateLayoutBindingConsistency,
+  validateRootLayoutIdentity,
+  validateLayoutRegionBindings,
+} from "./scene-layout-decomposition-contract.mjs";
 
 /** 判断是否为普通对象。 */
 export function isObject(value) {
@@ -161,7 +171,7 @@ function validateV2StageArtifacts(contract, stage, errors) {
 }
 
 /** 校验冻结目标条件，确保比较绑定显式 viewport 和动态封顶范围内的 DPR。 */
-function validateTargetConditions(contract, manifest, stage, errors) {
+function validateTargetConditions(contract, manifest, stage, errors, effectImage = false) {
   const target = field(contract, "target_conditions", "targetConditions", "target", "frozen_target", "frozenTarget");
   if (!isObject(target)) {
     errors.push(contractError(stage, contract, null, "scene_reconstruction_contract.target_conditions 必须是对象", { missing: "target_conditions", returnStage: "V1/PROPOSAL" }));
@@ -184,19 +194,36 @@ function validateTargetConditions(contract, manifest, stage, errors) {
   requiredString(target, ["animation_sample", "animationSample", "stable_frame", "stableFrame"], "冻结目标稳定帧/动画采样", errors, requiredContext);
   const baselineVersion = requiredString(target, ["visual_baseline_version", "visualBaselineVersion"], "冻结目标 visual baseline version", errors, requiredContext);
   const layoutVersion = requiredString(target, ["layout_contract_version", "layoutContractVersion"], "冻结目标 layout contract version", errors, requiredContext);
+  const layoutIdentity = field(target, "layout_identity", "layoutIdentity", "layout_contract_binding", "layoutContractBinding") ?? target;
+  const layoutContractSha = field(layoutIdentity, "layout_contract_sha256", "layoutContractSha256");
+  const layoutDecompositionVersion = field(layoutIdentity, "layout_decomposition_version", "layoutDecompositionVersion");
+  if (effectImage) {
+    requiredString(layoutIdentity, ["layout_contract_sha256", "layoutContractSha256"], "冻结目标 layout_contract_sha256", errors, { ...requiredContext, region: target, missing: "target_conditions.layout_contract_sha256" });
+    if (nonEmptyString(layoutContractSha) && !isSha256(layoutContractSha)) errors.push(contractError(stage, contract, null, "冻结目标 layout_contract_sha256 格式无效", { expected: "sha256: 后跟 64 位小写十六进制", actual: layoutContractSha, returnStage: "V1/PROPOSAL" }));
+    requiredString(layoutIdentity, ["layout_decomposition_version", "layoutDecompositionVersion"], "冻结目标 layout_decomposition_version", errors, { ...requiredContext, region: target, missing: "target_conditions.layout_decomposition_version" });
+  }
   if (manifest?.reference_target?.target_sha256 && targetSha && targetSha !== manifest.reference_target.target_sha256) errors.push(contractError(stage, contract, null, "场景合同 target SHA 与 reference_target 不一致", { expected: manifest.reference_target.target_sha256, actual: targetSha, returnStage: "V1/PROPOSAL" }));
   if (manifest?.reference_target?.scene_ids && sceneId && !manifest.reference_target.scene_ids.includes(sceneId)) errors.push(contractError(stage, contract, null, "场景合同 scene_id 不在冻结目标范围内", { actual: sceneId, returnStage: "V1/PROPOSAL" }));
   if (manifest?.reference_target?.state_ids && stateId && !manifest.reference_target.state_ids.includes(stateId)) errors.push(contractError(stage, contract, null, "场景合同 state_id 不在冻结目标范围内", { actual: stateId, returnStage: "V1/PROPOSAL" }));
   if (manifest?.visual_baseline?.version && baselineVersion && baselineVersion !== manifest.visual_baseline.version) errors.push(contractError(stage, contract, null, "场景合同 visual baseline version 不一致", { expected: manifest.visual_baseline.version, actual: baselineVersion, returnStage: "V1/PROPOSAL" }));
-  return { target, targetSha, sceneId, stateId, size, viewport, baselineVersion, layoutVersion };
+  return { target, targetSha, sceneId, stateId, size, viewport, baselineVersion, layoutVersion, layoutContractSha, layoutDecompositionVersion };
 }
 
 /** 验证区域事实；runtime owner 也必须承担完整 fidelity obligation。 */
-function validateCoverageRegion(region, contract, stage, toleranceIds, errors) {
+function validateCoverageRegion(region, contract, stage, toleranceIds, errors, effectImage = false) {
   const label = `scene_reconstruction_contract.coverage_regions[${region?.annotation_number ?? "?"}]`;
   if (!isObject(region)) {
     errors.push(contractError(stage, contract, null, `${label} 必须是对象`, { missing: "coverage region", returnStage: "V1/PROPOSAL" }));
     return;
+  }
+  if (effectImage) {
+    const layoutNodeIds = field(region, "layout_node_ids", "layoutNodeIds");
+    // effect-image 的区域是布局合同的最小覆盖单元；空数组不能表示“稍后再绑定”。
+    if (!Array.isArray(layoutNodeIds) || layoutNodeIds.length === 0 || layoutNodeIds.some((id) => !nonEmptyString(id))) {
+      errors.push(contractError(stage, contract, region, `${label} effect-image 必须声明非空 layout_node_ids`, { missing: "layout_node_ids", returnStage: "V1/PROPOSAL" }));
+    } else if (new Set(layoutNodeIds).size !== layoutNodeIds.length) {
+      errors.push(contractError(stage, contract, region, `${label} layout_node_ids 不能重复`, { actual: JSON.stringify(layoutNodeIds), returnStage: "V1/PROPOSAL" }));
+    }
   }
   for (const [names, text] of [
     [["annotation_number", "annotationNumber"], "annotation_number"],
@@ -238,7 +265,7 @@ function validateCoverageRegion(region, contract, stage, toleranceIds, errors) {
 }
 
 /** 验证整屏构图、响应式绑定和实现计划。 */
-function validateCompositionAndResponsive(contract, targetInfo, stage, errors) {
+function validateCompositionAndResponsive(contract, targetInfo, stage, errors, effectImage = false) {
   const composition = field(contract, "composition", "composition_contract", "compositionContract", "full_scene_composition");
   if (!isObject(composition)) {
     errors.push(contractError(stage, contract, null, "缺少完整场景构图合同", { missing: "composition", returnStage: "V1/PROPOSAL" }));
@@ -271,6 +298,7 @@ function validateCompositionAndResponsive(contract, targetInfo, stage, errors) {
     else {
       for (const [names, text] of [[["target_sha256", "targetSha256"], "target_sha256"], [["scene_id", "sceneId"], "scene_id"], [["state_id", "stateId"], "state_id"], [["visual_baseline_version", "visualBaselineVersion"], "visual_baseline_version"], [["reconstruction_contract_version", "reconstructionContractVersion", "contract_version", "contractVersion"], "reconstruction_contract_version"]]) requiredString(binding, names, `layout contract binding ${text}`, errors, { stage, contract, region: binding, returnStage: "V1/PROPOSAL", rootCause: "方案缺失" });
       if (targetInfo && field(binding, "target_sha256", "targetSha256") !== targetInfo.targetSha) errors.push(contractError(stage, contract, null, "layout contract 未绑定当前 target SHA", { expected: targetInfo.targetSha, actual: field(binding, "target_sha256", "targetSha256"), returnStage: "V1/PROPOSAL" }));
+      if (effectImage) validateLayoutBinding(binding, targetInfo, contract, stage, errors, "responsive_contract layout binding", { requireViewport: true, requireBaseline: true, requireLayoutVersion: true, requireLayoutIdentity: true });
     }
     if (targetInfo && validViewport(targetViewport) && (targetViewport.width !== targetInfo.viewport.width || targetViewport.height !== targetInfo.viewport.height)) errors.push(contractError(stage, contract, null, "响应式目标 viewport 与冻结目标不一致", { expected: `${targetInfo.viewport.width}x${targetInfo.viewport.height}`, actual: `${targetViewport.width}x${targetViewport.height}`, returnStage: "V1/PROPOSAL" }));
   }
@@ -312,7 +340,8 @@ function validateEffectImageCombinationFacts(contract, preacceptance, stage, err
     const declaredAssetIds = formalAssets.map((asset) => isObject(asset) ? field(asset, "id", "asset_id", "assetId") : asset).filter(nonEmptyString);
     if (declaredAssetIds.length === 0 || declaredAssetIds.some((assetId) => !currentAssetIds.has(assetId))) errors.push(contractError(stage, contract, preacceptance, "V4 同屏组合 formal_assets 未绑定当前正式资产身份", { missing: "formal_assets.current_asset_ids", returnStage: "V3/V4", rootCause: "执行问题" }));
   }
-  const formalLayout = field(preacceptance, "formal_layout_structure", "formalLayoutStructure", "formal_layout", "formalLayout", "layout_structure", "layoutStructure");
+  const formalLayout = field(preacceptance, "formal_layout_structure", "formalLayoutStructure", "formal_layout", "formalLayout", "layout_structure", "layoutStructure")
+    ?? field(field(preacceptance, "layout_geometry", "layoutGeometry"), "formal_layout_structure", "formalLayoutStructure", "formal_layout", "formalLayout");
   if (!(nonEmptyString(formalLayout) || isObject(formalLayout))) errors.push(contractError(stage, contract, preacceptance, "V4 同屏组合必须使用正式布局结构", { missing: "formal_layout_structure", returnStage: "V3/V4", rootCause: "执行问题" }));
 
   const fidelity = field(preacceptance, "visual_fidelity", "visualFidelity", "fidelity_checks", "fidelityChecks", "visual_checks", "visualChecks") ?? {};
@@ -371,8 +400,18 @@ export function validateSceneCombinationPreacceptance(contract, stage = "V4", op
   if (isSha256(targetSha) && field(preacceptance, "target_sha256", "targetSha256") !== targetSha) errors.push(contractError(stage, contract, preacceptance, "同屏组合预验收 target SHA 与冻结目标不一致", { expected: targetSha, actual: field(preacceptance, "target_sha256", "targetSha256"), returnStage: "V3/V4" }));
   if (isSha256(candidateSha) && field(preacceptance, "candidate_sha256", "candidateSha256") !== candidateSha) errors.push(contractError(stage, contract, preacceptance, "同屏组合预验收 candidate SHA 与当前 V2 候选不一致", { expected: candidateSha, actual: field(preacceptance, "candidate_sha256", "candidateSha256"), returnStage: "V3/V4" }));
   if (nonEmptyString(candidateDiff) && field(preacceptance, "diff_fingerprint", "diffFingerprint", "diff_identity", "diffIdentity") !== candidateDiff) errors.push(contractError(stage, contract, preacceptance, "同屏组合预验收 diff identity 与当前候选不一致", { expected: candidateDiff, actual: field(preacceptance, "diff_fingerprint", "diffFingerprint", "diff_identity", "diffIdentity"), returnStage: "V3/V4" }));
-  const effectImage = options.effectImage === true || contract?.effect_image_reconstruction?.applicability === "effect-image" || (Array.isArray(field(contract, "coverage_regions", "coverageRegions", "regions")) && field(contract, "coverage_regions", "coverageRegions", "regions").some((region) => field(region, "production_method", "productionMethod") === "imagegen" || field(region, "image_generation_required", "imageGenerationRequired") === true));
-  if (effectImage) validateEffectImageCombinationFacts(contract, preacceptance, stage, errors, options.manifest);
+  const effectImage = isEffectImageContract(contract, options.manifest, options);
+  const hasImageGen = Array.isArray(field(contract, "coverage_regions", "coverageRegions", "regions"))
+    && field(contract, "coverage_regions", "coverageRegions", "regions").some((region) => field(region, "production_method", "productionMethod") === "imagegen" || field(region, "image_generation_required", "imageGenerationRequired") === true);
+  if (effectImage || hasImageGen) {
+    validateEffectImageCombinationFacts(contract, preacceptance, stage, errors, options.manifest);
+  }
+  if (effectImage) {
+    const decomposition = field(contract, "layout_decomposition", "layoutDecomposition", "layout_decomposition_contract", "layoutDecompositionContract");
+    const nodes = isObject(decomposition) && Array.isArray(field(decomposition, "layout_nodes", "layoutNodes")) ? field(decomposition, "layout_nodes", "layoutNodes") : [];
+    const nodeById = new Map(nodes.map((node) => [field(node, "layout_node_id", "layoutNodeId"), node]).filter(([id]) => nonEmptyString(id)));
+    validateLayoutGeometryFacts(contract, preacceptance, stage, errors, { nodes, nodeById });
+  }
   return errors;
 }
 
@@ -412,6 +451,7 @@ export function validateSceneReconstructionContract(contract, manifest = null, o
   }
   const version = contractVersion(contract);
   if (!nonEmptyString(version)) errors.push(contractError(stage, contract, null, "scene_reconstruction_contract 缺少版本", { missing: "contract_version", returnStage: "V1/PROPOSAL" }));
+  const effectImage = isEffectImageContract(contract, manifest, options);
   // V1 先冻结冲突记录；V2 产物必须在 V2→V3 回对时完整绑定，不能用独立资源计划代替。
   validateReferenceTechnicalConflicts(contract, stage, errors);
   if (["V2", "V3", "V4", "V5"].includes(String(stage).toUpperCase())) {
@@ -430,7 +470,7 @@ export function validateSceneReconstructionContract(contract, manifest = null, o
       baselineSha: baseline,
     }, { stage: "V2", scene_id: field(target, "scene_id", "sceneId"), state_id: field(target, "state_id", "stateId") }, { requirePassed: true, returnStage: "V1/PROPOSAL", rootCause: "方案缺失" }));
   }
-  const targetInfo = validateTargetConditions(contract, manifest, stage, errors);
+  const targetInfo = validateTargetConditions(contract, manifest, stage, errors, effectImage);
   const toleranceBlock = field(contract, "predeclared_tolerances", "predeclaredTolerances", "tolerance_set", "toleranceSet", "tolerances");
   const toleranceIds = Array.isArray(toleranceBlock) ? new Set(toleranceBlock.map((item) => item?.id ?? item?.tolerance_id ?? item?.toleranceId).filter(nonEmptyString)) : new Set();
   const regions = field(contract, "coverage_regions", "coverageRegions", "regions");
@@ -438,7 +478,7 @@ export function validateSceneReconstructionContract(contract, manifest = null, o
   else {
     const ids = new Set();
     for (const region of regions) {
-      validateCoverageRegion(region, contract, stage, toleranceIds, errors);
+      validateCoverageRegion(region, contract, stage, toleranceIds, errors, effectImage);
       const regionId = field(region, "region_id", "regionId", "id");
       if (nonEmptyString(regionId) && ids.has(regionId)) errors.push(contractError(stage, contract, region, "coverage region_id 重复", { actual: regionId, returnStage: "V1/PROPOSAL" }));
       if (nonEmptyString(regionId)) ids.add(regionId);
@@ -449,12 +489,18 @@ export function validateSceneReconstructionContract(contract, manifest = null, o
       if (nonEmptyString(id) && !ids.has(id)) errors.push(contractError(stage, contract, manifestRegion, "coverage region 缺少对应 scene reconstruction visual facts", { missing: id, returnStage: "V1/PROPOSAL" }));
     }
   }
-  validateCompositionAndResponsive(contract, targetInfo, stage, errors);
+  const layoutInfo = validateLayoutDecomposition(contract, targetInfo, stage, errors, effectImage);
+  validateLayoutRegionBindings(regions, layoutInfo, contract, stage, errors, effectImage);
+  validateCompositionAndResponsive(contract, targetInfo, stage, errors, effectImage);
+  const responsive = field(contract, "responsive_contract", "responsiveContract", "responsive");
+  const responsiveBinding = field(responsive, "layout_contract_binding", "layoutContractBinding", "layout_contract", "layoutContract");
+  validateLayoutBindingConsistency(responsiveBinding, layoutInfo.binding, contract, stage, errors, "responsive_contract layout binding", "layout_decomposition binding", effectImage);
+  validateRootLayoutIdentity(contract, targetInfo, responsiveBinding, layoutInfo.binding, stage, errors, effectImage);
   if (stage === "V3" || stage === "V4" || stage === "V5") {
     const lifecycle = field(contract, "status", "lifecycle", "stage_status", "stageStatus");
     if (lifecycle === "proposal-missing" || lifecycle === "missing") errors.push(contractError(stage, contract, null, "还原方案缺失，不能进入生产", { actual: lifecycle, returnStage: "V1/PROPOSAL" }));
   }
-  if (stage === "V4" || stage === "V5") errors.push(...validateSceneCombinationPreacceptance(contract, "V4", { effectImage: manifest?.effect_image_reconstruction?.applicability === "effect-image" || contract?.effect_image_reconstruction?.applicability === "effect-image", manifest }));
+  if (stage === "V4" || stage === "V5") errors.push(...validateSceneCombinationPreacceptance(contract, "V4", { effectImage, manifest }));
   return errors;
 }
 
@@ -679,6 +725,7 @@ export function validateStructuredFidelityCases(cases, manifest = null, options 
       if (failed.length && ["passed", "PASS"].includes(String(item.conclusion ?? ""))) errors.push(contractError(stage, item, null, `${label}.conclusion=PASS 与逐区域 FAIL/unverified/missing 冲突`, { actual: `${failed.length} 个区域未通过`, returnStage: "VALIDATING" }));
       if (manifestRegionIds.size) for (const id of manifestRegionIds) if (!regionResults.some((result) => field(result, "region_id", "regionId", "id") === id)) errors.push(contractError(stage, item, { id }, `${label} 缺少 coverage region 结果`, { missing: id, returnStage: "VALIDATING" }));
     }
+    if (isEffectImageContract(sceneContract, manifest, options)) validateEffectImageLayoutNodeFidelity(item, sceneContract, stage, errors, toleranceDefinitions, sceneRegions);
     if (!['passed', 'PASS', 'failed', 'FAIL'].includes(String(item.conclusion ?? ""))) errors.push(contractError(stage, item, null, `${label}.conclusion 必须为 passed 或 failed`, { actual: item.conclusion ?? "missing", returnStage: "VALIDATING" }));
   }
   if (targetPairs.size) for (const pair of targetPairs) if (!coveredPairs.has(pair)) errors.push(contractError(stage, null, { scene_id: pair.split("\0")[0], state_id: pair.split("\0")[1] }, "fidelity_cases 缺少冻结 scene/state 组合", { missing: pair.replace("\0", "/"), returnStage: "VALIDATING" }));

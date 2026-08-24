@@ -20,6 +20,17 @@ function nonEmptyString(value) { return typeof value === "string" && value.trim(
 /** 判断值是否为普通 JSON 对象。 */
 function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 
+/** 读取并稳定排序区域布局节点身份；生成器只复制冻结合同，不推导运行时坐标。 */
+function layoutNodeIds(region) { return (Array.isArray(region?.layout_node_ids) ? region.layout_node_ids : []).slice().sort((left, right) => String(left).localeCompare(String(right))); }
+
+/** 收集并稳定排序 placement 与布局节点的绑定，供 proposal、结果和确认快照共同使用。 */
+function placementLayoutNodeIds(region) {
+  const production = resolveProductionContract(region);
+  const inventory = region.component_inventory ?? production.component_inventory;
+  const components = Array.isArray(inventory?.components) ? inventory.components : [];
+  return components.flatMap((component) => (Array.isArray(component?.placements) ? component.placements : []).map((placement) => ({ placement_id: placement.placement_id, layout_node_id: placement.layout_node_id ?? null }))).sort((left, right) => String(left.placement_id).localeCompare(String(right.placement_id)));
+}
+
 /** 计算字节内容的标准 SHA-256 表示。 */
 function sha256Bytes(bytes) { return `sha256:${createHash("sha256").update(bytes).digest("hex")}`; }
 
@@ -128,6 +139,8 @@ function confirmationRegionSnapshot(region) {
     region_id: region.id,
     scene_id: region.scene_id,
     state_id: region.state_id,
+    layout_node_ids: layoutNodeIds(region),
+    placement_layout_node_ids: placementLayoutNodeIds(region),
     region_definition_sha256: computeRegionDefinitionSha256(region),
     production_origin: production.production_origin ?? null,
     production_method: production.production_method ?? "",
@@ -176,6 +189,7 @@ export function technicalRegionSnapshot(region) {
     region_id: region.id,
     scene_id: region.scene_id,
     state_id: region.state_id,
+    layout_node_ids: layoutNodeIds(region),
     layer: region.layer,
     bounds: cloneJson(region.bounds),
     owner_type: region.owner_type,
@@ -225,9 +239,10 @@ function buildProposal(args, manifest, canvas, outputRelative, annotationSha, re
   const targetSha = manifest.reference_target.target_sha256; const proposalId = args.proposalId ?? `annotation-${args.sceneId}-${args.stateId}-${targetSha.slice(-12)}`;
   const createdAt = args.createdAt ?? manifest.reference_target.frozen_at;
   if (!nonEmptyString(createdAt) || Number.isNaN(Date.parse(createdAt))) throw new Error("proposal created_at 必须通过 --created-at 提供可解析时间，或使用可解析冻结时间");
-  const visualRegions = regions.map((region) => { const production = annotationProductionContract(region); return { region_id: region.id, annotation_number: region.annotation_number, mode: region.implementation_plan.mode, summary: region.implementation_plan.summary, production_method: production.production_method, production_origin: production.production_origin, delivery_kind: production.delivery_kind, production_label: production.label, ownership_evidence: region.ownership_evidence, atomic_image_requirements: deriveAtomicImageRequirements(region), region_definition_sha256: computeRegionDefinitionSha256(region) }; });
+  const visualRegions = regions.map((region) => { const production = annotationProductionContract(region); return { region_id: region.id, annotation_number: region.annotation_number, mode: region.implementation_plan.mode, summary: region.implementation_plan.summary, production_method: production.production_method, production_origin: production.production_origin, delivery_kind: production.delivery_kind, production_label: production.label, ownership_evidence: region.ownership_evidence, layout_node_ids: layoutNodeIds(region), placement_layout_node_ids: placementLayoutNodeIds(region), atomic_image_requirements: deriveAtomicImageRequirements(region), region_definition_sha256: computeRegionDefinitionSha256(region) }; });
   const canvasSnapshot = { scene_id: canvas.scene_id, state_id: canvas.state_id, width: canvas.width, height: canvas.height };
   const technicalRegions = regions.map(technicalRegionSnapshot);
+  const technicalLayoutNodeIds = regions.flatMap(layoutNodeIds).sort((left, right) => String(left).localeCompare(String(right)));
   return {
     schema_version: "1.5",
     proposal_kind: "effect-image-decomposition-technical-analysis",
@@ -244,12 +259,14 @@ function buildProposal(args, manifest, canvas, outputRelative, annotationSha, re
     numbered_image_mime: "image/png",
     numbered_image_sha256: annotationSha,
     region_ids: regions.map((region) => region.id),
+    layout_node_ids: technicalLayoutNodeIds,
     // regions/visual_regions 保持原确认链快照字段；完整技术资料使用独立命名空间。
     regions: regions.map(confirmationRegionSnapshot),
     visual_regions: visualRegions,
     technical_analysis: {
       schema_version: "1",
       canvas: canvasSnapshot,
+      layout_node_ids: technicalLayoutNodeIds,
       regions: technicalRegions,
     },
   };
@@ -266,7 +283,7 @@ export async function main(argv = process.argv.slice(2)) {
     if (!dimensions) throw new Error("reference_target.original_file 必须是完整合法 PNG");
     if (dimensions.width !== canvas.width || dimensions.height !== canvas.height) throw new Error("冻结原图 PNG 尺寸必须与选定 scene/state 画布一致");
     const outputPath = projectPath(projectRoot, args.output); await mkdir(dirname(outputPath), { recursive: true }); const pngBytes = renderEffectImageAnnotation(originalBytes, manifest.reference_target.original_file, canvas, regions); await writeFile(outputPath, pngBytes);
-    const outputRelative = relative(projectRoot, outputPath).replace(/\\/g, "/"); const result = { annotation_file: outputRelative, annotation_mime: "image/png", annotation_sha256: sha256Bytes(pngBytes), target_sha256: manifest.reference_target.target_sha256, scene_id: args.sceneId, state_id: args.stateId, regions: regions.map((region) => { const production = annotationProductionContract(region); return { region_id: region.id, annotation_number: region.annotation_number, mode: region.implementation_plan.mode, summary: region.implementation_plan.summary, production_method: production.production_method, production_origin: production.production_origin, delivery_kind: production.delivery_kind, production_label: production.label, ownership_evidence: region.ownership_evidence, region_definition_sha256: computeRegionDefinitionSha256(region) }; }) };
+    const outputRelative = relative(projectRoot, outputPath).replace(/\\/g, "/"); const result = { annotation_file: outputRelative, annotation_mime: "image/png", annotation_sha256: sha256Bytes(pngBytes), target_sha256: manifest.reference_target.target_sha256, scene_id: args.sceneId, state_id: args.stateId, layout_node_ids: regions.flatMap(layoutNodeIds).sort((left, right) => String(left).localeCompare(String(right))), regions: regions.map((region) => { const production = annotationProductionContract(region); return { region_id: region.id, annotation_number: region.annotation_number, mode: region.implementation_plan.mode, summary: region.implementation_plan.summary, production_method: production.production_method, production_origin: production.production_origin, delivery_kind: production.delivery_kind, production_label: production.label, ownership_evidence: region.ownership_evidence, layout_node_ids: layoutNodeIds(region), placement_layout_node_ids: placementLayoutNodeIds(region), region_definition_sha256: computeRegionDefinitionSha256(region) }; }) };
     const proposal = buildProposal(args, manifest, canvas, outputRelative, result.annotation_sha256, regions); const proposalPath = projectPath(projectRoot, args.proposal); await mkdir(dirname(proposalPath), { recursive: true }); const proposalBytes = Buffer.from(`${JSON.stringify(proposal, null, 2)}\n`); await writeFile(proposalPath, proposalBytes); result.proposal_file = relative(projectRoot, proposalPath).replace(/\\/g, "/"); result.proposal_sha256 = sha256Bytes(proposalBytes); result.proposal_id = proposal.proposal_id;
     console.log(JSON.stringify(result)); return 0;
   } catch (error) { console.error(`效果图标注生成失败：${error.message}`); return 1; }

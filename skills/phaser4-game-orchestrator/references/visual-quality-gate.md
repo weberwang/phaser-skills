@@ -17,6 +17,8 @@ effect-image ImageGen 的 canonical 提示词与生成记录合同统一引用[E
 - V4 生产正式资源并完成 `validationMode=MACHINE` 的确定性资源与跨资源 F2；不重复要求真人审阅，且不能修改或替代 V2 唯一真人审批。
 - V5 结构化集成、动态玩法视觉验证、响应式证据和低保真清理；视觉 `USER_DECISION` 不授权 Scene 或玩法代码操作。
 
+效果图必须采用同步拆解工作流：先整屏构图，再同步冻结布局节点与元素/状态，再把 coverage region、布局合同和 placement 三方绑定，最后按布局合同装配，V5 进行布局+视觉双验收。每个 region 的 `layout_node_ids` 非空唯一，`layout_decomposition.layout_nodes` 与 coverage 双向关联；placement 只能引用本区域节点，运行时布局实现必须声明消费节点，禁止孤立、跨区域和重复消费。`target_bounds` 是参考事实，布局合同是运行计算，runtime measurement 是候选证据。proposal/PNG/confirmation 的 `region_definition_sha256` 必须覆盖布局字段并绑定 target SHA、scene/state、layout contract version；不新增第二套清单或状态机，visual-assets.json 和布局合同继续各自作为领域权威。V3 `executionUnits` 推荐布局基础串行→视觉资源/程序元素并行→场景装配串行→联合验收串行；V4 组合预验收同时检查正式资源和正式布局，V5 必须 coverage=1、零孤立、逐节点几何差异及整屏 fidelity。
+
 ImageGen 生产合同贯穿 V3-V5：`independent-production` 与 `generate-now` 不推断图片生成；每个区域必须完成 `state_analysis`，并让 `expected_assets` 逐唯一 `component_id × required state_id` 对应独立位图。重复视觉实例只登记一个 component，通过 placements 表达；② 六按钮逐组件，⑧ 三相同表面可一组件三 placements，⑨ 按实际复用关系登记。ImageGen 无条件要求 `delivery_mode=individual`、`atlas_allowed=false`，横向组图、图集和交互热区不能冒充原子视觉资产；固定视觉不允许程序绘制或 SVG 作为游戏图片。V4 必须审计 `production_contract_audit` 及逐部件 `component_usages`，F2 只消费 `validationMode=MACHINE` 的确定性机器事实，V5 再绑定 F3 runtime replay、非空 freshness-bound fidelity cases、实际消费及无未批准替换。V2 唯一人工确认通过后不得生成视觉复核工件。生产方法变化只接受绑定区域与用户原文的 `ACCEPTED` Change Request。
 
 原子资源在结构、交互、布局和视口行为不变，且现有契约、冻结基线、预算和证据均适用时可从 V3 开始，绑定适用的 `AUTO` 或 `USER_DECISION` 记录。任一引用失效即升级路径。

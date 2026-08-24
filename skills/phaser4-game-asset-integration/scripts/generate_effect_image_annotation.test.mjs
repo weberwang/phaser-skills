@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { deflateSync } from "node:zlib";
 import test from "node:test";
 import { main as generateAnnotation } from "./generate_effect_image_annotation.mjs";
-import { renderEffectImageAnnotation } from "./effect_image_annotation_core.mjs";
+import { computeRegionDefinitionSha256, renderEffectImageAnnotation } from "./effect_image_annotation_core.mjs";
 import { asciiGlyph, decodePngRgba, effectImageFontGlyph, encodePngRgba } from "./effect_image_raster.mjs";
 import { EFFECT_IMAGE_FONT_PROVENANCE } from "./effect_image_font.mjs";
 import { validateAnnotatedPng } from "./validate_visual_manifest.mjs";
@@ -27,7 +27,9 @@ function addAtomicVisualContract(region, assetId) {
   const componentId = `${region.id}-component`;
   const atomicKey = `${region.id}-visual`;
   region.state_analysis = { status: "complete", phase: "before-component-splitting", evidence: `evidence/${region.id}-state.md`, evidence_sha256: `sha256:${"a".repeat(64)}`, reference_target_sha256: `sha256:${"a".repeat(64)}`, analysis_id: `${region.id}-analysis`, completed_at: "2026-08-15T00:00:00Z", states };
-  region.component_inventory = { granularity: "single-component", component_count: 1, visible_instance_count: 1, delivery_mode: "individual", atlas_allowed: false, created_at: "2026-08-15T00:01:00Z", components: [{ component_id: componentId, atomic_visual_key: atomicKey, role: "visual-component", reusable: true, state_coverage: states, placements: [{ placement_id: `${region.id}-placement`, bounds: { ...region.bounds }, interaction_required: false }] }] };
+  const layoutNodeId = region.layout_node_ids?.[0] ?? `${region.id}-layout-node`;
+  region.layout_node_ids ??= [layoutNodeId];
+  region.component_inventory = { granularity: "single-component", component_count: 1, visible_instance_count: 1, delivery_mode: "individual", atlas_allowed: false, created_at: "2026-08-15T00:01:00Z", components: [{ component_id: componentId, atomic_visual_key: atomicKey, role: "visual-component", reusable: true, state_coverage: states, placements: [{ placement_id: `${region.id}-placement`, layout_node_id: layoutNodeId, bounds: { ...region.bounds }, interaction_required: false }] }] };
   region.expected_assets = [{ asset_id: assetId, asset_scope: "atomic-component", atomic_visual_key: atomicKey, component_id: componentId, state_id: "default", source_file: `art/${assetId}.png`, runtime_file: `public/${assetId}.png` }];
   region.interaction_hotspots = [];
   region.atomic_image_requirements = deriveAtomicImageRequirements(region);
@@ -46,9 +48,9 @@ function annotationManifest(targetSha) {
     coverage_audit: {
       canvases: [{ scene_id: "main", state_id: "default", width: 32, height: 24 }],
       regions: [
-        { id: "runtime-background", scene_id: "main", state_id: "default", layer: "background", bounds: { x: 0, y: 0, width: 32, height: 24 }, owner_type: "runtime-rendered", owner_id: "background", ownership_evidence: "evidence/background-review.md", annotation_number: 1, implementation_plan: { mode: "runtime-program", summary: "运行时绘制背景" } },
-        { id: "hero", scene_id: "main", state_id: "default", layer: "actors", bounds: { x: 4, y: 4, width: 8, height: 8 }, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", expected_assets: ["hero"], asset_id: "hero", owner_id: "art", ownership_evidence: "evidence/hero-review.md", annotation_number: 2, implementation_plan: { mode: "generate-now", summary: "本次生成主角" } },
-        { id: "badge", scene_id: "main", state_id: "default", layer: "hud", bounds: { x: 20, y: 2, width: 8, height: 6 }, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "reuse", delivery_kind: "existing-asset", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", expected_assets: ["badge"], asset_id: "badge", owner_id: "art", ownership_evidence: "evidence/badge-review.md", annotation_number: 3, reuse_snapshot: { schema: "asset-reuse-snapshot/1.0", source_asset_id: "badge", source_manifest_file: "docs/reuse-snapshot.json", source_manifest_sha256: targetSha, source_file: "badge.png", source_sha256: targetSha, compatibility_evidence_file: "evidence/badge-consistency.json", compatibility_evidence_sha256: targetSha, accepted_at: "2026-08-15T00:00:00Z", source_status: "accepted" }, implementation_plan: { mode: "reuse-existing", summary: "复用既有资源" } },
+        { id: "runtime-background", scene_id: "main", state_id: "default", layout_node_ids: ["layout-runtime-background"], layer: "background", bounds: { x: 0, y: 0, width: 32, height: 24 }, owner_type: "runtime-rendered", owner_id: "background", ownership_evidence: "evidence/background-review.md", annotation_number: 1, implementation_plan: { mode: "runtime-program", summary: "运行时绘制背景" }, runtime_implementation: { kind: "runtime-program", integration_files: ["src/runtime-background.mjs"], layout_node_ids: ["layout-runtime-background"] } },
+        { id: "hero", scene_id: "main", state_id: "default", layout_node_ids: ["layout-hero"], layer: "actors", bounds: { x: 4, y: 4, width: 8, height: 8 }, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", expected_assets: ["hero"], asset_id: "hero", owner_id: "art", ownership_evidence: "evidence/hero-review.md", annotation_number: 2, implementation_plan: { mode: "generate-now", summary: "本次生成主角" } },
+        { id: "badge", scene_id: "main", state_id: "default", layout_node_ids: ["layout-badge"], layer: "hud", bounds: { x: 20, y: 2, width: 8, height: 6 }, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "reuse", delivery_kind: "existing-asset", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", expected_assets: ["badge"], asset_id: "badge", owner_id: "art", ownership_evidence: "evidence/badge-review.md", annotation_number: 3, reuse_snapshot: { schema: "asset-reuse-snapshot/1.0", source_asset_id: "badge", source_manifest_file: "docs/reuse-snapshot.json", source_manifest_sha256: targetSha, source_file: "badge.png", source_sha256: targetSha, compatibility_evidence_file: "evidence/badge-consistency.json", compatibility_evidence_sha256: targetSha, accepted_at: "2026-08-15T00:00:00Z", source_status: "accepted" }, implementation_plan: { mode: "reuse-existing", summary: "复用既有资源" } },
       ],
     },
   };
@@ -79,8 +81,8 @@ test("生成独立效果图标注 PNG、右栏说明和绑定提案", async () =
   const heroSummary = summaryRows.find((row) => row.annotation_number === 2); const heroPixels = []; for (let y = heroSummary.top; y <= heroSummary.bottom; y += 1) for (let x = 40; x < decoded.width; x += 1) { const index = (y * decoded.width + x) * 4; if (decoded.pixels[index] < 230 || decoded.pixels[index + 1] < 230 || decoded.pixels[index + 2] < 230) heroPixels.push(index); } assert(heroPixels.length > 0, "中文摘要必须真实落入 PNG 像素");
   assert.deepEqual(decoded.metadata.plan_labels, { "generate-now": "本次生成", "reuse-existing": "复用既有资源", "runtime-program": "程序实现" }); assert.equal(decoded.metadata.regions.length, 3);
   const proposalBytes = await readFile(join(root, "evidence/annotation-proposal.json")); const proposal = JSON.parse(proposalBytes.toString("utf8"));
-  assert.equal(proposal.numbered_image_mime, "image/png"); assert.equal(proposal.numbered_image_sha256, sha256(pngBytes)); assert.deepEqual(proposal.region_ids, ["runtime-background", "hero", "badge"]); assert.equal(proposal.target_sha256, targetSha); assert.equal(proposal.proposal_kind, "effect-image-decomposition-technical-analysis"); assert.deepEqual(proposal.canvas, { scene_id: "main", state_id: "default", width: 32, height: 24 }); assert.equal(proposal.visual_regions.find((region) => region.region_id === "hero").summary, "本次生成主角");
-  const technicalHero = proposal.technical_analysis.regions.find((region) => region.region_id === "hero"); assert.deepEqual(technicalHero.bounds, manifest.coverage_audit.regions[1].bounds); assert.deepEqual(technicalHero.components[0].placements[0].bounds, manifest.coverage_audit.regions[1].component_inventory.components[0].placements[0].bounds); assert.equal(technicalHero.state_analysis.states.length, 9); assert.equal(technicalHero.production_contract.production_method, "authored-raster"); assert.equal(technicalHero.resource_mapping.asset_ids[0], "hero"); assert.equal(technicalHero.atomic_image_requirements[0].asset_id, "hero");
+  assert.equal(proposal.numbered_image_mime, "image/png"); assert.equal(proposal.numbered_image_sha256, sha256(pngBytes)); assert.deepEqual(proposal.region_ids, ["runtime-background", "hero", "badge"]); assert.deepEqual(proposal.layout_node_ids, ["layout-badge", "layout-hero", "layout-runtime-background"]); assert.equal(proposal.target_sha256, targetSha); assert.equal(proposal.proposal_kind, "effect-image-decomposition-technical-analysis"); assert.deepEqual(proposal.canvas, { scene_id: "main", state_id: "default", width: 32, height: 24 }); assert.equal(proposal.visual_regions.find((region) => region.region_id === "hero").summary, "本次生成主角"); assert.deepEqual(decoded.metadata.regions.find((region) => region.region_id === "hero").layout_node_ids, ["layout-hero"]); assert.deepEqual(decoded.metadata.regions.find((region) => region.region_id === "hero").placement_layout_node_ids, [{ placement_id: "hero-placement", layout_node_id: "layout-hero" }]);
+  const technicalHero = proposal.technical_analysis.regions.find((region) => region.region_id === "hero"); assert.deepEqual(technicalHero.layout_node_ids, ["layout-hero"]); assert.equal(technicalHero.placements[0].layout_node_id, "layout-hero"); assert.deepEqual(technicalHero.bounds, manifest.coverage_audit.regions[1].bounds); assert.deepEqual(technicalHero.components[0].placements[0].bounds, manifest.coverage_audit.regions[1].component_inventory.components[0].placements[0].bounds); assert.equal(technicalHero.state_analysis.states.length, 9); assert.equal(technicalHero.production_contract.production_method, "authored-raster"); assert.equal(technicalHero.resource_mapping.asset_ids[0], "hero"); assert.equal(technicalHero.atomic_image_requirements[0].asset_id, "hero");
   const validErrors = []; validateAnnotatedPng(pngBytes, original, manifest.coverage_audit.regions, proposal, "annotation", validErrors); assert.deepEqual(validErrors, []);
   const tampered = structuredClone(manifest); tampered.coverage_audit.regions[1].bounds.width += 1; const errors = [];
   validateAnnotatedPng(pngBytes, original, tampered.coverage_audit.regions, proposal, "annotation", errors);
@@ -192,4 +194,17 @@ test("固定 OFL 中文字库为顶部按钮四字提供不同真实像素且覆
 test("右栏遇到未知生僻字在生成阶段明确失败，不绘制缺字框继续通过", () => {
   const original = minimalPng(32, 24); const manifest = annotationManifest(sha256(original)); const region = structuredClone(manifest.coverage_audit.regions[1]); region.implementation_plan.summary = "顶部𠀀";
   assert.throws(() => renderEffectImageAnnotation(original, "reference.png", { width: 32, height: 24 }, [region]), /未收录字符/);
+});
+
+test("布局节点、placement 布局身份和 runtime 布局消费均参与区域定义 SHA", () => {
+  const manifest = annotationManifest(sha256(minimalPng(32, 24)));
+  const region = manifest.coverage_audit.regions[1];
+  const original = computeRegionDefinitionSha256(region);
+  region.layout_node_ids = ["layout-hero-v2"];
+  assert.notEqual(computeRegionDefinitionSha256(region), original, "区域布局节点变化必须使确认 SHA 失效");
+  region.component_inventory.components[0].placements[0].layout_node_id = "layout-hero-v3";
+  const placementChanged = computeRegionDefinitionSha256(region);
+  assert.notEqual(placementChanged, original, "placement 布局节点变化必须使确认 SHA 失效");
+  region.runtime_implementation = { kind: "runtime-program", integration_files: ["src/hero.mjs"], layout_node_ids: ["layout-hero-v3"] };
+  assert.notEqual(computeRegionDefinitionSha256(region), placementChanged, "runtime 布局消费变化必须使确认 SHA 失效");
 });

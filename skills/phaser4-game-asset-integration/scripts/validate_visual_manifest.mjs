@@ -20,6 +20,7 @@ import { validateSceneReconstructionGate, validateSceneReconstructionContract, v
 import { validateImageGenerationSizeManifest } from "../../phaser4-game-workflow-control/scripts/visual-generation-size-contract.mjs";
 import { isWorkflowDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
 import { VISUAL_STAGE_IDS, VISUAL_STAGE_STATES } from "../../phaser4-game-workflow-control/scripts/visual-stage-prerequisites.mjs";
+import { validateEffectImageLayoutBindings, validatePngLayoutMetadata, validateTechnicalLayoutNodeIds, validateTechnicalRegionLayout, validateV5LayoutMeasurements } from "./validate_visual_layout_mapping.mjs";
 export { computeRegionDefinitionSha256 } from "./effect_image_annotation_core.mjs";
 export { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateEvidenceIdentity, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
 export { validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "../../phaser4-game-workflow-control/scripts/scene-reconstruction-contract.mjs";
@@ -398,7 +399,7 @@ export function validateManifest(data, options = {}) {
   if (!Array.isArray(data.assets)) { errors.push("assets 必须是数组"); return errors; }
   const assetIds = new Set(data.assets.filter(isObject).map((item) => item.id).filter(nonEmptyString));
   const assetById = new Map(data.assets.filter(isObject).filter((item) => nonEmptyString(item.id)).map((item) => [item.id, item]));
-  const fixedMappings = reconstruction?.applicability === "effect-image" ? validateCoverageAudit(data.coverage_audit, target, assetIds, errors, assetById, baseline) : new Map();
+  const fixedMappings = reconstruction?.applicability === "effect-image" ? validateCoverageAudit(data.coverage_audit, target, assetIds, errors, assetById, baseline) : new Map(); const layoutBindings = reconstruction?.applicability === "effect-image" ? validateEffectImageLayoutBindings(data, errors) : null;
   const coverageRegions = Array.isArray(data.coverage_audit?.regions) ? data.coverage_audit.regions : [];
   const fixedRegionAssetIds = (region) => (Array.isArray(region?.asset_ids) ? region.asset_ids : [region?.asset_id]).filter(nonEmptyString);
   const bitmapAssetIds = new Set(coverageRegions.filter((region) => isObject(region) && region.owner_type === "fixed-production-visual" && region.production_origin === "bitmap-decomposition").flatMap(fixedRegionAssetIds));
@@ -423,7 +424,7 @@ export function validateManifest(data, options = {}) {
     errors.push(...validateImageGenerationSizeManifest(data, { stage }));
     const requireAudit = stage === "V4" || stage === "V5" || reconstruction.lifecycle === "v5-complete";
     const requireV5 = stage === "V5" || reconstruction.lifecycle === "v5-complete";
-    if (requireV5) {
+    if (requireV5) { validateV5LayoutMeasurements(data, layoutBindings, errors);
       // V5 是不可绕过的总门：即使对象缺失也必须产出缺失错误，不能靠“没有对象”跳过审计。
       errors.push(...validateProductionAuditShape(fixedVisualAuditManifest(data), { ...options, projectRoot: options.projectRoot, checkFiles: options.checkFiles }));
       // 同步 API 只做 V5 结构门；逐编号 accepted/manual 文件证据在后续
@@ -643,7 +644,7 @@ function validateTechnicalProposal(proposal, regions, canvas, label, errors) {
   if (!isObject(technical.canvas) || !Number.isInteger(technical.canvas.width) || !Number.isInteger(technical.canvas.height)) errors.push(`${label}.proposal 技术文件必须保存完整画布尺寸`);
   if (!isObject(proposal.canvas) || !Number.isInteger(proposal.canvas.width) || !Number.isInteger(proposal.canvas.height)) errors.push(`${label}.proposal 必须保存完整画布尺寸`);
   const technicalRegions = Array.isArray(technical.regions) ? technical.regions : [];
-  const actualById = new Map(technicalRegions.map((item) => [item?.region_id, item]));
+  const actualById = new Map(technicalRegions.map((item) => [item?.region_id, item])); validateTechnicalLayoutNodeIds(technical, regions, label, errors);
   if (technicalRegions.length !== regions.length) errors.push(`${label}.proposal 技术文件区域数量与当前 scene/state 不一致`);
   for (const region of regions) {
     const item = actualById.get(region.id);
@@ -663,7 +664,7 @@ function validateTechnicalProposal(proposal, regions, canvas, label, errors) {
     if (expectedInventory !== undefined && canonicalAnnotationJson(item.component_inventory) !== canonicalAnnotationJson(expectedInventory)) errors.push(`${label}.proposal 技术文件 ${region.id} component_inventory 不一致`);
     const expectedComponents = Array.isArray(expectedInventory?.components) ? expectedInventory.components : [];
     if (canonicalAnnotationJson(item.components) !== canonicalAnnotationJson(expectedComponents)) errors.push(`${label}.proposal 技术文件 ${region.id} components 不一致`);
-    const expectedPlacements = expectedTechnicalPlacements(region);
+    const expectedPlacements = expectedTechnicalPlacements(region); validateTechnicalRegionLayout(region, item, expectedPlacements, label, errors);
     if (!Array.isArray(item.placements) || canonicalAnnotationJson(item.placements) !== canonicalAnnotationJson(expectedPlacements)) errors.push(`${label}.proposal 技术文件 ${region.id} placement 坐标不一致`);
     const expectedStateAnalysis = region.state_analysis ?? region.stateAnalysis;
     if (expectedStateAnalysis !== undefined && canonicalAnnotationJson(item.state_analysis) !== canonicalAnnotationJson(expectedStateAnalysis)) errors.push(`${label}.proposal 技术文件 ${region.id} state_analysis 不一致`);
@@ -692,7 +693,7 @@ export function validateAnnotatedPng(bytes, targetBytes, regions, proposal, labe
   for (const region of expected) {
     const item = actualById.get(region.id); const plan = region.implementation_plan ?? {}; const production = annotationProductionContract(region); const definitionSha = computeRegionDefinitionSha256(region); const requirements = deriveAtomicImageRequirements(region); const requirementSha = `sha256:${createHash("sha256").update(canonicalAnnotationJson(requirements)).digest("hex")}`;
     if (!item) { errors.push(`${label} 缺少区域标注：${region.id}`); continue; }
-    const expectedPlacementIds = normalizeAtomicComponents(region).flatMap((component) => component.placements.map((placement) => placement.placement_id)).sort();
+    const expectedPlacementIds = normalizeAtomicComponents(region).flatMap((component) => component.placements.map((placement) => placement.placement_id)).sort(); validatePngLayoutMetadata(region, item, expectedTechnicalPlacements(region), label, errors);
     if (item.scene_id !== region.scene_id || item.state_id !== region.state_id || item.annotation_number !== region.annotation_number || item.plan_mode !== plan.mode) errors.push(`${label}.${region.id} scene/state/编号/实现计划不一致`);
     // PNG 内嵌摘要是右栏中文说明的证据，必须与冻结区域合同逐字绑定。
     if (item.summary !== plan.summary) errors.push(`${label}.${region.id} PNG 编号对应的中文摘要与区域合同不一致`);
@@ -1028,5 +1029,4 @@ export async function main(argv = process.argv.slice(2)) {
     console.log("视觉资源清单验证通过。"); return 0;
   } catch (error) { console.error(`视觉资源清单无效：${error.message}`); return 1; }
 }
-
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) process.exitCode = await main();

@@ -26,7 +26,7 @@ function visualComponentContract(componentId, assetId, sourceFile = assetId === 
     { state_id: "default", requirement: "required", reason: "普通可见状态" },
     ...["selected", "active", "disabled", "pressed", "hover", "victory", "defeat", "paused"].map((state_id) => ({ state_id, requirement: "not-applicable", reason: "当前夹具区域没有该状态" })),
   ];
-  const component = { component_id: componentId, atomic_visual_key: `${componentId}-atomic`, role: "visual-component", reusable: true, state_coverage: states, placements: [{ placement_id: `${componentId}-placement-1`, bounds: regionBounds, interaction_required: false }] };
+  const component = { component_id: componentId, atomic_visual_key: `${componentId}-atomic`, role: "visual-component", reusable: true, state_coverage: states, placements: [{ placement_id: `${componentId}-placement-1`, layout_node_id: `${componentId}-layout-node`, bounds: regionBounds, interaction_required: false }] };
   const contract = {
     state_analysis: {
       status: "complete", phase: "before-component-splitting", evidence: "evidence/coverage/state-analysis.md", evidence_sha256: EMPTY_DOCUMENT_FINGERPRINT, reference_target_sha256: referenceTargetSha, analysis_id: "analysis-hero-1", completed_at: "2026-08-15T00:00:00Z",
@@ -91,7 +91,7 @@ function validManifest() {
       bindings: { gdd: "docs/GDD.md#v1", tdd: "docs/TDD.md#v1", gameplay_visual_contract: "visual-contract:v1", gameplay_function_contract: "function-contract:v1", layout_contract: "layout:v1", module_scene_ownership: "ownership:v1", budget_baseline: "budget:v1" },
       checks: ["scope", "state-machine", "input", "collision", "module-scene-ownership", "coordinate-space", "layout", "budget"].map((domain) => ({ domain, status: "passed", evidence: `evidence/reconcile/${domain}.md` })),
     },
-  coverage_audit: { version: "1", reference_target_sha256: targetSha, canvases: [{ scene_id: "main-gameplay", state_id: "default", width: 390, height: 844 }], summaries: [{ scene_id: "main-gameplay", state_id: "default", coverage_ratio: 1, uncovered: [], status: "passed", evidence: "evidence/coverage/summary.md" }], regions: [{ id: "region-background", scene_id: "main-gameplay", state_id: "default", layer: "background", bounds: { x: 0, y: 0, width: 390, height: 844 }, owner_type: "runtime-rendered", owner_id: "scene-background", production_method: "runtime-program", delivery_kind: "runtime-program", confirmation: { mode: "AUTO", reasons: [], evidence: "evidence/coverage/region-background.md" } }, { id: "region-hero", scene_id: "main-gameplay", state_id: "default", layer: "actors", bounds: { x: 10, y: 20, width: 64, height: 96 }, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", ...visualComponentContract("hero-component", "hero-idle", "art/hero.png", "public/assets/hero.png", targetSha), owner_id: "asset-pipeline", asset_id: "hero-idle", confirmation: { mode: "AUTO", reasons: [], evidence: "evidence/coverage/region-hero.md" } }, { id: "region-score", scene_id: "main-gameplay", state_id: "default", layer: "hud", bounds: { x: 300, y: 10, width: 70, height: 30 }, owner_type: "runtime-data", owner_id: "score-state", production_method: "runtime-program", delivery_kind: "runtime-program", confirmation: { mode: "AUTO", reasons: [], evidence: "evidence/coverage/region-score.md" } }] },
+  coverage_audit: { version: "1", reference_target_sha256: targetSha, canvases: [{ scene_id: "main-gameplay", state_id: "default", width: 390, height: 844 }], summaries: [{ scene_id: "main-gameplay", state_id: "default", coverage_ratio: 1, uncovered: [], status: "passed", evidence: "evidence/coverage/summary.md" }], regions: [{ id: "region-background", scene_id: "main-gameplay", state_id: "default", layout_node_ids: ["layout-background"], layer: "background", bounds: { x: 0, y: 0, width: 390, height: 844 }, owner_type: "runtime-rendered", owner_id: "scene-background", production_method: "runtime-program", delivery_kind: "runtime-program", confirmation: { mode: "AUTO", reasons: [], evidence: "evidence/coverage/region-background.md" } }, { id: "region-hero", scene_id: "main-gameplay", state_id: "default", layout_node_ids: ["hero-component-layout-node"], layer: "actors", bounds: { x: 10, y: 20, width: 64, height: 96 }, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", ...visualComponentContract("hero-component", "hero-idle", "art/hero.png", "public/assets/hero.png", targetSha), owner_id: "asset-pipeline", asset_id: "hero-idle", confirmation: { mode: "AUTO", reasons: [], evidence: "evidence/coverage/region-hero.md" } }, { id: "region-score", scene_id: "main-gameplay", state_id: "default", layout_node_ids: ["layout-score"], layer: "hud", bounds: { x: 300, y: 10, width: 70, height: 30 }, owner_type: "runtime-data", owner_id: "score-state", production_method: "runtime-program", delivery_kind: "runtime-program", confirmation: { mode: "AUTO", reasons: [], evidence: "evidence/coverage/region-score.md" } }] },
     fidelity_cases: [{ id: "main-default", target_sha256: targetSha, candidate_sha256: candidateSha, scene_id: "main-gameplay", state_id: "default", viewport: { width: 390, height: 844 }, dpr: 1.5, language: "zh-CN", random_seed: 42, input_trace: "traces/main-default.json", animation_sample: "stable-frame:120", layout_contract_version: "1.1.0", visual_baseline_version: "1.0.0", reference_evidence: ["evidence/visual/reference.png"], candidate_evidence: ["evidence/visual/candidate.png"], tolerance: { unit: "logical-px", value: 2 }, exception_ids: [], conclusion: "passed" }],
     budgets: { max_texture_size: 4096, texture_memory_mb: 64, max_atlases: 8, max_frames: 512, animation_sample_fps: 24, max_overdraw: 3, max_draw_calls: 100 },
     assets: [{ id: "hero-idle", texture_key: "hero-idle", ownership_type: "fixed-production-visual", coverage_region_ids: ["region-hero"], scene_id: "main-gameplay", route: "frame-animation", status: "accepted", production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", ...visualComponentContract("hero-component", "hero-idle", "art/hero.png", "public/assets/hero.png", targetSha), visual_baseline_id: "fox-world", visual_baseline_version: "1.0.0", style_fingerprint: EMPTY_DOCUMENT_FINGERPRINT, source_file: "art/hero.png", license_record: "docs/license.md", runtime_outputs: ["public/assets/hero.png"], sha256: heroPngSha, phaser_evidence: "evidence/phaser.png", gameplay_visual_evidence: "evidence/gameplay.mp4", consistency_evidence: ["evidence/visual/hero-consistency.png"] }],
@@ -104,7 +104,7 @@ function validManifest() {
   manifest.production_contract_audit = { status: "passed", candidate_version: manifest.candidateVersion, target_sha256: targetSha, audited_at: "2026-08-15T00:30:00Z", units: [{ annotation_number: 2, region_id: "region-hero", observed_method: "authored-raster", observed_delivery_kind: "raster-image", status: "passed", expected_assets: [{ ...heroExpected }], atomic_image_requirements: heroRegion.atomic_image_requirements, actual_assets: [{ asset_id: "hero-idle", file: "public/assets/hero.png", component_id: "hero-component", state_id: "default", asset_scope: "atomic-component", atomic_visual_key: heroExpected.atomic_visual_key, mime_type: "image/png", width: 64, height: 96, alpha: true, sha256: heroPngSha }], runtime_consumption: { status: "passed", evidence: "evidence/runtime/hero.json", ...evidenceIdentity, component_usages: componentUsage } }] };
   // V2 人工确认后，F2 只记录可重算的机器验证事实，不再嵌套任何 reviewer 或二次复核工件。
   manifest.v5_production_gate = { status: "passed", v3_status: "passed", implementation_package_status: "passed", v4_status: "passed", f2_status: "passed", f2_machine_validation: { status: "passed", validationMode: "MACHINE", evidence: "evidence/f2/machine.json", baselineHash: EMPTY_DOCUMENT_FINGERPRINT, diffFingerprint: "diff-1" }, f3_status: "passed", runtime_replay: { status: "passed", evidence: "evidence/f3/replay.json", ...evidenceIdentity }, fidelity_cases: [{ candidate_sha256: candidateSha, created_at: "2026-08-15T00:31:00Z", freshness_bound: true, evidence: "evidence/fidelity/main.json", ...evidenceIdentity }], candidate_sha256: candidateSha, target_sha256: targetSha, runtime_consumption: { status: "passed", evidence: "evidence/runtime/hero.json", ...evidenceIdentity, component_usages: componentUsage }, unapproved_substitution: false };
-  manifest.coverage_audit.regions.forEach((region, index) => { region.annotation_number = index + 1; region.ownership_evidence = `evidence/coverage/${region.id}.md`; region.implementation_plan = region.owner_type === "fixed-production-visual" ? { mode: "generate-now", summary: `生成区域 ${region.id}` } : { mode: "runtime-program", summary: `程序实现区域 ${region.id}` }; if (region.owner_type !== "fixed-production-visual") region.runtime_implementation = { kind: "runtime-program", integration_files: [`src/${region.id}.mjs`] }; });
+  manifest.coverage_audit.regions.forEach((region, index) => { region.annotation_number = index + 1; region.ownership_evidence = `evidence/coverage/${region.id}.md`; region.implementation_plan = region.owner_type === "fixed-production-visual" ? { mode: "generate-now", summary: `生成区域 ${region.id}` } : { mode: "runtime-program", summary: `程序实现区域 ${region.id}` }; if (region.owner_type !== "fixed-production-visual") region.runtime_implementation = { kind: "runtime-program", integration_files: [`src/${region.id}.mjs`], layout_node_ids: region.layout_node_ids }; });
   addManualConfirmationRecords(manifest);
   manifest.coverage_audit.regions[1].confirmation.region_definition_sha256 = computeRegionDefinitionSha256(manifest.coverage_audit.regions[1]);
   attachSceneReconstructionContract(manifest);
@@ -115,6 +115,9 @@ function validManifest() {
 function attachSceneReconstructionContract(manifest) {
   const targetSha = manifest.reference_target.target_sha256;
   const candidateSha = manifest.candidate_identity.sha256;
+  // 测试夹具也必须绑定布局合同身份，避免新版 V5 场景门把布局证据误当作可选字段。
+  const layoutContractSha = `sha256:${"3".repeat(64)}`;
+  const layoutDecompositionVersion = "1.0.0";
   const regionFacts = manifest.coverage_audit.regions.map((region) => {
     const runtimeOwner = region.owner_type === "fixed-production-visual" ? region.owner_type : region.owner_type;
     return {
@@ -122,6 +125,7 @@ function attachSceneReconstructionContract(manifest) {
       region_id: region.id,
       scene_id: region.scene_id,
       state_id: region.state_id,
+      layout_node_ids: [...(region.layout_node_ids ?? [])],
       target_bounds: { ...region.bounds },
       coordinate_space: "viewport",
       anchor_reference: "main-gameplay.viewport",
@@ -130,6 +134,7 @@ function attachSceneReconstructionContract(manifest) {
       target_visibility: "visible",
       size_strategy: { width: "target-bound", height: "target-bound", aspect: "preserve" },
       spacing: { surrounding: "declared-by-composition", whitespace: "declared" },
+      tolerance_reference: "layout-tolerance",
       typography_facts: { family: "project-font", ownership: "scene-contract" },
       color_facts: { family: "visual-baseline-bound", contrast: "declared" },
       material_texture_facts: { family: "visual-baseline-bound", surface: "declared" },
@@ -169,6 +174,16 @@ function attachSceneReconstructionContract(manifest) {
       } : {}),
     };
   });
+  const layoutNodes = manifest.coverage_audit.regions.map((region, index) => ({
+    layout_node_id: region.layout_node_ids[0], region_id: region.id, scene_id: region.scene_id, state_id: region.state_id, coordinate_space: "viewport", reference_id: "viewport",
+    self_anchor: { horizontal: "center", vertical: "center" }, reference_anchor: { horizontal: "center", vertical: "center" }, offset: { x: 0, y: 0 },
+    target_bounds: { ...region.bounds }, size_policy: { mode: "target-bound" }, z_order: index, clip_policy: "none", responsive_rule: "preserve-relative-anchors", planned_test_id: `layout-${region.id}`,
+  }));
+  const layoutGeometry = {
+    formal_layout_structure: "MainGameplayScene/ContainerGraph",
+    result: "passed",
+    node_measurements: layoutNodes.map((node) => ({ layout_node_id: node.layout_node_id, target_bounds: { ...node.target_bounds }, actual_bounds: { ...node.target_bounds }, delta: { x: 0, y: 0, width: 0, height: 0 }, tolerance_reference: "layout-tolerance", result: "passed", evidence: [`evidence/fidelity/${node.layout_node_id}.json`] })),
+  };
   manifest.scene_reconstruction_contract = {
     contract_version: "1.0",
     reference_technical_conflicts: [],
@@ -207,8 +222,11 @@ function attachSceneReconstructionContract(manifest) {
       animation_sample: "stable-frame:120",
       visual_baseline_version: manifest.visual_baseline.version,
       layout_contract_version: "1.1.0",
+      layout_contract_sha256: layoutContractSha,
+      layout_decomposition_version: layoutDecompositionVersion,
     },
     coverage_regions: regionFacts,
+    layout_decomposition: { layout_binding: { target_sha256: targetSha, scene_id: "main-gameplay", state_id: "default", visual_baseline_version: manifest.visual_baseline.version, viewport: { width: 390, height: 844 }, layout_contract_version: "1.1.0", layout_contract_sha256: layoutContractSha, layout_decomposition_version: layoutDecompositionVersion }, layout_nodes: layoutNodes },
     composition: {
       vertical_order: ["region-background", "region-hero", "region-score"],
       inter_region_spacing: { declared: true },
@@ -223,11 +241,11 @@ function attachSceneReconstructionContract(manifest) {
       target_viewport: { width: 390, height: 844 },
       other_viewports: [{ width: 393, height: 852, expected: "preserve-relative-anchors" }],
       relationship_invariants: ["scene order remains stable", "target-bound anchors remain stable"],
-      layout_contract_binding: { target_sha256: targetSha, scene_id: "main-gameplay", state_id: "default", visual_baseline_version: manifest.visual_baseline.version, reconstruction_contract_version: "1.0" },
+      layout_contract_binding: { target_sha256: targetSha, scene_id: "main-gameplay", state_id: "default", visual_baseline_version: manifest.visual_baseline.version, viewport: { width: 390, height: 844 }, layout_contract_version: "1.1.0", layout_contract_sha256: layoutContractSha, layout_decomposition_version: layoutDecompositionVersion, reconstruction_contract_version: "1.0" },
     },
     predeclared_tolerances: [{ id: "layout-tolerance", rules: { geometry: { unit: "logical-px", value: 2 } } }],
     implementation_plan: { resources: ["hero-idle"], layout: ["target-bound-layout"], runtime_objects: ["scene-background", "score-state"], composition: ["main-gameplay-scene"] },
-    combination_preacceptance: { status: "passed", formal_scene_structure: "MainGameplayScene/ContainerGraph", formal_assets: manifest.assets.map((asset) => asset.id), formal_layout_structure: "MainGameplayScene/ContainerGraph", visual_fidelity: { contour: "passed", proportion: "passed", pose: "passed", icon_semantics: "passed", full_scene_composition: "passed" }, redesign_check: "none", layout_calculation_identity: "layout:main-gameplay:1", evidence: ["evidence/visual/combined.png"], target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
+    combination_preacceptance: { status: "passed", formal_scene_structure: "MainGameplayScene/ContainerGraph", formal_assets: manifest.assets.map((asset) => asset.id), formal_layout_structure: "MainGameplayScene/ContainerGraph", layout_geometry: layoutGeometry, visual_fidelity: { contour: "passed", proportion: "passed", pose: "passed", icon_semantics: "passed", full_scene_composition: "passed" }, redesign_check: "none", layout_calculation_identity: "layout:main-gameplay:1", evidence: ["evidence/visual/combined.png"], target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
   };
   const fidelity = manifest.fidelity_cases[0];
   Object.assign(fidelity, {
@@ -249,6 +267,7 @@ function attachSceneReconstructionContract(manifest) {
     difference_evidence: "evidence/fidelity/diff.png",
     tolerance_set: { id: "layout-tolerance", geometry: { unit: "logical-px", value: 2 } },
     per_region_results: manifest.coverage_audit.regions.map((region) => ({ region_id: region.id, target_measurement: { bounds: { ...region.bounds } }, candidate_measurement: { bounds: { ...region.bounds } }, delta: 0, tolerance_reference: "layout-tolerance", tolerance: { id: "layout-tolerance", value: 2 }, result: "passed", evidence: [`evidence/fidelity/${region.id}.json`], exception_ids: [] })),
+    layout_node_results: layoutNodes.map((node) => ({ layout_node_id: node.layout_node_id, target_bounds: { ...node.target_bounds }, candidate_bounds: { ...node.target_bounds }, delta: { x: 0, y: 0, width: 0, height: 0 }, tolerance_reference: "layout-tolerance", result: "passed", evidence: [`evidence/fidelity/${node.layout_node_id}.json`] })),
   });
   return manifest;
 }
@@ -349,7 +368,7 @@ function minimalPng(width = 1, height = 1, raw = Buffer.alloc(height * (width * 
 
 /** 创建文件检查所需的空夹具。 */
 async function createFixtureFiles(root, includeAi = false) {
-  const paths = ["docs/visual-baseline.md", "evidence/visual/main-anchor.png", "evidence/visual/mockup.png", "evidence/visual/reference.png", "evidence/visual/candidate.png", "evidence/coverage/summary.md", "evidence/coverage/state-analysis.md", "evidence/coverage/region-background.md", "evidence/coverage/region-hero.md", "evidence/coverage/region-score.md", "art/hero.aseprite", "docs/license.md", "public/assets/hero.png", "evidence/phaser.png", "evidence/gameplay.mp4", "evidence/visual/hero-consistency.png", "src/region-background.mjs", "src/region-score.mjs", ...["scope", "state-machine", "input", "collision", "module-scene-ownership", "coordinate-space", "layout", "budget"].map((domain) => `evidence/reconcile/${domain}.md`)];
+  const paths = ["docs/visual-baseline.md", "evidence/visual/main-anchor.png", "evidence/visual/mockup.png", "evidence/visual/reference.png", "evidence/visual/candidate.png", "evidence/coverage/summary.md", "evidence/coverage/state-analysis.md", "evidence/coverage/region-background.md", "evidence/coverage/region-hero.md", "evidence/coverage/region-score.md", "art/hero.aseprite", "docs/license.md", "public/assets/hero.png", "evidence/phaser.png", "evidence/gameplay.mp4", "evidence/visual/hero-consistency.png", "src/region-background.mjs", "src/region-score.mjs", "evidence/fidelity/layout-background.json", "evidence/fidelity/hero-component-layout-node.json", "evidence/fidelity/layout-score.json", ...["scope", "state-machine", "input", "collision", "module-scene-ownership", "coordinate-space", "layout", "budget"].map((domain) => `evidence/reconcile/${domain}.md`)];
   if (includeAi) paths.push("evidence/visual/ai-reference.png");
   for (const path of paths) { const target = join(root, path); await mkdir(dirname(target), { recursive: true }); await writeFile(target, path === "evidence/visual/mockup.png" ? minimalPng(390, 844) : path === "public/assets/hero.png" ? minimalPng(includeAi ? 96 : 64, includeAi ? 144 : 96) : ""); }
   for (const path of ["evidence/runtime/hero.json", "evidence/f2/visual.md", "evidence/f2/production.md", "evidence/f3/replay.json", "evidence/fidelity/main.json", "evidence/visual/hero-consistency.json"]) { const target = join(root, path); await mkdir(dirname(target), { recursive: true }); await writeFile(target, path.endsWith("hero-consistency.json") ? JSON.stringify({ status: "passed" }) : ""); }
@@ -411,7 +430,9 @@ async function writeConfirmationFixtureFiles(root, manifest, annotationBytes = n
     const regionsSnapshot = groupRegions.map(snapshot);
     const visualRegions = groupRegions.map((region) => { const production = annotationProductionContract(region); return { region_id: region.id, annotation_number: region.annotation_number, mode: region.implementation_plan?.mode, summary: region.implementation_plan?.summary, production_method: production.production_method, production_origin: production.production_origin, delivery_kind: production.delivery_kind, production_label: production.label, ownership_evidence: region.ownership_evidence, region_definition_sha256: computeRegionDefinitionSha256(region), atomic_image_requirements: Array.isArray(region.atomic_image_requirements) ? region.atomic_image_requirements : deriveAtomicImageRequirements(region) }; });
     const canvasSnapshot = { scene_id: canvas.scene_id, state_id: canvas.state_id, width: canvas.width, height: canvas.height };
-    const proposal = { schema_version: "1.5", proposal_kind: "effect-image-decomposition-technical-analysis", proposal_id: confirmation.proposal_id, created_at: "2026-08-15T00:15:00Z", target_sha256: manifest.reference_target.target_sha256, scene_id: first.scene_id, state_id: first.state_id, canvas: canvasSnapshot, annotation_file: confirmation.annotation_file, annotation_mime: "image/png", annotation_sha256: annotationSha, regions: regionsSnapshot, visual_regions: visualRegions, technical_analysis: { schema_version: "1", canvas: canvasSnapshot, regions: groupRegions.map(technicalRegionSnapshot) } };
+    const technicalRegions = groupRegions.map((region) => ({ ...technicalRegionSnapshot(region), layout_node_ids: [...(region.layout_node_ids ?? [])].sort() }));
+    const technicalLayoutNodeIds = groupRegions.flatMap((region) => region.layout_node_ids ?? []).sort();
+    const proposal = { schema_version: "1.5", proposal_kind: "effect-image-decomposition-technical-analysis", proposal_id: confirmation.proposal_id, created_at: "2026-08-15T00:15:00Z", target_sha256: manifest.reference_target.target_sha256, scene_id: first.scene_id, state_id: first.state_id, canvas: canvasSnapshot, annotation_file: confirmation.annotation_file, annotation_mime: "image/png", annotation_sha256: annotationSha, regions: regionsSnapshot, visual_regions: visualRegions, technical_analysis: { schema_version: "1", canvas: canvasSnapshot, layout_node_ids: technicalLayoutNodeIds, regions: technicalRegions } };
     const proposalBytes = Buffer.from(`${JSON.stringify(proposal, null, 2)}\n`);
     const proposalPath = join(root, confirmation.proposal_file);
     await mkdir(dirname(proposalPath), { recursive: true });
@@ -843,6 +864,70 @@ test("manifest runtime_outputs 按规范化大小写和 ./ 路径识别物理冲
   dotted.assets[1].runtime_outputs = ["public/./shared.png"];
   assert(validateManifest(dotted).some((item) => item.includes("runtime_outputs 路径重复")), "./ 别名也必须冲突");
 });
+
+test("effect-image 布局节点必须与 coverage 双向绑定且禁止孤立、跨区和重复消费", () => {
+  const missing = validManifest();
+  delete missing.coverage_audit.regions[1].layout_node_ids;
+  assert(validateManifest(missing).some((item) => item.includes("layout_node_ids 必须是非空字符串列表")), "区域布局节点不能为空");
+
+  const missingPlacement = validManifest();
+  delete missingPlacement.coverage_audit.regions[1].component_inventory.components[0].placements[0].layout_node_id;
+  assert(validateManifest(missingPlacement).some((item) => item.includes("placement 缺少 layout_node_id") || item.includes("layout_node_id 必须是非空字符串")), "placement 布局节点不能为空");
+
+  const duplicateRegionNode = validManifest();
+  duplicateRegionNode.coverage_audit.regions[1].layout_node_ids.push("hero-component-layout-node");
+  assert(validateManifest(duplicateRegionNode).some((item) => item.includes("layout_node_ids 不得重复")), "区域布局节点不能重复");
+
+  const orphan = validManifest();
+  orphan.scene_reconstruction_contract.layout_decomposition.layout_nodes.push({
+    ...structuredClone(orphan.scene_reconstruction_contract.layout_decomposition.layout_nodes[1]),
+    layout_node_id: "orphan-layout-node",
+  });
+  assert(validateManifest(orphan).some((item) => item.includes("双向一一对应") || item.includes("未被 coverage region.layout_node_ids 反向声明")), "孤立布局节点必须失败");
+
+  const crossRegion = validManifest();
+  crossRegion.coverage_audit.regions[1].component_inventory.components[0].placements[0].layout_node_id = "layout-score";
+  assert(validateManifest(crossRegion).some((item) => item.includes("只能引用本 region")), "placement 不得跨区域引用布局节点");
+
+  const runtimeCrossRegion = validManifest();
+  runtimeCrossRegion.coverage_audit.regions[0].runtime_implementation.layout_node_ids = ["hero-component-layout-node"];
+  assert(validateManifest(runtimeCrossRegion).some((item) => item.includes("runtime_implementation.layout_node_ids 只能引用本 region")), "runtime 布局实现不得跨区域引用节点");
+
+  const duplicateConsumer = validManifest();
+  duplicateConsumer.coverage_audit.regions[1].runtime_implementation = { kind: "runtime-program", integration_files: ["src/hero.mjs"], layout_node_ids: ["hero-component-layout-node"] };
+  assert(validateManifest(duplicateConsumer).some((item) => item.includes("被重复消费")), "同一节点不得同时由 placement 和 runtime 消费");
+});
+
+test("布局拆解必须绑定冻结 target、scene、state 和 layout contract version", () => {
+  for (const field of ["target_sha256", "scene_id", "state_id", "layout_contract_version"]) {
+    const manifest = validManifest();
+    manifest.scene_reconstruction_contract.layout_decomposition.layout_binding[field] = field === "target_sha256" ? EMPTY_DOCUMENT_FINGERPRINT : `drifted-${field}`;
+    const errors = validateManifest(manifest);
+    assert(errors.some((item) => item.includes("layout_decomposition") && item.includes("不一致")), `${field} 漂移必须失败`);
+  }
+});
+
+test("V5 必须记录全部布局节点的逐节点几何差异和证据", () => {
+  const missing = validManifest();
+  delete missing.fidelity_cases[0].layout_node_results;
+  assert(validateManifest(missing).some((item) => item.includes("layout_node_results 必须是非空逐节点几何差异数组")), "缺逐节点布局证据必须失败");
+  const incomplete = validManifest();
+  incomplete.fidelity_cases[0].layout_node_results.pop();
+  assert(validateManifest(incomplete).some((item) => item.includes("layout_node_results 缺少布局节点")), "漏布局节点必须失败");
+  const forgedDelta = validManifest();
+  forgedDelta.fidelity_cases[0].layout_node_results[0].candidate_bounds.x += 1;
+  assert(validateManifest(forgedDelta).some((item) => item.includes("delta 必须由 candidate_bounds 减 target_bounds")), "伪造布局 delta 必须失败");
+});
+
+test("布局字段变化会使 confirmation 的区域定义 SHA 失效", () => {
+  const manifest = validManifest();
+  const region = manifest.coverage_audit.regions[1];
+  const original = region.confirmation.region_definition_sha256;
+  region.layout_node_ids = ["hero-component-layout-node-v2"];
+  assert.notEqual(computeRegionDefinitionSha256(region), original, "布局节点必须参与区域定义 SHA");
+  assert(validateManifest(manifest).some((item) => item.includes("region_definition_sha256 与当前区域合同不一致")), "布局字段漂移必须使旧确认失效");
+});
+
 test("产品体积预算非必需且最新初始化模板不生成该字段", () => {
   const manifest = validManifest();
   assert(!Object.hasOwn(manifest.budgets, "package_size_mb"));

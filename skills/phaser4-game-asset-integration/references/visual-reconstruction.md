@@ -46,6 +46,14 @@ V2 必须产出关键状态和动态可玩样片，并完成 V2a、V2b 机器检
 
 每个区域还必须登记精确 `bounds`。`coverage_audit.canvases` 声明每个冻结 scene/state 的目标画布，`summaries` 必须逐 scene/state 记录 `coverage_ratio: 1`、空 `uncovered`、`passed` 和非空覆盖证据；区域不得越出画布，验证器按矩形并集计算实际覆盖面积，零散 1x1 或彼此重叠的半画布区域不能冒充完整覆盖。`AUTO` 绑定非空判定证据；`USER_DECISION` 同时绑定编号图文件、版本、SHA 和决定 ID，并在文件检查中复算哈希。固定视觉区域与资源 `coverage_region_ids` 必须双向完全一致；未被固定区域引用的 Boot、Loading 或其他场景普通资产继续使用普通字段，不得伪造还原字段。
 
+### 同步布局、元素与状态拆解
+
+效果图拆解必须先看整屏构图，再同步冻结布局节点、视觉元素/组件和状态事实；不能先拆资产、最后凭感觉补坐标。每个 `coverage_audit.regions[]` 都必须声明非空且唯一的 `layout_node_ids`，`scene_reconstruction_contract.layout_decomposition.layout_nodes[]` 必须按 `region_id` 双向对应这些节点。每个 component placement 必须有唯一 `layout_node_id`，只能引用本区域节点；没有 placement 的运行时区域必须由 `runtime_implementation.layout_node_ids` 消费。节点不得孤立、跨区域、被多个 placement 重复消费或同时被 placement 与 runtime 重复消费，除非另有显式复用合同和 placement 级证据（默认合同不允许复用）。
+
+三方绑定顺序固定为“整屏构图 → 布局节点与元素/状态同步拆解 → coverage/布局合同/placement 三方绑定 → 按布局合同装配 → V5 布局与视觉双验收”。`target_bounds` 是参考图测量事实，不是运行时硬编码；布局合同负责运行时计算和响应式变换；runtime measurement 只是候选证据，不能回写或替代参考事实。技术 proposal 的 `technical_analysis.regions[].layout_node_ids` 与 `placements[].layout_node_id`、PNG 区域元数据的 `layout_node_ids` 与 `placement_layout_node_ids`，以及 confirmation 的 `region_definition_sha256` 都必须自然覆盖布局节点及 placement 字段，并同时绑定 target SHA、scene/state、layout contract version；任一身份或布局字段漂移都使旧确认失效。`visual-assets.json` 仍是视觉机器权威，布局合同保持布局领域权威，只通过 SHA/ID 关联，不新增第二套清单或状态机。
+
+V3 `executionUnits` 推荐固定为：布局基础串行 → 视觉资源/程序元素并行 → 场景装配串行 → 联合验收串行。V4 组合预验收必须同时使用正式资源和正式布局；V5 必须满足 coverage=1、零孤立节点、逐节点 target/candidate 几何差异与证据，以及整屏 fidelity，任一项缺失都不能通过。
+
 ## V3-V4
 
 V3 输入绑定当前有效的 V1/V2 `AUTO` 或 `USER_DECISION`、已通过的合同回对、冻结视觉目标、覆盖审计、忠实度矩阵和已批准例外。正式资源必须保留来源、授权、机器清单和参考绑定，V4 逐资源及同屏验证其是否支持冻结视觉事实。

@@ -4,9 +4,23 @@
 
 ## 合同身份与范围
 
-schema 1.1.0 根对象包含 `fidelity`、`frozen_visual_target`、`critical_alignments` 和 `parity_cases`。普通布局使用 `not-applicable/not-applicable`，后三者为 null/空数组；冻结目标使用 `specified` 或 `verified`。冻结目标还记录 `visual_baseline_version`。verified parity 的 scene/state 必须属于 scope，合同版本和视觉基线版本必须分别等于根合同与冻结目标；`actual_test_id` 必须等于 `planned_test_id`。
+schema 1.1.0 根对象包含 `fidelity`、`frozen_visual_target`、`layout_nodes`、`critical_alignments` 和 `parity_cases`。普通布局使用 `not-applicable/not-applicable`，`layout_nodes`、`critical_alignments` 和 `parity_cases` 都是空数组；冻结目标使用 `specified` 或 `verified`，并通过场景绑定携带拆解节点。冻结目标还记录 `visual_baseline_version`。verified parity 的 scene/state 必须属于 scope，合同版本和视觉基线版本必须分别等于根合同与冻结目标；`actual_test_id` 必须等于 `planned_test_id`。
 
-`regions` 是声明式布局节点。每个节点至少包含：
+`regions` 是声明式布局区域；`layout_nodes` 是效果图拆解出的可装配几何节点。普通布局 `fidelity.applicability=not-applicable` 必须使用空数组；`frozen-target` 合同必须声明至少一个布局节点。布局节点把效果图的目标几何与 Phaser 运行时的唯一布局入口绑定，不能用整屏截图、隐藏覆盖层或散落的绝对坐标替代。
+
+每个 `layout_nodes` 节点必须包含：
+
+- `layout_node_id`、`region_id`、`coordinate_space`、`reference_id`。
+- `self_anchor`、`reference_anchor`、`offset`、`target_bounds`、`size_policy`。
+- `z_order`、`clip_policy`、`responsive_rule`、`planned_test_id`。
+
+`layout_node_id` 在节点集合内唯一；同一 `region_id` 可以绑定多个元素/layout nodes，但该区域 ID 必须同时存在于 `regions` 和 `scope.ui_ids`，`coordinate_space` 必须存在于 `coordinate_spaces`。`target_bounds` 使用目标 viewport 的逻辑坐标，四边均须为有限数值，宽高为正数，并完全落在 `scene_reconstruction_binding.target_viewport` 内。`offset` 是双轴偏移对象，可以是数值或项目定义的非空表达式；`size_policy`、`clip_policy`、`responsive_rule` 和 `planned_test_id` 不得为空。
+
+模板的 `layout_node_example` 是可直接复制到 `layout_nodes` 的完整 effect-image 节点示例；它不是普通 `not-applicable` 合同的活动节点。切换到冻结目标时，应复制该示例、改成项目稳定 ID 和目标几何，并补齐场景绑定与关键对齐证据。
+
+布局节点的 `reference_id` 只能指向已声明的 `regions` 或其他 `layout_node_id`，并允许显式根参照 `viewport`、`safe-area`。当一个 region 只有一个布局节点时，可直接用该 region ID 作为参照；当一个 region 绑定多个布局节点时，region ID 参照会产生歧义，必须改用具体 `layout_node_id`。所有节点参照组成有向图，禁止自引用和环；因此不能通过一个孤立或循环的节点绕过布局合同。
+
+`regions` 自身仍是声明式布局区域，每个区域至少包含：
 
 - `id`、`semantic_role`、`parent_space`、`reference_id`、`positioning`。
 - `anchors.horizontal` 与 `anchors.vertical`，各自声明 `self`、`reference` 和 `offset`；两者必须有语义参照边界。
@@ -42,13 +56,15 @@ schema 1.1.0 根对象包含 `fidelity`、`frozen_visual_target`、`critical_ali
 
 `invariants` 的每一项都包含稳定 ID、非空描述/表达式、非空且全部有效的适用区域、非负容差和 `evidence.automation`/`evidence.visual` 字符串项。关系表达优先描述相对中心、边界距离、间距、遮挡和断点结构，而非一个孤立屏幕坐标。`evidence_matrix` 必须绑定同一候选、合同版本、动态封顶 1.5 的 DPR 策略和冻结视口条件，并覆盖断点邻值、宽高、方向、字号、本地化、安全区、动作态、DPR、动态值、Scene 生命周期和覆盖层/键盘/滚动组合；Golden 只在冻结目标视口验证精确视觉，普通测试验证关系不变量。
 
-`critical_alignments` 用于冻结目标中的关键 UI/HUD：specified 要求唯一 ID、稳定 element/reference、双轴关系、正尺寸目标测量、`planned_test_id`、目标证据、双方 SHA 和项目容差；verified 才要求 `actual_test_id`、正尺寸运行测量、运行证据和 `passed`。不得全局硬编码 1 logical px。
+`critical_alignments` 用于冻结目标中的关键 UI/HUD：每项必须通过 `layout_node_id` 绑定一个布局节点，并保持 `element_id` 等于该节点的 `region_id`。其 `reference_id` 可以指向稳定 region、`viewport` 或具体 `layout_node_id`；若指向绑定多个节点的 region，必须改成具体节点 ID。specified 要求唯一 ID、稳定 element/reference、双轴关系、与布局节点 `target_bounds` 一致的正尺寸目标测量、`planned_test_id`、目标证据、双方 SHA 和项目预声明容差；目标几何漂移时必须退回拆解阶段。verified 还要求 `actual_test_id`（且等于 planned ID）、正尺寸 `runtime_measurement`（也可用语义等价的 `actual_bounds`）、四轴 `delta`、运行证据和 `test_status=passed`，并校验 delta 等于运行 bounds 减去目标 bounds。不得全局硬编码 1 logical px；容差由项目在合同中按关系或证据类型预声明。
 
 `parity_cases` 不可变绑定 scene/state、viewport、实际有效 DPR（(0,1.5]）、语言、随机种子、输入轨迹、稳定帧/动画采样、合同/基线版本、双方证据、容差、例外 ID 与结论。目标或候选 SHA 不匹配时旧证据不得复用。
 
 specified 可只做结构检查；verified 必须追加 `--check-files --project-root .`，验证冻结原图存在且 SHA 匹配，并拒绝缺失或逃逸项目根目录的目标、运行及 parity 证据路径。
 # 效果图还原布局绑定
 
-当布局服务于 `effect-image` 时，根节点可声明 `scene_reconstruction_binding`，其中必须包含 `target_sha256`、`scene_id`、`state_id`、`target_viewport`、`visual_baseline_version` 和 `reconstruction_contract_version`。V2→V3 合同回对必须校验该绑定；`legacy_layout_reused`、`uses_generic_layout` 或 target SHA 不一致均退回 `V1/PROPOSAL`，不能沿用旧响应式骨架。
+当布局服务于 `effect-image` 时，根节点可声明 `scene_reconstruction_binding`，其中必须包含 `target_sha256`、`scene_id`、`state_id`、`target_viewport`、`visual_baseline_version`、`reconstruction_contract_version`、`layout_contract_sha256` 和 `layout_decomposition_version`。`layout_contract_sha256` 是布局合同身份哈希，不是整个文件的递归自哈希：生产方应对合同身份投影（合同 ID/版本、目标 SHA、scene/state、目标 viewport、布局拆解版本及按 `layout_node_id` 排序的节点 ID、区域、坐标空间、参照、锚点、偏移、目标几何、尺寸/裁切/响应式策略、层级和计划测试 ID）做确定性规范化后计算，并排除该哈希字段本身以及运行时证据；合同身份变化必须重新计算。这样不会因为把哈希写回合同而形成循环。验证器通过导出的 `computeLayoutContractIdentityHash` 复算该投影并拒绝旧哈希，除检查 SHA-256 格式和绑定字段外不依赖运行态证据。
+
+V2→V3 合同回对必须校验该绑定；`legacy_layout_reused`、`uses_generic_layout` 或 target SHA 不一致均退回 `V1/PROPOSAL`，不能沿用旧响应式骨架。
 
 目标 viewport 用于精确还原，其他 viewport 只验证关系不变量。布局区域仍须与正式 Scene 结构绑定；整屏截图不能作为交互 Scene、隐藏覆盖层或绝对叠图不能作为布局实现。

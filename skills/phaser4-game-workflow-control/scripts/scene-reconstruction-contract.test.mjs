@@ -8,6 +8,8 @@ import { validateSceneReconstructionContract, validateStructuredFidelityCases } 
 import { validateSceneAssetUsageContract, validateSceneCombinationPreacceptance, validateV5ProductionGate, validateVisualImplementationPackageBinding } from "./visual-production-contract.mjs";
 
 const SHA = "sha256:" + "a".repeat(64);
+const LAYOUT_SHA = "sha256:" + "b".repeat(64);
+const LAYOUT_DECOMPOSITION_VERSION = "layout-decomposition-1";
 
 /** 构造覆盖运行时和固定视觉事实的最小完整场景合同。 */
 function contract() {
@@ -128,10 +130,198 @@ function fidelityCase(overrides = {}) {
   return { ...base, ...overrides };
 }
 
+/** 构造带布局拆解、V4 几何证据和 V5 逐节点证据的 effect-image 合同。 */
+function effectImageContract() {
+  const value = structuredClone(contract());
+  value.effect_image_reconstruction = { applicability: "effect-image" };
+  value.target_conditions.layout_contract_sha256 = LAYOUT_SHA;
+  value.target_conditions.layout_decomposition_version = LAYOUT_DECOMPOSITION_VERSION;
+  value.coverage_regions[0].layout_node_ids = ["hud-main"];
+  value.coverage_regions[1].layoutNodeIds = ["board-surface"];
+  value.responsive_contract.layout_contract_binding.viewport = { width: 390, height: 844 };
+  value.responsive_contract.layout_contract_binding.layout_contract_version = "layout-2.0";
+  value.responsive_contract.layout_contract_binding.layout_contract_sha256 = LAYOUT_SHA;
+  value.responsive_contract.layout_contract_binding.layout_decomposition_version = LAYOUT_DECOMPOSITION_VERSION;
+  value.layout_decomposition = {
+    layout_binding: {
+      target_sha256: SHA,
+      scene_id: "main",
+      state_id: "default",
+      viewport: { width: 390, height: 844 },
+      visual_baseline_version: "1.0.0",
+      layout_contract_version: "layout-2.0",
+      layout_contract_sha256: LAYOUT_SHA,
+      layout_decomposition_version: LAYOUT_DECOMPOSITION_VERSION,
+    },
+    layout_nodes: [
+      {
+        layout_node_id: "hud-main",
+        region_id: "hud",
+        coordinate_space: "viewport",
+        reference_id: "viewport",
+        self_anchor: { horizontal: "center", vertical: "top" },
+        reference_anchor: { horizontal: "center", vertical: "top" },
+        offset: { x: 0, y: 0 },
+        target_bounds: { x: 0, y: 0, width: 390, height: 96 },
+        size_policy: { mode: "target-bound", aspect: "preserve" },
+        z_order: 10,
+        clip_policy: "none",
+        responsive_rule: { target: "exact", other: "preserve-relative-anchors" },
+      },
+      {
+        layoutNodeId: "board-surface",
+        regionId: "board",
+        coordinateSpace: "viewport",
+        referenceId: "viewport",
+        selfAnchor: { horizontal: "center", vertical: "top" },
+        referenceAnchor: { horizontal: "center", vertical: "top" },
+        offset: { x: 0, y: 160 },
+        targetBounds: { x: 20, y: 160, width: 350, height: 620 },
+        sizePolicy: { mode: "target-bound", aspect: "preserve" },
+        zOrder: 1,
+        clipPolicy: "none",
+        responsiveRule: { target: "exact", other: "preserve-relative-anchors" },
+      },
+    ],
+  };
+  value.combination_preacceptance.formal_assets = ["hud-main", "board-surface"];
+  value.combination_preacceptance.visual_fidelity = { contour: "passed", proportion: "passed", pose: "passed", icon_semantics: "passed", full_scene_composition: "passed" };
+  value.combination_preacceptance.redesign_check = "none";
+  value.combination_preacceptance.layout_geometry = {
+    formal_layout_structure: "MainScene/LayoutContract",
+    missing_node_ids: [],
+    extra_node_ids: [],
+    orphan_node_ids: [],
+    node_measurements: [
+      { layout_node_id: "hud-main", target_bounds: { x: 0, y: 0, width: 390, height: 96 }, actual_bounds: { x: 0, y: 0, width: 390, height: 96 }, delta: { x: 0, y: 0, width: 0, height: 0 }, tolerance_reference: "layout-tolerance", result: "passed", evidence: ["hud-layout.json"] },
+      { layout_node_id: "board-surface", target_bounds: { x: 20, y: 160, width: 350, height: 620 }, actual_bounds: { x: 20, y: 160, width: 350, height: 620 }, delta: { x: 0, y: 0, width: 0, height: 0 }, tolerance_reference: "layout-tolerance", result: "passed", evidence: ["board-layout.json"] },
+    ],
+    result: "passed",
+  };
+  return value;
+}
+
+/** 构造 effect-image 清单快照；V5 必须使用完整 scene contract。 */
+function effectImageManifest(sceneContract) {
+  return {
+    ...manifest(),
+    effect_image_reconstruction: { applicability: "effect-image" },
+    scene_reconstruction_contract: sceneContract,
+  };
+}
+
+/** 给 fidelity case 增加与布局节点一一对应的差异证据。 */
+function effectImageLayoutResults() {
+  return [
+    { layout_node_id: "hud-main", target_bounds: { x: 0, y: 0, width: 390, height: 96 }, candidate_bounds: { x: 0, y: 0, width: 390, height: 96 }, delta: { x: 0, y: 0, width: 0, height: 0 }, tolerance_reference: "layout-tolerance", result: "passed", evidence: ["hud-layout-diff.json"] },
+    { layoutNodeId: "board-surface", targetBounds: { x: 20, y: 160, width: 350, height: 620 }, candidateBounds: { x: 20, y: 160, width: 350, height: 620 }, delta: { x: 0, y: 0, width: 0, height: 0 }, toleranceReference: "layout-tolerance", result: "passed", evidence: ["board-layout-diff.json"] },
+  ];
+}
+
 test("场景还原合同覆盖整屏构图和 runtime fidelity obligation", () => {
   assert.deepEqual(validateSceneReconstructionContract(contract(), manifest(), { stage: "V3" }), []);
   const missing = structuredClone(contract()); delete missing.coverage_regions[0].fidelity_obligations;
   assert(validateSceneReconstructionContract(missing, manifest(), { stage: "V3" }).some((item) => item.includes("fidelity obligations")));
+});
+
+test("effect-image 布局拆解、双向 region 绑定、V4 几何和 V5 逐节点证据完整通过", () => {
+  const sceneContract = effectImageContract();
+  const targetManifest = effectImageManifest(sceneContract);
+  assert.deepEqual(validateSceneReconstructionContract(sceneContract, targetManifest, { stage: "V3" }), []);
+  assert.deepEqual(validateSceneCombinationPreacceptance(sceneContract, "V4", { effectImage: true, manifest: targetManifest }), []);
+  const fidelity = fidelityCase({ layout_node_results: effectImageLayoutResults() });
+  assert.deepEqual(validateStructuredFidelityCases([fidelity], targetManifest, { stage: "V5" }), []);
+
+  // 同一布局身份也允许使用 layout_decomposition 顶层绑定，供旧布局清单迁移时保持单一结构。
+  const direct = structuredClone(sceneContract);
+  const directLayout = direct.layout_decomposition;
+  delete directLayout.layout_binding;
+  Object.assign(directLayout, { target_sha256: SHA, scene_id: "main", state_id: "default", target_viewport: { width: 390, height: 844 }, visual_baseline_version: "1.0.0", layout_contract_version: "layout-2.0", layout_contract_sha256: LAYOUT_SHA, layout_decomposition_version: LAYOUT_DECOMPOSITION_VERSION });
+  for (const node of directLayout.layout_nodes) Object.assign(node, { target_sha256: SHA, scene_id: "main", state_id: "default", layout_contract_version: "layout-2.0" });
+  assert.deepEqual(validateSceneReconstructionContract(direct, effectImageManifest(direct), { stage: "V3" }), []);
+});
+
+test("effect-image 缺少布局节点、反向绑定或越界 bounds 时阻断；普通合同不受影响", () => {
+  const missing = effectImageContract();
+  delete missing.coverage_regions[0].layout_node_ids;
+  const missingErrors = validateSceneReconstructionContract(missing, effectImageManifest(missing), { stage: "V3" });
+  assert(missingErrors.some((item) => item.includes("layout_node_ids")));
+
+  const orphan = effectImageContract();
+  orphan.coverage_regions[0].layout_node_ids = ["board-surface"];
+  const orphanErrors = validateSceneReconstructionContract(orphan, effectImageManifest(orphan), { stage: "V3" });
+  assert(orphanErrors.some((item) => item.includes("跨 region") || item.includes("反向声明") || item.includes("错绑")), orphanErrors.join("\n"));
+
+  const outOfBounds = effectImageContract();
+  outOfBounds.layout_decomposition.layout_nodes[0].target_bounds.x = -1;
+  const boundsErrors = validateSceneReconstructionContract(outOfBounds, effectImageManifest(outOfBounds), { stage: "V3" });
+  assert(boundsErrors.some((item) => item.includes("位于冻结目标画布内")));
+  assert.deepEqual(validateSceneReconstructionContract(contract(), manifest(), { stage: "V3" }), []);
+});
+
+test("effect-image 两处布局 binding 必须共享完整身份并绑定冻结目标", () => {
+  const missingResponsiveHash = effectImageContract();
+  delete missingResponsiveHash.responsive_contract.layout_contract_binding.layout_contract_sha256;
+  const missingResponsiveErrors = validateSceneReconstructionContract(missingResponsiveHash, effectImageManifest(missingResponsiveHash), { stage: "V3" });
+  assert(missingResponsiveErrors.some((item) => item.includes("responsive_contract layout binding") && item.includes("layout_contract_sha256")), missingResponsiveErrors.join("\n"));
+
+  const missingTargetVersion = effectImageContract();
+  delete missingTargetVersion.target_conditions.layout_decomposition_version;
+  const missingTargetErrors = validateSceneReconstructionContract(missingTargetVersion, effectImageManifest(missingTargetVersion), { stage: "V3" });
+  assert(missingTargetErrors.some((item) => item.includes("target_conditions.layout_decomposition_version")), missingTargetErrors.join("\n"));
+
+  const missingDecompositionVersion = effectImageContract();
+  delete missingDecompositionVersion.layout_decomposition.layout_binding.layout_decomposition_version;
+  const missingDecompositionErrors = validateSceneReconstructionContract(missingDecompositionVersion, effectImageManifest(missingDecompositionVersion), { stage: "V3" });
+  assert(missingDecompositionErrors.some((item) => item.includes("layout_decomposition binding") && item.includes("layout_decomposition_version")), missingDecompositionErrors.join("\n"));
+
+  const invalidHash = effectImageContract();
+  invalidHash.layout_decomposition.layout_binding.layout_contract_sha256 = "sha256:" + "B".repeat(64);
+  const invalidHashErrors = validateSceneReconstructionContract(invalidHash, effectImageManifest(invalidHash), { stage: "V3" });
+  assert(invalidHashErrors.some((item) => item.includes("layout_decomposition binding") && item.includes("layout_contract_sha256 格式无效")), invalidHashErrors.join("\n"));
+
+  const mismatchedBinding = effectImageContract();
+  mismatchedBinding.layout_decomposition.layout_binding.layout_decomposition_version = "layout-decomposition-2";
+  const mismatchedBindingErrors = validateSceneReconstructionContract(mismatchedBinding, effectImageManifest(mismatchedBinding), { stage: "V3" });
+  assert(mismatchedBindingErrors.some((item) => item.includes("两个") || item.includes("不一致")), mismatchedBindingErrors.join("\n"));
+
+  const mismatchedViewport = effectImageContract();
+  mismatchedViewport.responsive_contract.layout_contract_binding.target_viewport = { width: 393, height: 852 };
+  delete mismatchedViewport.responsive_contract.layout_contract_binding.viewport;
+  const mismatchedViewportErrors = validateSceneReconstructionContract(mismatchedViewport, effectImageManifest(mismatchedViewport), { stage: "V3" });
+  assert(mismatchedViewportErrors.some((item) => item.includes("viewport") && item.includes("不一致")), mismatchedViewportErrors.join("\n"));
+
+  const mismatchedTarget = effectImageContract();
+  mismatchedTarget.target_conditions.layout_contract_sha256 = "sha256:" + "c".repeat(64);
+  const mismatchedTargetErrors = validateSceneReconstructionContract(mismatchedTarget, effectImageManifest(mismatchedTarget), { stage: "V3" });
+  assert(mismatchedTargetErrors.some((item) => item.includes("layout_contract_sha256 与冻结目标不一致")), mismatchedTargetErrors.join("\n"));
+
+  const rootIdentity = effectImageContract();
+  rootIdentity.layout_identity = structuredClone(rootIdentity.layout_decomposition.layout_binding);
+  assert.deepEqual(validateSceneReconstructionContract(rootIdentity, effectImageManifest(rootIdentity), { stage: "V3" }), []);
+  rootIdentity.layout_identity.layout_decomposition_version = "layout-decomposition-root-drift";
+  const rootErrors = validateSceneReconstructionContract(rootIdentity, effectImageManifest(rootIdentity), { stage: "V3" });
+  assert(rootErrors.some((item) => item.includes("scene contract root") && item.includes("layout_decomposition_version")), rootErrors.join("\n"));
+
+  assert.deepEqual(validateSceneReconstructionContract(contract(), manifest(), { stage: "V3" }), []);
+});
+
+test("effect-image V4/V5 布局几何必须覆盖全部节点并拒绝 unknown 或缺证据", () => {
+  const sceneContract = effectImageContract();
+  const targetManifest = effectImageManifest(sceneContract);
+  const v4Missing = structuredClone(sceneContract);
+  v4Missing.combination_preacceptance.layout_geometry.node_measurements.pop();
+  const v4Errors = validateSceneCombinationPreacceptance(v4Missing, "V4", { effectImage: true, manifest: targetManifest });
+  assert(v4Errors.some((item) => item.includes("缺少 layout node 实际测量")));
+
+  const fidelity = fidelityCase({ layout_node_results: effectImageLayoutResults() });
+  fidelity.layout_node_results[1].result = "unknown";
+  const v5Errors = validateStructuredFidelityCases([fidelity], targetManifest, { stage: "V5" });
+  assert(v5Errors.some((item) => item.includes("result 不能为 unknown/unverified/missing")));
+  const missingEvidence = fidelityCase({ layout_node_results: effectImageLayoutResults() });
+  delete missingEvidence.layout_node_results[0].evidence;
+  const evidenceErrors = validateStructuredFidelityCases([missingEvidence], targetManifest, { stage: "V5" });
+  assert(evidenceErrors.some((item) => item.includes("缺少 layout diff evidence")));
 });
 
 test("场景目标和 fidelity DPR 允许动态有效值并拒绝非法声明", () => {
