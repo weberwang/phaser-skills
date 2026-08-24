@@ -29,7 +29,7 @@ node <skill-dir>/scripts/spine_reskin_progress.mjs --help
 2. `init` 建立 schema v3 清单，记录所有源文件 SHA-256。低于目标 Runtime 时只接受外部官方工具生成的候选，使用 `upgrade-check` 比较结构投影；未通过目标 Runtime 解析证据前，任何批次命令都会阻断。
 3. `freeze-contract` 冻结角色名、目标 Runtime、暗黑视觉方向、六项色板、材质语言、光向和默认 `strict_alpha=true`。首批前不得使用临时色板。
 4. `plan-batches` 导入精确 Region 顺序、mode、alpha lock 和可选连续特效序列，机器校验全集覆盖、无重复/遗漏、Mesh 使用 `mesh-safe` 且锁 Alpha。
-5. 严格按 `batch prepare → mark generated → batch review → 停止 → batch accept` 执行。`batch accept` 只接受当前审阅图 SHA、候选 SHA 和严格确认文本；回执是 V4 局部 `spine_batch_acceptance`，不是全局第二次视觉审批。返工使用 `batch reopen` 增加 revision，只影响当前批。
+5. 按 `batch prepare → mark generated → batch review → 停止 → batch accept` 执行。`batch accept` 必须绑定当前审阅图 SHA、候选 SHA/fingerprint 和当前批次 revision；在刚展示且由 `--batch` 与 `--review-sha` 精确绑定的审阅上下文中，简短“确认”即可通过，也可使用当前批次对应的完整确认句（初始批次“确认第N批”、返工“确认重启版第N批”）。空白、无关或否定文本仍拒绝。回执是 V4 局部 `spine_batch_acceptance`，不是全局第二次视觉审批。返工使用 `batch reopen` 增加 revision，只影响当前批。
 6. 所有批次 `ACCEPTED+locked` 后执行 `pack`。默认且正式固定 `padding=0`、`extrusion=0`，Page 名必须保持原名并且实际为 PNG；Atlas Page/Region 间空行格式由序列化器固定。
 7. 使用 `runtime-validate` 提交结构化 Phaser SpineGameObject 报告，覆盖目标 Runtime 解析、动态动画全集、Idle 循环、纹理/锚点/Mesh/闪烁/裁剪检查、摘要、URL、桌面和约 390px 移动截图及 SHA。通过后才能 `finalize`，最后用 `report` 生成 11 项最终交付报告。
 

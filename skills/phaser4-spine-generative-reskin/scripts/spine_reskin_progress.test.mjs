@@ -190,21 +190,31 @@ test("批次覆盖、重复和越序生成 fail closed", async () => {
   assert.equal(await generate(value, "p0:body").then((result) => result.status), 0);
 });
 
-test("审阅图 SHA、确认文本和 alpha lock 绑定当前批次", async () => {
-  const value = await fixture();
+test("审阅图 SHA、完整或简短确认文本和 alpha lock 绑定当前批次", async () => {
+  const value = await fixture({ names: ["body", "head"] });
   await freezeContract(value);
-  await plan(value, [{ id: "b1", regions: ["p0:body"] }]);
+  await plan(value, [{ id: "b1", regions: ["p0:body"] }, { id: "b2", regions: ["p0:head"] }]);
   await prepare(value, "b1");
   await generate(value, "p0:body");
   let document = await review(value, "b1");
   const reviewSha = document.batches[0].review_board.sha256;
   assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", "bad", "--user-text", "确认第1批"]), 2);
+  assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", reviewSha, "--user-text", " "]), 2);
   assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", reviewSha, "--user-text", "同意第1批"]), 2);
   assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", reviewSha, "--user-text", "确认第1批"]), 0);
   document = JSON.parse(await readFile(value.manifest, "utf8"));
   assert.equal(document.batches[0].status, "ACCEPTED");
   assert.equal(document.batches[0].locked, true);
   assert.equal(document.batches[0].acceptance.review_board_sha256, reviewSha);
+
+  await prepare(value, "b2");
+  await generate(value, "p0:head", [20, 220, 30, 255]);
+  document = await review(value, "b2");
+  const secondReviewSha = document.batches[1].review_board.sha256;
+  assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b2", "--review-sha", secondReviewSha, "--user-text", " 确认 "]), 0);
+  document = JSON.parse(await readFile(value.manifest, "utf8"));
+  assert.equal(document.batches[1].status, "ACCEPTED");
+  assert.equal(document.batches[1].locked, true);
 });
 
 test("连续特效批次缺失颜色/亮度/轮廓/发光指标时不能导入", async () => {
@@ -384,7 +394,7 @@ test("确认后的 validating Cell 在 recover 后保持 ACCEPTED+locked 并可�
   assert.equal(await main(["pack", "--manifest", value.manifest, "--output-dir", join(value.candidate, "atlas")]), 0);
 });
 
-test("返工只重开当前批，必须重新 prepare 并使用重启版确认文本", async () => {
+test("返工只重开当前批，必须重新 prepare 并可使用简短确认文本", async () => {
   const value = await fixture();
   await freezeContract(value);
   await plan(value, [{ id: "b1", regions: ["p0:body"] }]);
@@ -404,7 +414,7 @@ test("返工只重开当前批，必须重新 prepare 并使用重启版确认�
   assert.equal(await main(["mark", "--manifest", value.manifest, "--cell", "p0:body", "--status", "generating"]), 0);
   assert.equal(await main(["mark", "--manifest", value.manifest, "--cell", "p0:body", "--status", "generated", "--image", imagePath]), 0);
   document = await review(value, "b1");
-  assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", document.batches[0].review_board.sha256, "--user-text", "确认重启版第1批"]), 0);
+  assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", document.batches[0].review_board.sha256, "--user-text", "确认"]), 0);
 });
 
 test("pack 阶段 I/O 失败会恢复为 validating 且保留批次锁，可重试", async () => {

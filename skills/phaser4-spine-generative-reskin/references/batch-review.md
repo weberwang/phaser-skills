@@ -8,9 +8,9 @@
 
 ```text
 batch prepare → 当前批源参考板 → 生成当前批 Cell → batch review → 唯一审阅图 → STOP
-→ 用户严格确认 → batch accept → Cell validating → 当前批 ACCEPTED+locked
+→ 用户确认 → batch accept → Cell validating → 当前批 ACCEPTED+locked
 ```
 
-源参考板和审阅图都绑定批次、revision、Region 名称和顺序，名称/顺序写入同名 JSON sidecar；审阅图 SHA、每个候选 Cell SHA 和组合 fingerprint 记录在 `spine_batch_acceptance` 回执中。确认文本只能是 `确认第N批`，返工 revision 只能是 `确认重启版第N批`。`batch reopen` 只清理当前批候选并增加 revision，已接受批次和后批不允许修改。
+源参考板和审阅图都绑定批次、revision、Region 名称和顺序，名称/顺序写入同名 JSON sidecar；审阅图 SHA、每个候选 Cell SHA 和组合 fingerprint 记录在 `spine_batch_acceptance` 回执中。当前批次刚展示且由 `--batch` 与 `--review-sha` 精确绑定时，确认文本可使用简短“确认”，也可使用当前 revision 对应的完整句（初始批次 `确认第N批`，返工 revision `确认重启版第N批`）；空白、无关或否定文本仍拒绝。上述简短确认不降低审阅 SHA、候选 fingerprint、revision 或批次顺序等机器校验。`batch reopen` 只清理当前批候选并增加 revision，已接受批次和后批不允许修改。
 
 该回执是 V4 的局部生产锁定，不写入全局 Approval Ledger，不替代唯一 V2 `visual_human_approval`。

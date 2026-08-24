@@ -5,6 +5,20 @@ import { auditSkeleton, verifyUpgradeCandidate } from "./spine_skeleton.mjs";
 import { ReskinError } from "./spine_atlas.mjs";
 import { assertCurrentBatch, acceptanceFingerprint, batchCells, candidateFingerprint, createReviewBoard, createSourceBoard, currentBatch, readBatchPlan, validateBatchPlan, validateEffectSequence } from "./spine_batch.mjs";
 
+/**
+ * 判断批次确认文本是否有效。
+ *
+ * 简短“确认”只在调用方已经锁定当前批次、停止审阅态和审阅图 SHA 后使用；
+ * 候选 fingerprint、revision 等机器身份约束仍由 batch accept 后续流程校验。
+ */
+export function isBatchConfirmationText(userText, expectedText) {
+  if (typeof userText !== "string" || typeof expectedText !== "string") return false;
+  const normalizedText = userText.trim();
+  const normalizedExpectedText = expectedText.trim();
+  if (!normalizedText || !normalizedExpectedText) return false;
+  return normalizedText === "确认" || normalizedText === normalizedExpectedText;
+}
+
 /** 检查正式批次前必须冻结的视觉合同和 Skeleton 升级门。 */
 export function assertProductionReady(document, options = {}) {
   const contract = document.visual_contract;
@@ -167,7 +181,7 @@ export function createBatchCommands(deps) {
       const batch = assertCurrentBatch(document, args.batch);
       if (batch.status !== "REVIEW_READY" || batch.review_stop !== true) throw new ReskinError(`批次 ${batch.id} 尚未进入停止审阅态`);
       const expectedText = `${batch.revision > 0 ? "确认重启版" : "确认"}第${batch.order + 1}批`;
-      if (args.userText !== expectedText) throw new ReskinError(`确认文本必须严格匹配：${expectedText}`);
+      if (!isBatchConfirmationText(args.userText, expectedText)) throw new ReskinError(`确认文本无效：请回复“确认”或完整确认句“${expectedText}”`);
       if (args.reviewSha !== batch.review_board.sha256) throw new ReskinError("确认绑定的审阅图 SHA 与当前图不一致");
       const cells = batchCells(document, batch);
       // acceptanceFingerprint 会重新读取报告并校验候选/审阅 SHA，防止 review 后文件漂移。
