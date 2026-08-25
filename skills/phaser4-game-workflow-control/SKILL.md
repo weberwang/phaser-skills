@@ -40,6 +40,8 @@ description: Phaser 4 游戏仓库的唯一全局工作流控制面。基于任�
 
 效果图还原额外要求 `scene_reconstruction_contract`：它冻结整屏构图、逐区域视觉事实、runtime fidelity obligations、目标绑定布局、响应式不变量、项目容差、完整实现计划和必填 `display_layer_planning`。规划合同必须显式声明 `scene_master + inventory`；常驻 HUD 必须进入主图，modal/popup/drawer/toast 等瞬态层按 required state 绑定宿主场景上下文效果图，禁止孤立图冒充完整证据。V2→V3 只生产独立资源、复用旧布局或缺少运行时视觉事实时返回 `V1/PROPOSAL`；V4 的宿主场景同屏组合与 V5 的打开→交互→关闭/恢复轨迹、结构化 fidelity/F2/正式 Scene 消费证据不可被资源工程子门替代。实施包的 `current_stage` 只接受 V3/V4/V5，未知阶段必须显式失败，V5 不得回落 V3。
 
+所有生成式效果图共享全局视觉一致性硬门：先冻结 `visual_baseline`（`global-static-baseline-frozen`、`docs/visual-baseline.md`、身份字段和全部 `anchor_evidence`），再生成场景主图、宿主场景上下文图或原子 ImageGen 资产。generated 记录必须绑定全局基线、全部 `style_reference_inputs`、canonical 一致性提示词、`style_drift_policy=forbid`、实际发送的完整提示词、输出 SHA 和一致性证据；provided 效果图只记录来源，不得伪造生成记录。全局基线不是 V2，V2 仍负责方向冻结；详细字段和复算规则见 [全局视觉一致性控制](../phaser4-game-asset-integration/references/global-visual-control.md)。
+
 effect-image ImageGen 的 canonical 提示词、真实参考输入、透明直出和 generation_record 绑定规则统一见 [`effect-image-prompt-contract.md`](../phaser4-game-asset-integration/references/effect-image-prompt-contract.md)；控制面这里只校验路由、硬字段和退回阶段，不重复模板正文。
 
 视觉人工确认是上述场景硬门的附加约束，不改变通用 A0-A6/F0-F4：整条 V0→V5 链只在 V2 视觉方向冻结时要求一条唯一的结构化 `visual_human_approval`。该记录不采集 `reviewer_type`、`reviewer_id` 或 reviewer 字符串，仅以 `review_id`、`reviewed_at`、`evidence`、`evidence_sha256`、`status: PASS` 及冻结 target、V2 candidate、diff、baseline 哈希表达一次人工通过事件。V2 的代表画面、动态样片和结构化机器验证，以及 V4/V5/F2 的资产、组合、全屏、overlay、diff、逐区域和组件检查，只使用当前身份绑定的确定性机器证据，不再重复要求 human_review 或第二 reviewer；AI reviewer 字段不能替代这条唯一真人审批。审批绑定的 target、candidate、diff、基线或审批证据哈希变化即失效，根 PASS、裸批准文本、自动布尔值或 `all_visual_artifacts_human_reviewed` 不能绕过校验。

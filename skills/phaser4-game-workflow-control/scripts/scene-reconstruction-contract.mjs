@@ -475,7 +475,7 @@ export function validateSceneReconstructionContract(contract, manifest = null, o
   }
   const targetInfo = validateTargetConditions(contract, manifest, stage, errors, effectImage);
   // G0/V1 必须显式盘点显示层；inventory=[] 表示确认没有显示层，不表示漏规划。
-  errors.push(...validateDisplayLayerPlanning(field(contract, "display_layer_planning"), targetInfo, { stage }));
+  errors.push(...validateDisplayLayerPlanning(field(contract, "display_layer_planning"), targetInfo, { stage, visual_baseline: manifest?.visual_baseline, reference_target: manifest?.reference_target }));
   const toleranceBlock = field(contract, "predeclared_tolerances", "predeclaredTolerances", "tolerance_set", "toleranceSet", "tolerances");
   const toleranceIds = Array.isArray(toleranceBlock) ? new Set(toleranceBlock.map((item) => item?.id ?? item?.tolerance_id ?? item?.toleranceId).filter(nonEmptyString)) : new Set();
   const regions = field(contract, "coverage_regions", "coverageRegions", "regions");

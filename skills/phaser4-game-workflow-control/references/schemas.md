@@ -89,3 +89,5 @@ V4 的合同还必须声明 `combination_preacceptance`，固定视觉实施单�
 根因只使用 `方案缺失`、`执行问题`、`验收问题`。退回阶段取最早受影响阶段：合同/方案字段缺失回 `V1/PROPOSAL`，生产或 Scene 组合偏差回 `V3/V4`，证据错误或错误 PASS 回 `VALIDATING`。
 
 视觉人工审阅只保留唯一 V2 `visual_human_approval`：它不采集 `reviewer_type`、`reviewer_id` 或 reviewer 字符串，仅包含非空 `review_id`、ISO `reviewed_at`、非空 `evidence`、`evidence_sha256`、`status: PASS`，并绑定冻结 target、V2 candidate、diff、基线和审批证据哈希。Schema 明确拒绝这些 reviewer 字段，避免 AI 身份成为人工审批真值。`v2Artifact.human_review`、`v2StructuredReview`、`combinationPreacceptance`、`structuredFidelityCase.human_review`、逐 `fidelityRegionResult.human_review`、F2 review 和 `component_reviews[].human_review` 均不再是重复人工审阅要求；这些工件必须改用当前身份绑定的确定性机器 evidence、status 和 hash。V5 COMPLETE 的 `all_visual_artifacts_human_reviewed` 既不能单独满足 schema/运行时硬门，也不再作为重复人工覆盖声明。
+
+效果图相关 Schema 统一使用 `origin=provided|generated`。generated 的 `reference_target`、上下文效果图、V2 artifact 或原子 expected asset 必须带 `generation_record`；provided 禁止带生成记录。generation record 的身份字段、完整 `style_reference_inputs`、canonical 全局视觉一致性提示词、`style_drift_policy=forbid`、实际 `full_prompt`、输出 SHA、`consistency_status=passed` 与 `consistency_evidence` 由共享合同进一步校验，Schema 不承担项目具体美术风格解释。

@@ -83,8 +83,8 @@ function validManifest() {
     candidateVersion: "candidate-1",
     baseline_sha256: EMPTY_DOCUMENT_FINGERPRINT,
     effect_image_reconstruction: { applicability: "effect-image", lifecycle: "v5-complete" },
-    visual_baseline: { id: "fox-world", version: "1.0.0", style_fingerprint: EMPTY_DOCUMENT_FINGERPRINT, document: "docs/visual-baseline.md", status: "global-static-baseline-frozen", anchor_evidence: ["evidence/visual/main-anchor.png"] },
-    reference_target: { candidate_id: "mockup-a", original_file: "evidence/visual/mockup.png", target_sha256: targetSha, frozen_at: "2026-08-15T00:00:00Z", status: "reference-target-frozen", scene_ids: ["main-gameplay"], state_ids: ["default"] },
+    visual_baseline: { id: "fox-world", version: "1.0.0", style_fingerprint: EMPTY_DOCUMENT_FINGERPRINT, document: "docs/visual-baseline.md", status: "global-static-baseline-frozen", anchor_evidence: [{ path: "evidence/visual/main-anchor.png", sha256: EMPTY_DOCUMENT_FINGERPRINT }] },
+    reference_target: { candidate_id: "mockup-a", original_file: "evidence/visual/mockup.png", target_sha256: targetSha, frozen_at: "2026-08-15T00:00:00Z", status: "reference-target-frozen", scene_ids: ["main-gameplay"], state_ids: ["default"], origin: "provided" },
     candidate_identity: { kind: "git", sha256: candidateSha, diff_fingerprint: "diff-1" },
     contract_reconciliation: {
       decision_id: "reconcile-1", reconciled_at: "2026-08-15T00:10:00Z", target_sha256: targetSha, candidate_sha256: candidateSha, status: "passed", rollback: "V1/module-audit",
@@ -94,7 +94,7 @@ function validManifest() {
   coverage_audit: { version: "1", reference_target_sha256: targetSha, canvases: [{ scene_id: "main-gameplay", state_id: "default", width: 390, height: 844 }], summaries: [{ scene_id: "main-gameplay", state_id: "default", coverage_ratio: 1, uncovered: [], status: "passed", evidence: "evidence/coverage/summary.md" }], regions: [{ id: "region-background", scene_id: "main-gameplay", state_id: "default", layout_node_ids: ["layout-background"], layer: "background", bounds: { x: 0, y: 0, width: 390, height: 844 }, owner_type: "runtime-rendered", owner_id: "scene-background", production_method: "runtime-program", delivery_kind: "runtime-program", confirmation: { mode: "AUTO", reasons: [], evidence: "evidence/coverage/region-background.md" } }, { id: "region-hero", scene_id: "main-gameplay", state_id: "default", layout_node_ids: ["hero-component-layout-node"], layer: "actors", bounds: { x: 10, y: 20, width: 64, height: 96 }, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", ...visualComponentContract("hero-component", "hero-idle", "art/hero.png", "public/assets/hero.png", targetSha), owner_id: "asset-pipeline", asset_id: "hero-idle", confirmation: { mode: "AUTO", reasons: [], evidence: "evidence/coverage/region-hero.md" } }, { id: "region-score", scene_id: "main-gameplay", state_id: "default", layout_node_ids: ["layout-score"], layer: "hud", bounds: { x: 300, y: 10, width: 70, height: 30 }, owner_type: "runtime-data", owner_id: "score-state", production_method: "runtime-program", delivery_kind: "runtime-program", confirmation: { mode: "AUTO", reasons: [], evidence: "evidence/coverage/region-score.md" } }] },
     fidelity_cases: [{ id: "main-default", target_sha256: targetSha, candidate_sha256: candidateSha, scene_id: "main-gameplay", state_id: "default", viewport: { width: 390, height: 844 }, dpr: 1.5, language: "zh-CN", random_seed: 42, input_trace: "traces/main-default.json", animation_sample: "stable-frame:120", layout_contract_version: "1.1.0", visual_baseline_version: "1.0.0", reference_evidence: ["evidence/visual/reference.png"], candidate_evidence: ["evidence/visual/candidate.png"], tolerance: { unit: "logical-px", value: 2 }, exception_ids: [], conclusion: "passed" }],
     budgets: { max_texture_size: 4096, texture_memory_mb: 64, max_atlases: 8, max_frames: 512, animation_sample_fps: 24, max_overdraw: 3, max_draw_calls: 100 },
-    assets: [{ id: "hero-idle", texture_key: "hero-idle", ownership_type: "fixed-production-visual", coverage_region_ids: ["region-hero"], scene_id: "main-gameplay", route: "frame-animation", status: "accepted", production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", ...visualComponentContract("hero-component", "hero-idle", "art/hero.png", "public/assets/hero.png", targetSha), visual_baseline_id: "fox-world", visual_baseline_version: "1.0.0", style_fingerprint: EMPTY_DOCUMENT_FINGERPRINT, source_file: "art/hero.png", license_record: "docs/license.md", runtime_outputs: ["public/assets/hero.png"], sha256: heroPngSha, phaser_evidence: "evidence/phaser.png", gameplay_visual_evidence: "evidence/gameplay.mp4", consistency_evidence: ["evidence/visual/hero-consistency.png"] }],
+    assets: [{ id: "hero-idle", texture_key: "hero-idle", origin: "provided", ownership_type: "fixed-production-visual", coverage_region_ids: ["region-hero"], scene_id: "main-gameplay", route: "frame-animation", status: "accepted", production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", ...visualComponentContract("hero-component", "hero-idle", "art/hero.png", "public/assets/hero.png", targetSha), visual_baseline_id: "fox-world", visual_baseline_version: "1.0.0", style_fingerprint: EMPTY_DOCUMENT_FINGERPRINT, source_file: "art/hero.png", license_record: "docs/license.md", runtime_outputs: ["public/assets/hero.png"], sha256: heroPngSha, phaser_evidence: "evidence/phaser.png", gameplay_visual_evidence: "evidence/gameplay.mp4", consistency_evidence: ["evidence/visual/hero-consistency.png"] }],
   };
   const evidenceIdentity = { evidence_sha256: EMPTY_DOCUMENT_FINGERPRINT, candidate_sha256: candidateSha, target_sha256: targetSha, baseline_sha256: EMPTY_DOCUMENT_FINGERPRINT, diff_fingerprint: "diff-1" };
   const componentUsage = [{ component_id: "hero-component", state_id: "default", asset_id: "hero-idle", placement_ids: ["hero-component-placement-1"], runtime_file: "public/assets/hero.png", runtime_sha256: heroPngSha, status: "passed" }];
@@ -247,7 +247,7 @@ function attachSceneReconstructionContract(manifest) {
     implementation_plan: { resources: ["hero-idle"], layout: ["target-bound-layout"], runtime_objects: ["scene-background", "score-state"], composition: ["main-gameplay-scene"] },
     display_layer_planning: {
       version: "1.0",
-      scene_master: { scene_id: "main-gameplay", state_id: "default", target_sha256: targetSha, viewport: { width: 390, height: 844 }, persistent_layer_ids: ["score-hud"] },
+      scene_master: { scene_id: "main-gameplay", state_id: "default", target_sha256: targetSha, origin: "provided", viewport: { width: 390, height: 844 }, persistent_layer_ids: ["score-hud"] },
       inventory: [{ layer_id: "score-hud", type: "hud", host_scene_id: "main-gameplay", target_sha256: targetSha, persistence: "persistent", states: [{ state_id: "default", required: true }], in_scene_master: true, trigger: { event: "scene-ready" }, dismiss: { event: "scene-exit" }, input_blocking: false, z_order: 10, backdrop: { mode: "none" }, focus_restore: { mode: "preserve" }, responsive: { rule: "safe-area" }, relations: { mutually_exclusive_layer_ids: [], coexists_with_layer_ids: [] } }],
     },
     combination_preacceptance: { status: "passed", formal_scene_structure: "MainGameplayScene/ContainerGraph", formal_assets: manifest.assets.map((asset) => asset.id), formal_layout_structure: "MainGameplayScene/ContainerGraph", layout_geometry: layoutGeometry, visual_fidelity: { contour: "passed", proportion: "passed", pose: "passed", icon_semantics: "passed", full_scene_composition: "passed" }, redesign_check: "none", layout_calculation_identity: "layout:main-gameplay:1", evidence: ["evidence/visual/combined.png"], target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
@@ -294,6 +294,21 @@ function validAiManifest() {
   const statePrompt = "状态段：default；严格保持冻结区域状态，不新增文字、数值或运行时热区。";
   const fullPrompt = buildEffectImageFullPrompt({ assetPrompt, statePrompt });
   asset.generation_record = { record_id: "gen-hero-1", generator: "imagegen", generator_version: "1", created_at: "2026-08-15T00:00:00Z", command_or_recipe: "render hero-idle", input_sources: ["prompt:hero-idle"], parameters: { size: `${width}x${height}` }, reconstruction_mode: "reference-faithful", reference_input_mode: "full-reference-guidance", pixel_reuse_policy: "forbid-output-reuse", global_prompt_prefix: EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, asset_prompt: assetPrompt, state_prompt: statePrompt, negative_prompt: EFFECT_IMAGE_NEGATIVE_PROMPT, full_prompt: fullPrompt, model: "image-model", model_version: "1", seed: 42, reference_inputs: [manifest.reference_target.original_file], style_reference_inputs: ["evidence/visual/ai-reference.png"], postprocess: [], output_file: "public/assets/hero.png", annotation_number: 2, region_id: "region-hero", component_id: "hero-component", state_id: "default", asset_id: "hero-idle", target_sha256: manifest.reference_target.target_sha256, candidate_sha256: manifest.candidate_identity.sha256, diff_fingerprint: manifest.candidate_identity.diff_fingerprint, candidate_version: manifest.candidateVersion, source_file: "art/hero.png", runtime_file: "public/assets/hero.png" };
+  asset.origin = "generated";
+  Object.assign(asset.generation_record, {
+    origin: "generated",
+    visual_baseline_id: manifest.visual_baseline.id,
+    visual_baseline_version: manifest.visual_baseline.version,
+    style_fingerprint: manifest.visual_baseline.style_fingerprint,
+    baseline_document: manifest.visual_baseline.document,
+    style_reference_inputs: [{ path: manifest.visual_baseline.anchor_evidence[0].path, sha256: manifest.visual_baseline.anchor_evidence[0].sha256 }],
+    global_visual_consistency_prompt: "保持当前项目全局视觉语言、颜色材质、光照、线条、装饰密度、UI形状与全局视觉锚点一致，禁止风格迁移、重设计、跨项目风格混用。",
+    style_drift_policy: "forbid",
+    prompt_sent: true,
+    output_sha256: asset.sha256,
+    consistency_status: "passed",
+    consistency_evidence: { path: "evidence/visual/ai-consistency.json", sha256: EMPTY_DOCUMENT_FINGERPRINT },
+  });
   asset.substitution_policy = "user-change-request-only";
   Object.assign(manifest.coverage_audit.regions[1], { production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
   manifest.coverage_audit.regions[1].atomic_image_requirements = deriveAtomicImageRequirements(manifest.coverage_audit.regions[1]);
@@ -374,7 +389,7 @@ function minimalPng(width = 1, height = 1, raw = Buffer.alloc(height * (width * 
 /** 创建文件检查所需的空夹具。 */
 async function createFixtureFiles(root, includeAi = false) {
   const paths = ["docs/visual-baseline.md", "evidence/visual/main-anchor.png", "evidence/visual/mockup.png", "evidence/visual/reference.png", "evidence/visual/candidate.png", "evidence/coverage/summary.md", "evidence/coverage/state-analysis.md", "evidence/coverage/region-background.md", "evidence/coverage/region-hero.md", "evidence/coverage/region-score.md", "art/hero.aseprite", "docs/license.md", "public/assets/hero.png", "evidence/phaser.png", "evidence/gameplay.mp4", "evidence/visual/hero-consistency.png", "src/region-background.mjs", "src/region-score.mjs", "evidence/fidelity/layout-background.json", "evidence/fidelity/hero-component-layout-node.json", "evidence/fidelity/layout-score.json", ...["scope", "state-machine", "input", "collision", "module-scene-ownership", "coordinate-space", "layout", "budget"].map((domain) => `evidence/reconcile/${domain}.md`)];
-  if (includeAi) paths.push("evidence/visual/ai-reference.png");
+  if (includeAi) paths.push("evidence/visual/ai-reference.png", "evidence/visual/ai-consistency.json");
   for (const path of paths) { const target = join(root, path); await mkdir(dirname(target), { recursive: true }); await writeFile(target, path === "evidence/visual/mockup.png" ? minimalPng(390, 844) : path === "public/assets/hero.png" ? minimalPng(includeAi ? 96 : 64, includeAi ? 144 : 96) : ""); }
   for (const path of ["evidence/runtime/hero.json", "evidence/f2/visual.md", "evidence/f2/production.md", "evidence/f3/replay.json", "evidence/fidelity/main.json", "evidence/visual/hero-consistency.json"]) { const target = join(root, path); await mkdir(dirname(target), { recursive: true }); await writeFile(target, path.endsWith("hero-consistency.json") ? JSON.stringify({ status: "passed" }) : ""); }
   // 独立生产资源必须与冻结原图保持不同内容，文件夹具用非空字节避免把两者误设为同一份证据。
@@ -582,7 +597,7 @@ test("显示层合同拒绝默认主图中的瞬态层和孤立上下文图", ()
   const planning = transient.scene_reconstruction_contract.display_layer_planning;
   const layer = planning.inventory[0]; layer.layer_id = "pause-modal"; layer.type = "modal"; layer.persistence = "transient"; layer.in_scene_master = true; planning.scene_master.persistent_layer_ids = ["pause-modal"]; layer.states = [{ state_id: "open", required: true }];
   assert(validateManifest(transient).some((item) => item.includes("上下文效果图") || item.includes("不得进入默认 scene master")));
-  layer.in_scene_master = false; planning.scene_master.persistent_layer_ids = []; layer.states[0].contextual_effect_image = { evidence: "evidence/display/pause-open.png", sha256: transient.reference_target.target_sha256, host_scene_id: "main-gameplay", host_target_sha256: transient.reference_target.target_sha256, layer_target_sha256: transient.reference_target.target_sha256, viewport: { width: 390, height: 844 }, kind: "host-scene-context", isolated_only: true };
+  layer.in_scene_master = false; planning.scene_master.persistent_layer_ids = []; layer.states[0].contextual_effect_image = { evidence: "evidence/display/pause-open.png", sha256: transient.reference_target.target_sha256, origin: "provided", host_scene_id: "main-gameplay", host_target_sha256: transient.reference_target.target_sha256, layer_target_sha256: transient.reference_target.target_sha256, viewport: { width: 390, height: 844 }, kind: "host-scene-context", isolated_only: true };
   assert(validateManifest(transient).some((item) => item.includes("孤立组件图")));
 });
 test("V4 stage 对 v3-ready 清单强制 production_contract_audit", async () => { const root = await mkdtemp(join(tmpdir(), "visual-v4-stage-")); const path = join(root, "visual-assets.json"); const manifest = validManifest(); manifest.effect_image_reconstruction.lifecycle = "v3-ready"; delete manifest.production_contract_audit; await writeFile(path, JSON.stringify(manifest)); assert(validateManifest(manifest, { stage: "V4" }).some((item) => item.includes("production_contract_audit 缺失"))); assert.equal(await main([path, "--stage", "V4", "--check-files", "--project-root", root]), 1); });
@@ -670,6 +685,17 @@ test("任意路线使用 generation_record 时必须提供完整公共生成身�
 test("预算必须是正数", () => { const manifest = validManifest(); manifest.budgets.max_texture_size = null; assert(validateManifest(manifest).some((item) => item.includes("max_texture_size 必须是正数"))); });
 test("PNG 必须具备支持的 IHDR 组合和完整扫描行", () => { assert.deepEqual(readPngDimensions(minimalPng(1, 1)), { width: 1, height: 1 }); assert.equal(readPngDimensions(minimalPng(1, 1, Buffer.alloc(0))), null); assert.equal(readPngDimensions(minimalPng(1, 1, Buffer.from([5, 0, 0, 0, 0]))), null); });
 test("文件检查覆盖存在性、哈希与 AI 引用", async () => { const root = await mkdtemp(join(tmpdir(), "visual-manifest-")); const manifest = validAiManifest(); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("文件不存在"))); await createFixtureFiles(root, true); await writeConfirmationFixtureFiles(root, manifest); assert.deepEqual(await checkManifestFiles(manifest, root), []); await writeFile(join(root, "docs/visual-baseline.md"), "修改"); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("SHA-256 不一致"))); });
+test("全局锚点和一致性证据内容篡改时文件门拒绝", async () => {
+  const root = await mkdtemp(join(tmpdir(), "visual-global-file-gate-"));
+  const manifest = validAiManifest();
+  await createFixtureFiles(root, true);
+  await writeConfirmationFixtureFiles(root, manifest);
+  await writeFile(join(root, "evidence/visual/main-anchor.png"), "anchor-drift");
+  assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("visual_baseline.anchor_evidence") && item.includes("sha256")));
+  await writeFile(join(root, "evidence/visual/main-anchor.png"), "");
+  await writeFile(join(root, "evidence/visual/ai-consistency.json"), "consistency-drift");
+  assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("generation_record.consistency_evidence") && item.includes("sha256")));
+});
 test("V5 check-files 与 CLI 拒绝旧 F2 baseline 或旧 diff 身份", async () => {
   const root = await mkdtemp(join(tmpdir(), "visual-f2-identity-"));
   await createFixtureFiles(root);

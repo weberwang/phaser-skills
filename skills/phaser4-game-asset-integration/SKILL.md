@@ -31,6 +31,8 @@ V4 需要使用正式 Scene 结构的同屏组合预验收；V5 需要结构化 
 
 正式效果图标注命令必须带 `--proposal <file>.json`；省略该参数直接失败，不生成只有用户图示的成功产物。
 
+效果图生成的前置硬门是全局视觉一致性：先冻结 `visual_baseline`（`status=global-static-baseline-frozen`、`document=docs/visual-baseline.md`、身份、风格指纹和全部锚点），再生成 scene master/reference target、宿主场景上下文图和原子 ImageGen 资产。generated 记录必须绑定全部锚点、canonical 全局一致性提示词、`style_drift_policy=forbid`、实际 full prompt、输出 SHA 和一致性证据；provided 图禁止伪造 generation_record。详细字段和文件门见 [全局视觉控制](references/global-visual-control.md)。
+
 ## 条件参考
 
 - 参考截图、录屏、运行项目或源码还原：读取 [视觉还原](references/visual-reconstruction.md)。

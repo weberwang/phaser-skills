@@ -39,6 +39,8 @@ V0 分流，V1 契约/低保真，V2 方向/高保真，V3 生产规划，V4 正
 
 视觉阶段使用全局控制面的唯一机器枚举 `V0→V1→V2→V3→V4→V5`。`global-static-baseline-frozen` 只冻结静态基线，不等于 `v2-direction-frozen`；生产规划、正式资产验收和运行集成分别使用 `v3-production-planning-complete`、`v4-formal-acceptance-complete`、`v5-runtime-integration-candidate`。正式 Scene/UI 入口、Boot 接入、可见资产消费和旧视觉删除必须由共享跨阶段校验器从带 path+sha256 的 V2/V3/V4/V5 证据派生，不能使用根摘要、手写 PASS 或用户批准文字。灰盒仅可留在隔离 A2/安全 A3，进入正式链后必须重新通过完整视觉阶段门。
 
+所有生成效果图必须先绑定全局 `visual_baseline` 与全部锚点：scene master/reference target、显示层宿主上下文图和原子 ImageGen 记录一律继承同一基线身份。generated 才要求完整生成记录与实际 full prompt；provided 不得补写伪记录。原子资产必须同时使用完整冻结效果图主参考和全局锚点，不能只传局部冻结图。文件门复算真实输出/锚点/一致性证据 SHA，身份变化时从最早受影响阶段重验。
+
 ## 完成
 
 ### 场景内显示层规划与验收

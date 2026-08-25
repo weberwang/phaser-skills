@@ -40,3 +40,5 @@ V1/V2 是条件门：严格复刻可免三方向探索，但不能免 V2a/V2b、
 ## 失效与返回
 
 需求或结构变化返回 V1；方向/基线变化返回 V2；生产规格或绑定变化返回 V3；资源执行偏差返回 V4；运行态问题返回 V5。模块边界变化仅在存在实质取舍时进入 grilling。任何基线、范围、路径、对象或代码/diff 指纹变化都会让覆盖事实的决定与证据失效。
+
+效果图生成另有统一的全局视觉输入门：生成前必须冻结 `visual_baseline`（`global-static-baseline-frozen`、`docs/visual-baseline.md`、`id/version/style_fingerprint`、完整锚点），并把身份与全部锚点传给 scene master、显示层上下文图和原子 ImageGen。局部冻结图不能代替全局锚点，原子资产仍必须把完整冻结效果图作为主参考。基线、锚点、target SHA、实际 full prompt 或 consistency evidence 身份变化时，旧证据失效并按上述规则返回最早受影响门；该静态状态不等价于 V2。

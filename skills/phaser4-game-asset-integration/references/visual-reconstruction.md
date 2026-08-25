@@ -118,4 +118,10 @@ V3 实施包把每个 region 与正式 Scene 的实现、owner、状态/部件�
 输出：current_stage=V5 未执行真实文件门，V5 FAIL。
 成功：node scripts/validate_visual_manifest.mjs docs/visual-assets.json --stage V5 --check-files --project-root .
 输出：scene contract、F2 两类机器证据、逐区域 fidelity、runtime replay 和文件门通过（exit 0）。
+
+## 先冻结全局视觉，再生成效果图
+
+场景还原的生成顺序固定为：冻结 `visual_baseline` 与全部全局锚点 → 生成/接收 scene master 与 reference target → 按 required state 生成宿主场景上下文效果图 → 以完整冻结效果图为主参考、额外继承全局锚点生成 effect-image 原子资产。基线状态 `global-static-baseline-frozen` 只是静态真值，不冒充 V2 的 `v2-direction-frozen`。
+
+生成记录必须明确 `origin=generated|provided`；只有 generated 强制绑定基线四元组、全部 `style_reference_inputs`、canonical 全局一致性段、`style_drift_policy=forbid`、实际完整提示词、输出 SHA 与一致性证据。provided 图不得伪造生成记录。基线、锚点、target SHA 或实际提示词变化会令旧记录失效，并按合同返回最早受影响阶段。
 ```

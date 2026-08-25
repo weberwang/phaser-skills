@@ -54,3 +54,5 @@ UI 必须使用 [`phaser4-game-ui-layout`](../../phaser4-game-ui-layout/SKILL.md
 
 玩法契约或结构问题退 V1，并让旧决定失效；模块边界变化仅在实质取舍时进入 grilling。修订候选重跑受影响的 F0-F3；只有 A4-A6 重跑 F4。
 视觉拆解确认属于控制面工件：收到用户确认后由编排层写入受保护 ledger/receipt，随后冻结新的 Git 基线；实施代理只能消费确认，不能创建、修改或把 ledger 路径纳入 owned/output 委派范围。
+
+场景与显示层实现消费同一全局视觉真值。实施包进入生成前，必须确认 `visual_baseline` 已冻结且 `anchor_evidence` 完整；scene master/reference target、modal/popup/drawer/toast 上下文图和原子资产的 generated 记录都必须绑定该身份与全部锚点。provided 文件只记录来源。全局基线只负责静态视觉一致性，不能替代 V2 方向冻结；任何基线、锚点、目标或提示词身份变化都要使旧生成证据失效。

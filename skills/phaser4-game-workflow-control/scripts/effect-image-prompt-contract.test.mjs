@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX,
   EFFECT_IMAGE_NEGATIVE_PROMPT,
+  EFFECT_IMAGE_GLOBAL_VISUAL_CONSISTENCY_PROMPT,
   buildEffectImageAssetPrompt,
   buildEffectImageFullPrompt,
   validateEffectImagePromptContract,
@@ -14,6 +15,17 @@ const TARGET_SHA = `sha256:${"b".repeat(64)}`;
 const CANDIDATE_SHA = `sha256:${"c".repeat(64)}`;
 const BASELINE_SHA = `sha256:${"d".repeat(64)}`;
 const EFFECT_ASSET_ID = "sc-main-hero-idle";
+const GLOBAL_ANCHOR_FILE = "evidence/visual/global-anchor.png";
+
+/** 提供当前 effect-image 回归所需的全局静态视觉基线。 */
+const GLOBAL_VISUAL_BASELINE = {
+  id: "project-global-style",
+  version: "2026.08",
+  style_fingerprint: BASELINE_SHA,
+  document: "docs/visual-baseline.md",
+  status: "global-static-baseline-frozen",
+  anchor_evidence: [{ path: GLOBAL_ANCHOR_FILE, sha256: BASELINE_SHA }],
+};
 
 /** 构造包含全部冻结视觉事实的 region，确保测试验证事实继承而非字符串长度。 */
 function effectRegion() {
@@ -60,8 +72,19 @@ function validEffectRecord(overrides = {}) {
     state_prompt: statePrompt,
     negative_prompt: EFFECT_IMAGE_NEGATIVE_PROMPT,
     full_prompt: fullPrompt,
+    origin: "generated",
+    visual_baseline_id: GLOBAL_VISUAL_BASELINE.id,
+    visual_baseline_version: GLOBAL_VISUAL_BASELINE.version,
+    style_fingerprint: GLOBAL_VISUAL_BASELINE.style_fingerprint,
+    baseline_document: GLOBAL_VISUAL_BASELINE.document,
+    global_visual_consistency_prompt: EFFECT_IMAGE_GLOBAL_VISUAL_CONSISTENCY_PROMPT,
+    style_drift_policy: "forbid",
+    prompt_sent: true,
+    consistency_status: "passed",
+    consistency_evidence: { path: "evidence/visual/global-consistency.json", sha256: BASELINE_SHA },
+    output_sha256: CANDIDATE_SHA,
     reference_inputs: [TARGET_FILE],
-    style_reference_inputs: ["evidence/visual/style-supplement.png"],
+    style_reference_inputs: [{ path: GLOBAL_ANCHOR_FILE, sha256: BASELINE_SHA }],
     target_sha256: TARGET_SHA,
     region_id: region.region_id,
     annotation_number: region.annotation_number,
@@ -137,6 +160,7 @@ function effectImageValidationContext() {
     region_id: "SC-MAIN-hero",
     region: effectRegion(),
     reference_target: { original_file: TARGET_FILE, target_sha256: TARGET_SHA },
+    visual_baseline: GLOBAL_VISUAL_BASELINE,
     effect_image_reconstruction: { applicability: "effect-image" },
   };
 }
@@ -150,6 +174,7 @@ function effectImageValidationOptions() {
     referenceTargetSha: TARGET_SHA,
     identity: { target: TARGET_SHA, candidate: CANDIDATE_SHA, baseline: BASELINE_SHA, diff: "diff-sc-main-hero" },
     candidateVersion: "candidate-2026-08-22",
+    visual_baseline: GLOBAL_VISUAL_BASELINE,
   };
 }
 
@@ -159,6 +184,7 @@ function validate(record = validEffectRecord(), asset = validEffectAsset(), over
   return validateEffectImagePromptContract(asset, { applicability: "effect-image" }, record, {
     region,
     reference_target: { original_file: TARGET_FILE },
+    visual_baseline: GLOBAL_VISUAL_BASELINE,
     ...overrides.context,
   }, {
     effectImage: true,
@@ -166,6 +192,7 @@ function validate(record = validEffectRecord(), asset = validEffectAsset(), over
     referenceTargetSha: TARGET_SHA,
     identity: { target: TARGET_SHA, candidate: CANDIDATE_SHA, diff: "diff-sc-main-hero" },
     candidateVersion: "candidate-2026-08-22",
+    visual_baseline: GLOBAL_VISUAL_BASELINE,
     ...overrides.options,
   });
 }

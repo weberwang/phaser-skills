@@ -77,3 +77,7 @@ V0-V5、G0-G3 与领域阶段是 `stageId`，不是另一套状态机。只有�
 视觉人工确认是上述阶段的附加硬门，不改变非视觉 A0-A6/F0-F4 语义：整条 V0→V5 链只要求 V2 视觉方向冻结的一条唯一 `visual_human_approval`，不采集 reviewer_type/reviewer_id/reviewer 字符串，仅要求非空 `review_id`、`reviewed_at`、`evidence`、`evidence_sha256`、`status=PASS`，并绑定冻结 target、V2 candidate、diff、基线和审批证据哈希。V2 代表画面/动态样片/结构化机器验证与 V4 actual asset、combination preacceptance、V5 fidelity、F2 component/contract 检查均需当前身份绑定的确定性机器证据和 PASS，不再重复要求 `human_review` 或第二 reviewer；AI reviewer 字段不能替代 V2 真人通过事件。审批绑定或其哈希漂移即失效；根节点 PASS、裸批准文本或 `all_visual_artifacts_human_reviewed=true` 不得代替结构化证据。缺少机器证据、过期 candidate/target、漏覆盖均按根因分类返回最早受影响阶段。
 
 Spine 换皮的 `spine_batch_acceptance` 只表示 V4 局部批次生产锁定。它必须绑定批次 revision、审阅图 SHA、候选 Cell SHA 和 Region 顺序，但不写入全局 Approval Ledger、不计为第二次 `visual_human_approval`，也不得绕过 V2 唯一人工审批或 V5 运行态证据。
+
+### 全局视觉生成顺序与失效
+
+效果图生成前必须先把 `visual_baseline` 冻结为 `global-static-baseline-frozen`，并绑定 `docs/visual-baseline.md`、基线身份、`style_fingerprint` 和全部 `anchor_evidence`。该输入同时约束 scene master/reference target、宿主场景 contextual effect image 和 effect-image 原子资产；原子资产必须同时携带完整冻结效果图主参考与全局锚点，不得用局部冻结图替代全局基线。`origin=provided` 只表示外部文件，`origin=generated` 才要求 generation_record。基线、锚点、目标 SHA、实际提示词或一致性证据身份变化时，旧记录失效并从最早受影响阶段重验。

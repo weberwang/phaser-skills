@@ -143,3 +143,7 @@ V4 除逐资产生产合同外必须完成同屏组合预验收，使用正式 S
 成功：node scripts/validate_visual_manifest.mjs docs/visual-assets.json --stage V5 --check-files --project-root .
 典型输出：结构合同、组合预验收、F2、fidelity、runtime 和文件证据全部通过，退出码 0。
 ```
+
+### 全局视觉一致性输入
+
+在任何效果图生成调用前先冻结全局 `visual_baseline`（`global-static-baseline-frozen`、`docs/visual-baseline.md`、身份字段、风格指纹和全部锚点）。该基线同时作用于 scene master/reference target、显示层上下文图和原子 ImageGen 资产；原子资产必须保留完整冻结效果图主参考，再把所有全局锚点作为额外 style references。generated 记录必须留下实际完整提示词、canonical 一致性段、禁止风格迁移策略、输出 SHA 和一致性证据；provided 只登记外部来源。文件门复算这些文件身份，基线或锚点变化会让旧证据失效。

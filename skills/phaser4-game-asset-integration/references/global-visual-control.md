@@ -108,3 +108,14 @@ V4 为每个生产包提交多资源联系表，并至少生成一张同屏组�
 - 失效证据与影响面重验：
 - 视觉一致性 F2：通过 / 失败 / 缺少机器事实
 ```
+
+## 生成前全局基线硬门
+
+所有场景主图、reference target、宿主场景 contextual effect image 和原子 ImageGen 资产都必须先引用同一份 `visual_baseline`。冻结基线必须是 `global-static-baseline-frozen`，并固定 `id`、`version`、`style_fingerprint`、`document=docs/visual-baseline.md` 与完整 `anchor_evidence`。项目具体美术风格只写入该正文和锚点证据，通用提示词不硬编码项目风格。
+
+| 记录 | 必填生成身份 | 全局锚点 | 实际提示词 | 输出/证据 | 失效条件 |
+| --- | --- | --- | --- | --- | --- |
+| generated | baseline 四元组、`origin`、`style_drift_policy=forbid` | 全部 `style_reference_inputs`，路径与真实 SHA | `global_visual_consistency_prompt` + `full_prompt`，并证明实际发送 | `output_sha256`、`consistency_status=passed`、证据路径与 SHA | 基线/锚点/目标/提示词/证据身份变化 |
+| provided | 仅 `origin=provided` | 不伪造生成输入 | 不要求生成记录 | 外部文件按普通文件门核验 | 文件路径或 SHA 变化 |
+
+原子资产仍以完整冻结效果图作为主参考，全局锚点只作为额外强制 style references。文件门会复算基线正文、锚点、冻结目标、输出和一致性证据的真实 SHA，旧记录不能跨身份复用；发现漂移时返回最早受影响阶段。

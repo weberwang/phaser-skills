@@ -46,7 +46,7 @@ function contract() {
     contract_version: "1.0",
     display_layer_planning: {
       version: "1.0",
-      scene_master: { scene_id: "main", state_id: "default", target_sha256: SHA, viewport: { width: 390, height: 844 }, persistent_layer_ids: ["battle-hud"] },
+      scene_master: { scene_id: "main", state_id: "default", target_sha256: SHA, origin: "provided", viewport: { width: 390, height: 844 }, persistent_layer_ids: ["battle-hud"] },
       inventory: [{
         layer_id: "battle-hud", type: "hud", host_scene_id: "main", target_sha256: SHA, persistence: "persistent", states: [{ state_id: "default", required: true }], in_scene_master: true,
         trigger: { event: "scene-ready" }, dismiss: { event: "scene-exit" }, input_blocking: false, z_order: 10, backdrop: { mode: "none" }, focus_restore: { mode: "preserve" }, responsive: { rule: "safe-area" },
@@ -245,7 +245,7 @@ test("显示层规划必须区分 scene master 与宿主场景上下文效果图
   assert(masterErrors.some((item) => item.includes("上下文效果图") || item.includes("不得进入默认 scene master")));
 
   layer.in_scene_master = false; transient.display_layer_planning.scene_master.persistent_layer_ids = [];
-  layer.states[0].contextual_effect_image = { evidence: "evidence/display/pause-open.png", sha256: SHA, host_scene_id: "main", host_target_sha256: SHA, layer_target_sha256: SHA, viewport: { width: 390, height: 844 }, kind: "host-scene-context", isolated_only: true };
+  layer.states[0].contextual_effect_image = { evidence: "evidence/display/pause-open.png", sha256: SHA, origin: "provided", host_scene_id: "main", host_target_sha256: SHA, layer_target_sha256: SHA, viewport: { width: 390, height: 844 }, kind: "host-scene-context", isolated_only: true };
   const isolatedErrors = validateSceneReconstructionContract(transient, manifest(), { stage: "V1" });
   assert(isolatedErrors.some((item) => item.includes("孤立组件图")));
 });
@@ -254,7 +254,7 @@ test("V4/V5 瞬态显示层必须提供宿主场景生命周期轨迹", () => {
   const value = structuredClone(contract());
   const layer = value.display_layer_planning.inventory[0];
   layer.layer_id = "pause-modal"; layer.type = "modal"; layer.persistence = "transient"; layer.in_scene_master = false; value.display_layer_planning.scene_master.persistent_layer_ids = [];
-  layer.states = [{ state_id: "open", required: true, contextual_effect_image: { evidence: "evidence/display/pause-open.png", sha256: SHA, host_scene_id: "main", host_target_sha256: SHA, layer_target_sha256: SHA, viewport: { width: 390, height: 844 }, kind: "host-scene-context", isolated_only: false } }];
+  layer.states = [{ state_id: "open", required: true, contextual_effect_image: { evidence: "evidence/display/pause-open.png", sha256: SHA, origin: "provided", host_scene_id: "main", host_target_sha256: SHA, layer_target_sha256: SHA, viewport: { width: 390, height: 844 }, kind: "host-scene-context", isolated_only: false } }];
   const errors = validateSceneReconstructionContract(value, manifest(), { stage: "V4" });
   assert(errors.some((item) => item.includes("runtime_replay")));
   layer.runtime_replay = { status: "passed", host_scene_id: "main", same_screen_combination: true, steps: ["open", "interact", "close", "restore"].map((phase) => ({ phase, evidence: `evidence/display/pause-${phase}.json` })) };

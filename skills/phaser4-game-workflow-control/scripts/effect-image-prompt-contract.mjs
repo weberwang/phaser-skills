@@ -5,6 +5,7 @@
  * 避免 SKILL、清单校验器与实际发送给生成器的文本各自漂移。
  */
 import { DIRECT_TRANSPARENT_BACKGROUND_PROMPT } from "./visual-transparent-background-contract.mjs";
+import { CANONICAL_GLOBAL_VISUAL_CONSISTENCY_PROMPT, GLOBAL_VISUAL_CONSISTENCY_PROMPT, validateGlobalVisualGenerationRecord } from "./global-visual-consistency-contract.mjs";
 
 /** effect-image 生成记录必须声明的重建模式。 */
 export const EFFECT_IMAGE_RECONSTRUCTION_MODE = "reference-faithful";
@@ -14,6 +15,8 @@ export const EFFECT_IMAGE_REFERENCE_INPUT_MODE = "full-reference-guidance";
 export const EFFECT_IMAGE_PIXEL_REUSE_POLICY = "forbid-output-reuse";
 /** expected_assets.alpha=true 时必须追加到实际请求中的透明直出提示词。 */
 export const EFFECT_IMAGE_DIRECT_TRANSPARENT_BACKGROUND_PROMPT = DIRECT_TRANSPARENT_BACKGROUND_PROMPT;
+/** effect-image 必须与全局视觉基线共同发送的 canonical 一致性段。 */
+export const EFFECT_IMAGE_GLOBAL_VISUAL_CONSISTENCY_PROMPT = GLOBAL_VISUAL_CONSISTENCY_PROMPT;
 
 /**
  * effect-image 的 canonical global_prompt_prefix。
@@ -182,10 +185,10 @@ export function buildEffectImageAssetPrompt({ region, sceneReconstructionContrac
 }
 
 /** 组合实际发送给 ImageGen 的完整正向/负向提示词，供生成器与记录共用。 */
-export function buildEffectImageFullPrompt({ assetPrompt, statePrompt = "", globalPromptPrefix = EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, negativePrompt = EFFECT_IMAGE_NEGATIVE_PROMPT, transparentBackground = false, expectedAlpha = false, expectedAsset = null } = {}) {
+export function buildEffectImageFullPrompt({ assetPrompt, statePrompt = "", globalPromptPrefix = EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, globalConsistencyPrompt = GLOBAL_VISUAL_CONSISTENCY_PROMPT, negativePrompt = EFFECT_IMAGE_NEGATIVE_PROMPT, transparentBackground = false, expectedAlpha = false, expectedAsset = null } = {}) {
   // 只有机器合同明确要求 alpha=true 时才追加直出指令，避免改变背景资产或不透明图片路线。
   const transparencyPrompt = transparentBackground === true || expectedAlpha === true || expectedAsset?.alpha === true ? EFFECT_IMAGE_DIRECT_TRANSPARENT_BACKGROUND_PROMPT : "";
-  return [globalPromptPrefix, assetPrompt, statePrompt, transparencyPrompt, negativePrompt].filter(nonEmptyString).join("\n\n");
+  return [globalPromptPrefix, globalConsistencyPrompt, assetPrompt, statePrompt, transparencyPrompt, negativePrompt].filter(nonEmptyString).join("\n\n");
 }
 
 /** 判断一段文本是否确实包含忠实还原语义，而非只提到参考图。 */
@@ -315,6 +318,17 @@ export function validateEffectImagePromptContract(asset, contract, generation, c
   if (targetFile && paths.some((path) => samePath(path, targetFile))) add("effect-image source_file/runtime_file/output 不得等于冻结效果图");
   const targetSha = options.referenceTargetSha ?? options.reference_target_sha256 ?? expectedIdentity.target ?? expectedIdentity.targetSha256 ?? expectedIdentity.target_sha256 ?? referenceTarget.target_sha256 ?? referenceTarget.targetSha256;
   const outputSha = [asset?.sha256, asset?.file_sha256, generation?.sha256, generation?.output?.sha256, generation?.output?.file_sha256, generation?.actual_output?.sha256, generation?.actualOutput?.sha256, generation?.output_metadata?.sha256].find(nonEmptyString);
+  // effect-image 的原子资产也必须继承根 visual_baseline 和全部全局锚点；局部冻结图不能替代全局真值。
+  const globalBaseline = options.visual_baseline ?? context.visual_baseline ?? contract?.visual_baseline;
+  errors.push(...validateGlobalVisualGenerationRecord(generation, {
+    label: "effect-image generation_record",
+    visual_baseline: globalBaseline,
+    target_sha256: targetSha,
+    output_sha256: options.outputSha256 ?? options.output_sha256 ?? outputSha,
+  }));
+  if (generation.global_visual_consistency_prompt !== CANONICAL_GLOBAL_VISUAL_CONSISTENCY_PROMPT) add("effect-image generation_record.global_visual_consistency_prompt 必须使用 canonical 全局视觉一致性提示词");
+  const fullPromptForGlobal = generation.full_prompt ?? generation.actual_full_prompt ?? generation.actual_prompt ?? generation.sent_prompt ?? generation.prompt_sent_text;
+  if (nonEmptyString(fullPromptForGlobal) && !fullPromptForGlobal.includes(CANONICAL_GLOBAL_VISUAL_CONSISTENCY_PROMPT)) add("effect-image 实际完整提示词缺少全局视觉一致性段");
   if (targetSha && outputSha && targetSha === outputSha) add("effect-image source/runtime/output 的文件身份不得复用冻结效果图 SHA");
   const operationValues = [generation.operation, generation.operations, generation.source_operation, generation.reference_operation, generation.reference_usage, generation.referenceUsage, generation.pixel_reuse_operation, generation.pixelReuseOperation, generation.postprocess, generation.post_processing, generation.postProcessing, generation.command_or_recipe, generation.actual_operation, generation.actualOperation, generation.output_operation, generation.outputOperation].flatMap((value) => Array.isArray(value) ? value : [value]).filter((value) => nonEmptyString(value) || isObject(value)).map((value) => typeof value === "string" ? value : JSON.stringify(value)).join(" ");
   if (generation.crop_reference === true || generation.reference_crop === true || /crop[-_ ]?reference|裁切参考|裁剪参考|抠图参考|抠取参考|直接复制参考(?:图)?像素|copy(?:ing)?\s+(?:the\s+)?reference(?:\s+image)?\s+pixels|reuse(?:d)?[-_ ]?(?:reference|ref)[-_ ]?pixels/i.test(operationValues)) add("effect-image 禁止裁切、抠图或复用参考图像素作为输出");

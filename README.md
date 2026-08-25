@@ -113,3 +113,11 @@ npm run test:workflow
 ```
 
 Phaser 验证流程启动本地服务前必须检查同项目健康实例并复用；查重后，本项目、非特权、无外部写入的验证服务不需要批准。终止归属不明进程仍禁止。Phaser 真机、商店、生产迁移和正式发布保留精确显式批准；A6 永不自动。通用进程和 Git 操作不由本控制面批准或阻断。
+
+### 全局视觉一致性生成硬门
+
+所有生成式效果图都必须先冻结同一份全局 `visual_baseline`：`status=global-static-baseline-frozen`、`document=docs/visual-baseline.md`、`id`、`version`、`style_fingerprint` 与完整 `anchor_evidence`。场景主效果图/reference target、modal/popup/drawer/toast 等宿主场景上下文效果图，以及 effect-image 拆解后的原子 ImageGen 资产，都必须在生成记录中绑定当前基线身份和全部锚点；原子资产仍以完整冻结效果图作为主参考，全局锚点只能作为额外强制 style references。
+
+生成记录必须声明 `origin=generated`、`visual_baseline_id`、`visual_baseline_version`、`style_fingerprint`、`baseline_document`、完整 `style_reference_inputs`（路径与 SHA）、canonical 全局一致性提示词、`style_drift_policy=forbid`、实际发送的 `full_prompt`、`output_sha256`、`consistency_status=passed` 及 `consistency_evidence`（路径与 SHA）。全局提示词固定为“保持当前项目全局视觉语言、颜色材质、光照、线条、装饰密度、UI形状与全局视觉锚点一致，禁止风格迁移、重设计、跨项目风格混用。”；项目具体美术风格只能从基线正文与锚点证据读取，不写入通用 Skill。外部/用户提供的效果图使用 `origin=provided`，不得补写伪生成记录。
+
+基线、锚点、冻结目标 SHA、实际 full prompt 或一致性证据身份变化会使旧生成记录失效，文件门必须重新读取并计算真实文件 SHA，再返回最早受影响阶段。`global-static-baseline-frozen` 只冻结静态基线，不等同于 V2 的 `v2-direction-frozen`。
