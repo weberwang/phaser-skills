@@ -9,7 +9,10 @@ function nonEmptyString(value) { return typeof value === "string" && value.trim(
 /** 提取资源的统一输出元数据，供 V4 文件门和 ImageGen 合同共用。 */
 export function resolveOutputMetadata(asset = {}) {
   const output = isObject(asset.output) ? asset.output : (isObject(asset.output_metadata) ? asset.output_metadata : {});
-  const outputFile = asset.output_file ?? asset.outputFile ?? output.file ?? output.path ?? asset.runtime_output_file ?? asset.runtimeOutputFile;
+  // ImageGen 的 runtime_outputs 是归一化后的交付路径；只有缺少所有显式输出字段时才退回 source_file。
+  const outputFile = asset.output_file ?? asset.outputFile ?? output.file ?? output.path ?? asset.runtime_output_file ?? asset.runtimeOutputFile
+    ?? (Array.isArray(asset.runtime_outputs) ? asset.runtime_outputs[0] : undefined)
+    ?? (Array.isArray(asset.runtimeOutputs) ? asset.runtimeOutputs[0] : undefined);
   return { mime_type: asset.mime_type ?? asset.mimeType ?? output.mime_type ?? output.mimeType, width: asset.width ?? output.width, height: asset.height ?? output.height, alpha: asset.alpha ?? output.alpha, sha256: asset.sha256 ?? asset.output_sha256 ?? output.sha256 ?? output.file_sha256, file: outputFile ?? asset.source_file };
 }
 

@@ -108,9 +108,33 @@ function independentContract(overrides = {}) {
   };
 }
 
-/** 构造包含完整输出身份的 ImageGen 资产合同。 */
-function imageGenAsset(overrides = {}) {
+/** 为 ImageGen 夹具生成与源图、运行时输出和最终尺寸一致的归一化记录。 */
+function normalizationRecordForAsset({ sourceFile, outputFile, width, height, alpha, sha256, operation = "not-required" } = {}) {
+  const identitySha = /^sha256:[a-f0-9]{64}$/.test(String(sha256 ?? "")) ? sha256 : HASH;
   return {
+    schema: "image-normalization/1",
+    status: "passed",
+    operation,
+    source_file: sourceFile,
+    source_sha256: identitySha,
+    source_width: width,
+    source_height: height,
+    target_width: width,
+    target_height: height,
+    output_file: outputFile,
+    output_sha256: identitySha,
+    output_width: width,
+    output_height: height,
+    preserve_alpha: alpha === true,
+    tool: "sharp",
+    tool_version: "0.35.3",
+    completed_at: "2026-08-15T00:00:00Z",
+  };
+}
+
+/** 构造包含完整输出身份的 ImageGen 资产合同，并同步资产与生成记录的归一化事实。 */
+function imageGenAsset(overrides = {}) {
+  const asset = {
     source_file: "art/hero.png",
     mime_type: "image/png",
     width: 64,
@@ -126,6 +150,27 @@ function imageGenAsset(overrides = {}) {
     },
     ...overrides,
   };
+  // 尺寸合同已经声明时，记录必须指向最终 runtime 输出；负向夹具没有有效尺寸时只保留可审计占位事实。
+  const width = Number.isInteger(asset.width) && asset.width > 0 ? asset.width : 64;
+  const height = Number.isInteger(asset.height) && asset.height > 0 ? asset.height : 96;
+  const sourceFile = asset.source_file ?? "art/hero.png";
+  const outputFile = asset.output_file ?? asset.runtime_outputs?.[0] ?? "public/assets/hero.png";
+  const identitySha = /^sha256:[a-f0-9]{64}$/.test(String(asset.sha256 ?? "")) ? asset.sha256 : HASH;
+  const inheritedNormalization = asset.generation_record?.normalization_record;
+  const inheritedMatchesAsset = inheritedNormalization && typeof inheritedNormalization === "object" && !Array.isArray(inheritedNormalization)
+    && inheritedNormalization.source_file === sourceFile && inheritedNormalization.output_file === outputFile
+    && inheritedNormalization.source_sha256 === identitySha && inheritedNormalization.output_sha256 === identitySha
+    && inheritedNormalization.source_width === width && inheritedNormalization.source_height === height
+    && inheritedNormalization.target_width === width && inheritedNormalization.target_height === height
+    && inheritedNormalization.output_width === width && inheritedNormalization.output_height === height
+    && inheritedNormalization.preserve_alpha === (asset.alpha === true)
+    && inheritedNormalization.operation === "not-required";
+  const normalization = Object.hasOwn(asset, "normalization_record")
+    ? asset.normalization_record
+    : (inheritedMatchesAsset ? inheritedNormalization : normalizationRecordForAsset({ sourceFile, outputFile, width, height, alpha: asset.alpha, sha256: identitySha }));
+  asset.normalization_record = normalization;
+  if (asset.generation_record && typeof asset.generation_record === "object") asset.generation_record = { ...asset.generation_record, normalization_record: normalization };
+  return asset;
 }
 
 /** 固定回归夹具：①–④、⑦–⑨均声明 ImageGen，只有①和⑦交付 PNG。 */
@@ -699,7 +744,10 @@ test("V4 文件门按 RGBA 像素指纹拒绝不同 ID/路径的重复 PNG", asy
   const png = encodePngRgba(2, 2, Buffer.alloc(16, 128)); const pngSha = `sha256:${createHash("sha256").update(png).digest("hex")}`; const identity = { evidence_sha256: HASH, candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1" };
   const region = refreshAtomicRequirements({ ...multiComponentRegion(2), id: "duplicate-pixels", annotation_number: 5, production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
   region.expected_assets = region.expected_assets.map((asset, index) => ({ ...asset, mime_type: "image/png", width: 2, height: 2, alpha: true, sha256: pngSha, source_file: `art/unique-${index + 1}.png`, runtime_file: `public/unique-${index + 1}.png` })); region.asset_ids = region.expected_assets.map((asset) => asset.asset_id); refreshAtomicRequirements(region);
-  const assets = region.expected_assets.map((expected, index) => ({ id: expected.asset_id, texture_key: expected.asset_id, source_file: expected.source_file, production_origin: region.production_origin, production_method: region.production_method, delivery_kind: region.delivery_kind, image_generation_required: true, generation_record_required: true, substitution_policy: region.substitution_policy, expected_assets: [expected], mime_type: "image/png", width: 2, height: 2, alpha: true, sha256: pngSha, runtime_outputs: [expected.runtime_file], runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", ...identity }, generation_record: { ...imageGenAsset().generation_record, record_id: `DEDUP-GEN-${index + 1}`, annotation_number: 5, region_id: region.id, component_id: expected.component_id, state_id: expected.state_id, asset_id: expected.asset_id, source_file: expected.source_file, runtime_file: expected.runtime_file, output_file: expected.runtime_file } }));
+  const assets = region.expected_assets.map((expected, index) => {
+    const normalization = normalizationRecordForAsset({ sourceFile: expected.source_file, outputFile: expected.runtime_file, width: 2, height: 2, alpha: true, sha256: pngSha });
+    return { id: expected.asset_id, texture_key: expected.asset_id, source_file: expected.source_file, production_origin: region.production_origin, production_method: region.production_method, delivery_kind: region.delivery_kind, image_generation_required: true, generation_record_required: true, substitution_policy: region.substitution_policy, expected_assets: [expected], mime_type: "image/png", width: 2, height: 2, alpha: true, sha256: pngSha, normalization_record: normalization, runtime_outputs: [expected.runtime_file], runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", ...identity }, generation_record: { ...imageGenAsset().generation_record, record_id: `DEDUP-GEN-${index + 1}`, annotation_number: 5, region_id: region.id, component_id: expected.component_id, state_id: expected.state_id, asset_id: expected.asset_id, source_file: expected.source_file, runtime_file: expected.runtime_file, output_file: expected.runtime_file, normalization_record: normalization } };
+  });
   await mkdir(join(root, "public"), { recursive: true }); for (const expected of region.expected_assets) await writeFile(join(root, expected.runtime_file), png);
   const actualAssets = region.expected_assets.map((expected) => ({ ...expected, file: expected.runtime_file })); const usages = region.expected_assets.map((expected) => ({ component_id: expected.component_id, state_id: expected.state_id, asset_id: expected.asset_id, placement_ids: [expected.component_id === "component-1" ? "placement-1" : "placement-2"], runtime_file: expected.runtime_file, runtime_sha256: pngSha, status: "passed" }));
   const manifest = { workItemId: "work-item-1", candidateVersion: "candidate-1", candidate_identity: { sha256: HASH, diff_fingerprint: "diff-1" }, visual_baseline: { style_fingerprint: HASH }, reference_target: { target_sha256: HASH }, coverage_audit: { regions: [region] }, assets, production_contract_audit: { status: "passed", candidate_version: "candidate-1", candidate_sha256: HASH, target_sha256: HASH, audited_at: "2026-08-15T00:00:00Z", units: [{ annotation_number: 5, region_id: region.id, observed_method: "imagegen", observed_delivery_kind: "raster-image", status: "passed", expected_assets: region.expected_assets, actual_assets: actualAssets, runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", ...identity, component_usages: usages } }] } };
@@ -833,4 +881,5 @@ test("Implementation Package schema 与生产合同方法/交付枚举保持一�
     assert(conditions.includes(`\"${pair[0]}\"`) && conditions.includes(`\"${pair[1]}\"`), `${pair[0]} delivery constraint missing`);
   }
   assert(schemaText.includes("image_generation_required") && schemaText.includes("atlas_allowed") && schemaText.includes("atlas_slice") && schemaText.includes("runtime_implementation"));
+  assert(schemaText.includes("imageNormalizationRecord") && schemaText.includes("imageGenerationRecord"), "ImageGen 尺寸归一化记录 schema 未接入实施包");
 });

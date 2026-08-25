@@ -85,7 +85,9 @@ node <skill-dir>\scripts\workflow-control.mjs diff-audit --work-item .workflow-c
 
 ImageGen 位图生产还需逐区域显式声明 `production_origin`、`production_method`、`delivery_kind`、`image_generation_required`、`generation_record_required`、`substitution_policy` 和 `expected_assets`；`production_method` 仅允许 `imagegen`、`authored-raster`、`authored-svg`、`phaser-graphics`、`runtime-program`、`reuse`，`delivery_kind` 仅允许 `raster-image`、`vector-image`、`runtime-drawing`、`runtime-program`、`existing-asset`。`independent-production`、`generate-now` 不推断 ImageGen。只有 `image_generation_required=true` 才强制 `imagegen` + `raster-image`、独立源/运行时位图、生成与提示词记录、MIME/宽高/alpha/SHA 及运行时实际消费；SVG、Graphics、CanvasTexture 或 runtime drawing 不等价。V4 使用 `production_contract_audit`，F2 同时通过视觉与生产合同复核，V5 还需 F3 replay、非空 freshness-bound fidelity cases 和无未批准替换。方法变更仅接受绑定区域、工作项、候选版本、用户原文与时间的 `ACCEPTED` Change Request。独立生产不等于图片生成；视觉相似不等于生产合同完成。
 
-本次 ImageGen 源文件、运行时文件和实际输出只允许 `image/png` 或 `image/jpeg`，扩展名只允许 `.png`、`.jpg`、`.jpeg`；通用 `authored-raster` 仍可按其合同使用其他位图格式。若 `expected_assets.alpha=true`，必须由 ImageGen 直接生成真实透明 PNG，生成记录声明 `background_mode=transparent`、`transparency_strategy=direct-generation`，提示词明确禁止先生成实体背景再抠图/去背/背景移除；`postprocess` 可为空数组，V4 仍需解码 PNG 证明存在透明像素。
+本次 ImageGen 源文件、运行时文件和实际输出只允许 `image/png` 或 `image/jpeg`，扩展名只允许 `.png`、`.jpg`、`.jpeg`；通用 `authored-raster` 仍可按其合同使用其他位图格式。若 `expected_assets.alpha=true`，默认且优先由 ImageGen 直接生成真实透明 PNG，生成记录声明 `background_mode=transparent`、`transparency_strategy=direct-generation`，提示词明确要求直出透明背景；只有直接生成明确 `failed` 或 `unsupported` 时才允许切换到 `background-removal-fallback`。兜底必须绑定包含 `status`、`record_id`、`attempted_at`、`failure_reason`、`evidence` 的 `direct_generation_attempt`，提供恰好一条含 `operation` 和完成状态的 `background_removal_attempts`，并明确记录一次背景移除操作；失败即退回 V3/V4，禁止无限重试或静默多次去背。直接策略仍禁止抠图/去背/背景移除，`postprocess` 可为空数组；无论哪条策略，V4 都需解码 PNG 证明存在透明像素。
+
+单图完整顺序是“生成原图 →（透明直出失败/不支持才一次受控背景移除）→ 尺寸归一化 → V4/final/runtime”。项目根 Sharp 工具必须按 `expected_assets.width/height` 输出精确 PNG/JPEG；不透明 `alpha=false` 可交付 JPEG，透明 `alpha=true` 只能交付 PNG，并生成 `normalization_record`。`padding_policy=none`，源图比例不符就重新生成，禁止裁剪、补边、contain 或静默拉伸。尺寸已正确仍记录 `operation=not-required`，透明路径前后都要保留 Alpha；归一化记录缺失、失败、路径/哈希/尺寸不一致时阻断。
 
 拆解必须先完成状态分析，再建立 `component_inventory`：逐项覆盖 `default`、`selected`、`active`、`disabled`、`pressed`、`hover`、`victory`、`defeat`、`paused`，并先绑定状态证据 SHA、冻结目标 SHA 和 `completed_at`。编号不是资产数量单位；② 的 6 个顶部按钮、⑨ 的 3 个动作图标必须按每个可复用 `component × required state` 交付独立位图，⑧ 的相同 3 个底部表面登记为 1 个 component + 3 个 placements。ImageGen 强制 `delivery_mode=individual`、`atlas_allowed=false`，禁止横向组图和图集；交互热区必须与 interactive placement 一一独立绑定且不计入视觉资产，重复视觉实例只登记一个 component 并用多个 placements 表达。
 
@@ -99,6 +101,8 @@ node <skill-dir>\scripts\validate_visual_manifest.mjs docs\visual-assets.json --
 node <skill-dir>\scripts\validate_visual_manifest.mjs docs\visual-assets.json --stage V4 --check-files --project-root .
 node <skill-dir>\scripts\validate_visual_manifest.mjs docs\visual-assets.json --stage V5 --check-files --project-root .
 ```
+
+尺寸归一化命令示例：`node <skill-dir>\scripts\visual-image-normalization.mjs --source art\hero-original.png --output public\hero.png --width 300 --height 450 --require-alpha`；命令成功输出可写入 `generation_record.normalization_record` 的 JSON 记录。不透明素材可将输出后缀改为 `.jpg`/`.jpeg`，透明素材必须使用 `.png`。
 
 正式生成命令必须带 `--proposal <file>.json`；省略该参数直接失败，不生成只有用户图示的成功产物。
 

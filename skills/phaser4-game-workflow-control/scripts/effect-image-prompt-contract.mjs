@@ -4,7 +4,7 @@
  * 该模块集中保存唯一的提示词常量、资产提示词构建器和生成记录门禁，
  * 避免 SKILL、清单校验器与实际发送给生成器的文本各自漂移。
  */
-import { DIRECT_TRANSPARENT_BACKGROUND_PROMPT } from "./visual-transparent-background-contract.mjs";
+import { DIRECT_TRANSPARENT_BACKGROUND_PROMPT, FALLBACK_TRANSPARENT_BACKGROUND_PROMPT, TRANSPARENCY_FALLBACK_STRATEGY, TRANSPARENCY_STRATEGY } from "./visual-transparent-background-contract.mjs";
 import { CANONICAL_GLOBAL_VISUAL_CONSISTENCY_PROMPT, GLOBAL_VISUAL_CONSISTENCY_PROMPT, validateGlobalVisualGenerationRecord } from "./global-visual-consistency-contract.mjs";
 
 /** effect-image 生成记录必须声明的重建模式。 */
@@ -15,6 +15,8 @@ export const EFFECT_IMAGE_REFERENCE_INPUT_MODE = "full-reference-guidance";
 export const EFFECT_IMAGE_PIXEL_REUSE_POLICY = "forbid-output-reuse";
 /** expected_assets.alpha=true 时必须追加到实际请求中的透明直出提示词。 */
 export const EFFECT_IMAGE_DIRECT_TRANSPARENT_BACKGROUND_PROMPT = DIRECT_TRANSPARENT_BACKGROUND_PROMPT;
+/** 直接透明生成失败/不支持时，兜底记录可复用的 canonical 提示词段。 */
+export const EFFECT_IMAGE_FALLBACK_TRANSPARENT_BACKGROUND_PROMPT = FALLBACK_TRANSPARENT_BACKGROUND_PROMPT;
 /** effect-image 必须与全局视觉基线共同发送的 canonical 一致性段。 */
 export const EFFECT_IMAGE_GLOBAL_VISUAL_CONSISTENCY_PROMPT = GLOBAL_VISUAL_CONSISTENCY_PROMPT;
 
@@ -185,9 +187,12 @@ export function buildEffectImageAssetPrompt({ region, sceneReconstructionContrac
 }
 
 /** 组合实际发送给 ImageGen 的完整正向/负向提示词，供生成器与记录共用。 */
-export function buildEffectImageFullPrompt({ assetPrompt, statePrompt = "", globalPromptPrefix = EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, globalConsistencyPrompt = GLOBAL_VISUAL_CONSISTENCY_PROMPT, negativePrompt = EFFECT_IMAGE_NEGATIVE_PROMPT, transparentBackground = false, expectedAlpha = false, expectedAsset = null } = {}) {
-  // 只有机器合同明确要求 alpha=true 时才追加直出指令，避免改变背景资产或不透明图片路线。
-  const transparencyPrompt = transparentBackground === true || expectedAlpha === true || expectedAsset?.alpha === true ? EFFECT_IMAGE_DIRECT_TRANSPARENT_BACKGROUND_PROMPT : "";
+export function buildEffectImageFullPrompt({ assetPrompt, statePrompt = "", globalPromptPrefix = EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, globalConsistencyPrompt = GLOBAL_VISUAL_CONSISTENCY_PROMPT, negativePrompt = EFFECT_IMAGE_NEGATIVE_PROMPT, transparentBackground = false, expectedAlpha = false, expectedAsset = null, transparencyStrategy, transparency_strategy } = {}) {
+  // 只有机器合同明确要求 alpha=true 时才追加透明策略段，避免改变背景资产或不透明图片路线。
+  const selectedStrategy = transparency_strategy ?? transparencyStrategy ?? expectedAsset?.transparency_strategy ?? TRANSPARENCY_STRATEGY;
+  const transparencyPrompt = transparentBackground === true || expectedAlpha === true || expectedAsset?.alpha === true
+    ? selectedStrategy === TRANSPARENCY_FALLBACK_STRATEGY ? EFFECT_IMAGE_FALLBACK_TRANSPARENT_BACKGROUND_PROMPT : EFFECT_IMAGE_DIRECT_TRANSPARENT_BACKGROUND_PROMPT
+    : "";
   return [globalPromptPrefix, globalConsistencyPrompt, assetPrompt, statePrompt, transparencyPrompt, negativePrompt].filter(nonEmptyString).join("\n\n");
 }
 

@@ -69,9 +69,10 @@ templates.core["visual-design.md"] = templates.core["visual-design.md"]
   .replace("风格指纹不回填本文件。冻结后对本文件完整字节计算 SHA-256，并仅在 `visual-assets.json` 记录 `sha256:<64 位小写十六进制>`；正式文件检查会重新计算并拒绝静默修改。", "风格指纹只计算 docs/visual-baseline.md 完整字节；本文件追加 V2b/V4/V5 留痕不会改变基线哈希。");
 templates.core["visual-design.md"] = templates.core["visual-design.md"].replace("状态 draft/frozen", "状态 draft/global-static-baseline-frozen");
 templates.core["visual-design.md"] += "\n## 冻结基线索引与阶段证据\n\n冻结规则正文位于 `docs/visual-baseline.md`，其 SHA-256 写入 `visual-assets.json`。本文件仅追加方向探索、V2b/V4/V5 证据和基线版本索引，不得把阶段留痕写回已哈希基线正文。\n";
-// 生成模板同步透明直出合同；ImageGen 直接交付时 postprocess 可以为空数组。
+// 生成模板同步透明生产合同；直出是首选，兜底必须留下失败事实和一次操作记录。
 templates.core["visual-design.md"] = templates.core["visual-design.md"].replace("非空 `postprocess` 列表", "字符串 `postprocess` 数组（可为空）");
-templates.core["visual-design.md"] += "\n透明 alpha 资产必须由 ImageGen 直接生成 PNG，记录 `background_mode=transparent` 与 `transparency_strategy=direct-generation`；禁止抠图、去背、背景移除或 matting 后处理。\n";
+templates.core["visual-design.md"] += "\n透明 alpha 资产默认且优先由 ImageGen 直接生成 PNG，记录 `background_mode=transparent` 与 `transparency_strategy=direct-generation`；只有直接生成明确 failed/unsupported 时才允许 `background-removal-fallback`，绑定包含 status、record_id、attempted_at、failure_reason、evidence 的 `direct_generation_attempt`，并提供恰好一条含 operation/status 的 `background_removal_attempts`，失败即退回 V3/V4。直接策略禁止抠图、去背、背景移除或 matting 后处理。\n";
+templates.core["visual-design.md"] += "\nImageGen 单图顺序固定为：生成原图 →（透明直出失败/不支持才一次受控背景移除）→ Sharp 尺寸归一化 → V4/final/runtime。`padding_policy=none`；源图比例不符必须按目标比例重新生成，禁止 crop、padding、contain 或静默拉伸；尺寸正确也写 `normalization_record.operation=not-required`，透明 PNG 前后保留 Alpha。\n";
 
 // 所有生成式效果图都从同一份静态全局基线和全部锚点取样；该规则不把项目具体美术风格硬编码进模板。
 templates.core["visual-baseline.md"] += "\n## 生成一致性硬门\n\n生成场景主效果图、宿主场景上下文效果图以及 effect-image 原子资产前，必须先冻结 `visual_baseline`：`status=global-static-baseline-frozen`、`document=docs/visual-baseline.md`、`id`、`version`、`style_fingerprint` 和完整 `anchor_evidence`。生成记录必须使用 `origin=generated`，逐项记录 `visual_baseline_id`、`visual_baseline_version`、`style_fingerprint`、`baseline_document`、全部 `style_reference_inputs`（路径与 SHA）、canonical 全局一致性提示词、`style_drift_policy=forbid`、实际 `full_prompt`、`prompt_sent=true`、`target_sha256`、`output_sha256`、`consistency_status=passed` 和 `consistency_evidence`（路径与 SHA）。外部或用户提供的效果图使用 `origin=provided`，禁止补写伪生成记录。全局基线是生成强制输入，但不冒充 V2；V2 仍负责方向冻结。\n\n固定全局一致性提示词：保持当前项目全局视觉语言、颜色材质、光照、线条、装饰密度、UI形状与全局视觉锚点一致，禁止风格迁移、重设计、跨项目风格混用。\n";

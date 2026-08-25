@@ -315,6 +315,30 @@
       "additionalProperties": true
     },
     "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "imageNormalizationRecord": {
+      "type": "object",
+      "required": ["schema", "status", "operation", "source_file", "source_sha256", "source_width", "source_height", "target_width", "target_height", "output_file", "output_sha256", "output_width", "output_height", "preserve_alpha", "tool", "tool_version", "completed_at"],
+      "properties": {
+        "schema": {"const": "image-normalization/1"},
+        "status": {"const": "passed"},
+        "operation": {"enum": ["resize-to-contract", "not-required"]},
+        "source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "source_width": {"type": "integer", "minimum": 1},
+        "source_height": {"type": "integer", "minimum": 1},
+        "target_width": {"type": "integer", "minimum": 1},
+        "target_height": {"type": "integer", "minimum": 1},
+        "output_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
+        "output_sha256": {"$ref": "#/$defs/sha256"},
+        "output_width": {"type": "integer", "minimum": 1},
+        "output_height": {"type": "integer", "minimum": 1},
+        "preserve_alpha": {"type": "boolean"},
+        "tool": {"const": "sharp"},
+        "tool_version": {"type": "string", "minLength": 1},
+        "completed_at": {"type": "string", "format": "date-time"}
+      },
+      "additionalProperties": true
+    },
     "referenceTechnicalConflicts": {
       "type": "array",
       "items": {"type": "object", "minProperties": 1}
@@ -360,6 +384,12 @@
         "consistency_evidence": {"$ref": "#/$defs/globalConsistencyEvidence"}
       },
       "additionalProperties": true
+    },
+    "imageGenerationRecord": {
+      "allOf": [
+        {"$ref": "#/$defs/globalVisualGenerationRecord"},
+        {"type": "object", "properties": {"normalization_record": {"$ref": "#/$defs/imageNormalizationRecord"}}}
+      ]
     },
     "globalStyleReferenceInput": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}}},
     "globalConsistencyEvidence": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}}},
@@ -767,7 +797,9 @@
           "properties": {
             "mime_type": {"enum": ["image/png", "image/jpeg"]},
             "source_file": {"pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
-            "runtime_file": {"pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}
+            "runtime_file": {"pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
+            "normalization_record": {"$ref": "#/$defs/imageNormalizationRecord"},
+            "generation_record": {"$ref": "#/$defs/imageGenerationRecord"}
           },
           "not": {"required": ["atlas_slice"]}
         }

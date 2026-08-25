@@ -764,6 +764,30 @@
       }
     },
     "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "imageNormalizationRecord": {
+      "type": "object",
+      "required": ["schema", "status", "operation", "source_file", "source_sha256", "source_width", "source_height", "target_width", "target_height", "output_file", "output_sha256", "output_width", "output_height", "preserve_alpha", "tool", "tool_version", "completed_at"],
+      "properties": {
+        "schema": {"const": "image-normalization/1"},
+        "status": {"const": "passed"},
+        "operation": {"enum": ["resize-to-contract", "not-required"]},
+        "source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "source_width": {"type": "integer", "minimum": 1},
+        "source_height": {"type": "integer", "minimum": 1},
+        "target_width": {"type": "integer", "minimum": 1},
+        "target_height": {"type": "integer", "minimum": 1},
+        "output_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
+        "output_sha256": {"$ref": "#/$defs/sha256"},
+        "output_width": {"type": "integer", "minimum": 1},
+        "output_height": {"type": "integer", "minimum": 1},
+        "preserve_alpha": {"type": "boolean"},
+        "tool": {"const": "sharp"},
+        "tool_version": {"type": "string", "minLength": 1},
+        "completed_at": {"type": "string", "format": "date-time"}
+      },
+      "additionalProperties": true
+    },
     "v2ToV3Contract": {
       "type": "object",
       "additionalProperties": false,
@@ -811,6 +835,12 @@
         "consistency_evidence": {"$ref": "#/$defs/globalConsistencyEvidence"}
       },
       "additionalProperties": true
+    },
+    "imageGenerationRecord": {
+      "allOf": [
+        {"$ref": "#/$defs/globalVisualGenerationRecord"},
+        {"type": "object", "properties": {"normalization_record": {"$ref": "#/$defs/imageNormalizationRecord"}}}
+      ]
     },
     "globalStyleReferenceInput": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}}},
     "globalConsistencyEvidence": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}}},
@@ -888,7 +918,7 @@
     "displayLayerRuntimeReplay": {"type": "object", "required": ["status", "host_scene_id", "same_screen_combination", "steps"], "properties": {"status": {"enum": ["passed", "PASS"]}, "host_scene_id": {"type": "string", "minLength": 1}, "same_screen_combination": {"const": true}, "steps": {"type": "array", "minItems": 4, "items": {"type": "object", "required": ["phase", "evidence"], "properties": {"phase": {"enum": ["open", "interact", "close", "restore"], "evidence": {"type": "string", "minLength": 1}}}}}}},
     "sceneAssetUsage": {"type": "object", "required": ["target_display_size", "intended_scale_range", "origin", "anchor", "nine_slice", "material", "composition_region", "required_neighbors", "typography_ownership", "runtime_foreground_ownership"], "properties": {"target_display_size": {"type": "object", "required": ["width", "height"], "properties": {"width": {"type": "number", "exclusiveMinimum": 0}, "height": {"type": "number", "exclusiveMinimum": 0}}}, "intended_scale_range": {"type": "object", "required": ["min", "max"], "properties": {"min": {"type": "number", "exclusiveMinimum": 0}, "max": {"type": "number", "exclusiveMinimum": 0}}}, "max_dpr": {"const": 1.5, "description": "最大生产 DPR 固定为 1.5；运行时实际 DPR 动态取值并封顶为 1.5。"}, "padding_policy": {"type": "string", "description": "ImageGen individual 必须为 none；非 ImageGen 可不声明该字段。"}, "origin": {"type": ["object", "string"]}, "anchor": {"type": ["object", "string"]}, "nine_slice": {"type": ["object", "string"]}, "material": {"type": ["object", "string"]}, "composition_region": {"type": ["object", "string"]}, "required_neighbors": {"type": "array"}, "typography_ownership": {"type": ["object", "string"]}, "runtime_foreground_ownership": {"type": ["object", "string"]}}, "additionalProperties": true},
     "visualExpectedAsset": {"type": "object", "required": ["asset_id", "asset_scope", "atomic_visual_key", "component_id", "state_id"], "properties": {"asset_id": {"type": "string", "minLength": 1}, "asset_scope": {"const": "atomic-component"}, "atomic_visual_key": {"type": "string", "minLength": 1}, "component_id": {"type": "string", "minLength": 1}, "state_id": {"type": "string", "minLength": 1}, "origin": {"enum": ["provided", "generated"]}, "generation_record": {"$ref": "#/$defs/globalVisualGenerationRecord"}, "mime_type": {"type": "string"}, "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1}}, "allOf": [{"if": {"required": ["origin"], "properties": {"origin": {"const": "generated"}}}, "then": {"required": ["generation_record"]}}, {"if": {"required": ["origin"], "properties": {"origin": {"const": "provided"}}}, "then": {"not": {"required": ["generation_record"]}}}]},
-    "imageGenerationExpectedAsset": {"allOf": [{"$ref": "#/$defs/visualExpectedAsset"}, {"type": "object", "required": ["source_file", "runtime_file", "mime_type", "width", "height"], "properties": {"mime_type": {"enum": ["image/png", "image/jpeg"]}, "source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "runtime_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}}}]},
+    "imageGenerationExpectedAsset": {"allOf": [{"$ref": "#/$defs/visualExpectedAsset"}, {"type": "object", "required": ["source_file", "runtime_file", "mime_type", "width", "height"], "properties": {"mime_type": {"enum": ["image/png", "image/jpeg"]}, "source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "runtime_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "normalization_record": {"$ref": "#/$defs/imageNormalizationRecord"}, "generation_record": {"$ref": "#/$defs/imageGenerationRecord"}}}]},
     "strings": {
       "type": "array",
       "items": {

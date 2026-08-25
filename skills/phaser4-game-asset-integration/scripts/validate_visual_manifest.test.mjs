@@ -69,6 +69,29 @@ function addManualConfirmationRecords(manifest) {
 /** 判断测试夹具字符串字段是否非空。 */
 function nonEmptyString(value) { return typeof value === "string" && value.trim().length > 0; }
 
+/** 为 AI 位图夹具生成与原始中间图、最终运行时文件和尺寸合同一致的记录。 */
+function imageNormalizationRecord({ sourceFile, outputFile, width, height, alpha, sha256 }) {
+  return {
+    schema: "image-normalization/1",
+    status: "passed",
+    operation: "not-required",
+    source_file: sourceFile,
+    source_sha256: sha256,
+    source_width: width,
+    source_height: height,
+    target_width: width,
+    target_height: height,
+    output_file: outputFile,
+    output_sha256: sha256,
+    output_width: width,
+    output_height: height,
+    preserve_alpha: alpha === true,
+    tool: "sharp",
+    tool_version: "0.35.3",
+    completed_at: "2026-08-15T00:00:00Z",
+  };
+}
+
 /** 构造包含一个已验收资源的有效清单。 */
 function validManifest() {
   const targetSha = sha256Bytes(minimalPng(390, 844));
@@ -287,13 +310,13 @@ function validOrdinaryManifest() {
 
 /** 构造包含完整生成包的 AI 合成栅格清单。 */
 function validAiManifest() {
-  const manifest = validManifest(); const asset = manifest.assets[0]; const region = manifest.coverage_audit.regions[1]; const width = 96; const height = 144; region.expected_assets[0].width = width; region.expected_assets[0].height = height; asset.expected_assets[0].width = width; asset.expected_assets[0].height = height; manifest.production_contract_audit.units[0].expected_assets[0].width = width; manifest.production_contract_audit.units[0].expected_assets[0].height = height; manifest.production_contract_audit.units[0].actual_assets[0].width = width; manifest.production_contract_audit.units[0].actual_assets[0].height = height; asset.route = "ai-composite-raster"; asset.production_method = "imagegen"; asset.delivery_kind = "raster-image"; asset.image_generation_required = true; asset.generation_record_required = true; asset.source_file = "art/hero.png"; region.expected_assets[0].source_file = "art/hero.png"; asset.expected_assets[0].source_file = "art/hero.png"; asset.output_file = "public/assets/hero.png"; asset.mime_type = "image/png"; asset.width = width; asset.height = height; asset.alpha = true; asset.sha256 = sha256Bytes(minimalPng(width, height)); asset.runtime_consumption.runtime_sha256 = asset.sha256; asset.runtime_consumption.component_usages[0].runtime_sha256 = asset.sha256; manifest.production_contract_audit.units[0].actual_assets[0].sha256 = asset.sha256;
+  const manifest = validManifest(); const asset = manifest.assets[0]; const region = manifest.coverage_audit.regions[1]; const width = 96; const height = 144; region.expected_assets[0].width = width; region.expected_assets[0].height = height; asset.expected_assets[0].width = width; asset.expected_assets[0].height = height; manifest.production_contract_audit.units[0].expected_assets[0].width = width; manifest.production_contract_audit.units[0].expected_assets[0].height = height; manifest.production_contract_audit.units[0].actual_assets[0].width = width; manifest.production_contract_audit.units[0].actual_assets[0].height = height; asset.route = "ai-composite-raster"; asset.production_method = "imagegen"; asset.delivery_kind = "raster-image"; asset.image_generation_required = true; asset.generation_record_required = true; asset.source_file = "art/hero.png"; region.expected_assets[0].source_file = "art/hero.png"; asset.expected_assets[0].source_file = "art/hero.png"; asset.output_file = "public/assets/hero.png"; asset.mime_type = "image/png"; asset.width = width; asset.height = height; asset.alpha = true; asset.sha256 = sha256Bytes(minimalPng(width, height)); region.expected_assets[0].alpha = true; asset.expected_assets[0].alpha = true; manifest.production_contract_audit.units[0].expected_assets[0].alpha = true; region.expected_assets[0].sha256 = asset.sha256; asset.expected_assets[0].sha256 = asset.sha256; manifest.production_contract_audit.units[0].expected_assets[0].sha256 = asset.sha256; asset.normalization_record = imageNormalizationRecord({ sourceFile: asset.source_file, outputFile: asset.output_file, width, height, alpha: asset.alpha, sha256: asset.sha256 }); asset.runtime_consumption.runtime_sha256 = asset.sha256; asset.runtime_consumption.component_usages[0].runtime_sha256 = asset.sha256; manifest.production_contract_audit.units[0].actual_assets[0].sha256 = asset.sha256;
   region.expected_assets[0].mime_type = "image/png"; asset.expected_assets[0].mime_type = "image/png"; manifest.production_contract_audit.units[0].expected_assets[0].mime_type = "image/png"; manifest.production_contract_audit.units[0].expected_assets[0].source_file = "art/hero.png";
   const promptRegion = manifest.scene_reconstruction_contract.coverage_regions.find((item) => item.region_id === "region-hero");
   const assetPrompt = buildEffectImageAssetPrompt({ region: promptRegion, component: promptRegion ? { component_id: "hero-component", role: "visual-component", atomic_visual_key: "hero-component-atomic" } : undefined, state: "default" }).prompt;
   const statePrompt = "状态段：default；严格保持冻结区域状态，不新增文字、数值或运行时热区。";
   const fullPrompt = buildEffectImageFullPrompt({ assetPrompt, statePrompt });
-  asset.generation_record = { record_id: "gen-hero-1", generator: "imagegen", generator_version: "1", created_at: "2026-08-15T00:00:00Z", command_or_recipe: "render hero-idle", input_sources: ["prompt:hero-idle"], parameters: { size: `${width}x${height}` }, reconstruction_mode: "reference-faithful", reference_input_mode: "full-reference-guidance", pixel_reuse_policy: "forbid-output-reuse", global_prompt_prefix: EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, asset_prompt: assetPrompt, state_prompt: statePrompt, negative_prompt: EFFECT_IMAGE_NEGATIVE_PROMPT, full_prompt: fullPrompt, model: "image-model", model_version: "1", seed: 42, reference_inputs: [manifest.reference_target.original_file], style_reference_inputs: ["evidence/visual/ai-reference.png"], postprocess: [], output_file: "public/assets/hero.png", annotation_number: 2, region_id: "region-hero", component_id: "hero-component", state_id: "default", asset_id: "hero-idle", target_sha256: manifest.reference_target.target_sha256, candidate_sha256: manifest.candidate_identity.sha256, diff_fingerprint: manifest.candidate_identity.diff_fingerprint, candidate_version: manifest.candidateVersion, source_file: "art/hero.png", runtime_file: "public/assets/hero.png" };
+  asset.generation_record = { record_id: "gen-hero-1", generator: "imagegen", generator_version: "1", created_at: "2026-08-15T00:00:00Z", command_or_recipe: "render hero-idle", input_sources: ["prompt:hero-idle"], parameters: { size: `${width}x${height}` }, reconstruction_mode: "reference-faithful", reference_input_mode: "full-reference-guidance", pixel_reuse_policy: "forbid-output-reuse", global_prompt_prefix: EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, asset_prompt: assetPrompt, state_prompt: statePrompt, negative_prompt: EFFECT_IMAGE_NEGATIVE_PROMPT, full_prompt: `${fullPrompt}\n透明背景要求：直接生成真实 alpha 透明背景`, background_mode: "transparent", transparency_strategy: "direct-generation", model: "image-model", model_version: "1", seed: 42, reference_inputs: [manifest.reference_target.original_file], style_reference_inputs: ["evidence/visual/ai-reference.png"], postprocess: [], output_file: "public/assets/hero.png", annotation_number: 2, region_id: "region-hero", component_id: "hero-component", state_id: "default", asset_id: "hero-idle", target_sha256: manifest.reference_target.target_sha256, candidate_sha256: manifest.candidate_identity.sha256, diff_fingerprint: manifest.candidate_identity.diff_fingerprint, candidate_version: manifest.candidateVersion, source_file: "art/hero.png", runtime_file: "public/assets/hero.png", normalization_record: asset.normalization_record };
   asset.origin = "generated";
   Object.assign(asset.generation_record, {
     origin: "generated",

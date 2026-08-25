@@ -54,7 +54,7 @@
 
 生成结果仍须以锚点和跨资源证据审阅。相同模型、种子、提示前缀或调色板只能证明生产条件相近，不能证明视觉一致。
 
-上述 AI 专用字段只强制用于路线为 `ai-composite-raster` 且状态为 `producing`、`review` 或 `accepted` 的资源，不泛化到非 AI 生产路线。机器清单中的 AI `generation_record` 必须至少包含非空 `global_prompt_prefix`、`asset_prompt`、`state_prompt`、`negative_prompt`、`model`、`model_version`、`seed`、非空 `reference_inputs` 路径列表和字符串 `postprocess` 数组；`postprocess` 可以为空数组，表示生成器已直接交付而无需后处理。所有路线的 accepted 资源若没有 `source_file/source_files`，仍须满足公共生成身份：record ID、生成器及版本、时间、可执行命令/配方、输入来源和参数。状态段不适用时也必须显式说明原因；`--check-files` 必须验证每个 `reference_inputs` 文件。若 `expected_assets.alpha=true`，还必须直接生成透明 PNG，记录 `background_mode=transparent` 与 `transparency_strategy=direct-generation`，并禁止抠图、去背、背景移除或 `matting/remove-background` 后处理。
+上述 AI 专用字段只强制用于路线为 `ai-composite-raster` 且状态为 `producing`、`review` 或 `accepted` 的资源，不泛化到非 AI 生产路线。机器清单中的 AI `generation_record` 必须至少包含非空 `global_prompt_prefix`、`asset_prompt`、`state_prompt`、`negative_prompt`、`model`、`model_version`、`seed`、非空 `reference_inputs` 路径列表和字符串 `postprocess` 数组；`postprocess` 可以为空数组，表示生成器已直接交付而无需后处理。所有路线的 accepted 资源若没有 `source_file/source_files`，仍须满足公共生成身份：record ID、生成器及版本、时间、可执行命令/配方、输入来源和参数。状态段不适用时也必须显式说明原因；`--check-files` 必须验证每个 `reference_inputs` 文件。若 `expected_assets.alpha=true`，默认且优先直接生成透明 PNG，记录 `background_mode=transparent` 与 `transparency_strategy=direct-generation`；只有直接生成明确 `failed/unsupported` 时，才可使用 `background-removal-fallback`，绑定完整 `direct_generation_attempt` 失败事实并记录一次实际背景移除操作。直接策略禁止抠图、去背、背景移除或 `matting/remove-background`，兜底失败立即返回 V3/V4。
 
 ## 多资源一致性证据
 
@@ -119,3 +119,5 @@ V4 为每个生产包提交多资源联系表，并至少生成一张同屏组�
 | provided | 仅 `origin=provided` | 不伪造生成输入 | 不要求生成记录 | 外部文件按普通文件门核验 | 文件路径或 SHA 变化 |
 
 原子资产仍以完整冻结效果图作为主参考，全局锚点只作为额外强制 style references。文件门会复算基线正文、锚点、冻结目标、输出和一致性证据的真实 SHA，旧记录不能跨身份复用；发现漂移时返回最早受影响阶段。
+
+生成式单图在绑定全局基线后仍按“生成原图 →（透明直出失败/不支持才一次受控背景移除）→ Sharp 尺寸归一化 → V4/final/runtime”交付；`padding_policy=none`，源图与目标宽高比不一致必须重生，禁止 crop、padding、contain 或静默拉伸。归一化后的 PNG/JPEG 才是最终输出（`alpha=true` 只能是 PNG，`alpha=false` 可是 JPEG），透明目标前后都要保留 Alpha，并以 `normalization_record` 绑定尺寸、路径、SHA 和工具版本。
