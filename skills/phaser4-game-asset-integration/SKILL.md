@@ -17,7 +17,7 @@ description: 为 Phaser 4 游戏规划、生产、登记、验证并集成 UI、
 
 `effect-image` 表示完整正式 Scene 的忠实还原，不是独立 PNG 生产。进入 V3 前必须有 `scene_reconstruction_contract`：冻结目标条件、整屏构图、逐 coverage region 视觉事实（runtime-data/runtime-rendered/runtime-program 也必须有 `fidelity_obligations`）、目标绑定布局、响应式关系、预声明容差和资源/布局/运行时对象/组合实现计划。合同缺失或 layout contract 未绑定当前 target SHA 时，必须返回 `V1/PROPOSAL`。
 
-effect-image ImageGen 的完整提示词模板、asset_prompt 事实继承规则和 generation_record 结构化字段统一见[《Effect-image ImageGen 忠实还原提示词合同》](references/effect-image-prompt-contract.md)。本 Skill 只保留路由和硬不变量，不在此复制模板。
+effect-image ImageGen 的完整提示词模板、asset_prompt 事实继承规则、透明直出要求和 generation_record 结构化字段统一见[《Effect-image ImageGen 忠实还原提示词合同》](references/effect-image-prompt-contract.md)。本 Skill 只保留路由和硬不变量，不在此复制模板。
 
 V4 需要使用正式 Scene 结构的同屏组合预验收；V5 需要结构化 fidelity case、逐区域测量与差异证据、确定性机器 F2、F3 runtime replay 和正式 Scene 消费证据。资源 loaded/used、missing=0、resize 稳定只属于工程子门，不能单独驱动 COMPLETE。
 

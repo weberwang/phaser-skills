@@ -54,7 +54,7 @@
 
 生成结果仍须以锚点和跨资源证据审阅。相同模型、种子、提示前缀或调色板只能证明生产条件相近，不能证明视觉一致。
 
-上述 AI 专用字段只强制用于路线为 `ai-composite-raster` 且状态为 `producing`、`review` 或 `accepted` 的资源，不泛化到非 AI 生产路线。机器清单中的 AI `generation_record` 必须至少包含非空 `global_prompt_prefix`、`asset_prompt`、`state_prompt`、`negative_prompt`、`model`、`model_version`、`seed`、非空 `reference_inputs` 路径列表和非空 `postprocess` 字符串列表。所有路线的 accepted 资源若没有 `source_file/source_files`，仍须满足公共生成身份：record ID、生成器及版本、时间、可执行命令/配方、输入来源和参数。状态段不适用时也必须显式说明原因；`--check-files` 必须验证每个 `reference_inputs` 文件。
+上述 AI 专用字段只强制用于路线为 `ai-composite-raster` 且状态为 `producing`、`review` 或 `accepted` 的资源，不泛化到非 AI 生产路线。机器清单中的 AI `generation_record` 必须至少包含非空 `global_prompt_prefix`、`asset_prompt`、`state_prompt`、`negative_prompt`、`model`、`model_version`、`seed`、非空 `reference_inputs` 路径列表和字符串 `postprocess` 数组；`postprocess` 可以为空数组，表示生成器已直接交付而无需后处理。所有路线的 accepted 资源若没有 `source_file/source_files`，仍须满足公共生成身份：record ID、生成器及版本、时间、可执行命令/配方、输入来源和参数。状态段不适用时也必须显式说明原因；`--check-files` 必须验证每个 `reference_inputs` 文件。若 `expected_assets.alpha=true`，还必须直接生成透明 PNG，记录 `background_mode=transparent` 与 `transparency_strategy=direct-generation`，并禁止抠图、去背、背景移除或 `matting/remove-background` 后处理。
 
 ## 多资源一致性证据
 

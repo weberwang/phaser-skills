@@ -4,6 +4,7 @@
  * 该模块集中保存唯一的提示词常量、资产提示词构建器和生成记录门禁，
  * 避免 SKILL、清单校验器与实际发送给生成器的文本各自漂移。
  */
+import { DIRECT_TRANSPARENT_BACKGROUND_PROMPT } from "./visual-transparent-background-contract.mjs";
 
 /** effect-image 生成记录必须声明的重建模式。 */
 export const EFFECT_IMAGE_RECONSTRUCTION_MODE = "reference-faithful";
@@ -11,6 +12,8 @@ export const EFFECT_IMAGE_RECONSTRUCTION_MODE = "reference-faithful";
 export const EFFECT_IMAGE_REFERENCE_INPUT_MODE = "full-reference-guidance";
 /** 允许重绘像素，但禁止复用参考图像素作为输出。 */
 export const EFFECT_IMAGE_PIXEL_REUSE_POLICY = "forbid-output-reuse";
+/** expected_assets.alpha=true 时必须追加到实际请求中的透明直出提示词。 */
+export const EFFECT_IMAGE_DIRECT_TRANSPARENT_BACKGROUND_PROMPT = DIRECT_TRANSPARENT_BACKGROUND_PROMPT;
 
 /**
  * effect-image 的 canonical global_prompt_prefix。
@@ -179,8 +182,10 @@ export function buildEffectImageAssetPrompt({ region, sceneReconstructionContrac
 }
 
 /** 组合实际发送给 ImageGen 的完整正向/负向提示词，供生成器与记录共用。 */
-export function buildEffectImageFullPrompt({ assetPrompt, statePrompt = "", globalPromptPrefix = EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, negativePrompt = EFFECT_IMAGE_NEGATIVE_PROMPT } = {}) {
-  return [globalPromptPrefix, assetPrompt, statePrompt, negativePrompt].filter(nonEmptyString).join("\n\n");
+export function buildEffectImageFullPrompt({ assetPrompt, statePrompt = "", globalPromptPrefix = EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, negativePrompt = EFFECT_IMAGE_NEGATIVE_PROMPT, transparentBackground = false, expectedAlpha = false, expectedAsset = null } = {}) {
+  // 只有机器合同明确要求 alpha=true 时才追加直出指令，避免改变背景资产或不透明图片路线。
+  const transparencyPrompt = transparentBackground === true || expectedAlpha === true || expectedAsset?.alpha === true ? EFFECT_IMAGE_DIRECT_TRANSPARENT_BACKGROUND_PROMPT : "";
+  return [globalPromptPrefix, assetPrompt, statePrompt, transparencyPrompt, negativePrompt].filter(nonEmptyString).join("\n\n");
 }
 
 /** 判断一段文本是否确实包含忠实还原语义，而非只提到参考图。 */

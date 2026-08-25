@@ -68,6 +68,9 @@ templates.core["visual-design.md"] = templates.core["visual-design.md"]
   .replace("风格指纹不回填本文件。冻结后对本文件完整字节计算 SHA-256，并仅在 `visual-assets.json` 记录 `sha256:<64 位小写十六进制>`；正式文件检查会重新计算并拒绝静默修改。", "风格指纹只计算 docs/visual-baseline.md 完整字节；本文件追加 V2b/V4/V5 留痕不会改变基线哈希。");
 templates.core["visual-design.md"] = templates.core["visual-design.md"].replace("状态 draft/frozen", "状态 draft/global-static-baseline-frozen");
 templates.core["visual-design.md"] += "\n## 冻结基线索引与阶段证据\n\n冻结规则正文位于 `docs/visual-baseline.md`，其 SHA-256 写入 `visual-assets.json`。本文件仅追加方向探索、V2b/V4/V5 证据和基线版本索引，不得把阶段留痕写回已哈希基线正文。\n";
+// 生成模板同步透明直出合同；ImageGen 直接交付时 postprocess 可以为空数组。
+templates.core["visual-design.md"] = templates.core["visual-design.md"].replace("非空 `postprocess` 列表", "字符串 `postprocess` 数组（可为空）");
+templates.core["visual-design.md"] += "\n透明 alpha 资产必须由 ImageGen 直接生成 PNG，记录 `background_mode=transparent` 与 `transparency_strategy=direct-generation`；禁止抠图、去背、背景移除或 matting 后处理。\n";
 
 export const CORE_TEMPLATES = templates.core;
 export const OPTIONAL_TEMPLATES = templates.optional;

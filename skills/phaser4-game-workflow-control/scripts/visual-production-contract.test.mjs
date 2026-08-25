@@ -121,7 +121,7 @@ function imageGenAsset(overrides = {}) {
     runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", evidence_sha256: HASH, candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1" },
     generation_record: {
       record_id: "GEN-1", generator: "imagegen", generator_version: "1", created_at: "2026-08-15T00:00:00Z", command_or_recipe: "imagegen hero",
-      global_prompt_prefix: "固定风格", asset_prompt: "主角", state_prompt: "待机", negative_prompt: "文字", model: "imagegen", model_version: "1", seed: 1,
+      global_prompt_prefix: "固定风格", asset_prompt: "主角", state_prompt: "待机", negative_prompt: "文字", full_prompt: "固定风格\n主角\n待机\n透明背景要求：直接生成真实 alpha 透明背景", background_mode: "transparent", transparency_strategy: "direct-generation", model: "imagegen", model_version: "1", seed: 1,
       reference_inputs: ["docs/reference.png"], postprocess: ["清理透明边缘"],
     },
     ...overrides,
@@ -216,6 +216,16 @@ test("ImageGen 输出 MIME/源运行时后缀拒绝 WebP，PNG 和 JPEG 通过",
   assert(webpErrors.some((item) => item.includes("仅允许 image/png 或 image/jpeg") || item.includes("扩展名仅允许")));
   const jpg = imageGenAsset({ mime_type: "image/jpeg", source_file: "art/hero.jpg", runtime_outputs: ["public/assets/hero.jpg"], generation_record: { ...imageGenAsset().generation_record, source_file: "art/hero.jpg", runtime_file: "public/assets/hero.jpg", output_file: "public/assets/hero.jpg" } });
   assert(!validateImageGenerationContract(jpg, contract, { annotation_number: 12, region_id: "imagegen-output-jpg" }).some((item) => item.includes("仅允许") || item.includes("扩展名仅允许")));
+});
+
+test("expected_assets.alpha=false 不触发透明直出合同，普通 JPEG ImageGen 仍可通过", () => {
+  const expectedAsset = { asset_id: "opaque-image", source_file: "art/opaque.jpg", runtime_file: "public/opaque.jpg", mime_type: "image/jpeg", alpha: false };
+  const contract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", expected_assets: [expectedAsset] });
+  delete contract.runtime_implementation;
+  assert.deepEqual(validateProductionContract(contract, { annotation_number: 12, region_id: "opaque-image" }), []);
+  const asset = imageGenAsset({ source_file: expectedAsset.source_file, mime_type: expectedAsset.mime_type, alpha: false, runtime_outputs: [expectedAsset.runtime_file], generation_record: { ...imageGenAsset().generation_record, source_file: expectedAsset.source_file, runtime_file: expectedAsset.runtime_file, output_file: expectedAsset.runtime_file } });
+  const errors = validateImageGenerationContract(asset, contract, { annotation_number: 12, region_id: "opaque-image" });
+  assert(!errors.some((item) => item.includes("透明 ImageGen")), errors.join("\n"));
 });
 
 test("ImageGen 所有多路径入口逐项拒绝非法格式和重复别名", () => {

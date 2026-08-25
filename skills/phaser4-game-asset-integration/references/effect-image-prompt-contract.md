@@ -18,6 +18,14 @@
 输出单个独立位图资产。除明确的背景资产外使用真实透明背景。主体必须完整落入指定画布。不得生成组合图、atlas、sprite sheet、展示板、说明文字、无关 UI、数字、标签、水印或其他组件。
 ```
 
+当当前 `expected_assets` 的 `alpha=true` 时，实际发送的完整提示词还必须追加以下透明直出段：
+
+```text
+透明背景要求：直接生成真实 alpha 透明背景；禁止先生成实体背景，再进行抠图、去背、背景移除或 matting。
+```
+
+这表示 ImageGen 直接输出带真实透明像素的 PNG，不再先生成实体背景后执行抠图、去背或背景移除。透明直出必须在生成记录中声明 `background_mode=transparent` 与 `transparency_strategy=direct-generation`；`operation`、`command_or_recipe`、`postprocess` 等结构化操作字段不得记录上述背景移除后处理。`postprocess` 仍必须是字符串数组，但可以为空数组 `[]`。
+
 `negative_prompt` 必须逐字使用下面的 canonical 内容：
 
 ```text
@@ -61,7 +69,7 @@
 
 `generation_record.reference_inputs` 必须包含 `reference_target.original_file` 指向的完整冻结效果图；`style_reference_inputs` 只能补充，不能替代它。`source_file`、`runtime_file`、`output_file` 和实际输出路径/文件身份不得等于冻结图。`crop_reference=true`、`reference_crop=true`、裁切/抠图参考图或复用参考像素作为输出都必须失败。
 
-记录必须保存实际发送的完整提示词（`full_prompt` 或 `actual_prompt`）和真实 `reference_inputs`，不能在生成后拼一份未实际使用的文本。完整提示词至少可复核地包含 canonical 全局段、当前 region 事实资产段、状态段和 canonical 负向段；并绑定当前 `target_sha256`、`region_id`、候选 `candidate_sha256`/`diff_fingerprint`、候选版本与实际 `record_id`。
+记录必须保存实际发送的完整提示词（`full_prompt` 或 `actual_prompt`）和真实 `reference_inputs`，不能在生成后拼一份未实际使用的文本。完整提示词至少可复核地包含 canonical 全局段、当前 region 事实资产段、状态段和 canonical 负向段；透明 `alpha=true` 资产还必须包含透明直出段；并绑定当前 `target_sha256`、`region_id`、候选 `candidate_sha256`/`diff_fingerprint`、候选版本与实际 `record_id`。
 
 普通非 `effect-image` ImageGen 不要求以上三个重建字段，也不要求冻结效果图作为参考输入；其现有通用 ImageGen 合同保持不变。
 

@@ -41,7 +41,7 @@ function validEffectRecord(overrides = {}) {
   const region = effectRegion();
   const { prompt: assetPrompt } = buildEffectImageAssetPrompt({ region, state: "idle" });
   const statePrompt = "状态：idle；保持冻结 region 中的默认待机姿态，不添加状态专属结构。";
-  const fullPrompt = buildEffectImageFullPrompt({ assetPrompt, statePrompt });
+  const fullPrompt = buildEffectImageFullPrompt({ assetPrompt, statePrompt, expectedAlpha: true });
   return {
     record_id: "GEN-SC-MAIN-HERO-IDLE",
     generator: "imagegen",
@@ -53,6 +53,8 @@ function validEffectRecord(overrides = {}) {
     reconstruction_mode: "reference-faithful",
     reference_input_mode: "full-reference-guidance",
     pixel_reuse_policy: "forbid-output-reuse",
+    background_mode: "transparent",
+    transparency_strategy: "direct-generation",
     global_prompt_prefix: EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX,
     asset_prompt: assetPrompt,
     state_prompt: statePrompt,
@@ -73,7 +75,7 @@ function validEffectRecord(overrides = {}) {
     source_file: "art/generated/sc-main-hero-idle.png",
     runtime_file: "public/assets/sc-main-hero-idle.png",
     output_file: "public/assets/sc-main-hero-idle.png",
-    postprocess: ["清理生成边缘并保留真实透明通道"],
+    postprocess: [],
     ...overrides,
   };
 }
@@ -173,6 +175,28 @@ test("合法 effect-image 忠实还原记录通过", () => {
   const record = validEffectRecord();
   const asset = validEffectAsset({ generation_record: record });
   assert.deepEqual(validateImageGenerationContract(asset, effectImageAssetContract(), effectImageValidationContext(), effectImageValidationOptions()), []);
+});
+
+test("alpha=true 单图必须声明直接透明生成并在提示词中要求透明直出", () => {
+  const record = validEffectRecord({ background_mode: undefined, full_prompt: buildEffectImageFullPrompt({ assetPrompt: validEffectRecord().asset_prompt, statePrompt: validEffectRecord().state_prompt }) });
+  const errors = validateImageGenerationContract(validEffectAsset({ generation_record: record }), effectImageAssetContract(), effectImageValidationContext(), effectImageValidationOptions());
+  assert(errors.some((item) => item.includes("background_mode")), errors.join("\n"));
+  assert(errors.some((item) => item.includes("透明直出") || item.includes("直接生成真实 alpha")), errors.join("\n"));
+});
+
+test("alpha=true 单图禁止背景移除后处理，postprocess 允许为空数组", () => {
+  const record = validEffectRecord({ postprocess: ["remove-background"] });
+  const errors = validateImageGenerationContract(validEffectAsset({ generation_record: record }), effectImageAssetContract(), effectImageValidationContext(), effectImageValidationOptions());
+  assert(errors.some((item) => item.includes("抠图") || item.includes("背景移除") || item.includes("matting")), errors.join("\n"));
+  assert.deepEqual(validateImageGenerationContract(validEffectAsset({ generation_record: validEffectRecord({ postprocess: [] }) }), effectImageAssetContract(), effectImageValidationContext(), effectImageValidationOptions()), []);
+});
+
+test("alpha=true 单图拒绝 JPEG 透明交付", () => {
+  const expectedAsset = { ...effectImageAssetContract().expected_assets[0], mime_type: "image/jpeg", source_file: "art/generated/sc-main-hero-idle.jpg", runtime_file: "public/assets/sc-main-hero-idle.jpg" };
+  const contract = { ...effectImageAssetContract(), expected_assets: [expectedAsset] };
+  const options = { ...effectImageValidationOptions(), expectedAsset };
+  const errors = validateImageGenerationContract(validEffectAsset({ mime_type: "image/jpeg", source_file: expectedAsset.source_file, runtime_file: expectedAsset.runtime_file, output_file: expectedAsset.runtime_file, generation_record: validEffectRecord({ source_file: expectedAsset.source_file, runtime_file: expectedAsset.runtime_file, output_file: expectedAsset.runtime_file }) }), contract, effectImageValidationContext(), options);
+  assert(errors.some((item) => item.includes("image/png") || item.includes("JPEG")), errors.join("\n"));
 });
 
 test("缺 reconstruction_mode 时失败", () => {

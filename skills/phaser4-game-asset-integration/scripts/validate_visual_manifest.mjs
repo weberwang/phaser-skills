@@ -14,7 +14,7 @@ import { buildVisualConfirmationAuthorityByRegion, validateVisualDecompositionCo
 import { validateReuseProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-confirmation-reuse-gates.mjs";
 import { validateFormalAnnotationPng } from "./visual-annotation-evidence.mjs";
 import { auditProductionContractByGroups, confirmationAuthorityBase, validateConfirmationGroups, validateImplementationPlan as validateImplementationPlanContract, validateManualConfirmationEvidence, validateReusePlanRelation, validateV5ProductionGateByGroups } from "./visual-manifest-confirmation.mjs";
-import { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, isSha256, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateEvidenceIdentity, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
+import { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, isSha256, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateEvidenceIdentity, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateTransparentBackgroundContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
 import { validateVisualPostApprovalReviewFields } from "../../phaser4-game-workflow-control/scripts/visual-human-review-contract.mjs";
 import { validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "../../phaser4-game-workflow-control/scripts/scene-reconstruction-contract.mjs";
 import { validateImageGenerationSizeManifest } from "../../phaser4-game-workflow-control/scripts/visual-generation-size-contract.mjs";
@@ -324,7 +324,7 @@ function validateAiGenerationRecord(asset, label, errors) {
   for (const field of AI_REQUIRED_TEXT_FIELDS) if (!nonEmptyString(record[field])) errors.push(`${label}.generation_record.${field} 必须是非空字符串`);
   if (!(nonEmptyString(record.seed) || Number.isInteger(record.seed))) errors.push(`${label}.generation_record.seed 必须是非空字符串或整数`);
   validatePathList(record.reference_inputs, `${label}.generation_record.reference_inputs`, errors);
-  if (!Array.isArray(record.postprocess) || record.postprocess.length === 0 || !record.postprocess.every(nonEmptyString)) errors.push(`${label}.generation_record.postprocess 必须是非空字符串列表`);
+  if (!Array.isArray(record.postprocess) || !record.postprocess.every(nonEmptyString)) errors.push(`${label}.generation_record.postprocess 必须是字符串列表（可为空）`); const contract = resolveProductionContract(asset); const expectedAsset = (Array.isArray(contract.expected_assets) ? contract.expected_assets : []).find((item) => item?.alpha === true); errors.push(...validateTransparentBackgroundContract({ asset, contract, generation: record, expectedAsset, metadata: resolveOutputMetadata(asset) }).map((message) => `${label} ${message}`));
 }
 
 /** 验证所有生成路线共享的可执行生成身份与来源，禁止用任意对象冒充来源。 */

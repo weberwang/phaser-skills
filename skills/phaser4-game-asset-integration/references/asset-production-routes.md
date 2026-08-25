@@ -32,6 +32,8 @@ V3 为每个资源选择一条主路线，并在机器清单记录场景或 shar
 
 当 `image_generation_required=true` 时，唯一合格组合是 `production_method=imagegen` 与 `delivery_kind=raster-image`。必须保留独立源/运行时位图、ImageGen 生成记录和完整提示词、MIME、宽高、alpha、输出 SHA，以及已被运行时实际消费的证据；单图宽高由验证器按逻辑像素 `ceil(max placement width/height × intended_scale_range.max × 1.5)` 自动计算，`expected_assets.width/height` 和实际输出必须精确等于最小值；`scene_asset_usage.max_dpr` 必须严格为数字 `1.5`，`padding_policy` 不是 `none` 均失败，尺寸计算合同不需要人工审阅。这里的 1.5 是最大生产 DPR；运行时实际 DPR 动态封顶，不改变已经冻结的资产尺寸。`authored-svg`、`phaser-graphics`、CanvasTexture 和 runtime drawing 均不能等价完成。生成记录禁止裁切冻结参考图，参考图只能作为输入约束。
 
+当 `expected_assets.alpha=true` 时，ImageGen 必须直接生成真实透明背景并交付 PNG（`mime_type=image/png`、`.png`）；生成记录必须声明 `background_mode=transparent`、`transparency_strategy=direct-generation`，实际提示词必须包含透明直出要求。此路线禁止在 `operation`、`command_or_recipe` 或 `postprocess` 中记录抠图、去背、背景移除或 `matting/remove-background`。`postprocess` 可以是空数组；V4 仍须解码真实 PNG 并证明存在透明像素，不能只相信声明。
+
 拆解粒度补充：先完成状态分析，再建立唯一原子 `component_id/atomic_visual_key`；重复视觉实例通过 `placements` 表达，不重复生成资产。② 的六个顶部按钮分别是六个组件；⑧ 的三个相同底部表面可是一组件三 placements；⑨ 的三个动作图标按实际复用关系登记。ImageGen 对每个唯一 component×required state 只接受独立位图，强制 `delivery_mode=individual` 与 `atlas_allowed=false`，编号组图、横向组图和图集均不等价；atlas 只适用于非 ImageGen 方法的显式切片合同。placement 热区有独立 `hotspot_id`，不计入视觉资产。
 
 V3 按每个 `annotation_number/region_id` 写入上述合同和错误定位；Implementation Package 另写 `visualProductionUnits`，逐一绑定 coverage、所有者、ownedPaths、输出路径和格式。V4 必须提交 `production_contract_audit`，F2 只消费带 `validationMode=MACHINE` 的当前身份机器验证事实；V5 还必须有 V3、实施包、V4、F2 机器验证事实、F3 runtime replay、freshness-bound fidelity cases、运行时消费和无未批准替换。
