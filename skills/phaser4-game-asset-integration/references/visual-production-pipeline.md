@@ -125,7 +125,7 @@ V2 完成代表画面、动态样片和结构化机器检查后，只需一条�
 拆解顺序固定为“先状态分析，再按可复用部件拆解”：`component_count` 只计算唯一原子视觉部件，`visible_instance_count` 通过多个 `placements` 表达重复实例。② 的六个顶部按钮分别登记六个 component；⑧ 的三个相同表面可登记一个 component 加三个 placements，⑨ 的三个动作图标按实际复用关系登记。ImageGen 每个唯一 `component×required state` 必须独立位图，强制 `individual + atlas_allowed=false`，不能以编号级组合图或图集替代；atlas 仅适用于非 ImageGen 方法的显式切片合同。交互热区绑定 placement 且不计入视觉资产。状态证据 SHA、冻结目标 SHA、分析 ID 和完成时间必须先于 component inventory。
 # 场景级效果图还原门
 
-效果图路线先建立 `scene_reconstruction_contract`，再执行 V3 资源与正式 Scene 计划。V1 负责冻结视觉事实、整屏构图、目标绑定布局、响应式关系和项目容差；V2 的 F2 审完整场景构图、比例、层级、颜色、材质和装饰密度；V2→V3 检查每个 coverage region（包括 runtime owner）均有 fidelity facts 与实现计划。
+效果图路线先建立 `scene_reconstruction_contract`，再执行 V3 资源与正式 Scene/显示层计划。V1 负责冻结视觉事实、整屏构图、scene master、显示层 inventory、宿主场景上下文效果图、目标绑定布局、响应式关系和项目容差；V2 的 F2 审完整场景构图、比例、层级、颜色、材质和装饰密度；V2→V3 检查每个 coverage region（包括 runtime owner）均有 fidelity facts 与实现计划，并检查每个 transient required state 都绑定 host-scene-context 图。V4/V5 必须在宿主场景上组合并重放打开→交互→关闭/恢复轨迹。
 
 V4 除逐资产生产合同外必须完成同屏组合预验收，使用正式 Scene 骨架或相同结构的布局计算。V5 只有在重建合同、layout、V3、V4、F2、F3、逐区域 fidelity、fresh runtime replay 和正式 Scene 消费证据全部通过时才可完成；资源 loaded/used 或 `missing=0` 只能构成工程子门。
 

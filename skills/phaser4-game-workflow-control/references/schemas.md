@@ -42,7 +42,7 @@ Work Item 使用 `taskAuthorization` 保存用户原始请求、目标、范围�
 
 操作 pending 与 Approval Ledger 都必须包含非空 `impactSummary`。操作类型、影响、路径、服务、外部目标或任一副作用字段变化后，旧记录不再精确匹配。
 
-Work Item 与 Approval Ledger 使用排序后的非空 `moduleIds`。Implementation Package 在 A3 前冻结 `executionUnits`；数组顺序是计划制定者预设的唯一执行顺序，控制面只校验/执行，不通过依赖图、闭包或拓扑关系推导顺序。每个单元绑定 `moduleId`，场景单元还绑定 `sceneId`；SERIAL 单元各占一个顺序位置，同一非空 `parallelGroup` 的 PARALLEL 单元必须连续出现并视为一个顺序阶段。SHARED/INTEGRATION 强制 SERIAL，只有 MODULE/SCENE 可进入至少含两个单元的并行组。`fileOwnership` 与实施单元写范围必须双向唯一覆盖且 owner 相同，预期增删文件也必须唯一落入实施单元。
+Work Item 与 Approval Ledger 使用排序后的非空 `moduleIds`。Implementation Package 在 A3 前冻结 `executionUnits`；数组顺序是计划制定者预设的唯一执行顺序，控制面只校验/执行，不通过依赖图、闭包或拓扑关系推导顺序。每个单元绑定 `moduleId`；`SCENE` 绑定 `sceneId`，`DISPLAY_LAYER` 绑定 `displayLayerId` 和 `hostSceneId` 且 `sceneId=null`，其他类型三个身份字段均为 null。SERIAL 单元各占一个顺序位置，同一非空 `parallelGroup` 的 PARALLEL 单元必须连续出现并视为一个顺序阶段。SHARED/INTEGRATION 强制 SERIAL，MODULE/SCENE/DISPLAY_LAYER 才可进入至少含两个单元的并行组。`fileOwnership` 与实施单元写范围必须双向唯一覆盖且 owner 相同，预期增删文件也必须唯一落入实施单元。
 
 Execution Unit Result 绑定当前工作项、实施包、单元、基线、代码与该单元路径级 diff 指纹、实际成功命令和证据哈希；`files` 唯一且必须与 `fileHashes` 精确一一对应，只有当前有效 PASS 才满足预设顺序的前序门。目标 SERIAL 单元需要其前面全部单元 PASS；目标 PARALLEL 单元只需要其并行组首项之前全部单元 PASS，同组 peer 不构成前序条件。Evidence Manifest 的 `completedUnitIds` 必须覆盖全部实施单元并由结果复核。A0-A2 Delegation Package 禁止实施单元字段；串行 A3 使用 `delegate-check`，并行 A3 必须通过保存于 `delegations/batches/` 的完整不可变批次执行 `parallel-check`，单独委派不得放行。
 
@@ -67,7 +67,7 @@ ImageGen 的源文件、运行时文件和实际输出 MIME 只能是 `image/png
 
 ### 场景还原 schema 与验证命令
 
-效果图 `scene_reconstruction_contract` 的 V1 最低字段包括 `reference_technical_conflicts`（允许空数组但不得省略）；V2→V3 还必须绑定 `v2_scene_candidate`、`v2_dynamic_sample` 和 `v2_structured_review`。结构化 fidelity case 必须记录候选 `code_sha256` 或 `build_sha256`（可用同等 `sha256` 身份表示）及 `diff_fingerprint`，并提供 `normalization_equivalence.viewport`、`dpr`、`logical_coordinates` 三项等价证明。`difference_evidence` 不得为 `null`；逐区域结果必须同时包含 target/candidate measurement、delta、场景预声明 `tolerance_reference`、result、evidence 和（可为空的）`exception_ids`。
+效果图 `scene_reconstruction_contract` 的 V1 最低字段包括 `reference_technical_conflicts`（允许空数组但不得省略）和 `display_layer_planning`（无显示层也必须显式 `inventory=[]`）；规划必须区分 scene master、宿主场景上下文层图和 V3 component×state 资产。V2→V3 还必须绑定 `v2_scene_candidate`、`v2_dynamic_sample` 和 `v2_structured_review`。结构化 fidelity case 必须记录候选 `code_sha256` 或 `build_sha256`（可用同等 `sha256` 身份表示）及 `diff_fingerprint`，并提供 `normalization_equivalence.viewport`、`dpr`、`logical_coordinates` 三项等价证明。`difference_evidence` 不得为 `null`；逐区域结果必须同时包含 target/candidate measurement、delta、场景预声明 `tolerance_reference`、result、evidence 和（可为空的）`exception_ids`。V4/V5 还必须回到宿主场景同屏组合，提供瞬态层打开→交互→关闭→底层状态/焦点恢复轨迹。
 
 Evidence Manifest 的 `current_stage` 为 V3 或 V4 时，场景合同和组合验收字段按当前硬门校验，但允许尚未产生 V5 `fidelity_cases`；只有显式 `current_stage=V5` 才要求非空 fidelity cases，并仍由 V5 runtime validator 执行真实文件、F2/F3 和正式 Scene 消费门。
 

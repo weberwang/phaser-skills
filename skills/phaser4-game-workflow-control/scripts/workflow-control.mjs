@@ -724,7 +724,8 @@ function diffAudit(args) {
     if (approval && approval.approvalId !== work.approvalRecord) fail(`diff 未由 Work Item.approvalRecord 覆盖：${entry.file}`);
     if (entry.status === 'D' && approval && !approval.allowDelete) fail(`未批准删除：${entry.file}`);
     if (entry.status === 'D' && pkg && !pkg.expectedDeletedFiles.includes(entry.file)) fail(`删除不在 Implementation Package.expectedDeletedFiles：${entry.file}`);
-    mapping.push({ ...entry, workItemId: work.workItemId, executionUnitId: executionUnit?.unitId ?? null, moduleId: executionUnit?.moduleId ?? null, sceneId: executionUnit?.sceneId ?? null, domain: work.domain, stageId: work.stageId, actionLevel: level, authorizationId: approval?.approvalId ?? work.taskAuthorization.authorizationId, authorizationBasis: approval ? 'EXPLICIT_APPROVAL' : 'TASK_AUTHORIZATION', owner: executionUnit?.owner ?? work.assignedAgent });
+    // 显示层实施单元不能只落到宿主 Scene 身份，否则 diff 审计会把多个弹窗/抽屉混成同一个对象。
+    mapping.push({ ...entry, workItemId: work.workItemId, executionUnitId: executionUnit?.unitId ?? null, moduleId: executionUnit?.moduleId ?? null, sceneId: executionUnit?.sceneId ?? null, displayLayerId: executionUnit?.displayLayerId ?? null, hostSceneId: executionUnit?.hostSceneId ?? null, domain: work.domain, stageId: work.stageId, actionLevel: level, authorizationId: approval?.approvalId ?? work.taskAuthorization.authorizationId, authorizationBasis: approval ? 'EXPLICIT_APPROVAL' : 'TASK_AUTHORIZATION', owner: executionUnit?.owner ?? work.assignedAgent });
   }
   if (!entries.length) {
     if (ledger) {
@@ -776,7 +777,7 @@ function verifyDiffAudit(work, repo, path) {
       if (pkg.workItemId !== work.workItemId || pkg.baselineHash !== work.baselineHash) fail('Diff Audit Record 的 Implementation Package 绑定不一致');
       const owners = Object.entries(pkg.fileOwnership).filter(([pattern]) => pathMatches(entry.file, pattern));
       const units = pkg.executionUnits.filter((unit) => unit.ownedPaths.some((pattern) => pathMatches(entry.file, pattern)));
-      if (owners.length !== 1 || units.length !== 1 || item.owner !== owners[0][1] || item.executionUnitId !== units[0].unitId || item.moduleId !== units[0].moduleId || item.sceneId !== units[0].sceneId) fail(`Diff Audit Record.entries 单元/模块/场景/ownership 不一致：${entry.file}`);
+      if (owners.length !== 1 || units.length !== 1 || item.owner !== owners[0][1] || item.executionUnitId !== units[0].unitId || item.moduleId !== units[0].moduleId || item.sceneId !== units[0].sceneId || item.displayLayerId !== (units[0].displayLayerId ?? null) || item.hostSceneId !== (units[0].hostSceneId ?? null)) fail(`Diff Audit Record.entries 单元/模块/场景/显示层/ownership 不一致：${entry.file}`);
     } else if (item.owner !== work.assignedAgent) fail(`Diff Audit Record.entries owner 不一致：${entry.file}`);
   }
   return record;

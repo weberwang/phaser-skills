@@ -32,6 +32,8 @@ UI 设计与实现优先用符合全局视觉基线且含义清晰、熟悉的�
 
 ## 资源导航
 
+场景规划涉及 HUD、modal、popup、drawer 或 toast 时，必须同步在场景 `display_layer_planning` 中记录宿主场景、生命周期、输入阻断、层级、遮罩、焦点恢复和响应式事实。scene master 只承载常驻层；瞬态层按状态使用带宿主场景上下文的效果图，V4/V5 回到宿主场景同屏验证打开→交互→关闭后的底层布局恢复。
+
 - 需要字段、关系表达或不变量写法时，读取 [references/layout-contract.md](references/layout-contract.md)。
 - 需要 Phaser Scale、Camera、Container、DOM Overlay、resize 或重排边界时，读取 [references/phaser-adapter.md](references/phaser-adapter.md)。
 - 需要 V/F/G 门禁、退回和候选绑定规则时，读取 [references/workflow-gates.md](references/workflow-gates.md)。

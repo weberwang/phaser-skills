@@ -245,6 +245,11 @@ function attachSceneReconstructionContract(manifest) {
     },
     predeclared_tolerances: [{ id: "layout-tolerance", rules: { geometry: { unit: "logical-px", value: 2 } } }],
     implementation_plan: { resources: ["hero-idle"], layout: ["target-bound-layout"], runtime_objects: ["scene-background", "score-state"], composition: ["main-gameplay-scene"] },
+    display_layer_planning: {
+      version: "1.0",
+      scene_master: { scene_id: "main-gameplay", state_id: "default", target_sha256: targetSha, viewport: { width: 390, height: 844 }, persistent_layer_ids: ["score-hud"] },
+      inventory: [{ layer_id: "score-hud", type: "hud", host_scene_id: "main-gameplay", target_sha256: targetSha, persistence: "persistent", states: [{ state_id: "default", required: true }], in_scene_master: true, trigger: { event: "scene-ready" }, dismiss: { event: "scene-exit" }, input_blocking: false, z_order: 10, backdrop: { mode: "none" }, focus_restore: { mode: "preserve" }, responsive: { rule: "safe-area" }, relations: { mutually_exclusive_layer_ids: [], coexists_with_layer_ids: [] } }],
+    },
     combination_preacceptance: { status: "passed", formal_scene_structure: "MainGameplayScene/ContainerGraph", formal_assets: manifest.assets.map((asset) => asset.id), formal_layout_structure: "MainGameplayScene/ContainerGraph", layout_geometry: layoutGeometry, visual_fidelity: { contour: "passed", proportion: "passed", pose: "passed", icon_semantics: "passed", full_scene_composition: "passed" }, redesign_check: "none", layout_calculation_identity: "layout:main-gameplay:1", evidence: ["evidence/visual/combined.png"], target_sha256: targetSha, candidate_sha256: candidateSha, diff_fingerprint: manifest.candidate_identity.diff_fingerprint },
   };
   const fidelity = manifest.fidelity_cases[0];
@@ -572,6 +577,14 @@ test("普通 visual manifest fidelity DPR 允许动态有效值并拒绝非法�
 test("不保留 visual-assets 1.4 兼容", () => { const manifest = validManifest(); manifest.schema_version = "1.4"; assert(validateManifest(manifest).some((item) => item.includes("schema_version 必须为 1.5"))); });
 test("非效果图 1.5 清单通过", () => assert.deepEqual(validateManifest(validOrdinaryManifest()), []));
 test("effect-image V3-ready 允许 fidelity case 尚未产生", () => { const manifest = validManifest(); manifest.effect_image_reconstruction.lifecycle = "v3-ready"; manifest.fidelity_cases = []; assert.deepEqual(validateManifest(manifest), []); });
+test("显示层合同拒绝默认主图中的瞬态层和孤立上下文图", () => {
+  const transient = validManifest();
+  const planning = transient.scene_reconstruction_contract.display_layer_planning;
+  const layer = planning.inventory[0]; layer.layer_id = "pause-modal"; layer.type = "modal"; layer.persistence = "transient"; layer.in_scene_master = true; planning.scene_master.persistent_layer_ids = ["pause-modal"]; layer.states = [{ state_id: "open", required: true }];
+  assert(validateManifest(transient).some((item) => item.includes("上下文效果图") || item.includes("不得进入默认 scene master")));
+  layer.in_scene_master = false; planning.scene_master.persistent_layer_ids = []; layer.states[0].contextual_effect_image = { evidence: "evidence/display/pause-open.png", sha256: transient.reference_target.target_sha256, host_scene_id: "main-gameplay", host_target_sha256: transient.reference_target.target_sha256, layer_target_sha256: transient.reference_target.target_sha256, viewport: { width: 390, height: 844 }, kind: "host-scene-context", isolated_only: true };
+  assert(validateManifest(transient).some((item) => item.includes("孤立组件图")));
+});
 test("V4 stage 对 v3-ready 清单强制 production_contract_audit", async () => { const root = await mkdtemp(join(tmpdir(), "visual-v4-stage-")); const path = join(root, "visual-assets.json"); const manifest = validManifest(); manifest.effect_image_reconstruction.lifecycle = "v3-ready"; delete manifest.production_contract_audit; await writeFile(path, JSON.stringify(manifest)); assert(validateManifest(manifest, { stage: "V4" }).some((item) => item.includes("production_contract_audit 缺失"))); assert.equal(await main([path, "--stage", "V4", "--check-files", "--project-root", root]), 1); });
 test("V4/V5 效果图 API 和 CLI 缺少文件门必须拒绝，显式文件门才可继续结构校验", async () => {
   const v4 = validManifest(); v4.effect_image_reconstruction.lifecycle = "v3-ready";

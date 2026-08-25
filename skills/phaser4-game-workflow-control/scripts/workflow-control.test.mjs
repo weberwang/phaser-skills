@@ -9,10 +9,25 @@ import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { createExecutionState, executionStatePath, scopedDiffFingerprint } from './execution-unit-control.mjs';
 import { parallelBatchFingerprint } from './parallel-batch-control.mjs';
+import { validateExecutionPlan } from './parallel-plan.mjs';
 
 const CLI = resolve(import.meta.dirname, 'workflow-control.mjs');
 const INITIALIZER = resolve(import.meta.dirname, '..', '..', 'phaser4-game-orchestrator', 'scripts', 'initialize_project_docs.mjs');
 const HASH = `sha256:${'a'.repeat(64)}`;
+
+test('DISPLAY_LAYER execution unit 必须绑定显示层与宿主场景身份', () => {
+  const pkg = {
+    allowedPaths: ['src/display'], forbiddenPaths: [], expectedAddedFiles: [], expectedDeletedFiles: [],
+    fileOwnership: { 'src/display': 'worker' }, executionUnits: [{
+      unitId: 'DISPLAY-1', unitType: 'DISPLAY_LAYER', scopeId: 'pause-modal', moduleId: 'scene', sceneId: null, displayLayerId: 'pause-modal', hostSceneId: 'play', owner: 'worker', parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: ['src/display'], stateOwnership: ['display.pause-modal'], acceptanceCommands: ['node --test'], serializationReason: '等待宿主 Scene 装配',
+    }],
+  };
+  assert.doesNotThrow(() => validateExecutionPlan(pkg, (value, pattern) => value === pattern, (message) => { throw new Error(message); }));
+  const missing = structuredClone(pkg); delete missing.executionUnits[0].displayLayerId;
+  assert.throws(() => validateExecutionPlan(missing, (value, pattern) => value === pattern, (message) => { throw new Error(message); }), /字段不严格|displayLayerId/);
+  const sceneIdentity = structuredClone(pkg); sceneIdentity.executionUnits[0].unitType = 'SCENE'; sceneIdentity.executionUnits[0].sceneId = 'play'; sceneIdentity.executionUnits[0].displayLayerId = 'pause-modal'; sceneIdentity.executionUnits[0].hostSceneId = 'play';
+  assert.throws(() => validateExecutionPlan(sceneIdentity, (value, pattern) => value === pattern, (message) => { throw new Error(message); }), /只允许 DISPLAY_LAYER|displayLayerId/);
+});
 
 /** 写入格式稳定的 JSON 测试工件。 */
 function writeJson(path, value) {
@@ -57,9 +72,9 @@ function makeWork(head, overrides = {}) {
 /** 构造绑定任务授权而非审批记录的 Implementation Package。 */
 function makePackage(overrides = {}) {
   return { packageId: 'PKG-1', workItemId: 'WI-1', baselineVersion: '1', baselineHash: HASH, taskAuthorizationId: 'TASK-WI-1', approvedRequirements: ['REQ-1'], approvedArchitecture: 'ARCH-FACT', fileOwnership: { 'src/main.js': 'implementer', 'src/module': 'implementer', 'src/scene': 'implementer' }, executionUnits: [
-    { unitId: 'SHARED-1', unitType: 'SHARED', scopeId: 'runtime-contract', moduleId: 'core', sceneId: null, owner: 'implementer', parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: ['src/main.js'], stateOwnership: ['runtime-contract'], acceptanceCommands: ['node --test'], serializationReason: '先冻结共享契约' },
-    { unitId: 'MODULE-1', unitType: 'MODULE', scopeId: 'core-module', moduleId: 'core', sceneId: null, owner: 'implementer', parallelMode: 'PARALLEL', parallelGroup: 'PG-1', ownedPaths: ['src/module'], stateOwnership: ['core-state'], acceptanceCommands: ['node --test'], serializationReason: null },
-    { unitId: 'SCENE-1', unitType: 'SCENE', scopeId: 'play-scene', moduleId: 'scene', sceneId: 'play', owner: 'implementer', parallelMode: 'PARALLEL', parallelGroup: 'PG-1', ownedPaths: ['src/scene'], stateOwnership: ['scene-state'], acceptanceCommands: ['node --test'], serializationReason: null }
+    { unitId: 'SHARED-1', unitType: 'SHARED', scopeId: 'runtime-contract', moduleId: 'core', sceneId: null, displayLayerId: null, hostSceneId: null, owner: 'implementer', parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: ['src/main.js'], stateOwnership: ['runtime-contract'], acceptanceCommands: ['node --test'], serializationReason: '先冻结共享契约' },
+    { unitId: 'MODULE-1', unitType: 'MODULE', scopeId: 'core-module', moduleId: 'core', sceneId: null, displayLayerId: null, hostSceneId: null, owner: 'implementer', parallelMode: 'PARALLEL', parallelGroup: 'PG-1', ownedPaths: ['src/module'], stateOwnership: ['core-state'], acceptanceCommands: ['node --test'], serializationReason: null },
+    { unitId: 'SCENE-1', unitType: 'SCENE', scopeId: 'play-scene', moduleId: 'scene', sceneId: 'play', displayLayerId: null, hostSceneId: null, owner: 'implementer', parallelMode: 'PARALLEL', parallelGroup: 'PG-1', ownedPaths: ['src/scene'], stateOwnership: ['scene-state'], acceptanceCommands: ['node --test'], serializationReason: null }
   ], allowedPaths: ['src', 'docs'], forbiddenPaths: ['.git', 'src/secret'], expectedAddedFiles: [], expectedDeletedFiles: [], testScope: ['node --test'], outOfScope: ['release'], compatibilityStrategy: '不保留旧版兼容', definitionOfDone: ['tests pass'], stopConditions: ['scope changes'], ...overrides };
 }
 

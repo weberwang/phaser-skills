@@ -15,7 +15,7 @@ description: 为 Phaser 4 游戏规划、生产、登记、验证并集成 UI、
 
 ### 场景还原合同（effect-image 强制）
 
-`effect-image` 表示完整正式 Scene 的忠实还原，不是独立 PNG 生产。进入 V3 前必须有 `scene_reconstruction_contract`：冻结目标条件、整屏构图、逐 coverage region 视觉事实（runtime-data/runtime-rendered/runtime-program 也必须有 `fidelity_obligations`）、目标绑定布局、响应式关系、预声明容差和资源/布局/运行时对象/组合实现计划。合同缺失或 layout contract 未绑定当前 target SHA 时，必须返回 `V1/PROPOSAL`。
+`effect-image` 表示完整正式 Scene 的忠实还原，不是独立 PNG 生产。进入 V3 前必须有 `scene_reconstruction_contract`：冻结目标条件、整屏构图、逐 coverage region 视觉事实（runtime-data/runtime-rendered/runtime-program 也必须有 `fidelity_obligations`）、目标绑定布局、响应式关系、预声明容差、资源/布局/运行时对象/组合实现计划和 `display_layer_planning`。规划时一起盘点 HUD、modal、popup、drawer、toast：scene master 只包含基础场景与常驻层，瞬态层按 required state 提供带宿主场景、遮罩/层级的上下文效果图；V3 再拆 component×state，V4/V5 回到宿主场景同屏组合并验证打开→交互→关闭/恢复轨迹。合同缺失、遗漏显示层规划或 layout contract 未绑定当前 target SHA 时，必须返回 `V1/PROPOSAL`。
 
 effect-image ImageGen 的完整提示词模板、asset_prompt 事实继承规则、透明直出要求和 generation_record 结构化字段统一见[《Effect-image ImageGen 忠实还原提示词合同》](references/effect-image-prompt-contract.md)。本 Skill 只保留路由和硬不变量，不在此复制模板。
 

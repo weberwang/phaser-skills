@@ -17,6 +17,7 @@ import { auditProductionContractByGroups, confirmationAuthorityBase, validateCon
 import { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, isSha256, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateEvidenceIdentity, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateTransparentBackgroundContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
 import { validateVisualPostApprovalReviewFields } from "../../phaser4-game-workflow-control/scripts/visual-human-review-contract.mjs";
 import { validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "../../phaser4-game-workflow-control/scripts/scene-reconstruction-contract.mjs";
+import { collectDisplayLayerEvidencePaths } from "../../phaser4-game-workflow-control/scripts/display-layer-planning-contract.mjs";
 import { validateImageGenerationSizeManifest } from "../../phaser4-game-workflow-control/scripts/visual-generation-size-contract.mjs";
 import { isWorkflowDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
 import { VISUAL_STAGE_IDS, VISUAL_STAGE_STATES } from "../../phaser4-game-workflow-control/scripts/visual-stage-prerequisites.mjs";
@@ -909,6 +910,8 @@ export async function checkManifestFiles(data, projectRoot, options = {}) {
     });
   }
   if (Array.isArray(data.contract_reconciliation?.checks)) for (const [index, item] of data.contract_reconciliation.checks.entries()) if (nonEmptyString(item?.evidence)) supplementalPaths.push([`contract_reconciliation.checks[${index}].evidence`, item.evidence]);
+  // 显示层上下文图和运行轨迹属于宿主场景证据，文件门必须检查真实文件而不是只接受路径字符串。
+  for (const item of collectDisplayLayerEvidencePaths(data.scene_reconstruction_contract?.display_layer_planning)) supplementalPaths.push([item.field, item.path, item.sha256]);
   if (Array.isArray(data.coverage_audit?.regions)) for (const [index, region] of data.coverage_audit.regions.entries()) {
     const label = `coverage_audit.regions[${index}]`;
     const canonicalRegion = normalizeVisualRegionDefinition(region);
@@ -942,7 +945,13 @@ export async function checkManifestFiles(data, projectRoot, options = {}) {
   }
   if (Array.isArray(data.coverage_audit?.summaries)) for (const [index, summary] of data.coverage_audit.summaries.entries()) if (nonEmptyString(summary?.evidence)) supplementalPaths.push([`coverage_audit.summaries[${index}].evidence`, summary.evidence]);
   // 合同与 fidelity 证据在目标身份检查后统一核验存在性，避免只接受路径字符串。
-  for (const [field, path] of supplementalPaths) { try { if (!isFile(projectPath(projectRoot, path))) errors.push(`${field} 文件不存在：${path}`); } catch (error) { errors.push(`${field}：${error.message}`); } }
+  for (const [field, path, expectedSha] of supplementalPaths) {
+    try {
+      const resolvedEvidence = projectPath(projectRoot, path);
+      if (!isFile(resolvedEvidence)) errors.push(`${field} 文件不存在：${path}`);
+      else if (nonEmptyString(expectedSha) && sha256Bytes(await readFile(resolvedEvidence)) !== expectedSha) errors.push(`${field} sha256 与证据文件不一致：${path}`);
+    } catch (error) { errors.push(`${field}：${error.message}`); }
+  }
   if (!Array.isArray(data.assets)) return errors;
   const independentAssetIds = new Set((Array.isArray(data.coverage_audit?.regions) ? data.coverage_audit.regions : []).filter((region) => isObject(region) && region.owner_type === "fixed-production-visual" && region.production_origin === "independent-production").flatMap((region) => (Array.isArray(region.asset_ids) ? region.asset_ids : [region.asset_id]).filter(nonEmptyString)));
   if (referenceTargetFile) for (const [index, asset] of data.assets.entries()) {

@@ -18,6 +18,9 @@ import {
   validateRootLayoutIdentity,
   validateLayoutRegionBindings,
 } from "./scene-layout-decomposition-contract.mjs";
+import { validateDisplayLayerPlanning } from "./display-layer-planning-contract.mjs";
+
+export { validateDisplayLayerPlanning } from "./display-layer-planning-contract.mjs";
 
 /** 判断是否为普通对象。 */
 export function isObject(value) {
@@ -471,6 +474,8 @@ export function validateSceneReconstructionContract(contract, manifest = null, o
     }, { stage: "V2", scene_id: field(target, "scene_id", "sceneId"), state_id: field(target, "state_id", "stateId") }, { requirePassed: true, returnStage: "V1/PROPOSAL", rootCause: "方案缺失" }));
   }
   const targetInfo = validateTargetConditions(contract, manifest, stage, errors, effectImage);
+  // G0/V1 必须显式盘点显示层；inventory=[] 表示确认没有显示层，不表示漏规划。
+  errors.push(...validateDisplayLayerPlanning(field(contract, "display_layer_planning"), targetInfo, { stage }));
   const toleranceBlock = field(contract, "predeclared_tolerances", "predeclaredTolerances", "tolerance_set", "toleranceSet", "tolerances");
   const toleranceIds = Array.isArray(toleranceBlock) ? new Set(toleranceBlock.map((item) => item?.id ?? item?.tolerance_id ?? item?.toleranceId).filter(nonEmptyString)) : new Set();
   const regions = field(contract, "coverage_regions", "coverageRegions", "regions");

@@ -48,11 +48,11 @@ V2 必须产出关键状态和动态可玩样片，并完成 V2a、V2b 机器检
 
 ### 同步布局、元素与状态拆解
 
-效果图拆解必须先看整屏构图，再同步冻结布局节点、视觉元素/组件和状态事实；不能先拆资产、最后凭感觉补坐标。每个 `coverage_audit.regions[]` 都必须声明非空且唯一的 `layout_node_ids`，`scene_reconstruction_contract.layout_decomposition.layout_nodes[]` 必须按 `region_id` 双向对应这些节点。每个 component placement 必须有唯一 `layout_node_id`，只能引用本区域节点；没有 placement 的运行时区域必须由 `runtime_implementation.layout_node_ids` 消费。节点不得孤立、跨区域、被多个 placement 重复消费或同时被 placement 与 runtime 重复消费，除非另有显式复用合同和 placement 级证据（默认合同不允许复用）。
+效果图拆解必须先看整屏构图，再同步冻结布局节点、视觉元素/组件、状态事实和 `display_layer_planning`；不能先拆资产、最后凭感觉补坐标。scene master 只冻结基础场景与常驻 HUD，modal/popup/drawer/toast 等瞬态层必须按 required state 产出宿主场景上下文效果图，孤立透明组件图不能作为完整效果图。每个 `coverage_audit.regions[]` 都必须声明非空且唯一的 `layout_node_ids`，`scene_reconstruction_contract.layout_decomposition.layout_nodes[]` 必须按 `region_id` 双向对应这些节点。每个 component placement 必须有唯一 `layout_node_id`，只能引用本区域节点；没有 placement 的运行时区域必须由 `runtime_implementation.layout_node_ids` 消费。节点不得孤立、跨区域、被多个 placement 重复消费或同时被 placement 与 runtime 重复消费，除非另有显式复用合同和 placement 级证据（默认合同不允许复用）。
 
 三方绑定顺序固定为“整屏构图 → 布局节点与元素/状态同步拆解 → coverage/布局合同/placement 三方绑定 → 按布局合同装配 → V5 布局与视觉双验收”。`target_bounds` 是参考图测量事实，不是运行时硬编码；布局合同负责运行时计算和响应式变换；runtime measurement 只是候选证据，不能回写或替代参考事实。技术 proposal 的 `technical_analysis.regions[].layout_node_ids` 与 `placements[].layout_node_id`、PNG 区域元数据的 `layout_node_ids` 与 `placement_layout_node_ids`，以及 confirmation 的 `region_definition_sha256` 都必须自然覆盖布局节点及 placement 字段，并同时绑定 target SHA、scene/state、layout contract version；任一身份或布局字段漂移都使旧确认失效。`visual-assets.json` 仍是视觉机器权威，布局合同保持布局领域权威，只通过 SHA/ID 关联，不新增第二套清单或状态机。
 
-V3 `executionUnits` 推荐固定为：布局基础串行 → 视觉资源/程序元素并行 → 场景装配串行 → 联合验收串行。V4 组合预验收必须同时使用正式资源和正式布局；V5 必须满足 coverage=1、零孤立节点、逐节点 target/candidate 几何差异与证据，以及整屏 fidelity，任一项缺失都不能通过。
+V3 `executionUnits` 推荐固定为：布局基础串行 → 视觉资源/程序元素并行 → 显示层/场景装配串行 → 联合验收串行。显示层可独立使用 `DISPLAY_LAYER` 实施单元，但必须绑定 `displayLayerId` 与 `hostSceneId`，不能填写 `sceneId`。V4 组合预验收必须同时使用正式资源、正式布局和宿主场景同屏组合；V5 必须满足 coverage=1、零孤立节点、逐节点 target/candidate 几何差异与证据、整屏 fidelity，以及显示层打开→交互→关闭→底层状态/焦点恢复轨迹，任一项缺失都不能通过。
 
 ## V3-V4
 

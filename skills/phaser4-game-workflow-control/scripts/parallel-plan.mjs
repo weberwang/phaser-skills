@@ -1,5 +1,5 @@
 /** Implementation Package 中实施单元的必填字段。数组位置就是计划制定者冻结的执行顺序。 */
-const UNIT_FIELDS = ['unitId', 'unitType', 'scopeId', 'moduleId', 'sceneId', 'owner', 'parallelMode', 'parallelGroup', 'ownedPaths', 'stateOwnership', 'acceptanceCommands', 'serializationReason'];
+const UNIT_FIELDS = ['unitId', 'unitType', 'scopeId', 'moduleId', 'sceneId', 'displayLayerId', 'hostSceneId', 'owner', 'parallelMode', 'parallelGroup', 'ownedPaths', 'stateOwnership', 'acceptanceCommands', 'serializationReason'];
 
 /** 判断两个路径范围是否相交。 */
 function rangesOverlap(left, right, pathMatches) {
@@ -25,8 +25,11 @@ export function validateExecutionPlan(pkg, pathMatches, fail) {
     const extra = Object.keys(unit).filter((field) => !UNIT_FIELDS.includes(field));
     if (missing.length || extra.length) fail(`execution unit 字段不严格：缺少 ${missing.join('、') || '无'}；多余 ${extra.join('、') || '无'}`);
     if (!unit.unitId || unitsById.has(unit.unitId)) fail(`execution unit ID 为空或重复：${unit.unitId ?? '<empty>'}`);
-    if (!['MODULE', 'SCENE', 'SHARED', 'INTEGRATION'].includes(unit.unitType) || !unit.scopeId || !unit.moduleId || !unit.owner) fail(`execution unit ${unit.unitId} 的类型、范围、模块或负责人无效`);
+    if (!['MODULE', 'SCENE', 'DISPLAY_LAYER', 'SHARED', 'INTEGRATION'].includes(unit.unitType) || !unit.scopeId || !unit.moduleId || !unit.owner) fail(`execution unit ${unit.unitId} 的类型、范围、模块或负责人无效`);
     if ((unit.unitType === 'SCENE' && (typeof unit.sceneId !== 'string' || !unit.sceneId)) || (unit.unitType !== 'SCENE' && unit.sceneId !== null)) fail(`execution unit ${unit.unitId}.sceneId 与类型不一致`);
+    if (unit.unitType === 'DISPLAY_LAYER') {
+      if (typeof unit.displayLayerId !== 'string' || !unit.displayLayerId || typeof unit.hostSceneId !== 'string' || !unit.hostSceneId) fail(`DISPLAY_LAYER execution unit ${unit.unitId} 必须绑定 displayLayerId 和 hostSceneId`);
+    } else if (unit.displayLayerId !== null || unit.hostSceneId !== null) fail(`execution unit ${unit.unitId}.displayLayerId/hostSceneId 只允许 DISPLAY_LAYER 使用`);
     for (const field of ['ownedPaths', 'stateOwnership', 'acceptanceCommands']) {
       if (!Array.isArray(unit[field]) || unit[field].some((item) => typeof item !== 'string' || !item.trim())) fail(`execution unit ${unit.unitId}.${field} 必须为非空字符串数组`);
       if (new Set(unit[field]).size !== unit[field].length) fail(`execution unit ${unit.unitId}.${field} 不得重复`);

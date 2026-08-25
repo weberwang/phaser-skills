@@ -56,12 +56,12 @@ V0-V5、G0-G3 与领域阶段是 `stageId`，不是另一套状态机。只有�
 补充跨阶段硬门：同一 annotation/proposal/decision 确认集合必须覆盖全部带编号区域，包括本次生成、复用既有资源和非图片逻辑，并冻结 `production_label`、组件/状态/资产需求与权威 SHA；程序实现区域不得借“不产图”跳过人工确认。
 ### 效果图 V1→V5 硬门与退回
 
-1. **V1/PROPOSAL**：冻结 target 条件、整屏 composition、layout/responsive 绑定、逐 region 视觉事实、`reference_technical_conflicts`（空数组也必须存在）、项目预声明 tolerance 和实现计划。
+1. **V1/PROPOSAL**：冻结 target 条件、整屏 composition、layout/responsive 绑定、逐 region 视觉事实、`reference_technical_conflicts`（空数组也必须存在）、项目预声明 tolerance、实现计划和 `display_layer_planning`。其中 `scene_master` 只记录基础场景与常驻 HUD；每个 modal/popup/drawer/toast 的 required state 都要绑定宿主场景上下文效果图。
 2. **V2/REVIEW**：提交带 code/build SHA 与 diff identity 的完整场景候选、动态样片和结构化 F2 机器验证；验证必须覆盖整屏、逐 region、构图、几何、颜色/材质、字体、装饰密度和响应式。
 3. **V2→V3**：以上字段任一缺失均拒绝进入 V3，根因标记 `方案缺失`，退回最早阶段 `V1/PROPOSAL`。
 4. **V3/IMPLEMENTING**：绑定 `visualProductionUnits`、状态/部件合同、预声明 tolerance ID 和正式 Scene 实现计划；运行时 owner 也必须承担 fidelity obligations。
-5. **V4/VALIDATING**：逐资源执行 production contract audit，并完成 `combination_preacceptance` 与每个固定视觉单元的 `scene_asset_usage`；偏差属于 `执行问题`，退回 V3/V4。
-6. **V5/PASSED**：必须显式执行真实文件门，F2 `validationMode=MACHINE` 确定性机器检查、F3 runtime replay、fresh fidelity cases、逐区域差异证据和正式 Scene consumption 全部通过；不重复要求真人审阅。候选身份漂移、证据缺失或错误 PASS 属于 `验收问题`，退回 `VALIDATING` 或最早受影响阶段。
+5. **V4/VALIDATING**：逐资源执行 production contract audit，并完成 `combination_preacceptance`、宿主场景同屏组合与每个固定视觉单元的 `scene_asset_usage`；瞬态显示层必须具备打开/交互/关闭/恢复轨迹证据。偏差属于 `执行问题`，退回 V3/V4。
+6. **V5/PASSED**：必须显式执行真实文件门，F2 `validationMode=MACHINE` 确定性机器检查、F3 runtime replay、fresh fidelity cases、逐区域差异证据、宿主场景正式 Scene consumption 和显示层底层状态/焦点恢复全部通过；不重复要求真人审阅。候选身份漂移、证据缺失或错误 PASS 属于 `验收问题`，退回 `VALIDATING` 或最早受影响阶段。
 
 结构化 fidelity 的 `normalization_equivalence` 必须同时证明 viewport、有效 DPR（target/candidate 均在 (0,1.5]、彼此相等且 `equivalent=true`）和逻辑坐标；`difference_evidence` 只能是有效证据，或 `not-applicable` 且附 reason。逐区域 `target_measurement`、`candidate_measurement`、`delta`、`tolerance_reference`、`result`、`evidence` 和 `exception_ids` 缺一不可；数值差异按场景预声明 tolerance 判定，非数值差异只允许精确批准例外。
 

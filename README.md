@@ -25,7 +25,7 @@ A0-A6 只描述 Phaser 项目生命周期：A0 项目只读调查；A1 项目规
 
 Work Item 的 `taskAuthorization` 保存用户原始请求、目标和范围；它是 A0-A3 本地工作的任务授权，不写入 Approval Ledger。产品、视觉或架构取舍属于 `USER_DECISION`：澄清后更新任务授权、权威工件或决策记录，不生成审批。只有 A4、A5、A6 的具体操作才生成 pending 和操作批准记录；记录精确冻结操作、影响、对象、门、基线、路径、服务、外部目标与副作用，A6 永不自动放行。
 
-Work Item 使用已排序的 `moduleIds` 精确覆盖多模块/多场景范围。A3 采用静态 Implementation Package、路径级 Execution Unit Result 和原子 Parallel Delegation Batch：依赖单元只有存在当前基线、当前路径 diff 的 PASS Result 才派生为 READY；共享基础和集成单元强制串行，模块/场景安全并行必须一次提交完整批次。
+Work Item 使用已排序的 `moduleIds` 精确覆盖多模块/多场景范围。A3 采用静态 Implementation Package、路径级 Execution Unit Result 和原子 Parallel Delegation Batch：依赖单元只有存在当前基线、当前路径 diff 的 PASS Result 才派生为 READY；共享基础和集成单元强制串行，模块/场景/显示层安全并行必须一次提交完整批次。`DISPLAY_LAYER` 实施单元绑定 `displayLayerId` 与 `hostSceneId`，`sceneId` 仅属于 `SCENE`。
 
 ## CLI
 
@@ -75,7 +75,7 @@ node <skill-dir>\scripts\workflow-control.mjs diff-audit --work-item .workflow-c
 
 ## 效果图还原与位图拆解
 
-效果图还原使用 schema 1.5 的 `visual-assets.json`。先冻结原始效果图，再生成 PNG 用户图示：左侧保持原图尺寸并只绘制框选、稳定编号和原子框，右侧说明栏只显示用户可读摘要及“本次生成 / 复用既有资源 / 程序实现”标签，不绘制 placement ID、坐标尺寸或组件/状态/资产字段。完整坐标、状态、生产合同、原子需求和资源映射统一保存在 `--proposal` 生成的拆解分析技术 JSON 中。正式标注产物仅为 PNG；PNG 目标图须为与场景画布一致的完整合法图像，标注编号和说明栏不得越界。
+效果图还原使用 schema 1.5 的 `visual-assets.json`。G0/V1 采用“规划时一起规划、视觉目标按状态分图、验收时重新同屏组合”：`scene_reconstruction_contract.display_layer_planning` 必须显式声明 `scene_master` 和 `inventory`；scene master 只冻结基础场景与常驻 HUD，modal/popup/drawer/toast 等瞬态层分别生成包含宿主场景、遮罩/层级和当前状态的上下文效果图，孤立透明组件图不能作为完整效果图或最终验收证据。V3 再按 component×state 拆解，V4/V5 回到宿主场景同屏组合并重放打开→交互→关闭→底层状态/焦点恢复。随后生成 PNG 用户图示：左侧保持原图尺寸并只绘制框选、稳定编号和原子框，右侧说明栏只显示用户可读摘要及“本次生成 / 复用既有资源 / 程序实现”标签，不绘制 placement ID、坐标尺寸或组件/状态/资产字段。不含显示层时也必须写 `inventory: []`，防止规划遗漏。
 
 只有 `bitmap-decomposition` 下的 `generate-now` 区域需要在生产前等待用户精确确认。确认前禁止裁切、抠图、分层、AI 分割或补全；`reuse-existing` 与 `runtime-program` 区域仍须在同一 PNG 标注图中可见，但不触发位图拆解确认。校验器会用确定性 PNG 渲染器重建标注图并逐字节复验，防止隐藏、覆盖或篡改标注。
 

@@ -41,4 +41,8 @@ V0 分流，V1 契约/低保真，V2 方向/高保真，V3 生产规划，V4 正
 
 ## 完成
 
+### 场景内显示层规划与验收
+
+G0/V1 必须同步盘点 HUD、modal、popup、drawer、toast 等显示层，并在 `display_layer_planning` 中显式记录 `scene_master` 与 `inventory`。scene master 只冻结基础场景和常驻层；瞬态层按 required state 产出宿主场景上下文效果图，不能用孤立透明组件图作为完整证据。V3 再按 component×state 拆解，V4/V5 回到宿主场景同屏组合并重放打开→交互→关闭→底层状态/焦点恢复。显示层使用 `DISPLAY_LAYER` 实施单元，复用同一 V0-V5、A0-A6、F0-F4，不建立第二套全局状态机。
+
 只报告状态包、交付物、实际 diff、可复现证据、未覆盖项和下一门。仍有未完成场景、功能、正式视觉接入或占位资源时不得报告 G1 完成；仅全局控制面可迁移到 `PASSED`、`INTEGRATING`、`RELEASING` 或 `COMPLETE`。

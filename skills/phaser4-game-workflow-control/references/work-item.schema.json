@@ -124,7 +124,7 @@
     "sceneReconstructionContract": {
       "type": "object",
       "description": "effect-image V1-V5 场景还原合同；缺失时不得把独立资源工件视为完整还原。",
-      "required": ["contract_version", "reference_technical_conflicts", "target_conditions", "coverage_regions", "composition", "responsive_contract", "predeclared_tolerances", "implementation_plan"],
+      "required": ["contract_version", "reference_technical_conflicts", "target_conditions", "coverage_regions", "composition", "responsive_contract", "predeclared_tolerances", "implementation_plan", "display_layer_planning"],
       "properties": {
         "contract_version": {"type": "string", "minLength": 1},
         "reference_technical_conflicts": {"$ref": "#/$defs/referenceTechnicalConflicts"},
@@ -137,6 +137,7 @@
         "responsive_contract": {"type": "object"},
         "predeclared_tolerances": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "rules"]}},
         "implementation_plan": {"type": "object"},
+        "display_layer_planning": {"$ref": "#/$defs/displayLayerPlanning"},
         "combination_preacceptance": {"$ref": "#/$defs/combinationPreacceptance"}
       },
       "additionalProperties": true
@@ -144,7 +145,7 @@
     "scene_reconstruction_contract": {
       "type": "object",
       "description": "effect-image V1-V5 场景还原合同；snake_case 入口同样必须显式提供完整合同。",
-      "required": ["contract_version", "reference_technical_conflicts", "target_conditions", "coverage_regions", "composition", "responsive_contract", "predeclared_tolerances", "implementation_plan"],
+      "required": ["contract_version", "reference_technical_conflicts", "target_conditions", "coverage_regions", "composition", "responsive_contract", "predeclared_tolerances", "implementation_plan", "display_layer_planning"],
       "properties": {
         "contract_version": {"type": "string", "minLength": 1},
         "reference_technical_conflicts": {"$ref": "#/$defs/referenceTechnicalConflicts"},
@@ -157,6 +158,7 @@
         "responsive_contract": {"type": "object"},
         "predeclared_tolerances": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "rules"]}},
         "implementation_plan": {"type": "object"},
+        "display_layer_planning": {"$ref": "#/$defs/displayLayerPlanning"},
         "combination_preacceptance": {"type": "object"}
       },
       "additionalProperties": true
@@ -823,6 +825,38 @@
       "additionalProperties": true
     },
     "combinationPreacceptance": {"type": "object", "required": ["status", "formal_scene_structure", "layout_calculation_identity", "evidence", "target_sha256", "candidate_sha256", "diff_fingerprint"], "properties": {"status": {"enum": ["passed", "PASS"]}, "formal_scene_structure": {"type": "string", "minLength": 1}, "layout_calculation_identity": {"type": "string", "minLength": 1}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "target_sha256": {"$ref": "#/$defs/sha256"}, "candidate_sha256": {"$ref": "#/$defs/sha256"}, "diff_fingerprint": {"type": "string", "minLength": 1}}},
+    "displayLayerPlanning": {
+      "type": "object",
+      "required": ["version", "scene_master", "inventory"],
+      "properties": {"version": {"type": "string", "minLength": 1}, "scene_master": {"$ref": "#/$defs/displaySceneMaster"}, "inventory": {"type": "array", "items": {"$ref": "#/$defs/displayLayer"}}},
+      "additionalProperties": false
+    },
+    "displaySceneMaster": {
+      "type": "object",
+      "required": ["scene_id", "state_id", "target_sha256", "viewport", "persistent_layer_ids"],
+      "properties": {"scene_id": {"type": "string", "minLength": 1}, "state_id": {"type": "string", "minLength": 1}, "target_sha256": {"$ref": "#/$defs/sha256"}, "viewport": {"type": "object", "required": ["width", "height"]}, "persistent_layer_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}},
+      "additionalProperties": false
+    },
+    "displayLayer": {
+      "type": "object",
+      "required": ["layer_id", "type", "host_scene_id", "target_sha256", "persistence", "states", "in_scene_master", "trigger", "dismiss", "input_blocking", "z_order", "backdrop", "focus_restore", "responsive", "relations"],
+      "properties": {"layer_id": {"type": "string", "minLength": 1}, "type": {"enum": ["hud", "modal", "popup", "drawer", "toast"]}, "host_scene_id": {"type": "string", "minLength": 1}, "target_sha256": {"$ref": "#/$defs/sha256"}, "persistence": {"enum": ["persistent", "transient"]}, "states": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/displayLayerState"}}, "in_scene_master": {"type": "boolean"}, "trigger": {"$ref": "#/$defs/evidenceValue"}, "dismiss": {"$ref": "#/$defs/evidenceValue"}, "input_blocking": {"oneOf": [{"type": "boolean"}, {"$ref": "#/$defs/evidenceValue"}]}, "z_order": {"type": ["string", "number"]}, "backdrop": {"$ref": "#/$defs/evidenceValue"}, "focus_restore": {"$ref": "#/$defs/evidenceValue"}, "responsive": {"$ref": "#/$defs/evidenceValue"}, "relations": {"$ref": "#/$defs/displayLayerRelations"}, "runtime_replay": {"$ref": "#/$defs/displayLayerRuntimeReplay"}},
+      "additionalProperties": false
+    },
+    "displayLayerState": {
+      "type": "object",
+      "required": ["state_id", "required"],
+      "properties": {"state_id": {"type": "string", "minLength": 1}, "required": {"type": "boolean"}, "contextual_effect_image": {"$ref": "#/$defs/contextualEffectImage"}},
+      "additionalProperties": false
+    },
+    "contextualEffectImage": {
+      "type": "object",
+      "required": ["evidence", "sha256", "host_scene_id", "host_target_sha256", "layer_target_sha256", "viewport", "kind", "isolated_only"],
+      "properties": {"evidence": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}, "host_scene_id": {"type": "string", "minLength": 1}, "host_target_sha256": {"$ref": "#/$defs/sha256"}, "layer_target_sha256": {"$ref": "#/$defs/sha256"}, "viewport": {"type": "object", "required": ["width", "height"]}, "kind": {"const": "host-scene-context"}, "isolated_only": {"const": false}},
+      "additionalProperties": false
+    },
+    "displayLayerRelations": {"type": "object", "required": ["mutually_exclusive_layer_ids", "coexists_with_layer_ids"], "properties": {"mutually_exclusive_layer_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}, "coexists_with_layer_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}}, "additionalProperties": false},
+    "displayLayerRuntimeReplay": {"type": "object", "required": ["status", "host_scene_id", "same_screen_combination", "steps"], "properties": {"status": {"enum": ["passed", "PASS"]}, "host_scene_id": {"type": "string", "minLength": 1}, "same_screen_combination": {"const": true}, "steps": {"type": "array", "minItems": 4, "items": {"type": "object", "required": ["phase", "evidence"], "properties": {"phase": {"enum": ["open", "interact", "close", "restore"], "evidence": {"type": "string", "minLength": 1}}}}}}},
     "sceneAssetUsage": {"type": "object", "required": ["target_display_size", "intended_scale_range", "origin", "anchor", "nine_slice", "material", "composition_region", "required_neighbors", "typography_ownership", "runtime_foreground_ownership"], "properties": {"target_display_size": {"type": "object", "required": ["width", "height"], "properties": {"width": {"type": "number", "exclusiveMinimum": 0}, "height": {"type": "number", "exclusiveMinimum": 0}}}, "intended_scale_range": {"type": "object", "required": ["min", "max"], "properties": {"min": {"type": "number", "exclusiveMinimum": 0}, "max": {"type": "number", "exclusiveMinimum": 0}}}, "max_dpr": {"const": 1.5, "description": "最大生产 DPR 固定为 1.5；运行时实际 DPR 动态取值并封顶为 1.5。"}, "padding_policy": {"type": "string", "description": "ImageGen individual 必须为 none；非 ImageGen 可不声明该字段。"}, "origin": {"type": ["object", "string"]}, "anchor": {"type": ["object", "string"]}, "nine_slice": {"type": ["object", "string"]}, "material": {"type": ["object", "string"]}, "composition_region": {"type": ["object", "string"]}, "required_neighbors": {"type": "array"}, "typography_ownership": {"type": ["object", "string"]}, "runtime_foreground_ownership": {"type": ["object", "string"]}}, "additionalProperties": true},
     "visualExpectedAsset": {"type": "object", "required": ["asset_id", "asset_scope", "atomic_visual_key", "component_id", "state_id"], "properties": {"asset_id": {"type": "string", "minLength": 1}, "asset_scope": {"const": "atomic-component"}, "atomic_visual_key": {"type": "string", "minLength": 1}, "component_id": {"type": "string", "minLength": 1}, "state_id": {"type": "string", "minLength": 1}, "mime_type": {"type": "string"}, "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1}}},
     "imageGenerationExpectedAsset": {"allOf": [{"$ref": "#/$defs/visualExpectedAsset"}, {"type": "object", "required": ["source_file", "runtime_file", "mime_type", "width", "height"], "properties": {"mime_type": {"enum": ["image/png", "image/jpeg"]}, "source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "runtime_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}}}]},
@@ -869,7 +903,8 @@
           "phaser-audio-change",
           "phaser-balance-change",
           "phaser-qa-build"
-      ]
+        ]
+      }
     },
     "visualConfirmationAuthorityRef": {
       "type": "object",
@@ -882,7 +917,6 @@
         "receipt_id": {"type": "string", "minLength": 1},
         "receipt_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
       }
-    }
     }
   }
 }
