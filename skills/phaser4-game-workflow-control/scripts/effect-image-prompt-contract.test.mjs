@@ -65,8 +65,9 @@ function validEffectRecord(overrides = {}) {
     reconstruction_mode: "reference-faithful",
     reference_input_mode: "full-reference-guidance",
     pixel_reuse_policy: "forbid-output-reuse",
-    background_mode: "transparent",
-    transparency_strategy: "direct-generation",
+    source_background_mode: "opaque",
+    final_background_mode: "transparent",
+    transparency_strategy: "background-removal",
     global_prompt_prefix: EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX,
     asset_prompt: assetPrompt,
     state_prompt: statePrompt,
@@ -95,10 +96,14 @@ function validEffectRecord(overrides = {}) {
     diff_fingerprint: "diff-sc-main-hero",
     candidate_version: "candidate-2026-08-22",
     seed: 42,
-    source_file: "art/generated/sc-main-hero-idle.png",
+    raw_source_file: "art/generated/sc-main-hero-idle-raw.png",
+    raw_source_has_alpha: false,
+    source_file: "art/generated/sc-main-hero-idle-cutout.png",
+    source_has_alpha: true,
     runtime_file: "public/assets/sc-main-hero-idle.png",
     output_file: "public/assets/sc-main-hero-idle.png",
-    postprocess: [],
+    postprocess: ["background-removal"],
+    background_removal_attempts: [{ operation: "background-removal", status: "completed", source_file: "art/generated/sc-main-hero-idle-raw.png", output_file: "art/generated/sc-main-hero-idle-cutout.png", source_has_alpha: false, output_has_alpha: true, completed_at: "2026-08-22T00:00:00Z", evidence: { record_id: "BR-SC-MAIN-HERO-IDLE", report: "evidence/visual/sc-main-hero-background-removal.json" } }],
     ...overrides,
   };
 }
@@ -106,7 +111,7 @@ function validEffectRecord(overrides = {}) {
 /** 构造与冻结原图身份分离的独立输出资产。 */
 function validEffectAsset(overrides = {}) {
   return {
-    source_file: "art/generated/sc-main-hero-idle.png",
+    source_file: "art/generated/sc-main-hero-idle-cutout.png",
     runtime_file: "public/assets/sc-main-hero-idle.png",
     output_file: "public/assets/sc-main-hero-idle.png",
     mime_type: "image/png",
@@ -119,7 +124,7 @@ function validEffectAsset(overrides = {}) {
       schema: "image-normalization/1",
       status: "passed",
       operation: "not-required",
-      source_file: "art/generated/sc-main-hero-idle.png",
+      source_file: "art/generated/sc-main-hero-idle-cutout.png",
       source_sha256: CANDIDATE_SHA,
       source_width: 128,
       source_height: 192,
@@ -161,7 +166,7 @@ function effectImageAssetContract() {
       asset_id: EFFECT_ASSET_ID,
       component_id: "hero-character",
       state_id: "idle",
-      source_file: "art/generated/sc-main-hero-idle.png",
+      source_file: "art/generated/sc-main-hero-idle-cutout.png",
       runtime_file: "public/assets/sc-main-hero-idle.png",
       mime_type: "image/png",
       width: 128,
@@ -223,17 +228,17 @@ test("合法 effect-image 忠实还原记录通过", () => {
   assert.deepEqual(validateImageGenerationContract(asset, effectImageAssetContract(), effectImageValidationContext(), effectImageValidationOptions()), []);
 });
 
-test("alpha=true 单图必须声明直接透明生成并在提示词中要求透明直出", () => {
-  const record = validEffectRecord({ background_mode: undefined, full_prompt: buildEffectImageFullPrompt({ assetPrompt: validEffectRecord().asset_prompt, statePrompt: validEffectRecord().state_prompt }) });
+test("alpha=true 单图必须声明背景模式并在提示词中要求非透明去背原图", () => {
+  const record = validEffectRecord({ source_background_mode: undefined, full_prompt: buildEffectImageFullPrompt({ assetPrompt: validEffectRecord().asset_prompt, statePrompt: validEffectRecord().state_prompt, expectedAlpha: false }) });
   const errors = validateImageGenerationContract(validEffectAsset({ generation_record: record }), effectImageAssetContract(), effectImageValidationContext(), effectImageValidationOptions());
-  assert(errors.some((item) => item.includes("background_mode")), errors.join("\n"));
-  assert(errors.some((item) => item.includes("透明直出") || item.includes("直接生成真实 alpha")), errors.join("\n"));
+  assert(errors.some((item) => item.includes("source_background_mode")), errors.join("\n"));
+  assert(errors.some((item) => item.includes("非透明") || item.includes("透明 Alpha")), errors.join("\n"));
 });
 
-test("alpha=true 单图禁止背景移除后处理，postprocess 允许为空数组", () => {
-  const record = validEffectRecord({ postprocess: ["remove-background"] });
+test("alpha=true 单图必须恰好记录一次成功背景移除", () => {
+  const record = validEffectRecord({ background_removal_attempts: [{ ...validEffectRecord().background_removal_attempts[0], operation: "remove-background" }] });
   const errors = validateImageGenerationContract(validEffectAsset({ generation_record: record }), effectImageAssetContract(), effectImageValidationContext(), effectImageValidationOptions());
-  assert(errors.some((item) => item.includes("抠图") || item.includes("背景移除") || item.includes("matting")), errors.join("\n"));
+  assert(errors.some((item) => item.includes("background_removal_attempts")), errors.join("\n"));
   assert.deepEqual(validateImageGenerationContract(validEffectAsset({ generation_record: validEffectRecord({ postprocess: [] }) }), effectImageAssetContract(), effectImageValidationContext(), effectImageValidationOptions()), []);
 });
 

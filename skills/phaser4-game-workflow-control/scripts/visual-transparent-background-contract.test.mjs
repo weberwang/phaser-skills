@@ -1,162 +1,161 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  FALLBACK_TRANSPARENT_BACKGROUND_PROMPT,
-  TRANSPARENCY_FALLBACK_STRATEGY,
-  TRANSPARENCY_STRATEGY,
+  BACKGROUND_REMOVAL_OPERATION,
+  TRANSPARENT_BACKGROUND_REMOVAL_PROMPT,
+  TRANSPARENT_BACKGROUND_STRATEGY,
   validateTransparentBackgroundContract,
 } from "./visual-transparent-background-contract.mjs";
 import { buildEffectImageFullPrompt } from "./effect-image-prompt-contract.mjs";
 
-/** 构造透明 ImageGen 测试所需的 expected asset 与输出元数据。 */
+/** 构造透明背景移除路线所需的完整中间产物、归一化和最终输出事实。 */
 function transparentFixture(overrides = {}) {
+  const normalizationRecord = {
+    schema: "image-normalization/1",
+    status: "passed",
+    operation: "resize-to-contract",
+    source_file: "art/hero-cutout.png",
+    source_sha256: `sha256:${"b".repeat(64)}`,
+    source_width: 128,
+    source_height: 128,
+    target_width: 64,
+    target_height: 64,
+    output_file: "public/hero.png",
+    output_sha256: `sha256:${"a".repeat(64)}`,
+    output_width: 64,
+    output_height: 64,
+    preserve_alpha: true,
+    tool: "sharp",
+    tool_version: "0.35.3",
+    completed_at: "2026-08-26T00:00:00Z",
+  };
+  const generation = {
+    source_background_mode: "opaque",
+    final_background_mode: "transparent",
+    transparency_strategy: TRANSPARENT_BACKGROUND_STRATEGY,
+    full_prompt: TRANSPARENT_BACKGROUND_REMOVAL_PROMPT,
+    postprocess: ["background-removal"],
+    raw_source_file: "art/hero-raw.png",
+    raw_source_has_alpha: false,
+    source_file: "art/hero-cutout.png",
+    source_has_alpha: true,
+    runtime_file: "public/hero.png",
+    output_file: "public/hero.png",
+    normalization_record: normalizationRecord,
+    background_removal_attempts: [{
+      operation: BACKGROUND_REMOVAL_OPERATION,
+      status: "completed",
+      source_file: "art/hero-raw.png",
+      output_file: "art/hero-cutout.png",
+      source_has_alpha: false,
+      output_has_alpha: true,
+      completed_at: "2026-08-26T00:00:00Z",
+      evidence: { record_id: "BR-HERO-1", report: "evidence/hero-background-removal.json" },
+    }],
+  };
   return {
-    expectedAsset: { asset_id: "hero", mime_type: "image/png", source_file: "art/hero.png", runtime_file: "public/hero.png", alpha: true },
+    expectedAsset: { asset_id: "hero", mime_type: "image/png", source_file: "art/hero-cutout.png", runtime_file: "public/hero.png", width: 64, height: 64, alpha: true },
     contract: { production_method: "imagegen", image_generation_required: true, delivery_kind: "raster-image" },
-    generation: {
-      background_mode: "transparent",
-      transparency_strategy: TRANSPARENCY_STRATEGY,
-      full_prompt: "透明背景要求：直接生成真实 alpha 透明背景",
-      postprocess: [],
-      source_file: "art/hero.png",
-      runtime_file: "public/hero.png",
-    },
-    metadata: { mime_type: "image/png", file: "public/hero.png", alpha: true },
+    asset: { source_file: "art/hero-cutout.png", runtime_outputs: ["public/hero.png"], normalization_record: normalizationRecord },
+    generation,
+    metadata: { mime_type: "image/png", file: "public/hero.png", alpha: true, width: 64, height: 64 },
     ...overrides,
   };
 }
 
-test("直接透明生成成功，允许 postprocess 为空数组", () => {
+test("背景移除生产成功，允许恰好一次结构化操作", () => {
   assert.deepEqual(validateTransparentBackgroundContract(transparentFixture()), []);
 });
 
-test("透明 expected asset 的缺省或空 delivery_kind 不误报，显式错误值仍拒绝", () => {
-  const fixture = transparentFixture();
-  assert.deepEqual(validateTransparentBackgroundContract(fixture), []);
-  assert.deepEqual(validateTransparentBackgroundContract({
-    ...fixture,
-    expectedAsset: { ...fixture.expectedAsset, delivery_kind: "" },
-  }), []);
-  const errors = validateTransparentBackgroundContract({
-    ...fixture,
-    expectedAsset: { ...fixture.expectedAsset, delivery_kind: "vector-image" },
-  });
-  assert(errors.some((item) => item.includes("delivery_kind=raster-image")), errors.join("\n"));
+test("提示词要求非透明高对比纯色背景并禁止透明 Alpha 直出", () => {
+  const prompt = buildEffectImageFullPrompt({ assetPrompt: "冻结 region 资产", expectedAlpha: true });
+  assert(prompt.includes("非透明"));
+  assert(prompt.includes("纯色背景"));
+  assert(prompt.includes("与主体高对比"));
+  assert(prompt.includes("便于去背"));
+  assert(prompt.includes("禁止直接输出透明 Alpha"));
 });
 
-test("提示词构造器默认使用直出，只有显式兜底策略才切换提示词段", () => {
-  const direct = buildEffectImageFullPrompt({ assetPrompt: "冻结 region 资产", expectedAlpha: true });
-  const fallback = buildEffectImageFullPrompt({ assetPrompt: "冻结 region 资产", expectedAlpha: true, transparencyStrategy: TRANSPARENCY_FALLBACK_STRATEGY });
-  assert(direct.includes("直接生成真实 alpha 透明背景"));
-  assert(fallback.includes(FALLBACK_TRANSPARENT_BACKGROUND_PROMPT));
-  assert(!fallback.includes("禁止先生成实体背景，再进行抠图"));
-});
-
-test("直接路径出现背景移除操作时失败，不允许静默走抠图", () => {
-  const fixture = transparentFixture({ generation: { ...transparentFixture().generation, postprocess: ["remove-background"] } });
-  const errors = validateTransparentBackgroundContract(fixture);
-  assert(errors.some((item) => item.includes("直接策略") && item.includes("背景移除")), errors.join("\n"));
-});
-
-test("兜底策略带完整直接失败事实和一次背景移除操作时通过", () => {
+test("提示词混入透明直出指令时拒绝，即使仍包含背景移除段", () => {
   const base = transparentFixture();
   const errors = validateTransparentBackgroundContract({
     ...base,
-    generation: {
-      ...base.generation,
-      transparency_strategy: TRANSPARENCY_FALLBACK_STRATEGY,
-      full_prompt: FALLBACK_TRANSPARENT_BACKGROUND_PROMPT,
-      command_or_recipe: "imagegen fallback then remove-background once",
-      postprocess: ["remove-background"],
-      direct_generation_attempt: {
-        status: "failed",
-        record_id: "GEN-DIRECT-FAILED-1",
-        attempted_at: "2026-08-25T01:00:00Z",
-        failure_reason: "provider returned opaque output",
-        evidence: { path: "evidence/direct-failed.json", sha256: "sha256:abc" },
-      },
-      background_removal_attempts: [{ operation: "remove-background", status: "passed" }],
-    },
+    generation: { ...base.generation, full_prompt: `${TRANSPARENT_BACKGROUND_REMOVAL_PROMPT}\n直接生成透明背景` },
+  });
+  assert(errors.some((item) => item.includes("透明直出指令")), errors.join("\n"));
+});
+
+test("旧策略值已禁用，必须显式使用 background-removal", () => {
+  for (const strategy of ["direct-generation", "background-removal-fallback"]) {
+    const errors = validateTransparentBackgroundContract({ ...transparentFixture(), generation: { ...transparentFixture().generation, transparency_strategy: strategy } });
+    assert(errors.some((item) => item.includes("transparency_strategy")), `${strategy}: ${errors.join("\n")}`);
+  }
+});
+
+test("旧 background_mode 和 direct_generation_attempt 字段被拒绝", () => {
+  const base = transparentFixture();
+  const errors = validateTransparentBackgroundContract({
+    ...base,
+    generation: { ...base.generation, background_mode: "transparent", direct_generation_attempt: { status: "failed" } },
+  });
+  assert(errors.some((item) => item.includes("background_mode")), errors.join("\n"));
+  assert(errors.some((item) => item.includes("direct_generation_attempt")), errors.join("\n"));
+});
+
+test("结构化一次记录是次数权威，命令和 postprocess 重复描述仍通过", () => {
+  const base = transparentFixture();
+  const errors = validateTransparentBackgroundContract({
+    ...base,
+    generation: { ...base.generation, command_or_recipe: "imagegen hero -> background-removal", postprocess: ["background-removal"] },
   });
   assert.deepEqual(errors, []);
 });
 
-test("兜底策略缺少直接失败事实时失败", () => {
+test("缺少或重复背景移除记录时失败，禁止自动重试", () => {
+  const base = transparentFixture();
+  for (const attempts of [undefined, [], [base.generation.background_removal_attempts[0], base.generation.background_removal_attempts[0]]]) {
+    const generation = { ...base.generation };
+    if (attempts === undefined) delete generation.background_removal_attempts;
+    else generation.background_removal_attempts = attempts;
+    const errors = validateTransparentBackgroundContract({ ...base, generation });
+    assert(errors.some((item) => item.includes("恰好一条")), errors.join("\n"));
+  }
+});
+
+test("背景移除必须成功且记录完整路径、时间、Alpha 和 evidence", () => {
+  const base = transparentFixture();
+  const attempt = base.generation.background_removal_attempts[0];
+  for (const change of [
+    { operation: "remove-background" },
+    { status: "failed" },
+    { source_file: "" },
+    { output_file: "art/hero-raw.png" },
+    { completed_at: "not-a-date" },
+    { evidence: {} },
+    { source_has_alpha: true },
+    { output_has_alpha: false },
+  ]) {
+    const errors = validateTransparentBackgroundContract({
+      ...base,
+      generation: { ...base.generation, background_removal_attempts: [{ ...attempt, ...change }] },
+    });
+    assert(errors.length > 0, JSON.stringify(change));
+  }
+});
+
+test("归一化 source_file 必须绑定背景移除输出", () => {
   const base = transparentFixture();
   const errors = validateTransparentBackgroundContract({
     ...base,
-    generation: { ...base.generation, transparency_strategy: TRANSPARENCY_FALLBACK_STRATEGY, postprocess: ["remove-background"] },
+    generation: { ...base.generation, normalization_record: { ...base.generation.normalization_record, source_file: "art/hero-raw.png" } },
   });
-  assert(errors.some((item) => item.includes("direct_generation_attempt")), errors.join("\n"));
+  assert(errors.some((item) => item.includes("normalization_record.source_file")), errors.join("\n"));
 });
 
-test("兜底策略缺少唯一 background_removal_attempts 时失败", () => {
-  const base = transparentFixture();
-  const errors = validateTransparentBackgroundContract({
-    ...base,
-    generation: {
-      ...base.generation,
-      transparency_strategy: TRANSPARENCY_FALLBACK_STRATEGY,
-      postprocess: ["remove-background"],
-      direct_generation_attempt: {
-        status: "failed",
-        record_id: "GEN-DIRECT-FAILED-3",
-        attempted_at: "2026-08-25T01:00:00Z",
-        failure_reason: "provider returned opaque output",
-        evidence: "evidence/direct-failed-3.json",
-      },
-    },
-  });
-  assert(errors.some((item) => item.includes("background_removal_attempts")), errors.join("\n"));
-});
-
-test("兜底策略未记录实际背景移除操作时失败", () => {
-  const base = transparentFixture();
-  const errors = validateTransparentBackgroundContract({
-    ...base,
-    generation: {
-      ...base.generation,
-      transparency_strategy: TRANSPARENCY_FALLBACK_STRATEGY,
-      direct_generation_attempt: {
-        status: "unsupported",
-        record_id: "GEN-DIRECT-UNSUPPORTED-1",
-        attempted_at: "2026-08-25T01:00:00Z",
-        failure_reason: "provider does not support alpha output",
-        evidence: "evidence/direct-unsupported.json",
-      },
-    },
-  });
-  assert(errors.some((item) => item.includes("实际背景移除操作")), errors.join("\n"));
-});
-
-test("兜底策略出现多次背景移除操作时失败并停止重试", () => {
-  const base = transparentFixture();
-  const errors = validateTransparentBackgroundContract({
-    ...base,
-    generation: {
-      ...base.generation,
-      transparency_strategy: TRANSPARENCY_FALLBACK_STRATEGY,
-      postprocess: ["remove-background", "remove-background"],
-      direct_generation_attempt: {
-        status: "failed",
-        record_id: "GEN-DIRECT-FAILED-2",
-        attempted_at: "2026-08-25T01:00:00Z",
-        failure_reason: "provider returned opaque output",
-        evidence: "evidence/direct-failed-2.json",
-      },
-      background_removal_attempts: [
-        { operation: "remove-background", status: "passed" },
-        { operation: "remove-background", status: "passed" },
-      ],
-    },
-  });
-  assert(errors.some((item) => item.includes("恰好一条")), errors.join("\n"));
-});
-
-test("alpha=false 与普通非透明路线不触发透明背景合同", () => {
+test("alpha=false 与普通非透明路线不触发背景移除合同", () => {
   const fixture = transparentFixture({
     expectedAsset: { asset_id: "background", mime_type: "image/jpeg", source_file: "art/background.jpg", runtime_file: "public/background.jpg", alpha: false },
-    generation: { transparency_strategy: TRANSPARENCY_FALLBACK_STRATEGY, postprocess: ["remove-background"] },
+    contract: { production_method: "imagegen", image_generation_required: true, delivery_kind: "raster-image" },
     metadata: { mime_type: "image/jpeg", file: "public/background.jpg", alpha: false },
   });
   assert.deepEqual(validateTransparentBackgroundContract(fixture), []);

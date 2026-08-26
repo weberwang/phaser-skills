@@ -65,6 +65,8 @@ Work Item 不得内嵌 `userDecisionReceipt` 或 `visualConfirmationAuthority` �
 
 ImageGen 的源文件、运行时文件和实际输出 MIME 只能是 `image/png` 或 `image/jpeg`，路径扩展名只能是 `.png`、`.jpg`、`.jpeg`；通用 `authored-raster` 不受此专用格式限制。声明 `expected_assets.width/height` 的 ImageGen 还必须绑定 `normalization_record`（`schema=image-normalization/1`），由 Sharp 记录原图/归一化输出路径、尺寸、SHA、Alpha、工具版本和完成时间；`alpha=true` 只能交付 PNG 并保留 Alpha，`alpha=false` 可交付 JPEG。
 
+透明 ImageGen 单图的三份 JSON schema（Evidence Manifest、Implementation Package、Work Item）共享唯一 `transparentBackgroundProductionRecord`：`transparency_strategy=background-removal`、`source_background_mode=opaque`、`final_background_mode=transparent`，并要求 `raw_source_file`、背景移除后的 `source_file`、两侧 Alpha 状态及恰好一条 `transparentBackgroundRemovalAttempt`。该 attempt 必须是 `operation=background-removal`、`status=completed`，绑定不同的源/输出路径、`completed_at` 与可审计 `evidence`；`background_mode`、`direct_generation_attempt` 和旧策略值不属于 schema。透明 expected asset 通过条件 schema 收紧为 PNG；运行时验证器继续核对 `normalization_record.source_file` 等于背景移除输出。
+
 ### 场景还原 schema 与验证命令
 
 效果图 `scene_reconstruction_contract` 的 V1 最低字段包括 `reference_technical_conflicts`（允许空数组但不得省略）和 `display_layer_planning`（无显示层也必须显式 `inventory=[]`）；规划必须区分 scene master、宿主场景上下文层图和 V3 component×state 资产。V2→V3 还必须绑定 `v2_scene_candidate`、`v2_dynamic_sample` 和 `v2_structured_review`。结构化 fidelity case 必须记录候选 `code_sha256` 或 `build_sha256`（可用同等 `sha256` 身份表示）及 `diff_fingerprint`，并提供 `normalization_equivalence.viewport`、`dpr`、`logical_coordinates` 三项等价证明。`difference_evidence` 不得为 `null`；逐区域结果必须同时包含 target/candidate measurement、delta、场景预声明 `tolerance_reference`、result、evidence 和（可为空的）`exception_ids`。V4/V5 还必须回到宿主场景同屏组合，提供瞬态层打开→交互→关闭→底层状态/焦点恢复轨迹。

@@ -15,18 +15,18 @@
 
 允许重新绘制全部像素，但禁止把参考图裁切、抠图或复制后直接作为交付结果。
 
-输出单个独立位图资产。除明确的背景资产外使用真实透明背景。主体必须完整落入指定画布。不得生成组合图、atlas、sprite sheet、展示板、说明文字、无关 UI、数字、标签、水印或其他组件。
+输出单个独立位图资产。按当前 expected_assets 的背景生产合同生成背景。主体必须完整落入指定画布。不得生成组合图、atlas、sprite sheet、展示板、说明文字、无关 UI、数字、标签、水印或其他组件。
 ```
 
-当当前 `expected_assets` 的 `alpha=true` 时，默认且优先使用直接透明生成，实际发送的完整提示词必须追加以下透明直出段：
+当当前 `expected_assets` 的 `alpha=true` 时，实际发送的完整提示词必须追加以下背景移除生产段：
 
 ```text
-透明背景要求：直接生成真实 alpha 透明背景；禁止先生成实体背景，再进行抠图、去背、背景移除或 matting。
+透明目标要求：生成非透明、轮廓清晰、与主体高对比、便于去背的纯色背景；禁止直接输出透明 Alpha。随后仅执行一次受控背景移除，产出含真实 Alpha 的 PNG。
 ```
 
-这表示 ImageGen 首选直接输出带真实透明像素的 PNG，不先生成实体背景。只有直接透明生成明确 `failed` 或 `unsupported` 时，才允许把 `transparency_strategy` 切换为 `background-removal-fallback`。兜底必须在同一 `generation_record` 中提供唯一的 `direct_generation_attempt`，至少包含 `status`、`record_id`、`attempted_at`、`failure_reason` 和可审计的 `evidence`；状态只能是 `failed` 或 `unsupported`，不能用“重试中”、人工判断或空记录替代。兜底还必须提供恰好一条结构化 `background_removal_attempts`，其中包含明确的 `operation` 与完成状态；`operation`、`command_or_recipe` 或 `postprocess` 等文本字段只用于确认确实记录了背景移除，不用于跨字段计数。最终转换最多执行一次；转换失败立即退回 V3/V4，禁止无限重试或自动多次去背。两条路径最终都必须交付真实含透明像素的 PNG，由 V4 文件解码复核。
+这表示 ImageGen 先交付非透明原图；生成记录必须声明 `source_background_mode=opaque`、`final_background_mode=transparent`、`transparency_strategy=background-removal`，并提供 `raw_source_file`、`source_file`（背景移除输出）和 `source_has_alpha=true`。`background_removal_attempts` 必须恰好一条，记录 `operation=background-removal`、`status=completed`、源/输出路径、完成时间、源/输出 Alpha 和可审计 evidence；`normalization_record.source_file` 必须绑定该输出。失败立即退回 V3/V4，禁止无限重试或自动多次去背；最终 PNG 由 V4 文件解码复核真实 Alpha。
 
-直接策略的 `operation`、`command_or_recipe`、`postprocess` 等结构化操作字段仍禁止记录抠图、去背、背景移除或 `matting/remove-background`；`postprocess` 必须是字符串数组且可以为空数组 `[]`。兜底策略不是静默降级，必须明确记录实际操作和失败事实。
+`background_mode`、`direct_generation_attempt` 和旧的策略值均不属于本合同；`postprocess` 必须是字符串数组，背景移除操作以结构化 `background_removal_attempts` 为权威记录。
 
 `negative_prompt` 必须逐字使用下面的 canonical 内容：
 
@@ -71,11 +71,11 @@
 
 `generation_record.reference_inputs` 必须包含 `reference_target.original_file` 指向的完整冻结效果图；`style_reference_inputs` 只能补充，不能替代它。`source_file`、`runtime_file`、`output_file` 和实际输出路径/文件身份不得等于冻结图。`crop_reference=true`、`reference_crop=true`、裁切/抠图参考图或复用参考像素作为输出都必须失败。
 
-记录必须保存实际发送的完整提示词（`full_prompt` 或 `actual_prompt`）和真实 `reference_inputs`，不能在生成后拼一份未实际使用的文本。完整提示词至少可复核地包含 canonical 全局段、当前 region 事实资产段、状态段和 canonical 负向段；透明 `alpha=true` 资产还必须包含透明直出段；并绑定当前 `target_sha256`、`region_id`、候选 `candidate_sha256`/`diff_fingerprint`、候选版本与实际 `record_id`。
+记录必须保存实际发送的完整提示词（`full_prompt` 或 `actual_prompt`）和真实 `reference_inputs`，不能在生成后拼一份未实际使用的文本。完整提示词至少可复核地包含 canonical 全局段、当前 region 事实资产段、状态段和 canonical 负向段；透明 `alpha=true` 资产还必须包含背景移除生产段；并绑定当前 `target_sha256`、`region_id`、候选 `candidate_sha256`/`diff_fingerprint`、候选版本与实际 `record_id`。
 
 普通非 `effect-image` ImageGen 不要求以上三个重建字段，也不要求冻结效果图作为参考输入；其现有通用 ImageGen 合同保持不变。
 
-无论透明直出还是受控背景移除兜底，原图都只是中间产物。生产顺序必须是“生成原图 →（透明直出失败/不支持才一次背景移除）→ 尺寸归一化 → V4/final/runtime”；归一化使用 Sharp，写入 `normalization_record`，并把最终 `actual_output` 绑定到归一化后的 PNG。`padding_policy=none`，源图与 `expected_assets.width/height` 必须同宽高比，比例不符必须重生，禁止 crop、padding、contain 或静默拉伸；透明目标归一化前后都必须保留 Alpha。
+透明单图原图只是中间产物。生产顺序必须是“生成非透明原图 → 一次背景移除 → 尺寸归一化 → V4/final/runtime”；归一化使用 Sharp，写入 `normalization_record`，并把 `normalization_record.source_file` 绑定到背景移除输出、最终 `actual_output` 绑定到归一化后的 PNG。`padding_policy=none`，源图与 `expected_assets.width/height` 必须同宽高比，比例不符必须重生，禁止 crop、padding、contain 或静默拉伸；透明目标归一化前后都必须保留 Alpha。
 
 ## 全局视觉基线绑定
 

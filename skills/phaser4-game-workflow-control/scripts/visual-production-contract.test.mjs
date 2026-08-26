@@ -135,7 +135,7 @@ function normalizationRecordForAsset({ sourceFile, outputFile, width, height, al
 /** 构造包含完整输出身份的 ImageGen 资产合同，并同步资产与生成记录的归一化事实。 */
 function imageGenAsset(overrides = {}) {
   const asset = {
-    source_file: "art/hero.png",
+    source_file: "art/hero-cutout.png",
     mime_type: "image/png",
     width: 64,
     height: 96,
@@ -145,15 +145,15 @@ function imageGenAsset(overrides = {}) {
     runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", evidence_sha256: HASH, candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1" },
     generation_record: {
       record_id: "GEN-1", generator: "imagegen", generator_version: "1", created_at: "2026-08-15T00:00:00Z", command_or_recipe: "imagegen hero",
-      global_prompt_prefix: "固定风格", asset_prompt: "主角", state_prompt: "待机", negative_prompt: "文字", full_prompt: "固定风格\n主角\n待机\n透明背景要求：直接生成真实 alpha 透明背景", background_mode: "transparent", transparency_strategy: "direct-generation", model: "imagegen", model_version: "1", seed: 1,
-      reference_inputs: ["docs/reference.png"], postprocess: ["清理透明边缘"],
+      global_prompt_prefix: "固定风格", asset_prompt: "主角", state_prompt: "待机", negative_prompt: "文字", full_prompt: "固定风格\n主角\n待机\n透明目标要求：生成非透明、轮廓清晰、与主体高对比、便于去背的纯色背景；禁止直接输出透明 Alpha。随后仅执行一次受控背景移除，产出含真实 Alpha 的 PNG。", source_background_mode: "opaque", final_background_mode: "transparent", transparency_strategy: "background-removal", model: "imagegen", model_version: "1", seed: 1,
+      raw_source_file: "art/hero-raw.png", raw_source_has_alpha: false, source_file: "art/hero-cutout.png", source_has_alpha: true, reference_inputs: ["docs/reference.png"], postprocess: ["background-removal"], background_removal_attempts: [{ operation: "background-removal", status: "completed", source_file: "art/hero-raw.png", output_file: "art/hero-cutout.png", source_has_alpha: false, output_has_alpha: true, completed_at: "2026-08-15T00:00:00Z", evidence: { record_id: "BR-1", report: "evidence/background-removal.json" } }],
     },
     ...overrides,
   };
   // 尺寸合同已经声明时，记录必须指向最终 runtime 输出；负向夹具没有有效尺寸时只保留可审计占位事实。
   const width = Number.isInteger(asset.width) && asset.width > 0 ? asset.width : 64;
   const height = Number.isInteger(asset.height) && asset.height > 0 ? asset.height : 96;
-  const sourceFile = asset.source_file ?? "art/hero.png";
+  const sourceFile = asset.source_file ?? "art/hero-cutout.png";
   const outputFile = asset.output_file ?? asset.runtime_outputs?.[0] ?? "public/assets/hero.png";
   const identitySha = /^sha256:[a-f0-9]{64}$/.test(String(asset.sha256 ?? "")) ? asset.sha256 : HASH;
   const inheritedNormalization = asset.generation_record?.normalization_record;
@@ -263,7 +263,7 @@ test("ImageGen 输出 MIME/源运行时后缀拒绝 WebP，PNG 和 JPEG 通过",
   assert(!validateImageGenerationContract(jpg, contract, { annotation_number: 12, region_id: "imagegen-output-jpg" }).some((item) => item.includes("仅允许") || item.includes("扩展名仅允许")));
 });
 
-test("expected_assets.alpha=false 不触发透明直出合同，普通 JPEG ImageGen 仍可通过", () => {
+test("expected_assets.alpha=false 不触发透明背景移除合同，普通 JPEG ImageGen 仍可通过", () => {
   const expectedAsset = { asset_id: "opaque-image", source_file: "art/opaque.jpg", runtime_file: "public/opaque.jpg", mime_type: "image/jpeg", alpha: false };
   const contract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", expected_assets: [expectedAsset] });
   delete contract.runtime_implementation;

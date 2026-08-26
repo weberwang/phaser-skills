@@ -19,7 +19,7 @@ description: 为 Phaser 4 游戏规划、生产、登记、验证并集成 UI、
 
 V0 的高保真/效果图还原适用性只看 Work Item 是否把效果图或参考截图指定为正式运行画面的视觉目标，与是否生成、制作或新增资源无关。只要指定为正式视觉目标，就必须进入 `effect-image` 的 V1→V5 高保真/忠实还原链，包含 `scene_reconstruction_contract`、布局绑定、coverage、宿主场景同屏组合和 fidelity 验收；即使所有区域都用 `reuse-existing`/`runtime-program` 实现、零新资源且零 ImageGen 也不例外。仅仅生成新资源，或仅把图片作为灵感、说明或临时参考，不足以触发 `effect-image`，仍按普通资产、组件或场景路径分类。`image_generation_required`、`generate-now`、资源数量和 `production_method` 只能在已经触发后由 V3 决定生产路线，不能参与 V0 applicability 判定。
 
-effect-image ImageGen 的完整提示词模板、asset_prompt 事实继承规则、透明生产要求和 generation_record 结构化字段统一见[《Effect-image ImageGen 忠实还原提示词合同》](references/effect-image-prompt-contract.md)。透明 alpha 单图默认且优先直接生成；只有直接生成明确 `failed/unsupported` 时，才允许使用 `background-removal-fallback`，并绑定 `direct_generation_attempt` 失败事实、恰好一条 `background_removal_attempts` 和一次实际背景移除操作。本 Skill 只保留路由和硬不变量，不在此复制模板。
+effect-image ImageGen 的完整提示词模板、asset_prompt 事实继承规则、透明生产要求和 generation_record 结构化字段统一见[《Effect-image ImageGen 忠实还原提示词合同》](references/effect-image-prompt-contract.md)。透明 alpha 单图只允许背景移除生产：先生成非透明、轮廓清晰、与主体高对比、便于去背的纯色背景，再绑定恰好一条成功的 `background_removal_attempts`。本 Skill 只保留路由和硬不变量，不在此复制模板。
 
 V4 需要使用正式 Scene 结构的同屏组合预验收；V5 需要结构化 fidelity case、逐区域测量与差异证据、确定性机器 F2、F3 runtime replay 和正式 Scene 消费证据。资源 loaded/used、missing=0、resize 稳定只属于工程子门，不能单独驱动 COMPLETE。
 
@@ -30,7 +30,7 @@ V4 需要使用正式 Scene 结构的同屏组合预验收；V5 需要结构化 
 5. V3 可运行 `node scripts/validate_visual_manifest.mjs docs/visual-assets.json --stage V3`；V4 正式验收运行 `node scripts/validate_visual_manifest.mjs docs/visual-assets.json --stage V4 --check-files --project-root .`，V5 正式验收运行同命令但使用 `--stage V5`。两阶段均逐项验证真实文件、授权、预算、冻结基线、coverage、`production_contract_audit`、F2 两类机器证据、F3 runtime replay 和 freshness-bound fidelity cases。效果图清单根节点必须绑定单一 camelCase 的 `workItemId` 与 `candidateVersion`，并与 `candidate_identity.sha256/diff_fingerprint` 及当前实施包一致。
 6. 按 G1 场景序列先完成全部 gameplay 场景的 V3-V5 闭环，再完成 supporting 场景；公共正式资源只允许至少两个场景稳定复用或运行必需。只将 V4 `accepted` 资源接入 V5，并在当前场景联合验收前清除灰盒、占位和 fallback。
 
-ImageGen 单图生产顺序固定为“生成原图 →（透明直出失败/不支持时才一次受控背景移除）→ Sharp 尺寸归一化 → V4/final/runtime”。不透明 `alpha=false` 可输出 JPEG，透明 `alpha=true` 只能输出含 Alpha 的 PNG。`padding_policy=none`；源图与 `expected_assets.width/height` 比例不一致必须重新生成，不能 crop、padding、contain 或静默拉伸。原图已满足尺寸也必须写 `normalization_record.operation=not-required`，透明资产必须前后保留 Alpha。
+ImageGen 单图生产顺序固定为“生成非透明原图 → 一次受控背景移除 → Sharp 尺寸归一化 → V4/final/runtime”。不透明 `alpha=false` 可输出 JPEG，透明 `alpha=true` 只能输出含 Alpha 的 PNG。透明生成记录使用 `source_background_mode=opaque`、`final_background_mode=transparent` 和 `transparency_strategy=background-removal`，`normalization_record.source_file` 必须绑定背景移除输出。`padding_policy=none`；源图与 `expected_assets.width/height` 比例不一致必须重新生成，不能 crop、padding、contain 或静默拉伸。原图已满足尺寸也必须写 `normalization_record.operation=not-required`，透明资产必须前后保留 Alpha。
 7. V1 灰盒、V2 可玩视觉切片和 V5 正式场景沿用同一生产 Scene 入口/骨架逐步重构；禁止一次性截图 Scene、整屏铺图、隐藏覆盖层和绝对叠层凑像素。V5 与玩法协作完成结构化集成、动态验收和低保真清理，fidelity case 任一目标、代码、布局或基线身份变化都必须失效重采。
 
 正式效果图标注命令必须带 `--proposal <file>.json`；省略该参数直接失败，不生成只有用户图示的成功产物。

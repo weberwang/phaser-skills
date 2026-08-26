@@ -44,9 +44,9 @@ V0 的高保真/效果图还原适用性唯一看 Work Item 是否把效果图�
 
 所有生成式效果图共享全局视觉一致性硬门：先冻结 `visual_baseline`（`global-static-baseline-frozen`、`docs/visual-baseline.md`、身份字段和全部 `anchor_evidence`），再生成场景主图、宿主场景上下文图或原子 ImageGen 资产。generated 记录必须绑定全局基线、全部 `style_reference_inputs`、canonical 一致性提示词、`style_drift_policy=forbid`、实际发送的完整提示词、输出 SHA 和一致性证据；provided 效果图只记录来源，不得伪造生成记录。全局基线不是 V2，V2 仍负责方向冻结；详细字段和复算规则见 [全局视觉一致性控制](../phaser4-game-asset-integration/references/global-visual-control.md)。
 
-effect-image ImageGen 的 canonical 提示词、真实参考输入、透明生产和 generation_record 绑定规则统一见 [`effect-image-prompt-contract.md`](../phaser4-game-asset-integration/references/effect-image-prompt-contract.md)；透明 alpha 单图优先直接生成，失败/不支持时才允许带完整失败事实的一次性背景移除兜底；控制面这里只校验路由、硬字段和退回阶段，不重复模板正文。
+effect-image ImageGen 的 canonical 提示词、真实参考输入、透明生产和 generation_record 绑定规则统一见 [`effect-image-prompt-contract.md`](../phaser4-game-asset-integration/references/effect-image-prompt-contract.md)；透明 alpha 单图只允许“非透明纯色原图 → 一次背景移除”的生产路线，并由结构化记录证明源/最终背景状态；控制面这里只校验路由、硬字段和退回阶段，不重复模板正文。
 
-ImageGen 单图在原图生成（透明直出失败/不支持时才做一次受控兜底）后，必须执行 Sharp 尺寸归一化，再进入 V4/final/runtime；`normalization_record` 负责绑定源/目标尺寸、路径、SHA、工具和完成时间。不透明 `alpha=false` 可输出 JPEG，透明 `alpha=true` 只能输出含 Alpha 的 PNG。`padding_policy=none`，比例不符必须按目标比例重新生成，禁止 crop、padding、contain、静默拉伸；透明直出和兜底均需确认最终 PNG 含 Alpha。
+ImageGen 单图在生成非透明原图并完成一次受控背景移除后，必须执行 Sharp 尺寸归一化，再进入 V4/final/runtime；`normalization_record` 负责绑定背景移除输出、目标尺寸、路径、SHA、工具和完成时间。不透明 `alpha=false` 可输出 JPEG，透明 `alpha=true` 只能输出含 Alpha 的 PNG。`padding_policy=none`，比例不符必须按目标比例重新生成，禁止 crop、padding、contain、静默拉伸；最终 PNG 必须由 V4 解码确认含 Alpha。
 
 视觉人工确认是上述场景硬门的附加约束，不改变通用 A0-A6/F0-F4：整条 V0→V5 链只在 V2 视觉方向冻结时要求一条唯一的结构化 `visual_human_approval`。该记录不采集 `reviewer_type`、`reviewer_id` 或 reviewer 字符串，仅以 `review_id`、`reviewed_at`、`evidence`、`evidence_sha256`、`status: PASS` 及冻结 target、V2 candidate、diff、baseline 哈希表达一次人工通过事件。V2 的代表画面、动态样片和结构化机器验证，以及 V4/V5/F2 的资产、组合、全屏、overlay、diff、逐区域和组件检查，只使用当前身份绑定的确定性机器证据，不再重复要求 human_review 或第二 reviewer；AI reviewer 字段不能替代这条唯一真人审批。审批绑定的 target、candidate、diff、基线或审批证据哈希变化即失效，根 PASS、裸批准文本、自动布尔值或 `all_visual_artifacts_human_reviewed` 不能绕过校验。
 

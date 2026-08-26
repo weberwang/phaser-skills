@@ -1,36 +1,25 @@
 /**
- * ImageGen 透明背景生产合同。
+ * ImageGen 透明背景移除生产合同。
  *
- * 透明度以 expected_assets.alpha=true 为唯一入口事实；本模块只约束
- * ImageGen 单图，不改变 authored-raster、reuse 或普通非透明图片路线。
- * 直接透明生成是唯一首选，背景移除只允许作为一次、可审计的受控兜底。
+ * alpha=true 的单图只能先生成非透明、便于分离的原图，再执行一次背景移除，
+ * 最后由 Sharp 完成尺寸归一化；普通不透明图片和非 ImageGen 路线不经过本模块。
  */
 
-/** 透明 ImageGen 记录必须声明的背景模式。 */
-export const TRANSPARENT_BACKGROUND_MODE = "transparent";
-/** 透明 ImageGen 记录必须声明的生成策略。 */
-export const TRANSPARENCY_STRATEGY = "direct-generation";
-/** 直接透明生成明确失败/不支持时允许使用的唯一兜底策略。 */
-export const TRANSPARENCY_FALLBACK_STRATEGY = "background-removal-fallback";
-/** 透明生产策略白名单，避免调用方静默引入第三种处理路径。 */
-export const TRANSPARENCY_STRATEGIES = Object.freeze([TRANSPARENCY_STRATEGY, TRANSPARENCY_FALLBACK_STRATEGY]);
-/** 允许触发兜底的直接生成终态；其它状态不能绕过直出首选。 */
-export const DIRECT_GENERATION_FAILURE_STATUSES = Object.freeze(["failed", "unsupported"]);
-/** 透明直出必须实际发送给生成器的正向提示词片段。 */
-export const DIRECT_TRANSPARENT_BACKGROUND_PROMPT = "透明背景要求：直接生成真实 alpha 透明背景；禁止先生成实体背景，再进行抠图、去背、背景移除或 matting。";
-/** 兜底路径的提示词片段；它不能被误当成默认策略。 */
-export const FALLBACK_TRANSPARENT_BACKGROUND_PROMPT = "透明背景兜底要求：直接透明生成已明确失败或不支持；允许仅执行一次受控背景移除并交付真实 alpha 透明 PNG。";
+/** 透明目标的 ImageGen 原图背景模式。 */
+export const TRANSPARENT_SOURCE_BACKGROUND_MODE = "opaque";
+/** 背景移除完成后的交付背景模式。 */
+export const TRANSPARENT_FINAL_BACKGROUND_MODE = "transparent";
+/** 透明目标唯一允许的生产策略。 */
+export const TRANSPARENT_BACKGROUND_STRATEGY = "background-removal";
+/** 透明目标策略白名单，禁止静默引入其它旁路。 */
+export const TRANSPARENT_BACKGROUND_STRATEGIES = Object.freeze([TRANSPARENT_BACKGROUND_STRATEGY]);
+/** 结构化背景移除操作的稳定名称。 */
+export const BACKGROUND_REMOVAL_OPERATION = "background-removal";
+/** 透明目标必须实际发送给 ImageGen 的原图生成提示词。 */
+export const TRANSPARENT_BACKGROUND_REMOVAL_PROMPT = "透明目标要求：生成非透明、轮廓清晰、与主体高对比、便于去背的纯色背景；禁止直接输出透明 Alpha。随后仅执行一次受控背景移除，产出含真实 Alpha 的 PNG。";
 
-const OPERATION_FIELDS = [
-  "operation", "operations", "source_operation", "sourceOperation", "reference_operation", "referenceOperation",
-  "reference_usage", "referenceUsage", "pixel_reuse_operation", "pixelReuseOperation", "postprocess", "post_processing",
-  "postProcessing", "command", "command_or_recipe", "commandOrRecipe", "recipe", "actual_operation", "actualOperation",
-  "output_operation", "outputOperation", "background_operation", "backgroundOperation",
-  "background_removal", "backgroundRemoval", "background_removal_operation", "backgroundRemovalOperation",
-  "background_removal_command", "backgroundRemovalCommand", "matting_operation", "mattingOperation",
-];
-const FORBIDDEN_BACKGROUND_REMOVAL = /抠图|抠取|去背|背景移除|移除背景|去除背景|擦除背景|背景擦除|matting|remove[-_ ]?background|background[-_ ]?(?:removal|remove)|remove[-_ ]?(?:bg|background)|background[\s]+eras(?:e|ing)/i;
-const OUTPUT_PATH_FIELDS = ["source_file", "sourceFile", "source_files", "sourceFiles", "runtime_file", "runtimeFile", "runtime_output_file", "runtimeOutputFile", "runtime_outputs", "runtimeOutputs", "output_file", "outputFile"];
+const OUTPUT_PATH_FIELDS = ["raw_source_file", "rawSourceFile", "source_file", "sourceFile", "source_files", "sourceFiles", "runtime_file", "runtimeFile", "runtime_output_file", "runtimeOutputFile", "runtime_outputs", "runtimeOutputs", "output_file", "outputFile"];
+const FINAL_OUTPUT_PATH_FIELDS = OUTPUT_PATH_FIELDS.filter((field) => !["raw_source_file", "rawSourceFile"].includes(field));
 
 /** 判断值是否为普通对象。 */
 function isObject(value) {
@@ -42,47 +31,48 @@ function nonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-/** 判断当前 expected asset 是否要求透明 ImageGen 直出。 */
-export function requiresDirectTransparentGeneration(expectedAsset, contract = {}) {
+/** 判断当前 expected asset 是否要求透明背景移除生产。 */
+export function requiresTransparentBackgroundProduction(expectedAsset, contract = {}) {
   return expectedAsset?.alpha === true && (contract?.production_method === "imagegen" || contract?.image_generation_required === true);
 }
 
-/** 判断当前是否为受控透明背景兜底策略。 */
-export function isTransparentBackgroundFallback(generation = {}) {
-  return generation?.transparency_strategy === TRANSPARENCY_FALLBACK_STRATEGY;
+/** 判断生成记录是否声明唯一的背景移除生产策略。 */
+export function isBackgroundRemovalProduction(generation = {}) {
+  return generation?.transparency_strategy === TRANSPARENT_BACKGROUND_STRATEGY;
 }
 
-/** 从嵌套数组/对象稳定展开结构化操作字段，避免只检查字符串顶层值；不把 false 等键值误判为操作。 */
-function flattenOperationValue(value) {
-  if (value === undefined || value === null) return [];
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [String(value)];
-  if (Array.isArray(value)) return value.flatMap(flattenOperationValue);
-  if (isObject(value)) return Object.values(value).flatMap(flattenOperationValue);
-  return [String(value)];
-}
-
-/** 收集生成记录中可能描述背景处理的结构化操作，不扫描提示词正文。 */
-function collectOperationText(generation = {}) {
-  return OPERATION_FIELDS.flatMap((field) => Object.hasOwn(generation, field) ? flattenOperationValue(generation[field]) : []).join(" ");
-}
-
-/** 收集源文件、运行时文件和实际输出路径，确保透明资产没有 JPEG 旁路。 */
-function collectOutputPaths(value = {}) {
+/** 收集所有输出路径，确保透明交付不绕过 PNG 合同。 */
+function collectOutputPaths(value = {}, fields = OUTPUT_PATH_FIELDS) {
   if (!isObject(value)) return [];
-  return OUTPUT_PATH_FIELDS.flatMap((field) => {
+  return fields.flatMap((field) => {
     const item = value[field];
     return Array.isArray(item) ? item : [item];
   }).filter(nonEmptyString);
 }
 
-/** 判断实际发送的提示词是否明确要求透明背景直出。 */
-export function expressesDirectTransparentGeneration(value) {
+/** 判断提示词是否要求非透明高对比纯色背景并禁止透明 Alpha 输出。 */
+export function expressesBackgroundRemovalProduction(value) {
   if (!nonEmptyString(value)) return false;
   const text = value.toLowerCase();
-  return (text.includes("透明背景") && /直接生成|直接输出|direct(?:ly)?\s+(?:generate|output)/i.test(text) && /alpha|透明/.test(text));
+  return /非透明/.test(text)
+    && /纯色背景/.test(text)
+    && /高对比/.test(text)
+    && /轮廓清晰|边界清晰/.test(text)
+    && /便于去背|便于背景移除/.test(text)
+    && /禁止直接(?:输出|生成).*透明\s*alpha|禁止直接输出透明\s*alpha/.test(text);
 }
 
-/** 判断 evidence 是否至少包含可追溯内容；不把布尔值当作审计证据。 */
+/** 拒绝把已禁用的透明直出命令混入背景移除提示词；合同要求只保留否定性说明。 */
+function expressesForbiddenTransparentGeneration(value) {
+  if (!nonEmptyString(value)) return false;
+  const text = value.toLowerCase()
+    // 保留“禁止直接输出透明 Alpha”这一必要的负向合同说明，不把它误判为生产指令。
+    .replaceAll("禁止直接输出透明 alpha", "")
+    .replaceAll("禁止直接生成透明 alpha", "");
+  return /直接(?:输出|生成).{0,20}(?:透明背景|透明\s*alpha|alpha\s*透明)|(?:透明背景|透明\s*alpha|alpha\s*透明).{0,20}直接(?:输出|生成)|direct(?:ly)?\s+(?:generate|output)\s+(?:a\s+)?transparent\s+(?:background|alpha)/i.test(text);
+}
+
+/** 判断 evidence 是否至少包含可追溯内容；空对象不能冒充审计事实。 */
 function hasAuditableEvidence(value) {
   if (nonEmptyString(value)) return true;
   if (Array.isArray(value)) return value.length > 0 && value.some(hasAuditableEvidence);
@@ -90,94 +80,86 @@ function hasAuditableEvidence(value) {
   return false;
 }
 
-/** 从兜底记录中读取唯一的直接透明生成尝试。 */
-function directGenerationAttempt(generation = {}) {
-  return generation.direct_generation_attempt ?? generation.directGenerationAttempt;
+/** 比较两个路径，兼容相对路径、分隔符和 Windows 大小写差异。 */
+function samePath(left, right) {
+  if (!nonEmptyString(left) || !nonEmptyString(right)) return false;
+  return left.replaceAll("\\", "/").replace(/^\.\//, "").toLowerCase() === right.replaceAll("\\", "/").replace(/^\.\//, "").toLowerCase();
 }
 
-/** 读取兜底唯一权威的背景移除转换记录。 */
-function backgroundRemovalAttempts(generation = {}) {
-  return generation.background_removal_attempts ?? generation.backgroundRemovalAttempts;
-}
-
-/** 校验直接透明生成失败事实，兜底只接受 failed/unsupported 两种明确终态。 */
-function validateDirectGenerationAttempt(attempt) {
-  const errors = [];
-  if (!isObject(attempt)) return ["透明背景兜底必须提供 direct_generation_attempt 直接生成尝试记录"];
-  if (!DIRECT_GENERATION_FAILURE_STATUSES.includes(attempt.status)) errors.push("direct_generation_attempt.status 只能为 failed 或 unsupported");
-  if (!nonEmptyString(attempt.record_id)) errors.push("direct_generation_attempt.record_id 缺失");
-  if (!nonEmptyString(attempt.attempted_at) || Number.isNaN(Date.parse(attempt.attempted_at))) errors.push("direct_generation_attempt.attempted_at 必须是有效时间");
-  if (!nonEmptyString(attempt.failure_reason)) errors.push("direct_generation_attempt.failure_reason 缺失");
-  if (!hasAuditableEvidence(attempt.evidence)) errors.push("direct_generation_attempt.evidence 必须包含可审计事实");
-  return errors;
-}
-
-/** 检查兜底是否显式记录了一次实际背景移除操作。 */
-function hasBackgroundRemovalOperation(generation = {}) {
-  return FORBIDDEN_BACKGROUND_REMOVAL.test(collectOperationText(generation));
-}
-
-/** 校验兜底唯一转换记录，文本字段只证明操作存在，不参与次数统计。 */
-function validateBackgroundRemovalAttempts(generation = {}) {
-  const attempts = backgroundRemovalAttempts(generation);
-  if (!Array.isArray(attempts) || attempts.length !== 1) return ["透明背景兜底必须提供恰好一条 background_removal_attempts，失败后不得自动重试"];
+/** 校验透明目标唯一的一次背景移除及其原图/输出绑定。 */
+function validateBackgroundRemovalAttempt(generation, normalizationRecord) {
+  const attempts = generation.background_removal_attempts ?? generation.backgroundRemovalAttempts;
+  if (!Array.isArray(attempts) || attempts.length !== 1) return ["透明背景生产必须提供恰好一条 background_removal_attempts，失败后不得自动重试"];
   const attempt = attempts[0];
   const errors = [];
-  if (!isObject(attempt)) return ["透明背景兜底 background_removal_attempts[0] 必须是对象"];
-  if (!hasBackgroundRemovalOperation({ operation: attempt.operation })) errors.push("透明背景兜底 background_removal_attempts[0].operation 必须明确记录背景移除");
-  if (!nonEmptyString(attempt.status) || !["passed", "completed", "succeeded", "success"].includes(attempt.status.toLowerCase())) errors.push("透明背景兜底 background_removal_attempts[0].status 必须证明转换成功完成");
+  if (!isObject(attempt)) return ["透明背景 background_removal_attempts[0] 必须是对象"];
+  if (attempt.operation !== BACKGROUND_REMOVAL_OPERATION) errors.push(`background_removal_attempts[0].operation 必须为 ${BACKGROUND_REMOVAL_OPERATION}`);
+  if (attempt.status !== "completed") errors.push("background_removal_attempts[0].status 必须为 completed，证明背景移除成功");
+  if (!nonEmptyString(attempt.source_file)) errors.push("background_removal_attempts[0].source_file 缺失");
+  if (!nonEmptyString(attempt.output_file)) errors.push("background_removal_attempts[0].output_file 缺失");
+  if (samePath(attempt.source_file, attempt.output_file)) errors.push("background_removal_attempts[0].source_file 与 output_file 必须不同");
+  if (!nonEmptyString(attempt.completed_at) || Number.isNaN(Date.parse(attempt.completed_at))) errors.push("background_removal_attempts[0].completed_at 必须是有效时间");
+  if (!hasAuditableEvidence(attempt.evidence)) errors.push("background_removal_attempts[0].evidence 必须包含可审计事实");
+  if (attempt.source_has_alpha !== false) errors.push("background_removal_attempts[0].source_has_alpha 必须为 false，原图必须是不透明中间产物");
+  if (attempt.output_has_alpha !== true) errors.push("background_removal_attempts[0].output_has_alpha 必须为 true，背景移除输出必须含 Alpha");
+  if (!samePath(attempt.source_file, generation.raw_source_file)) errors.push("background_removal_attempts[0].source_file 必须绑定 generation_record.raw_source_file");
+  if (!samePath(attempt.output_file, generation.source_file)) errors.push("background_removal_attempts[0].output_file 必须绑定背景移除后的 generation_record.source_file");
+  if (!isObject(normalizationRecord) || !samePath(normalizationRecord.source_file, attempt.output_file)) errors.push("normalization_record.source_file 必须绑定背景移除输出，而不是 ImageGen 原始文件");
   return errors;
 }
 
 /** 检查透明 expected asset 的 PNG 交付声明。 */
 export function validateTransparentExpectedAssetContract(expectedAsset, contract = {}) {
-  if (!requiresDirectTransparentGeneration(expectedAsset, contract)) return [];
+  if (!requiresTransparentBackgroundProduction(expectedAsset, contract)) return [];
   const errors = [];
   if (expectedAsset.mime_type !== "image/png") errors.push("透明 ImageGen expected_assets 必须声明 mime_type=image/png");
-  for (const field of ["source_file", "runtime_file"]) if (nonEmptyString(expectedAsset[field]) && !/\.png$/i.test(expectedAsset[field])) errors.push(`透明 ImageGen expected_assets.${field} 必须使用 .png 文件`);
-  // 规范化会把未声明值收敛为空字符串；空值交由上层 contract.delivery_kind 负责校验。
+  for (const field of ["source_file", "runtime_file"]) if (!nonEmptyString(expectedAsset[field]) || !/\.png$/i.test(expectedAsset[field])) errors.push(`透明 ImageGen expected_assets.${field} 必须使用非空 .png 文件`);
   if (nonEmptyString(expectedAsset.delivery_kind) && expectedAsset.delivery_kind !== "raster-image") errors.push("透明 ImageGen expected_assets 必须使用 delivery_kind=raster-image");
   return errors;
 }
 
-/** 检查透明 ImageGen 的结构化直出声明、提示词和后处理操作。 */
-export function validateTransparentGenerationRecord(generation, expectedAsset, contract = {}) {
-  if (!requiresDirectTransparentGeneration(expectedAsset, contract)) return [];
+/** 检查透明 ImageGen 的背景模式、提示词、原图身份和一次背景移除。 */
+export function validateTransparentBackgroundProductionRecord(generation, expectedAsset, contract = {}, normalizationRecord) {
+  if (!requiresTransparentBackgroundProduction(expectedAsset, contract)) return [];
   const errors = [];
-  if (!isObject(generation)) return ["透明 ImageGen 缺少 generation_record，无法证明直接透明生成"];
-  if (generation.background_mode !== TRANSPARENT_BACKGROUND_MODE) errors.push(`透明 ImageGen generation_record.background_mode 必须为 ${TRANSPARENT_BACKGROUND_MODE}`);
-  if (!TRANSPARENCY_STRATEGIES.includes(generation.transparency_strategy)) errors.push(`透明 ImageGen generation_record.transparency_strategy 必须为 ${TRANSPARENCY_STRATEGIES.join(" 或 ")}`);
-  const prompts = [generation.full_prompt, generation.actual_prompt, generation.prompt_sent, generation.sent_prompt, generation.positive_prompt, generation.prompt].filter(nonEmptyString);
-  if (generation.transparency_strategy === TRANSPARENCY_STRATEGY) {
-    if (prompts.length === 0 || !prompts.some(expressesDirectTransparentGeneration)) errors.push("透明 ImageGen 实际提示词必须明确要求直接生成真实 alpha 透明背景");
-    // 直出透明结果不允许把“生成实体背景→抠图/去背”藏在命令、操作或后处理记录中。
-    if (hasBackgroundRemovalOperation(generation)) errors.push("透明 ImageGen 直接策略禁止使用抠图、去背、背景移除或 matting 后处理");
-    if (directGenerationAttempt(generation) !== undefined) errors.push("透明 ImageGen 直接策略不得携带兜底 direct_generation_attempt；失败后必须退回并显式切换策略");
-  } else if (generation.transparency_strategy === TRANSPARENCY_FALLBACK_STRATEGY) {
-    // 兜底不是静默降级：必须先留下唯一一次直接尝试的失败/不支持证据。
-    const attempt = directGenerationAttempt(generation);
-    errors.push(...validateDirectGenerationAttempt(attempt));
-    if (isObject(attempt) && nonEmptyString(generation.record_id) && attempt.record_id === generation.record_id) errors.push("direct_generation_attempt.record_id 必须与最终兜底 generation_record.record_id 区分");
-    if (!hasBackgroundRemovalOperation(generation)) errors.push("透明背景兜底必须明确记录实际背景移除操作");
-    errors.push(...validateBackgroundRemovalAttempts(generation));
-  }
+  if (!isObject(generation)) return ["透明 ImageGen 缺少 generation_record，无法证明背景移除生产"];
+  if (generation.source_background_mode !== TRANSPARENT_SOURCE_BACKGROUND_MODE) errors.push(`透明 ImageGen generation_record.source_background_mode 必须为 ${TRANSPARENT_SOURCE_BACKGROUND_MODE}`);
+  if (generation.final_background_mode !== TRANSPARENT_FINAL_BACKGROUND_MODE) errors.push(`透明 ImageGen generation_record.final_background_mode 必须为 ${TRANSPARENT_FINAL_BACKGROUND_MODE}`);
+  if (Object.hasOwn(generation, "background_mode")) errors.push("透明 ImageGen 禁止使用含义不明确的 background_mode，必须声明 source_background_mode/final_background_mode");
+  if (generation.transparency_strategy !== TRANSPARENT_BACKGROUND_STRATEGY) errors.push(`透明 ImageGen generation_record.transparency_strategy 必须为 ${TRANSPARENT_BACKGROUND_STRATEGY}`);
+  if (!nonEmptyString(generation.raw_source_file)) errors.push("透明 ImageGen generation_record.raw_source_file 缺失");
+  else if (!/\.(?:png|jpe?g)$/i.test(generation.raw_source_file)) errors.push("透明 ImageGen generation_record.raw_source_file 必须使用 PNG/JPEG 文件");
+  if (!nonEmptyString(generation.source_file)) errors.push("透明 ImageGen generation_record.source_file 必须指向背景移除输出");
+  if (generation.raw_source_has_alpha !== false) errors.push("透明 ImageGen generation_record.raw_source_has_alpha 必须为 false");
+  if (generation.source_has_alpha !== true) errors.push("透明 ImageGen generation_record.source_has_alpha 必须为 true");
+  const prompts = [generation.full_prompt, generation.actual_prompt, generation.prompt_sent_text, generation.sent_prompt, generation.positive_prompt, generation.prompt].filter(nonEmptyString);
+  if (prompts.length === 0 || !prompts.some(expressesBackgroundRemovalProduction)) errors.push("透明 ImageGen 实际提示词必须要求非透明高对比纯色背景并禁止直接输出透明 Alpha");
+  if (prompts.some(expressesForbiddenTransparentGeneration)) errors.push("透明 ImageGen 提示词禁止保留已停用的透明直出指令");
+  if (Object.hasOwn(generation, "direct_generation_attempt") || Object.hasOwn(generation, "directGenerationAttempt")) errors.push("透明背景生产禁止使用 direct_generation_attempt 旧字段");
+  errors.push(...validateBackgroundRemovalAttempt(generation, normalizationRecord));
   return errors;
 }
 
-/** 检查透明 ImageGen 的输出声明；V4 仍会通过真实 PNG 解码复核 alpha。 */
+/** 检查透明 ImageGen 最终输出声明；V4 仍需解码 PNG 复核实际 Alpha。 */
 export function validateTransparentOutputMetadata(metadata, expectedAsset, contract = {}) {
-  if (!requiresDirectTransparentGeneration(expectedAsset, contract)) return [];
+  if (!requiresTransparentBackgroundProduction(expectedAsset, contract)) return [];
   const errors = [];
   if (metadata?.mime_type !== "image/png") errors.push("透明 ImageGen 实际输出必须为 image/png，不能交付 JPEG");
-  if (metadata?.file !== undefined && nonEmptyString(metadata.file) && !/\.png$/i.test(metadata.file)) errors.push("透明 ImageGen 实际输出文件必须使用 .png 后缀");
+  if (!nonEmptyString(metadata?.file) || !/\.png$/i.test(metadata.file)) errors.push("透明 ImageGen 实际输出文件必须使用非空 .png 后缀");
   if (metadata?.alpha !== true) errors.push("透明 ImageGen 输出必须声明 alpha=true");
   return errors;
 }
 
-/** 汇总透明 expected asset、生成记录和输出元数据的机器校验。 */
+/** 汇总透明 expected asset、背景移除记录、归一化记录和输出元数据的机器校验。 */
 export function validateTransparentBackgroundContract({ asset, contract, generation, expectedAsset, metadata } = {}) {
-  if (!requiresDirectTransparentGeneration(expectedAsset, contract)) return [];
-  const errors = [...validateTransparentExpectedAssetContract(expectedAsset, contract), ...validateTransparentGenerationRecord(generation, expectedAsset, contract), ...validateTransparentOutputMetadata(metadata, expectedAsset, contract)];
-  for (const path of [...collectOutputPaths(asset), ...collectOutputPaths(generation)]) if (!/\.png$/i.test(path)) errors.push("透明 ImageGen 源文件、运行时文件和实际输出必须使用 .png 后缀");
+  if (!requiresTransparentBackgroundProduction(expectedAsset, contract)) return [];
+  const normalizationRecord = generation?.normalization_record ?? generation?.normalizationRecord ?? asset?.normalization_record ?? asset?.normalizationRecord;
+  const errors = [
+    ...validateTransparentExpectedAssetContract(expectedAsset, contract),
+    ...validateTransparentBackgroundProductionRecord(generation, expectedAsset, contract, normalizationRecord),
+    ...validateTransparentOutputMetadata(metadata, expectedAsset, contract),
+  ];
+  // 原始 ImageGen 中间图可以是不透明 JPEG；只有去背输出、归一化交付物和运行时路径收紧为 PNG。
+  for (const path of [...collectOutputPaths(asset, FINAL_OUTPUT_PATH_FIELDS), ...collectOutputPaths(generation, FINAL_OUTPUT_PATH_FIELDS)]) if (!/\.png$/i.test(path)) errors.push("透明 ImageGen 去背输出、运行时文件和实际输出必须使用 .png 后缀");
   return [...new Set(errors)];
 }

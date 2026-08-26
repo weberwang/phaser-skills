@@ -3,7 +3,7 @@
  * ImageGen 原图尺寸归一化工具。
  *
  * 原图只是中间产物；本工具使用 Sharp 读取元数据并在保持宽高比的前提下
- * 生成精确尺寸 PNG/JPEG。透明直出或透明兜底都必须在进入 V4/runtime 前调用本工具。
+ * 生成精确尺寸 PNG/JPEG。透明背景移除路线必须在进入 V4/runtime 前调用本工具。
  */
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile } from "node:fs/promises";

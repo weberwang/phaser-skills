@@ -388,8 +388,33 @@
     "imageGenerationRecord": {
       "allOf": [
         {"$ref": "#/$defs/globalVisualGenerationRecord"},
-        {"type": "object", "properties": {"normalization_record": {"$ref": "#/$defs/imageNormalizationRecord"}}}
+        {"type": "object", "properties": {"normalization_record": {"$ref": "#/$defs/imageNormalizationRecord"}}},
+        {"if": {"required": ["transparency_strategy"]}, "then": {"$ref": "#/$defs/transparentBackgroundProductionRecord"}}
       ]
+    },
+    "transparentBackgroundRemovalAttempt": {
+      "type": "object",
+      "required": ["operation", "status", "source_file", "output_file", "source_has_alpha", "output_has_alpha", "completed_at", "evidence"],
+      "properties": {
+        "operation": {"const": "background-removal"}, "status": {"const": "completed"},
+        "source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
+        "output_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
+        "source_has_alpha": {"const": false}, "output_has_alpha": {"const": true},
+        "completed_at": {"type": "string", "format": "date-time"}, "evidence": {"$ref": "#/$defs/evidenceValue"}
+      },
+      "additionalProperties": true
+    },
+    "transparentBackgroundProductionRecord": {
+      "type": "object",
+      "required": ["source_background_mode", "final_background_mode", "transparency_strategy", "raw_source_file", "raw_source_has_alpha", "source_file", "source_has_alpha", "background_removal_attempts"],
+      "properties": {
+        "source_background_mode": {"const": "opaque"}, "final_background_mode": {"const": "transparent"}, "transparency_strategy": {"const": "background-removal"},
+        "raw_source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "raw_source_has_alpha": {"const": false},
+        "source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "source_has_alpha": {"const": true},
+        "background_removal_attempts": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"$ref": "#/$defs/transparentBackgroundRemovalAttempt"}}
+      },
+      "not": {"anyOf": [{"required": ["background_mode"]}, {"required": ["direct_generation_attempt"]}, {"required": ["directGenerationAttempt"]}]},
+      "additionalProperties": true
     },
     "globalStyleReferenceInput": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}}},
     "globalConsistencyEvidence": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}}},
@@ -802,6 +827,10 @@
             "generation_record": {"$ref": "#/$defs/imageGenerationRecord"}
           },
           "not": {"required": ["atlas_slice"]}
+        },
+        {
+          "if": {"required": ["alpha"], "properties": {"alpha": {"const": true}}},
+          "then": {"properties": {"mime_type": {"const": "image/png"}, "source_file": {"pattern": "\\.[Pp][Nn][Gg]$"}, "runtime_file": {"pattern": "\\.[Pp][Nn][Gg]$"}, "generation_record": {"$ref": "#/$defs/transparentBackgroundProductionRecord"}}}
         }
       ]
     },

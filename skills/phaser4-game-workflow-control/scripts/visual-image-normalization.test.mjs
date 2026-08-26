@@ -71,20 +71,25 @@ function normalizedFixture(overrides = {}) {
     normalization_record: normalizationRecord(),
     ...overrides,
   };
-  return { expectedAsset, asset, generation, contract: { production_method: "imagegen", image_generation_required: true }, metadata: { mime_type: "image/png", width: 200, height: 100, alpha: true, sha256: OUTPUT_SHA } };
+  return { expectedAsset, asset, generation, contract: { production_method: "imagegen", image_generation_required: true }, metadata: { mime_type: "image/png", file: "public/hero.png", width: 200, height: 100, alpha: true, sha256: OUTPUT_SHA } };
 }
 
-/** 生成透明 ImageGen 的直出或受控兜底记录。 */
-function transparentGeneration(strategy) {
-  const record = { background_mode: "transparent", transparency_strategy: strategy, postprocess: [], full_prompt: "透明背景要求：直接生成真实 alpha 透明背景", command_or_recipe: "imagegen hero", record_id: "GEN-HERO" };
-  if (strategy === "background-removal-fallback") {
-    record.full_prompt = "透明背景兜底要求：直接透明生成已明确失败或不支持";
-    record.command_or_recipe = "imagegen hero -> background-removal";
-    record.postprocess = ["background-removal"];
-    record.direct_generation_attempt = { status: "failed", record_id: "GEN-HERO-DIRECT", attempted_at: "2026-08-25T00:00:00.000Z", failure_reason: "provider returned failed", evidence: { provider_status: "failed" } };
-    record.background_removal_attempts = [{ operation: "background-removal", status: "completed" }];
-  }
-  return record;
+/** 生成唯一透明背景移除路线的完整记录，并把归一化源绑定到去背输出。 */
+function transparentGeneration() {
+  return {
+    source_background_mode: "opaque",
+    final_background_mode: "transparent",
+    transparency_strategy: "background-removal",
+    raw_source_file: "art/hero-raw.png",
+    raw_source_has_alpha: false,
+    source_file: "art/hero-cutout.png",
+    source_has_alpha: true,
+    full_prompt: "透明目标要求：生成非透明、轮廓清晰、与主体高对比、便于去背的纯色背景；禁止直接输出透明 Alpha。随后仅执行一次受控背景移除，产出含真实 Alpha 的 PNG。",
+    command_or_recipe: "imagegen hero -> background-removal once",
+    postprocess: ["background-removal"],
+    record_id: "GEN-HERO",
+    background_removal_attempts: [{ operation: "background-removal", status: "completed", source_file: "art/hero-raw.png", output_file: "art/hero-cutout.png", source_has_alpha: false, output_has_alpha: true, completed_at: "2026-08-25T00:00:00.000Z", evidence: { provider_status: "completed" } }],
+  };
 }
 
 test("同宽高比缩放到精确尺寸并保留 Alpha", async () => {
@@ -183,13 +188,13 @@ test("视觉生产契约门接线后拒绝失败或错误归一化记录", () =>
   }
 });
 
-test("透明直出与受控兜底在有效归一化后都通过", () => {
-  for (const strategy of ["direct-generation", "background-removal-fallback"]) {
-    const fixture = normalizedFixture();
-    fixture.generation = { ...fixture.generation, ...transparentGeneration(strategy) };
-    assert.deepEqual(validateImageNormalizationContract(fixture), []);
-    assert.deepEqual(validateTransparentBackgroundContract({ asset: fixture.asset, contract: fixture.contract, generation: fixture.generation, expectedAsset: fixture.expectedAsset, metadata: fixture.metadata }), []);
-  }
+test("背景移除路线在有效归一化后通过", () => {
+  const fixture = normalizedFixture();
+  fixture.expectedAsset = { ...fixture.expectedAsset, source_file: "art/hero-cutout.png" };
+  fixture.asset = { ...fixture.asset, source_file: "art/hero-cutout.png", normalization_record: normalizationRecord({ source_file: "art/hero-cutout.png" }) };
+  fixture.generation = { ...fixture.generation, ...transparentGeneration(), normalization_record: normalizationRecord({ source_file: "art/hero-cutout.png" }) };
+  assert.deepEqual(validateImageNormalizationContract(fixture), []);
+  assert.deepEqual(validateTransparentBackgroundContract({ asset: fixture.asset, contract: fixture.contract, generation: fixture.generation, expectedAsset: fixture.expectedAsset, metadata: fixture.metadata }), []);
 });
 
 test("alpha=false 的 ImageGen 和普通非 ImageGen 路线不误触透明 Alpha 门", () => {
@@ -208,7 +213,7 @@ test("alpha=false 的 ImageGen 和普通非 ImageGen 路线不误触透明 Alpha
     expectedAsset: { ...normalizedFixture().expectedAsset, source_file: "art/hero.jpg", runtime_file: "public/hero.jpg", mime_type: "image/jpeg", alpha: false },
     asset: { ...normalizedFixture().asset, source_file: "art/hero.jpg", output_file: "public/hero.jpg", runtime_outputs: ["public/hero.jpg"], mime_type: "image/jpeg", alpha: false, normalization_record: jpegRecord },
     generation: { ...normalizedFixture().generation, source_file: "art/hero.jpg", output_file: "public/hero.jpg", normalization_record: jpegRecord },
-    metadata: { ...normalizedFixture().metadata, mime_type: "image/jpeg", alpha: false },
+    metadata: { ...normalizedFixture().metadata, file: "public/hero.jpg", mime_type: "image/jpeg", alpha: false },
   };
   assert.deepEqual(validateImageNormalizationContract(jpegFixture), []);
 });
