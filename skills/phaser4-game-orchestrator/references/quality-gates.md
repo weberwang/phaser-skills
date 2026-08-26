@@ -5,7 +5,7 @@ G0-G3 是领域 `stageId`，由全局控制面映射到唯一 `globalState`，�
 | 门 | 出口 | 全局状态范围 |
 | --- | --- | --- |
 | G0 | 全部授权需求、功能、模块、场景、正式资源、渠道、视觉/布局契约、预算与证据追踪已冻结；仅实质取舍精确确认 | `BASELINE` 至实施就绪 |
-| G1 | 公共基础、全部 gameplay 与 supporting 场景、跨场景功能均关闭；每个场景的功能、V3、V4 accepted、V5、占位清理及联合证据完整 | `IMPLEMENTING` 至 `PASSED` |
+| G1 | 全局视觉效果图冻结门已通过；`SHARED` 最小骨架、`MODULE`、全部 gameplay/supporting `SCENE` 及其从属 `DISPLAY_LAYER` 均关闭；随后完成跨场景 `INTEGRATION`/联合验收。每个场景的功能、V3、V4 accepted、V5、全部显示层、占位清理及联合证据完整 | `IMPLEMENTING` 至 `PASSED` |
 | G2 | 对 G1 完整候选执行全场景集成、预算、响应式、性能、存档/恢复、正式资源完整性和全功能回归 | `VALIDATING` 至 `INTEGRATING` |
 | G3 | 独立发布 Work Item 聚合逐渠道候选、合规、风险和回滚；等待 A5/A6 精确审批 | `RELEASE_APPROVAL_REQUIRED` 至 `COMPLETE` |
 

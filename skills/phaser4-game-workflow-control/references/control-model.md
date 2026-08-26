@@ -56,6 +56,10 @@ V0 分流 → V1 契约/低保真 → V2 方向冻结
 
 ## 实施顺序状态硬门
 
+全局实施顺序在状态控制面固定为：先通过全局视觉效果图冻结前置门（全部授权 gameplay/supporting 场景的 `scene master` 与必需瞬态宿主场景上下文效果图，按 scene/state 分项而非一张合并图），保留 V0-V2 方向与唯一真人视觉审批并登记完整 coverage/layout/fidelity obligations；effect-image 仍完整执行 V1→V5，V3-V5 在对应场景阶段验证。之后才允许 A3 实施包/代码单元进入执行。该视觉冻结是前置条件而非新的 `unitType`；通过后 `executionUnits` 必须按 `SHARED` 最小骨架→`MODULE`→按场景组织的 `SCENE`+紧邻从属 `DISPLAY_LAYER`→`INTEGRATION`/联合验收排列。`DISPLAY_LAYER` 不能在全部场景之后另设尾部阶段，`gameplay`/`supporting` 只作为场景分类，实际场景顺序由计划制定者冻结。
+
+effect-image 的布局拆解在控制面也必须冻结父子几何事实：节点先声明 `parent_layout_node_id` 和 `parent_target_bounds`，再测量父内容框内的 `relative_position`，由最近边（相等取 left/top）推导 `nearest_edge_docking`、`offset` 和两个 `${vertical}-${horizontal}` 锚点。`reference_id` 必须等于父 ID，父级只能是节点、`viewport` 或 `safe-area`，不得循环或越界；父子几何字段变化会使布局身份 SHA 失效，V3/V4/V5 入口必须消费同一校验模块。
+
 进入 A3 `IMPLEMENTING` 时创建 `evidence/<workItemId>/execution-state.json`。该状态记录绑定当前 Work Item、Implementation Package、baseline、执行计划指纹和 `executionUnits` 数组位置；只有通过 `unit-check` 的当前 PASS Result 可以把当前单元更新为 `COMPLETE`，并按预设数组激活下一串行单元或下一并行组的 `IN_PROGRESS`。并行组未全部完成时，后续顺序阶段不得提前激活；没有下一任务时必须明确 `WORKFLOW_COMPLETE`。`delegate-check`、`parallel-check`、`unit-check`、`evidence-check` 和进入 `VALIDATING` 的迁移均必须读取并复核该状态，缺失、过期、篡改或身份/顺序不一致一律阻断。
 
 V2 单元序列完成后，状态输出固定的下一任务为 `V3-PRODUCTION-PLANNING`，门为 `V2_TO_V3_CONTRACT`。只有 Work Item 唯一 `v2ToV3Contract` 对象同时绑定 `status=PASS`、`contractId`、evidenceRoot 内的 `evidenceFile` 和复算一致的 `evidenceSha256`，合同回对记录才能将该任务标为 `IN_PROGRESS`；否则任务保持 `BLOCKED`，不得推进 V3。合同在单元完成后补齐时，必须运行 `refresh-v2-v3` 在排他锁内复核旧 BLOCKED 状态并持久化刷新；错误路径、文件或 SHA 均保持阻断。V2 合同 PASS 的 `V3-PRODUCTION-PLANNING` 是当前 V2 工作项的显式交接任务，允许该工作项进入 `VALIDATING → PASSED → COMPLETE`，V3 规划由后续工作项执行。

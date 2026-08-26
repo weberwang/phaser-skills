@@ -168,8 +168,12 @@ function effectImageContract() {
         region_id: "hud",
         coordinate_space: "viewport",
         reference_id: "viewport",
-        self_anchor: { horizontal: "center", vertical: "top" },
-        reference_anchor: { horizontal: "center", vertical: "top" },
+        parent_layout_node_id: "viewport",
+        parent_target_bounds: { x: 0, y: 0, width: 390, height: 844 },
+        relative_position: { left: 0, right: 0, top: 0, bottom: 748 },
+        nearest_edge_docking: { horizontal: "left", vertical: "top" },
+        self_anchor: "top-left",
+        reference_anchor: "top-left",
         offset: { x: 0, y: 0 },
         target_bounds: { x: 0, y: 0, width: 390, height: 96 },
         size_policy: { mode: "target-bound", aspect: "preserve" },
@@ -182,9 +186,13 @@ function effectImageContract() {
         regionId: "board",
         coordinateSpace: "viewport",
         referenceId: "viewport",
-        selfAnchor: { horizontal: "center", vertical: "top" },
-        referenceAnchor: { horizontal: "center", vertical: "top" },
-        offset: { x: 0, y: 160 },
+        parent_layout_node_id: "viewport",
+        parent_target_bounds: { x: 0, y: 0, width: 390, height: 844 },
+        relative_position: { left: 20, right: 20, top: 160, bottom: 64 },
+        nearest_edge_docking: { horizontal: "left", vertical: "bottom" },
+        self_anchor: "bottom-left",
+        reference_anchor: "bottom-left",
+        offset: { x: 20, y: -64 },
         targetBounds: { x: 20, y: 160, width: 350, height: 620 },
         sizePolicy: { mode: "target-bound", aspect: "preserve" },
         zOrder: 1,
@@ -294,6 +302,59 @@ test("effect-image 缺少布局节点、反向绑定或越界 bounds 时阻断�
   const boundsErrors = validateSceneReconstructionContract(outOfBounds, effectImageManifest(outOfBounds), { stage: "V3" });
   assert(boundsErrors.some((item) => item.includes("位于冻结目标画布内")));
   assert.deepEqual(validateSceneReconstructionContract(contract(), manifest(), { stage: "V3" }), []);
+});
+
+test("effect-image 父子布局允许多层关系，并拒绝缺父、循环和越界", () => {
+  const nested = effectImageContract();
+  nested.coverage_regions[1].layoutNodeIds.push("board-inner");
+  nested.layout_decomposition.layout_nodes.push({
+    ...structuredClone(nested.layout_decomposition.layout_nodes[1]),
+    layout_node_id: "board-inner",
+    region_id: "board",
+    reference_id: "board-surface",
+    parent_layout_node_id: "board-surface",
+    parent_target_bounds: { x: 20, y: 160, width: 350, height: 620 },
+    relative_position: { left: 20, right: 230, top: 20, bottom: 500 },
+    nearest_edge_docking: { horizontal: "left", vertical: "top" },
+    self_anchor: "top-left",
+    reference_anchor: "top-left",
+    offset: { x: 20, y: 20 },
+    target_bounds: { x: 40, y: 180, width: 100, height: 100 },
+  });
+  assert.deepEqual(validateSceneReconstructionContract(nested, effectImageManifest(nested), { stage: "V3" }), []);
+
+  const missingParent = effectImageContract();
+  delete missingParent.layout_decomposition.layout_nodes[0].parent_layout_node_id;
+  assert(validateSceneReconstructionContract(missingParent, effectImageManifest(missingParent), { stage: "V3" }).some((item) => item.includes("parent_layout_node_id")));
+
+  const cycle = effectImageContract();
+  cycle.layout_decomposition.layout_nodes[0].parent_layout_node_id = "board-surface";
+  cycle.layout_decomposition.layout_nodes[0].reference_id = "board-surface";
+  cycle.layout_decomposition.layout_nodes[0].parent_target_bounds = { x: 20, y: 160, width: 350, height: 620 };
+  cycle.layout_decomposition.layout_nodes[1].parent_layout_node_id = "hud-main";
+  cycle.layout_decomposition.layout_nodes[1].reference_id = "hud-main";
+  cycle.layout_decomposition.layout_nodes[1].parent_target_bounds = { x: 0, y: 0, width: 390, height: 96 };
+  assert(validateSceneReconstructionContract(cycle, effectImageManifest(cycle), { stage: "V3" }).some((item) => item.includes("父子布局图存在循环")));
+
+  const childOutside = effectImageContract();
+  childOutside.layout_decomposition.layout_nodes[1].parent_layout_node_id = "hud-main";
+  childOutside.layout_decomposition.layout_nodes[1].reference_id = "hud-main";
+  childOutside.layout_decomposition.layout_nodes[1].parent_target_bounds = { x: 0, y: 0, width: 390, height: 96 };
+  assert(validateSceneReconstructionContract(childOutside, effectImageManifest(childOutside), { stage: "V3" }).some((item) => item.includes("child target_bounds")));
+});
+
+test("effect-image 相对距离、最近边、offset 和锚点均不得伪造", () => {
+  for (const mutate of [
+    (node) => { node.relative_position.left += 1; },
+    (node) => { node.nearest_edge_docking.horizontal = "right"; },
+    (node) => { node.offset.x = 999; },
+    (node) => { node.self_anchor = "center-center"; },
+    (node) => { node.reference_anchor = "center-center"; },
+  ]) {
+    const value = effectImageContract();
+    mutate(value.layout_decomposition.layout_nodes[0]);
+    assert(validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V3" }).some((item) => item.includes("relative_position") || item.includes("nearest_edge_docking") || item.includes("offset.x") || item.includes("self_anchor") || item.includes("reference_anchor")));
+  }
 });
 
 test("effect-image 两处布局 binding 必须共享完整身份并绑定冻结目标", () => {

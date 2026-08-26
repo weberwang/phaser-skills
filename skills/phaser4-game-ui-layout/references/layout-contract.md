@@ -11,14 +11,19 @@ schema 1.1.0 根对象包含 `fidelity`、`frozen_visual_target`、`layout_nodes
 每个 `layout_nodes` 节点必须包含：
 
 - `layout_node_id`、`region_id`、`coordinate_space`、`reference_id`。
+- `parent_layout_node_id`、`parent_target_bounds`、`relative_position`、`nearest_edge_docking`。
 - `self_anchor`、`reference_anchor`、`offset`、`target_bounds`、`size_policy`。
 - `z_order`、`clip_policy`、`responsive_rule`、`planned_test_id`。
 
 `layout_node_id` 在节点集合内唯一；同一 `region_id` 可以绑定多个元素/layout nodes，但该区域 ID 必须同时存在于 `regions` 和 `scope.ui_ids`，`coordinate_space` 必须存在于 `coordinate_spaces`。`target_bounds` 使用目标 viewport 的逻辑坐标，四边均须为有限数值，宽高为正数，并完全落在 `scene_reconstruction_binding.target_viewport` 内。`offset` 是双轴偏移对象，可以是数值或项目定义的非空表达式；`size_policy`、`clip_policy`、`responsive_rule` 和 `planned_test_id` 不得为空。
 
+效果图还原节点必须先建立父子几何图：`parent_layout_node_id` 只能引用另一个已声明的 `layout_node_id`，或稳定根 `viewport`/`safe-area`；`reference_id` 必须逐字等于该父 ID，父子图不得自引用或成环。`parent_target_bounds` 必须逐字段等于父节点 `target_bounds`；`viewport` 根固定为 `{x:0,y:0,width:target_viewport.width,height:target_viewport.height}`，`safe-area` 根以首次有效测量冻结唯一 bounds，所有引用必须一致且位于 viewport 内。子 `target_bounds` 必须完整落在父内容框内。`relative_position` 必须按 `left=child.x-parent.x`、`right=parent.x+parent.width-child.x-child.width`、`top=child.y-parent.y`、`bottom=parent.y+parent.height-child.y-child.height` 逐项测量，不接受手填近似或负距离；允许的浮点误差不超过 `1e-6`。
+
+`nearest_edge_docking.horizontal` 取 `left<=right ? left : right`，`vertical` 取 `top<=bottom ? top : bottom`，相等时确定性选择 `left/top`。运行时 `offset.x` 必须是左停靠的 `left` 或右停靠的 `-right`，`offset.y` 必须是上停靠的 `top` 或下停靠的 `-bottom`；`self_anchor` 与 `reference_anchor` 都必须是 `${vertical}-${horizontal}`（例如 `top-left`）。这些父子、相对距离、停靠、偏移和锚点字段均属于布局合同身份投影，任一变化都必须让旧 `layout_contract_sha256` 失效。
+
 模板的 `layout_node_example` 是可直接复制到 `layout_nodes` 的完整 effect-image 节点示例；它不是普通 `not-applicable` 合同的活动节点。切换到冻结目标时，应复制该示例、改成项目稳定 ID 和目标几何，并补齐场景绑定与关键对齐证据。
 
-布局节点的 `reference_id` 只能指向已声明的 `regions` 或其他 `layout_node_id`，并允许显式根参照 `viewport`、`safe-area`。当一个 region 只有一个布局节点时，可直接用该 region ID 作为参照；当一个 region 绑定多个布局节点时，region ID 参照会产生歧义，必须改用具体 `layout_node_id`。所有节点参照组成有向图，禁止自引用和环；因此不能通过一个孤立或循环的节点绕过布局合同。
+布局节点的 `reference_id` 在普通布局中可以指向已声明的 `regions` 或其他 `layout_node_id`；在 `effect-image` 中必须与 `parent_layout_node_id` 相等，父级只能是具体节点或 `viewport`/`safe-area`。当一个 region 只有一个布局节点时，普通布局可直接用该 region ID 作为参照；当一个 region 绑定多个布局节点时，region ID 参照会产生歧义，必须改用具体 `layout_node_id`。所有节点参照组成有向图，禁止自引用和环；因此不能通过一个孤立或循环的节点绕过布局合同。
 
 `regions` 自身仍是声明式布局区域，每个区域至少包含：
 
@@ -63,7 +68,7 @@ schema 1.1.0 根对象包含 `fidelity`、`frozen_visual_target`、`layout_nodes
 specified 可只做结构检查；verified 必须追加 `--check-files --project-root .`，验证冻结原图存在且 SHA 匹配，并拒绝缺失或逃逸项目根目录的目标、运行及 parity 证据路径。
 # 效果图还原布局绑定
 
-当布局服务于 `effect-image` 时，根节点可声明 `scene_reconstruction_binding`，其中必须包含 `target_sha256`、`scene_id`、`state_id`、`target_viewport`、`visual_baseline_version`、`reconstruction_contract_version`、`layout_contract_sha256` 和 `layout_decomposition_version`。`layout_contract_sha256` 是布局合同身份哈希，不是整个文件的递归自哈希：生产方应对合同身份投影（合同 ID/版本、目标 SHA、scene/state、目标 viewport、布局拆解版本及按 `layout_node_id` 排序的节点 ID、区域、坐标空间、参照、锚点、偏移、目标几何、尺寸/裁切/响应式策略、层级和计划测试 ID）做确定性规范化后计算，并排除该哈希字段本身以及运行时证据；合同身份变化必须重新计算。这样不会因为把哈希写回合同而形成循环。验证器通过导出的 `computeLayoutContractIdentityHash` 复算该投影并拒绝旧哈希，除检查 SHA-256 格式和绑定字段外不依赖运行态证据。
+当布局服务于 `effect-image` 时，根节点可声明 `scene_reconstruction_binding`，其中必须包含 `target_sha256`、`scene_id`、`state_id`、`target_viewport`、`visual_baseline_version`、`reconstruction_contract_version`、`layout_contract_sha256` 和 `layout_decomposition_version`。`layout_contract_sha256` 是布局合同身份哈希，不是整个文件的递归自哈希：生产方应对合同身份投影（合同 ID/版本、目标 SHA、scene/state、目标 viewport、布局拆解版本及按 `layout_node_id` 排序的节点 ID、区域、坐标空间、父节点 ID、父目标 bounds、四边相对距离、最近边停靠、参照、锚点、偏移、目标几何、尺寸/裁切/响应式策略、层级和计划测试 ID）做确定性规范化后计算，并排除该哈希字段本身以及运行时证据；合同身份变化必须重新计算。这样不会因为把哈希写回合同而形成循环。验证器通过导出的 `computeLayoutContractIdentityHash` 复算该投影并拒绝旧哈希，除检查 SHA-256 格式和绑定字段外不依赖运行态证据。
 
 V2→V3 合同回对必须校验该绑定；`legacy_layout_reused`、`uses_generic_layout` 或 target SHA 不一致均退回 `V1/PROPOSAL`，不能沿用旧响应式骨架。
 

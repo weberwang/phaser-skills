@@ -38,6 +38,10 @@ V0-V5、G0-G3 与领域阶段是 `stageId`，不是另一套状态机。只有�
 
 `global-static-baseline-frozen` 是静态基线的独立状态，不是 V2 完成状态。正式可见 Scene/UI 工作进入 A4/F4 前，校验器必须从 V2→V3→V4 的不可变文件证据派生 V5；裸 `frozen`、未知阶段、根摘要、手写 PASS 或 `stageId=main/integration/production-entry` 均失败。灰盒只允许隔离 A2 或安全 A3，接入正式 Boot/Scene 链即重新走完整依赖。
 
+### 全局视觉冻结与实施顺序前置门
+
+进入 A3 实施包或任何骨架代码单元前，必须先冻结覆盖全部授权 gameplay/supporting 场景的 `scene master`，以及所有必需 transient display-layer required state 的宿主场景上下文效果图；集合按 scene/state 分项而非一张合并图。该门保留 V0-V2 方向与唯一真人视觉审批，并登记完整 coverage/layout/fidelity obligations；effect-image 仍完整执行 V1→V5，V3-V5 在对应场景阶段验证。视觉冻结只作为进入实现的前置条件，不新增全局状态或 `executionUnit` 类型。通过后，`executionUnits` 的唯一权威顺序为 `SHARED` 最小骨架→`MODULE`→按场景连续的 `SCENE`+紧邻从属 `DISPLAY_LAYER`→`INTEGRATION`/联合验收；模块才可按互斥所有权并行，显示层不得在所有场景之后独立实施，实际场景顺序由计划制定者冻结。
+
 ## 强制停止门
 
 - 用户请求范围变化：停止受影响实现，创建 Change Request；只有存在实质产品、行为、预算、合规或数据边界取舍时请求决定。
@@ -57,6 +61,8 @@ V0-V5、G0-G3 与领域阶段是 `stageId`，不是另一套状态机。只有�
 ### 效果图 V1→V5 硬门与退回
 
 1. **V1/PROPOSAL**：冻结 target 条件、整屏 composition、layout/responsive 绑定、逐 region 视觉事实、`reference_technical_conflicts`（空数组也必须存在）、项目预声明 tolerance、实现计划和 `display_layer_planning`。其中 `scene_master` 只记录基础场景与常驻 HUD；每个 modal/popup/drawer/toast 的 required state 都要绑定宿主场景上下文效果图。
+
+V1 的布局冻结还必须包含父子几何测量：每个 effect-image 节点声明 `parent_layout_node_id`、`parent_target_bounds`、`relative_position` 和 `nearest_edge_docking`，且 `reference_id` 等于父 ID。父级只能是布局节点、`viewport` 或 `safe-area`，父子图不得循环；子 bounds 必须在父内容框内。相对四边距离由 bounds 精确计算，最近边相等时固定停靠 left/top，并据此推导 `offset`、`self_anchor`、`reference_anchor`；伪造或缺失任一字段都属于方案缺失并退回 V1。该组字段纳入布局身份 SHA。
 2. **V2/REVIEW**：提交带 code/build SHA 与 diff identity 的完整场景候选、动态样片和结构化 F2 机器验证；验证必须覆盖整屏、逐 region、构图、几何、颜色/材质、字体、装饰密度和响应式。
 3. **V2→V3**：以上字段任一缺失均拒绝进入 V3，根因标记 `方案缺失`，退回最早阶段 `V1/PROPOSAL`。
 4. **V3/IMPLEMENTING**：绑定 `visualProductionUnits`、状态/部件合同、预声明 tolerance ID 和正式 Scene 实现计划；运行时 owner 也必须承担 fidelity obligations。

@@ -5,6 +5,7 @@ import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { DPR_POLICY, MAX_DPR, isDeviceDprInput, isWorkflowDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
+import { layoutNodeIdentityProjection, validateEffectImageParentChildLayoutNodes } from "../../phaser4-game-workflow-control/scripts/layout-node-parent-geometry.mjs";
 
 const ROOT_REQUIRED = ["schema_version", "contract_id", "contract_version", "scope", "fidelity", "frozen_visual_target", "targets", "coordinate_spaces", "regions", "layout_nodes", "content", "platform_insets", "scrolling", "dynamic_content", "overlay_rules", "breakpoints", "invariants", "critical_alignments", "parity_cases", "evidence_matrix"];
 const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
@@ -40,21 +41,7 @@ function canonicalize(value) {
  */
 export function computeLayoutContractSha256(document) {
   const binding = document?.scene_reconstruction_binding ?? document?.sceneReconstructionBinding ?? {};
-  const nodes = (Array.isArray(document?.layout_nodes) ? document.layout_nodes : []).filter(isObject).map((node) => ({
-    layout_node_id: node.layout_node_id,
-    region_id: node.region_id,
-    coordinate_space: node.coordinate_space,
-    reference_id: node.reference_id,
-    self_anchor: node.self_anchor,
-    reference_anchor: node.reference_anchor,
-    offset: node.offset,
-    target_bounds: node.target_bounds,
-    size_policy: node.size_policy,
-    z_order: node.z_order,
-    clip_policy: node.clip_policy,
-    responsive_rule: node.responsive_rule,
-    planned_test_id: node.planned_test_id,
-  })).sort((left, right) => { const leftId = String(left.layout_node_id ?? ""); const rightId = String(right.layout_node_id ?? ""); return leftId < rightId ? -1 : leftId > rightId ? 1 : 0; });
+  const nodes = (Array.isArray(document?.layout_nodes) ? document.layout_nodes : []).filter(isObject).map(layoutNodeIdentityProjection).sort((left, right) => { const leftId = String(left.layout_node_id ?? ""); const rightId = String(right.layout_node_id ?? ""); return leftId < rightId ? -1 : leftId > rightId ? 1 : 0; });
   const projection = {
     contract_id: document?.contract_id ?? null,
     contract_version: document?.contract_version ?? null,
@@ -338,6 +325,10 @@ function validateLayoutNodes(document, fidelity, binding, spaces, regionIds, err
       if (bounds.x < 0 || bounds.y < 0 || bounds.x + bounds.width > viewport.width || bounds.y + bounds.height > viewport.height) errors.push(`${label}.target_bounds 必须完全位于 scene_reconstruction_binding.target_viewport 内`);
     }
   });
+  if (isEffectImageContract(document)) {
+    // parent_layout_node_id、parent_target_bounds、relative_position、nearest_edge_docking 必须与场景拆解入口使用同一规则。
+    for (const issue of validateEffectImageParentChildLayoutNodes(nodes, viewport, { label: "layout_nodes" })) errors.push(issue.message);
+  }
   const graph = new Map(); const stableRoots = new Set(["viewport", "safe-area"]);
   nodes.forEach((node, index) => {
     if (!isObject(node) || !isString(node.layout_node_id) || !isString(node.reference_id)) return;

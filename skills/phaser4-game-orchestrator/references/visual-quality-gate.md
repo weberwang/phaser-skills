@@ -4,6 +4,8 @@
 
 视觉领域规则只能收紧 [`phaser4-game-workflow-control`](../../phaser4-game-workflow-control/SKILL.md)。V0-V5 是 `stageId`；全局状态、审批与 F0-F4 语义不得改写。
 
+全局实施顺序的视觉前置门：在任何 A3 实施包/代码单元前，必须先冻结覆盖全部授权 `gameplay`/`supporting` 场景的 `scene master`，以及所有必需 transient display-layer required state 的宿主场景上下文效果图；集合按 scene/state 分项冻结，不是一张合并图。该冻结沿用 V0-V2 方向与唯一真人视觉审批，并登记完整 coverage/layout/fidelity obligations；effect-image 仍完整执行 V1→V5，V3-V5 生产与运行接入归入对应场景阶段。它是进入实现的前置门，不新增 `executionUnits` 的 `unitType`。通过后，实施单元只能按 `SHARED` 最小骨架→`MODULE`→按场景组织的 `SCENE`+紧邻 `DISPLAY_LAYER`→`INTEGRATION`/联合验收推进。
+
 effect-image ImageGen 的 canonical 提示词与生成记录合同统一引用[Effect-image ImageGen 忠实还原提示词合同](../../phaser4-game-asset-integration/references/effect-image-prompt-contract.md)，本门只消费其校验结果。
 
 正式可见视觉集成还必须声明 `visualStage`/`visualStageState` 并通过全局 `visual-stage-prerequisites.mjs`。静态基线只允许 `global-static-baseline-frozen`；V2/V3/V4/V5 的唯一完成状态分别为 `v2-direction-frozen`、`v3-production-planning-complete`、`v4-formal-acceptance-complete`、`v5-runtime-integration-candidate`。阶段依赖只能从带 path+sha256 的不可变文件引用加载和复算，内联 PASS、根布尔值、Ledger 记录和 stageId 文本没有证明力。
@@ -19,9 +21,11 @@ effect-image ImageGen 的 canonical 提示词与生成记录合同统一引用[E
 
 V0 的高保真/效果图还原适用性唯一看 Work Item 是否把效果图或参考截图指定为正式运行画面的视觉目标，与是否生成、制作或新增资源无关。只要是正式视觉目标，即使全部 coverage 区域采用 `reuse-existing`/`runtime-program`、零新资源且零 ImageGen，也必须走 `effect-image` 的 V1→V5 高保真/忠实还原链，包含布局绑定、coverage、宿主场景同屏组合和 fidelity 验收。仅仅生成新资源，或仅把图片作为灵感、说明或临时参考，不触发 `effect-image`，仍按普通资产、组件或场景路径分类。`image_generation_required`、`generate-now`、资源数量和 `production_method` 只能在触发后于 V3 决定生产路线，不能参与 V0 applicability 判定。
 
-效果图必须采用同步拆解工作流：先整屏构图，再同步冻结布局节点与元素/状态，再把 coverage region、布局合同和 placement 三方绑定，最后按布局合同装配，V5 进行布局+视觉双验收。每个 region 的 `layout_node_ids` 非空唯一，`layout_decomposition.layout_nodes` 与 coverage 双向关联；placement 只能引用本区域节点，运行时布局实现必须声明消费节点，禁止孤立、跨区域和重复消费。`target_bounds` 是参考事实，布局合同是运行计算，runtime measurement 是候选证据。proposal/PNG/confirmation 的 `region_definition_sha256` 必须覆盖布局字段并绑定 target SHA、scene/state、layout contract version；不新增第二套清单或状态机，visual-assets.json 和布局合同继续各自作为领域权威。V3 `executionUnits` 推荐布局基础串行→视觉资源/程序元素并行→场景装配串行→联合验收串行；V4 组合预验收同时检查正式资源和正式布局，V5 必须 coverage=1、零孤立、逐节点几何差异及整屏 fidelity。
+效果图必须采用同步拆解工作流：先整屏构图，再同步冻结布局节点与元素/状态，再把 coverage region、布局合同和 placement 三方绑定，最后按布局合同装配，V5 进行布局+视觉双验收。每个 region 的 `layout_node_ids` 非空唯一，`layout_decomposition.layout_nodes` 与 coverage 双向关联；placement 只能引用本区域节点，运行时布局实现必须声明消费节点，禁止孤立、跨区域和重复消费。`target_bounds` 是参考事实，布局合同是运行计算，runtime measurement 是候选证据。proposal/PNG/confirmation 的 `region_definition_sha256` 必须覆盖布局字段并绑定 target SHA、scene/state、layout contract version；不新增第二套清单或状态机，visual-assets.json 和布局合同继续各自作为领域权威。布局、视觉资源和场景装配属于对应 `SCENE`+`DISPLAY_LAYER` 内部的实现职责；不得把场景内部子步骤提升为全局执行阶段。V4 组合预验收同时检查正式资源和正式布局，V5 必须 coverage=1、零孤立、逐节点几何差异及整屏 fidelity。
 
-场景内显示层沿用同一条 V0-V5 链：G0/V1 必须同步盘点 HUD、modal、popup、drawer、toast 等层，并在 `scene_reconstruction_contract.display_layer_planning` 中显式登记；即使没有显示层也写入空 `inventory`。主效果图只冻结基础场景与 persistent/HUD，transient 层按必需状态分别提供绑定宿主场景、遮罩/层级和当前状态的 contextual effect image，孤立透明组件图不能作为完整视觉证据。V3 可按 component×state 独立生产，V4/V5 必须重新回到宿主场景同屏组合，并提交打开→交互→关闭/恢复轨迹，验证焦点、输入阻断、响应式与恢复后的场景状态。
+布局质量门还必须复核父子几何：每个节点的 `parent_layout_node_id`、`parent_target_bounds`、`relative_position` 和 `nearest_edge_docking` 必须存在且可由目标 bounds 重算，`reference_id` 必须等于父 ID；父节点/`viewport`/`safe-area` 的边界必须一致，子节点不得越出父内容框，父子图不得成环。最近边相等时采用 left/top，`offset` 与 `self_anchor`/`reference_anchor` 必须采用同一测量推导值（例如 `top-left`）。这些字段纳入布局合同身份投影，任何父子关系或相对坐标变化都必须使旧 identity 失效。
+
+场景内显示层沿用同一条 V0-V5 链：全局冻结门必须覆盖所有授权场景，并在 `scene_reconstruction_contract.display_layer_planning` 中显式登记 HUD、modal、popup、drawer、toast 等层；即使没有显示层也写入空 `inventory`。主效果图只冻结基础场景与 persistent/HUD，transient 层按必需状态分别提供绑定宿主场景、遮罩/层级和当前状态的 contextual effect image，孤立透明组件图不能作为完整视觉证据。V3 可按 component×state 独立生产，但必须归入对应宿主 `SCENE`+`DISPLAY_LAYER`；V4/V5 必须重新回到宿主场景同屏组合，并提交打开→交互→关闭/恢复轨迹，验证焦点、输入阻断、响应式与恢复后的场景状态。
 
 ImageGen 生产合同贯穿 V3-V5：`independent-production` 与 `generate-now` 不推断图片生成；每个区域必须完成 `state_analysis`，并让 `expected_assets` 逐唯一 `component_id × required state_id` 对应独立位图。重复视觉实例只登记一个 component，通过 placements 表达；② 六按钮逐组件，⑧ 三相同表面可一组件三 placements，⑨ 按实际复用关系登记。ImageGen 无条件要求 `delivery_mode=individual`、`atlas_allowed=false`，横向组图、图集和交互热区不能冒充原子视觉资产；固定视觉不允许程序绘制或 SVG 作为游戏图片。V4 必须审计 `production_contract_audit` 及逐部件 `component_usages`，F2 只消费 `validationMode=MACHINE` 的确定性机器事实，V5 再绑定 F3 runtime replay、非空 freshness-bound fidelity cases、实际消费及无未批准替换。V2 唯一人工确认通过后不得生成视觉复核工件。生产方法变化只接受绑定区域与用户原文的 `ACCEPTED` Change Request。
 
@@ -43,4 +47,4 @@ V1/V2 是条件门：严格复刻可免三方向探索，但不能免 V2a/V2b、
 
 需求或结构变化返回 V1；方向/基线变化返回 V2；生产规格或绑定变化返回 V3；资源执行偏差返回 V4；运行态问题返回 V5。模块边界变化仅在存在实质取舍时进入 grilling。任何基线、范围、路径、对象或代码/diff 指纹变化都会让覆盖事实的决定与证据失效。
 
-效果图生成另有统一的全局视觉输入门：生成前必须冻结 `visual_baseline`（`global-static-baseline-frozen`、`docs/visual-baseline.md`、`id/version/style_fingerprint`、完整锚点），并把身份与全部锚点传给 scene master、显示层上下文图和原子 ImageGen。局部冻结图不能代替全局锚点，原子资产仍必须把完整冻结效果图作为主参考。基线、锚点、target SHA、实际 full prompt 或 consistency evidence 身份变化时，旧证据失效并按上述规则返回最早受影响门；该静态状态不等价于 V2。
+效果图生成另有统一的全局视觉输入门：生成前必须冻结 `visual_baseline`（`global-static-baseline-frozen`、`docs/visual-baseline.md`、`id/version/style_fingerprint`、完整锚点），并在 A3 骨架代码前冻结全局 scene master 与必需宿主上下文图集合。身份与全部锚点必须传给每个 scene master、显示层上下文图和原子 ImageGen；局部冻结图不能代替全局锚点，原子资产仍必须把完整冻结效果图作为主参考。基线、锚点、target SHA、实际 full prompt 或 consistency evidence 身份变化时，旧证据失效并按上述规则返回最早受影响门；该静态状态不等价于 V2。

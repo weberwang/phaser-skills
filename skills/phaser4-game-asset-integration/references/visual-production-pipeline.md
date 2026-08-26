@@ -18,7 +18,7 @@ V0 的高保真/效果图还原适用性唯一看 Work Item 是否把效果图�
 
 所有任务执行适用 V1/V2 确定性机器检查。已有明确需求或冻结基线且候选不改变冻结视觉事实时可记录 `AUTO`；修复、提升游戏感或工程适配只要产生可见变化，就按差异列出影响和候选方案，请求一次精确选择并记录 `USER_DECISION` 与已批准例外。后续绑定当前决策记录。
 
-资源生产服从 G1 场景序列：公共运行必需资源先行，随后逐个完成全部 gameplay 场景，再逐个完成 supporting 场景。每个场景完成 V3 规划、V4 `accepted`、V5 正式接入、占位清理和联合证据后再关闭；首个可玩切片不终止后续正式视觉生产。
+资源生产服从新的全局实施顺序：在任何骨架代码前先冻结覆盖全部授权 gameplay/supporting 场景的 scene master，以及所有必需瞬态显示层状态的宿主场景上下文效果图；该前置门继续绑定 V0-V5、V2 唯一真人视觉审批、coverage/layout/fidelity 等硬门。随后搭建 `SHARED` 最小运行骨架，再实现 `MODULE`，最后在各宿主 `SCENE` 阶段完成 V3 规划、V4 `accepted`、V5 正式接入、全部 UI/显示层、占位清理和联合证据；`DISPLAY_LAYER` 必须紧邻并归属于宿主场景，不能在全部场景之后独立生产。`gameplay`/`supporting` 只作场景分类，实际场景顺序由计划制定者冻结；全部场景闭环后才做跨场景 `INTEGRATION`/联合验收。
 
 F2 必须由确定性机器验证执行，并绑定当前 baseline/diff 身份。V1/V2 只保留机器事实和唯一 `visual_human_approval`；V1/V2 使用 `AUTO` 或 `USER_DECISION` 记录，只覆盖所列对象且不写 Approval Ledger；F4 只处理当前 V5 候选集成或独立发布 Work Item 的具体操作。
 

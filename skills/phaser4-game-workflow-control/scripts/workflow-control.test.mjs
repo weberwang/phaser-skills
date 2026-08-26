@@ -9,25 +9,10 @@ import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { createExecutionState, executionStatePath, scopedDiffFingerprint } from './execution-unit-control.mjs';
 import { parallelBatchFingerprint } from './parallel-batch-control.mjs';
-import { validateExecutionPlan } from './parallel-plan.mjs';
 
 const CLI = resolve(import.meta.dirname, 'workflow-control.mjs');
 const INITIALIZER = resolve(import.meta.dirname, '..', '..', 'phaser4-game-orchestrator', 'scripts', 'initialize_project_docs.mjs');
 const HASH = `sha256:${'a'.repeat(64)}`;
-
-test('DISPLAY_LAYER execution unit 必须绑定显示层与宿主场景身份', () => {
-  const pkg = {
-    allowedPaths: ['src/display'], forbiddenPaths: [], expectedAddedFiles: [], expectedDeletedFiles: [],
-    fileOwnership: { 'src/display': 'worker' }, executionUnits: [{
-      unitId: 'DISPLAY-1', unitType: 'DISPLAY_LAYER', scopeId: 'pause-modal', moduleId: 'scene', sceneId: null, displayLayerId: 'pause-modal', hostSceneId: 'play', owner: 'worker', parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: ['src/display'], stateOwnership: ['display.pause-modal'], acceptanceCommands: ['node --test'], serializationReason: '等待宿主 Scene 装配',
-    }],
-  };
-  assert.doesNotThrow(() => validateExecutionPlan(pkg, (value, pattern) => value === pattern, (message) => { throw new Error(message); }));
-  const missing = structuredClone(pkg); delete missing.executionUnits[0].displayLayerId;
-  assert.throws(() => validateExecutionPlan(missing, (value, pattern) => value === pattern, (message) => { throw new Error(message); }), /字段不严格|displayLayerId/);
-  const sceneIdentity = structuredClone(pkg); sceneIdentity.executionUnits[0].unitType = 'SCENE'; sceneIdentity.executionUnits[0].sceneId = 'play'; sceneIdentity.executionUnits[0].displayLayerId = 'pause-modal'; sceneIdentity.executionUnits[0].hostSceneId = 'play';
-  assert.throws(() => validateExecutionPlan(sceneIdentity, (value, pattern) => value === pattern, (message) => { throw new Error(message); }), /只允许 DISPLAY_LAYER|displayLayerId/);
-});
 
 /** 写入格式稳定的 JSON 测试工件。 */
 function writeJson(path, value) {
@@ -73,9 +58,20 @@ function makeWork(head, overrides = {}) {
 function makePackage(overrides = {}) {
   return { packageId: 'PKG-1', workItemId: 'WI-1', baselineVersion: '1', baselineHash: HASH, taskAuthorizationId: 'TASK-WI-1', approvedRequirements: ['REQ-1'], approvedArchitecture: 'ARCH-FACT', fileOwnership: { 'src/main.js': 'implementer', 'src/module': 'implementer', 'src/scene': 'implementer' }, executionUnits: [
     { unitId: 'SHARED-1', unitType: 'SHARED', scopeId: 'runtime-contract', moduleId: 'core', sceneId: null, displayLayerId: null, hostSceneId: null, owner: 'implementer', parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: ['src/main.js'], stateOwnership: ['runtime-contract'], acceptanceCommands: ['node --test'], serializationReason: '先冻结共享契约' },
-    { unitId: 'MODULE-1', unitType: 'MODULE', scopeId: 'core-module', moduleId: 'core', sceneId: null, displayLayerId: null, hostSceneId: null, owner: 'implementer', parallelMode: 'PARALLEL', parallelGroup: 'PG-1', ownedPaths: ['src/module'], stateOwnership: ['core-state'], acceptanceCommands: ['node --test'], serializationReason: null },
-    { unitId: 'SCENE-1', unitType: 'SCENE', scopeId: 'play-scene', moduleId: 'scene', sceneId: 'play', displayLayerId: null, hostSceneId: null, owner: 'implementer', parallelMode: 'PARALLEL', parallelGroup: 'PG-1', ownedPaths: ['src/scene'], stateOwnership: ['scene-state'], acceptanceCommands: ['node --test'], serializationReason: null }
+    { unitId: 'MODULE-1', unitType: 'MODULE', scopeId: 'core-module', moduleId: 'core', sceneId: null, displayLayerId: null, hostSceneId: null, owner: 'implementer', parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: ['src/module'], stateOwnership: ['core-state'], acceptanceCommands: ['node --test'], serializationReason: '等待共享契约冻结' },
+    { unitId: 'SCENE-1', unitType: 'SCENE', scopeId: 'play-scene', moduleId: 'scene', sceneId: 'play', displayLayerId: null, hostSceneId: null, owner: 'implementer', parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: ['src/scene'], stateOwnership: ['scene-state'], acceptanceCommands: ['node --test'], serializationReason: '等待全部模块完成' }
   ], allowedPaths: ['src', 'docs'], forbiddenPaths: ['.git', 'src/secret'], expectedAddedFiles: [], expectedDeletedFiles: [], testScope: ['node --test'], outOfScope: ['release'], compatibilityStrategy: '不保留旧版兼容', definitionOfDone: ['tests pass'], stopConditions: ['scope changes'], ...overrides };
+}
+
+/** 构造仅在 MODULE 阶段并行、场景随后串行的顺序包。 */
+function makePhaseOrderedParallelPackage() {
+  const pkg = makePackage();
+  const module = pkg.executionUnits.find((unit) => unit.unitId === 'MODULE-1');
+  module.parallelMode = 'PARALLEL'; module.parallelGroup = 'PG-1'; module.serializationReason = null;
+  pkg.fileOwnership['src/module-peer'] = 'implementer';
+  const sceneIndex = pkg.executionUnits.findIndex((unit) => unit.unitId === 'SCENE-1');
+  pkg.executionUnits.splice(sceneIndex, 0, { ...module, unitId: 'MODULE-2', scopeId: 'core-module-peer', ownedPaths: ['src/module-peer'], stateOwnership: ['core-peer-state'] });
+  return pkg;
 }
 
 /** 构造绑定单个实施单元的 A3 委派。 */
@@ -208,15 +204,18 @@ function completeUnits(fixture, unitIds) {
   }
 }
 
-/** 创建含两个已登记代理、委派文件和不可变批次的并行测试夹具。 */
+/** 创建含两个同阶段 MODULE 代理、委派文件和不可变批次的并行测试夹具。 */
 function prepareParallelFixture(state = 'IMPLEMENTING') {
   const f = setup({ globalState: state, delegatedAgents: ['module-agent', 'scene-agent'] });
-  writeJson(f.packagePath, makePackage({ fileOwnership: { 'src/main.js': 'implementer', 'src/module': 'module-agent', 'src/scene': 'scene-agent' }, executionUnits: makePackage().executionUnits.map((unit) => unit.unitId === 'MODULE-1' ? { ...unit, owner: 'module-agent' } : unit.unitId === 'SCENE-1' ? { ...unit, owner: 'scene-agent' } : unit) }));
+  const pkg = makePhaseOrderedParallelPackage();
+  pkg.fileOwnership = { 'src/main.js': 'implementer', 'src/module': 'module-agent', 'src/module-peer': 'scene-agent', 'src/scene': 'implementer' };
+  pkg.executionUnits = pkg.executionUnits.map((unit) => unit.unitId === 'MODULE-1' ? { ...unit, owner: 'module-agent' } : unit.unitId === 'MODULE-2' ? { ...unit, owner: 'scene-agent' } : unit);
+  writeJson(f.packagePath, pkg);
   writeExecutionState(f);
   writeJson(join(f.root, 'delegations', 'm.json'), makeDelegation('module-agent', 'MODULE-1', 'PG-1', 'src/module'));
-  writeJson(join(f.root, 'delegations', 's.json'), makeDelegation('scene-agent', 'SCENE-1', 'PG-1', 'src/scene'));
+  writeJson(join(f.root, 'delegations', 'm2.json'), makeDelegation('scene-agent', 'MODULE-2', 'PG-1', 'src/module-peer'));
   const batchPath = join(f.root, 'delegations', 'batches', 'batch.json');
-  writeJson(batchPath, makeParallelBatch(f.repo, ['.workflow-control/delegations/m.json', '.workflow-control/delegations/s.json']));
+  writeJson(batchPath, makeParallelBatch(f.repo, ['.workflow-control/delegations/m.json', '.workflow-control/delegations/m2.json']));
   return { f, batchPath };
 }
 
@@ -427,7 +426,7 @@ test('任务授权与委派：A4-A6 操作不能伪装成任务授权或委派�
 
   work.taskAuthorization.authorizedActions.pop();
   writeJson(f.workPath, work);
-  const delegation = { workItemId: 'WI-1', stageId: 'G1', authorizationId: 'TASK-WI-1', owner: 'orchestrator', assignedAgent: 'worker', executionUnitIds: ['MODULE-1'], parallelGroup: 'PG-1', ownership: ['src/module'], allowedActions: ['phaser-integration'], forbiddenActions: [], actionLevel: 'A4', allowedPaths: ['src/module'], forbiddenPaths: ['.git'], acceptanceCommands: ['node --test'], completionBoundary: '完成返回', outOfScopeReturn: '越界返回', preserveOthersChanges: true };
+  const delegation = { workItemId: 'WI-1', stageId: 'G1', authorizationId: 'TASK-WI-1', owner: 'orchestrator', assignedAgent: 'worker', executionUnitIds: ['MODULE-1'], parallelGroup: null, ownership: ['src/module'], allowedActions: ['phaser-integration'], forbiddenActions: [], actionLevel: 'A4', allowedPaths: ['src/module'], forbiddenPaths: ['.git'], acceptanceCommands: ['node --test'], completionBoundary: '完成返回', outOfScopeReturn: '越界返回', preserveOthersChanges: true };
   const path = join(f.root, 'delegations', 'high-risk.json'); writeJson(path, delegation);
   rejects(run('delegate-check', ['--work-item', f.workPath, '--delegation', path, '--implementation-package', f.packagePath], f.repo), /只能委派 A0-A3/);
 });
@@ -607,32 +606,31 @@ test('Diff Audit：空 A3、审计后篡改和伪造 owner 均拒绝', () => {
 
 test('委派门：未登记代理、所有权冲突和伪造授权均拒绝', () => {
   const f = setup({ delegatedAgents: ['worker'] });
-  const delegation = { workItemId: 'WI-1', stageId: 'G1', authorizationId: 'FAKE', owner: 'orchestrator', assignedAgent: 'worker', executionUnitIds: ['MODULE-1'], parallelGroup: 'PG-1', ownership: ['src/module'], allowedActions: ['phaser-code-change'], forbiddenActions: [], actionLevel: 'A3', allowedPaths: ['src/module'], forbiddenPaths: ['.git', 'src/secret'], acceptanceCommands: ['node --test'], completionBoundary: '完成返回', outOfScopeReturn: '越界返回', preserveOthersChanges: true };
+  const delegation = { workItemId: 'WI-1', stageId: 'G1', authorizationId: 'FAKE', owner: 'orchestrator', assignedAgent: 'worker', executionUnitIds: ['MODULE-1'], parallelGroup: null, ownership: ['src/module'], allowedActions: ['phaser-code-change'], forbiddenActions: [], actionLevel: 'A3', allowedPaths: ['src/module'], forbiddenPaths: ['.git', 'src/secret'], acceptanceCommands: ['node --test'], completionBoundary: '完成返回', outOfScopeReturn: '越界返回', preserveOthersChanges: true };
   const path = join(f.root, 'delegations', 'worker.json'); writeJson(path, delegation);
   rejects(run('delegate-check', ['--work-item', f.workPath, '--delegation', path, '--implementation-package', f.packagePath], f.repo), /任务授权/);
   delegation.authorizationId = 'TASK-WI-1'; delegation.assignedAgent = 'unregistered'; writeJson(path, delegation);
   rejects(run('delegate-check', ['--work-item', f.workPath, '--delegation', path, '--implementation-package', f.packagePath], f.repo), /未登记/);
 });
 
-test('并行计划：模块与场景单元可在同组通过并行委派检查', () => {
+test('并行计划：两个 MODULE 单元可在同组通过并行委派检查', () => {
   const f = setup({ delegatedAgents: ['module-agent', 'scene-agent'] });
-  const pkg = makePackage({
-    fileOwnership: { 'src/main.js': 'implementer', 'src/module': 'module-agent', 'src/scene': 'scene-agent' },
-    executionUnits: makePackage().executionUnits.map((unit) => unit.unitId === 'MODULE-1' ? { ...unit, owner: 'module-agent' } : unit.unitId === 'SCENE-1' ? { ...unit, owner: 'scene-agent' } : unit)
-  });
+  const pkg = makePhaseOrderedParallelPackage();
+  pkg.fileOwnership = { 'src/main.js': 'implementer', 'src/module': 'module-agent', 'src/module-peer': 'scene-agent', 'src/scene': 'implementer' };
+  pkg.executionUnits = pkg.executionUnits.map((unit) => unit.unitId === 'MODULE-1' ? { ...unit, owner: 'module-agent' } : unit.unitId === 'MODULE-2' ? { ...unit, owner: 'scene-agent' } : unit);
   writeJson(f.packagePath, pkg);
   const modulePath = join(f.root, 'delegations', 'module.json');
-  const scenePath = join(f.root, 'delegations', 'scene.json');
+  const peerPath = join(f.root, 'delegations', 'module-peer.json');
   writeJson(modulePath, makeDelegation('module-agent', 'MODULE-1', 'PG-1', 'src/module'));
-  writeJson(scenePath, makeDelegation('scene-agent', 'SCENE-1', 'PG-1', 'src/scene'));
+  writeJson(peerPath, makeDelegation('scene-agent', 'MODULE-2', 'PG-1', 'src/module-peer'));
   writeUnitResults(f, {}, { completeState: false });
   const sharedResult = join(f.root, 'evidence', 'WI-1', 'units', 'SHARED-1.json');
   assert.equal(run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', sharedResult], f.repo).status, 0);
   // 只保留并行阶段之前的共享单元结果，验证同组 peer 不构成 READY 前序条件。
   rmSync(join(f.root, 'evidence', 'WI-1', 'units', 'MODULE-1.json'));
-  rmSync(join(f.root, 'evidence', 'WI-1', 'units', 'SCENE-1.json'));
+  rmSync(join(f.root, 'evidence', 'WI-1', 'units', 'MODULE-2.json'));
   const batchPath = join(f.root, 'delegations', 'batches', 'valid.json');
-  writeJson(batchPath, makeParallelBatch(f.repo, ['.workflow-control/delegations/module.json', '.workflow-control/delegations/scene.json']));
+  writeJson(batchPath, makeParallelBatch(f.repo, ['.workflow-control/delegations/module.json', '.workflow-control/delegations/module-peer.json']));
   const result = run('parallel-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--batch', batchPath], f.repo);
   assert.equal(result.status, 0, result.stderr);
 });
@@ -655,25 +653,30 @@ test('预设串行顺序：a1→a2→a3 只按数组位置放行并拒绝跳过�
   assert.equal(run('delegate-check', ['--work-item', f.workPath, '--delegation', delegationPath, '--implementation-package', f.packagePath], f.repo).status, 0);
 });
 
-test('并行计划：预设顺序、连续组、严格字段和所有权保护均生效', () => {
+test('并行计划：预设顺序、同阶段连续组、阶段隔离和所有权保护均生效', () => {
   for (const [mutate, pattern] of [
     [(pkg) => { pkg.executionUnits[0].dependsOn = []; }, /字段不严格.*多余 dependsOn/],
-    [(pkg) => { pkg.executionUnits = [pkg.executionUnits[1], pkg.executionUnits[0], pkg.executionUnits[2]]; }, /并行组.*必须在 executionUnits 中连续出现/],
-    [(pkg) => { pkg.executionUnits.find((unit) => unit.unitId === 'SCENE-1').parallelMode = 'SERIAL'; pkg.executionUnits.find((unit) => unit.unitId === 'SCENE-1').parallelGroup = null; pkg.executionUnits.find((unit) => unit.unitId === 'SCENE-1').serializationReason = '等待模块'; }, /至少需要两个/],
-    [(pkg) => { pkg.executionUnits.find((unit) => unit.unitId === 'SCENE-1').stateOwnership = ['core-state']; }, /状态所有权冲突/],
+    [(pkg) => { const peer = pkg.executionUnits.find((unit) => unit.unitId === 'MODULE-2'); const interstitial = { ...peer, unitId: 'MODULE-3', scopeId: 'core-module-serial', parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: ['src/module-serial'], stateOwnership: ['core-serial-state'], serializationReason: '按模块顺序串行' }; pkg.fileOwnership['src/module-serial'] = 'implementer'; pkg.executionUnits.splice(2, 0, interstitial); }, /并行组.*必须在 executionUnits 中连续出现/],
+    [(pkg) => { const scene = pkg.executionUnits.find((unit) => unit.unitId === 'SCENE-1'); scene.parallelMode = 'PARALLEL'; scene.parallelGroup = 'PG-1'; scene.serializationReason = null; }, /并行组.*不得跨越全局阶段/],
+    [(pkg) => { pkg.executionUnits.find((unit) => unit.unitId === 'MODULE-2').parallelMode = 'SERIAL'; pkg.executionUnits.find((unit) => unit.unitId === 'MODULE-2').parallelGroup = null; pkg.executionUnits.find((unit) => unit.unitId === 'MODULE-2').serializationReason = '等待模块契约'; }, /至少需要两个/],
+    [(pkg) => { pkg.executionUnits.find((unit) => unit.unitId === 'MODULE-2').stateOwnership = ['core-state']; }, /状态所有权冲突/],
     [(pkg) => { pkg.executionUnits.find((unit) => unit.unitId === 'MODULE-1').owner = 'worker'; }, /唯一映射到同一 owner/],
     [(pkg) => { pkg.fileOwnership['src/unplanned'] = 'implementer'; }, /fileOwnership 未唯一反向绑定/],
     [(pkg) => { pkg.expectedAddedFiles = ['src/unplanned/new.js']; }, /预期增删文件未唯一绑定/]
   ]) {
-    const f = setup({ delegatedAgents: ['worker'] }); const pkg = makePackage(); mutate(pkg); writeJson(f.packagePath, pkg);
+    const f = setup({ delegatedAgents: ['worker'] }); const pkg = makePhaseOrderedParallelPackage(); mutate(pkg); writeJson(f.packagePath, pkg);
     rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), pattern);
   }
   const f = setup({ delegatedAgents: ['scene-agent', 'worker'] });
+  const pkg = makePhaseOrderedParallelPackage();
+  pkg.fileOwnership = { 'src/main.js': 'implementer', 'src/module': 'scene-agent', 'src/module-peer': 'implementer', 'src/scene': 'implementer' };
+  pkg.executionUnits = pkg.executionUnits.map((unit) => unit.unitId === 'MODULE-1' ? { ...unit, owner: 'scene-agent' } : unit);
+  writeJson(f.packagePath, pkg);
   writeJson(join(f.root, 'delegations', 'mismatch.json'), makeDelegation('worker', 'MODULE-1', 'PG-1', 'src/module'));
-  writeJson(join(f.root, 'delegations', 'mismatch-scene.json'), makeDelegation('scene-agent', 'SCENE-1', 'PG-1', 'src/scene'));
+  writeJson(join(f.root, 'delegations', 'mismatch-module.json'), makeDelegation('scene-agent', 'MODULE-2', 'PG-1', 'src/module-peer'));
   writeUnitResults(f);
   const batchPath = join(f.root, 'delegations', 'batches', 'mismatch.json');
-  writeJson(batchPath, makeParallelBatch(f.repo, ['.workflow-control/delegations/mismatch.json', '.workflow-control/delegations/mismatch-scene.json']));
+  writeJson(batchPath, makeParallelBatch(f.repo, ['.workflow-control/delegations/mismatch.json', '.workflow-control/delegations/mismatch-module.json']));
   rejects(run('parallel-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--batch', batchPath], f.repo), /代理与 execution unit.owner 不一致/);
 });
 
@@ -681,15 +684,15 @@ test('并行委派：并行组不匹配、所有权冲突或写范围冲突均�
   const cases = [
     { peer: { parallelGroup: 'PG-OTHER' }, pattern: /同一非空组|parallelGroup.*不一致/ },
     { peer: { actionLevel: 'A2', allowedActions: ['phaser-prototype'] }, pattern: /不得携带 executionUnitIds|必须全部.*A3|至少两个/ },
-    { packageMutation: (pkg) => { pkg.executionUnits.find((unit) => unit.unitId === 'SCENE-1').stateOwnership = ['core-state']; }, pattern: /状态所有权冲突/ },
-    { packageMutation: (pkg) => { pkg.executionUnits.find((unit) => unit.unitId === 'SCENE-1').ownedPaths = ['src/module']; pkg.fileOwnership = { 'src/main.js': 'implementer', 'src/module': 'worker' }; }, peer: { ownership: ['src/module'] }, pattern: /写范围冲突|未唯一反向绑定|未唯一映射/ }
+    { packageMutation: (pkg) => { pkg.executionUnits.find((unit) => unit.unitId === 'MODULE-2').stateOwnership = ['core-state']; }, pattern: /状态所有权冲突/ },
+    { packageMutation: (pkg) => { pkg.executionUnits.find((unit) => unit.unitId === 'MODULE-2').ownedPaths = ['src/module']; pkg.fileOwnership = { 'src/main.js': 'implementer', 'src/module': 'worker' }; }, peer: { ownership: ['src/module'] }, pattern: /写范围冲突|未唯一反向绑定|未唯一映射/ }
   ];
   for (const item of cases) {
-    const f = setup({ delegatedAgents: ['module-agent', 'scene-agent'] }); const pkg = makePackage({ fileOwnership: { 'src/main.js': 'implementer', 'src/module': 'module-agent', 'src/scene': 'scene-agent' }, executionUnits: makePackage().executionUnits.map((unit) => unit.unitId === 'MODULE-1' ? { ...unit, owner: 'module-agent' } : unit.unitId === 'SCENE-1' ? { ...unit, owner: 'scene-agent' } : unit) });
+    const f = setup({ delegatedAgents: ['module-agent', 'scene-agent'] }); const pkg = makePhaseOrderedParallelPackage(); pkg.fileOwnership = { 'src/main.js': 'implementer', 'src/module': 'module-agent', 'src/module-peer': 'scene-agent', 'src/scene': 'implementer' }; pkg.executionUnits = pkg.executionUnits.map((unit) => unit.unitId === 'MODULE-1' ? { ...unit, owner: 'module-agent' } : unit.unitId === 'MODULE-2' ? { ...unit, owner: 'scene-agent' } : unit);
     item.packageMutation?.(pkg); writeJson(f.packagePath, pkg);
     const leftPath = join(f.root, 'delegations', 'left.json'); const peerPath = join(f.root, 'delegations', 'peer.json');
     writeJson(leftPath, makeDelegation('module-agent', 'MODULE-1', 'PG-1', 'src/module'));
-    writeJson(peerPath, makeDelegation('scene-agent', 'SCENE-1', 'PG-1', item.peer?.ownership?.[0] ?? 'src/scene', item.peer ?? {}));
+    writeJson(peerPath, makeDelegation('scene-agent', 'MODULE-2', 'PG-1', item.peer?.ownership?.[0] ?? 'src/module-peer', item.peer ?? {}));
     // 这些用例验证批次结构先行失败，故只生成 Result 文件，不尝试推进故意损坏的实施包状态。
     writeUnitResults(f, {}, { completeState: false });
     const batchPath = join(f.root, 'delegations', 'batches', 'invalid.json');
@@ -742,8 +745,8 @@ test('并行批次：缺 READY、遗漏、重复代理/单元、REVIEW 和历史
   let item = prepareParallelFixture(); rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /尚未 READY/);
   item = prepareParallelFixture('REVIEW'); writeUnitResults(item.f); rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /仅允许 IMPLEMENTING/);
   item = prepareParallelFixture(); writeUnitResults(item.f); writeJson(item.batchPath, makeParallelBatch(item.f.repo, ['.workflow-control/delegations/m.json'])); rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /至少两个/);
-  item = prepareParallelFixture(); writeUnitResults(item.f); writeJson(join(item.f.root, 'delegations', 's.json'), makeDelegation('module-agent', 'MODULE-1', 'PG-1', 'src/module')); writeJson(item.batchPath, makeParallelBatch(item.f.repo, ['.workflow-control/delegations/m.json', '.workflow-control/delegations/s.json'])); rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /至少两个|重复分配|代理身份重复/);
-  item = prepareParallelFixture(); writeUnitResults(item.f); const history = join(item.f.root, 'delegations', 'batches', 'history.json'); writeJson(history, makeParallelBatch(item.f.repo, ['.workflow-control/delegations/m.json', '.workflow-control/delegations/s.json'], { batchId: 'PB-HISTORY' })); rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /历史并行批次分配/);
+  item = prepareParallelFixture(); writeUnitResults(item.f); writeJson(join(item.f.root, 'delegations', 'm2.json'), makeDelegation('module-agent', 'MODULE-1', 'PG-1', 'src/module')); writeJson(item.batchPath, makeParallelBatch(item.f.repo, ['.workflow-control/delegations/m.json', '.workflow-control/delegations/m2.json'])); rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /至少两个|重复分配|代理身份重复/);
+  item = prepareParallelFixture(); writeUnitResults(item.f); const history = join(item.f.root, 'delegations', 'batches', 'history.json'); writeJson(history, makeParallelBatch(item.f.repo, ['.workflow-control/delegations/m.json', '.workflow-control/delegations/m2.json'], { batchId: 'PB-HISTORY' })); rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /历史并行批次分配/);
 });
 
 test('并行批次不可变：委派内容、哈希、派生数组和历史批次篡改均拒绝', () => {
@@ -757,7 +760,7 @@ test('并行批次不可变：委派内容、哈希、派生数组和历史批�
   item = prepareParallelFixture(); writeUnitResults(item.f); batch = JSON.parse(readFileSync(item.batchPath, 'utf8')); batch.executionUnitIds = ['MODULE-1', 'UNKNOWN']; batch.assignedAgents = ['fake-agent', 'module-agent']; batch.fingerprint = parallelBatchFingerprint(batch); writeJson(item.batchPath, batch);
   rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /与委派内容不一致/);
 
-  item = prepareParallelFixture(); writeUnitResults(item.f); const historyPath = join(item.f.root, 'delegations', 'batches', 'history.json'); batch = makeParallelBatch(item.f.repo, ['.workflow-control/delegations/m.json', '.workflow-control/delegations/s.json'], { batchId: 'PB-HISTORY' }); batch.assignedAgents[0] = 'tampered-agent'; writeJson(historyPath, batch);
+  item = prepareParallelFixture(); writeUnitResults(item.f); const historyPath = join(item.f.root, 'delegations', 'batches', 'history.json'); batch = makeParallelBatch(item.f.repo, ['.workflow-control/delegations/m.json', '.workflow-control/delegations/m2.json'], { batchId: 'PB-HISTORY' }); batch.assignedAgents[0] = 'tampered-agent'; writeJson(historyPath, batch);
   rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /历史并行批次损坏/);
 });
 
@@ -804,6 +807,7 @@ test('状态合同：串行 unit-check 完成当前单元并立即激活下一�
 
 test('状态合同：并行组未齐不推进，全部完成后才激活下一阶段', () => {
   const f = setup();
+  writeJson(f.packagePath, makePhaseOrderedParallelPackage());
   writeExecutionState(f);
   writeUnitResults(f, {}, { completeState: false });
   const check = (unitId) => {
@@ -813,12 +817,15 @@ test('状态合同：并行组未齐不推进，全部完成后才激活下一�
   };
   check('SHARED-1');
   const partial = check('MODULE-1');
-  assert.deepEqual(partial.currentUnitIds, ['SCENE-1']);
+  assert.deepEqual(partial.currentUnitIds, ['MODULE-2']);
   assert.equal(partial.nextTask.kind, 'PARALLEL_GROUP');
   assert.equal(partial.nextTask.taskId, 'PG-1');
-  const complete = check('SCENE-1');
-  assert.equal(complete.workflowState, 'COMPLETE');
-  assert.equal(complete.nextTask.kind, 'WORKFLOW_COMPLETE');
+  const complete = check('MODULE-2');
+  assert.deepEqual(complete.currentUnitIds, ['SCENE-1']);
+  assert.equal(complete.nextTask.kind, 'SERIAL_UNIT');
+  const finished = check('SCENE-1');
+  assert.equal(finished.workflowState, 'COMPLETE');
+  assert.equal(finished.nextTask.kind, 'WORKFLOW_COMPLETE');
 });
 
 test('状态合同：缺失或篡改 Execution State 时所有单元放行路径 fail closed', () => {
@@ -898,21 +905,24 @@ test('V2→V3 合同 PASS：VALIDATING 迁移消费显式交接，不被 COMPLET
   assert.equal(JSON.parse(readFileSync(f.workPath, 'utf8')).globalState, 'VALIDATING');
 });
 
-test('并行 unit-check：两个独立进程并发完成同组单元时保留双 COMPLETE', async () => {
+test('并行 unit-check：两个独立进程并发完成同阶段 MODULE 后再完成场景', async () => {
   const { f } = prepareParallelFixture();
   writeUnitResults(f, {}, { completeState: false });
   const sharedResult = join(f.root, 'evidence', 'WI-1', 'units', 'SHARED-1.json');
   const shared = run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', sharedResult], f.repo);
   assert.equal(shared.status, 0, shared.stderr);
   const moduleResult = join(f.root, 'evidence', 'WI-1', 'units', 'MODULE-1.json');
-  const sceneResult = join(f.root, 'evidence', 'WI-1', 'units', 'SCENE-1.json');
-  const [moduleCheck, sceneCheck] = await Promise.all([
+  const peerResult = join(f.root, 'evidence', 'WI-1', 'units', 'MODULE-2.json');
+  const [moduleCheck, peerCheck] = await Promise.all([
     runConcurrent('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', moduleResult], f.repo),
-    runConcurrent('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', sceneResult], f.repo)
+    runConcurrent('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', peerResult], f.repo)
   ]);
-  assert.equal(moduleCheck.status, 0, moduleCheck.stderr); assert.equal(sceneCheck.status, 0, sceneCheck.stderr);
+  assert.equal(moduleCheck.status, 0, moduleCheck.stderr); assert.equal(peerCheck.status, 0, peerCheck.stderr);
+  const sceneResult = join(f.root, 'evidence', 'WI-1', 'units', 'SCENE-1.json');
+  const sceneCheckResult = run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', sceneResult], f.repo);
+  assert.equal(sceneCheckResult.status, 0, sceneCheckResult.stderr);
   const state = JSON.parse(readFileSync(join(f.root, 'evidence', 'WI-1', 'execution-state.json'), 'utf8'));
-  assert.deepEqual(state.units.map((unit) => [unit.unitId, unit.state]), [['SHARED-1', 'COMPLETE'], ['MODULE-1', 'COMPLETE'], ['SCENE-1', 'COMPLETE']]);
+  assert.deepEqual(state.units.map((unit) => [unit.unitId, unit.state]), [['SHARED-1', 'COMPLETE'], ['MODULE-1', 'COMPLETE'], ['MODULE-2', 'COMPLETE'], ['SCENE-1', 'COMPLETE']]);
   assert.equal(state.workflowState, 'COMPLETE'); assert.equal(state.nextTask.kind, 'WORKFLOW_COMPLETE');
 });
 

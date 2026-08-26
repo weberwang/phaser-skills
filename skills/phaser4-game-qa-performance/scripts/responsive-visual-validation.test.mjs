@@ -38,6 +38,25 @@ function contract(overrides = {}) {
   };
 }
 
+/** 构造已绑定冻结目标与父子停靠几何的效果图合同，避免不同入口的测试样本发生漂移。 */
+function effectImageContract() {
+  const targetSha = `sha256:${"b".repeat(64)}`;
+  const document = {
+    ...contract(),
+    resize: { required: false },
+    viewports: [],
+    effect_image_reconstruction: { applicability: "effect-image" },
+    fidelity: { applicability: "frozen-target", status: "specified" },
+    frozen_visual_target: { candidate_id: "target-1", target_sha256: targetSha, original_file: "evidence/target.png", visual_baseline_version: identity.visual_baseline_version, status: "frozen" },
+    scene_reconstruction_binding: { target_sha256: targetSha, scene_id: identity.scene_id, state_id: identity.state_id, visual_baseline_version: identity.visual_baseline_version, reconstruction_contract_version: "1.0.0", layout_contract_sha256: "pending", layout_decomposition_version: "layout-v1", target_viewport: { width: 360, height: 800 } },
+    layout_nodes: [{ layout_node_id: "hud.title", region_id: "title", coordinate_space: "ui-space", reference_id: "safe-area", parent_layout_node_id: "safe-area", parent_target_bounds: { x: 0, y: 0, width: 360, height: 800 }, relative_position: { left: 10, right: 250, top: 20, bottom: 740 }, nearest_edge_docking: { horizontal: "left", vertical: "top" }, self_anchor: "top-left", reference_anchor: "top-left", offset: { x: 10, y: 20 }, target_bounds: { x: 10, y: 20, width: 100, height: 40 }, size_policy: "fixed-at-target", z_order: 10, clip_policy: "none", responsive_rule: "preserve-center-and-top-gap", planned_test_id: "align-title" }],
+    critical_alignments: [{ id: "align-title", layout_node_id: "hud.title", element_id: "title", reference_id: "ui-root", planned_test_id: "align-title", target_sha256: targetSha, candidate_sha256: identity.candidate_sha256, horizontal: { type: "aligned", element_anchor: "center", reference_anchor: "center" }, vertical: { type: "offset", element_anchor: "top", reference_anchor: "top" }, target_measurement: { x: 10, y: 20, width: 100, height: 40 }, target_evidence: ["evidence/target-title.png"], tolerance: { unit: "logical-px", value: 2 } }]
+  };
+  // 身份哈希必须在节点与场景绑定完整后计算，确保测试覆盖真实合同而非格式占位。
+  document.scene_reconstruction_binding.layout_contract_sha256 = computeLayoutContractIdentityHash(document);
+  return { document, targetSha };
+}
+
 test("360x800 中 Canvas [0,80,360,640] 必须失败", () => {
   const result = evaluateViewport({
     viewportRect: { x: 0, y: 0, width: 360, height: 800 },
@@ -184,24 +203,13 @@ test("响应式合同声明允许动态有效值并拒绝非法有效声明", ()
 test("报告必须带合法不可变证据身份", () => { const missing = summarizeReport([], { resize: { required: false }, viewports: [] }); assert.equal(missing.responsivePass, false); assert(missing.identityErrors.length > 0); const report = summarizeReport([], { ...contract(), resize: { required: false }, viewports: [] }, { ...identity, target_sha256: `sha256:${"b".repeat(64)}` }); assert.deepEqual(report.identityErrors, []); });
 
 test("效果图还原报告必须绑定冻结目标 SHA", () => {
-  const targetSha = `sha256:${"b".repeat(64)}`;
-  const effectContract = {
-    ...contract(),
-    resize: { required: false },
-    viewports: [],
-    effect_image_reconstruction: { applicability: "effect-image" },
-    fidelity: { applicability: "frozen-target", status: "specified" },
-    frozen_visual_target: { candidate_id: "target-1", target_sha256: targetSha, original_file: "evidence/target.png", visual_baseline_version: identity.visual_baseline_version, status: "frozen" },
-    scene_reconstruction_binding: { target_sha256: targetSha, scene_id: identity.scene_id, state_id: identity.state_id, visual_baseline_version: identity.visual_baseline_version, reconstruction_contract_version: "1.0.0", layout_contract_sha256: "pending", layout_decomposition_version: "layout-v1", target_viewport: { width: 360, height: 800 } },
-    layout_nodes: [{ layout_node_id: "hud.title", region_id: "title", coordinate_space: "ui-space", reference_id: "safe-area", self_anchor: "top-center", reference_anchor: "top-center", offset: { x: 0, y: 20 }, target_bounds: { x: 10, y: 20, width: 100, height: 40 }, size_policy: "fixed-at-target", z_order: 10, clip_policy: "none", responsive_rule: "preserve-center-and-top-gap", planned_test_id: "align-title" }],
-    critical_alignments: [{ id: "align-title", layout_node_id: "hud.title", element_id: "title", reference_id: "ui-root", planned_test_id: "align-title", target_sha256: targetSha, candidate_sha256: identity.candidate_sha256, horizontal: { type: "aligned", element_anchor: "center", reference_anchor: "center" }, vertical: { type: "offset", element_anchor: "top", reference_anchor: "top" }, target_measurement: { x: 10, y: 20, width: 100, height: 40 }, target_evidence: ["evidence/target-title.png"], tolerance: { unit: "logical-px", value: 2 } }]
-  };
-  // 身份哈希必须在节点与场景绑定完整后计算，确保测试覆盖真实合同而非格式占位。
-  effectContract.scene_reconstruction_binding.layout_contract_sha256 = computeLayoutContractIdentityHash(effectContract);
-  const missing = summarizeReport([], effectContract, identity); assert(missing.identityErrors.some((item) => item.includes("target_sha256")));
-  const wrong = summarizeReport([], effectContract, { ...identity, target_sha256: `sha256:${"c".repeat(64)}` }); assert(wrong.identityErrors.some((item) => item.includes("frozen_visual_target")));
-  const complete = summarizeReport([], effectContract, { ...identity, target_sha256: targetSha }); assert.deepEqual(complete.identityErrors, []);
+  const { document, targetSha } = effectImageContract();
+  const missing = summarizeReport([], document, identity); assert(missing.identityErrors.some((item) => item.includes("target_sha256")));
+  const wrong = summarizeReport([], document, { ...identity, target_sha256: `sha256:${"c".repeat(64)}` }); assert(wrong.identityErrors.some((item) => item.includes("frozen_visual_target")));
+  const complete = summarizeReport([], document, { ...identity, target_sha256: targetSha }); assert.deepEqual(complete.identityErrors, []);
 });
+
+test("响应式入口复用效果图父子停靠几何合同", () => { const { document, targetSha } = effectImageContract(); document.layout_nodes[0].relative_position.left += 1; assert.notEqual(computeLayoutContractIdentityHash(document), document.scene_reconstruction_binding.layout_contract_sha256); assert.equal(summarizeReport([], document, { ...identity, target_sha256: targetSha }).responsivePass, false); });
 
 test("报告身份必须与原始 UI 合同交叉绑定", () => { for (const [field, value, message] of [["scene_id", "other", "scope.scenes"], ["state_id", "paused", "scope.states"], ["layout_contract_version", "9.0.0", "contract_version"], ["candidate_sha256", `sha256:${"d".repeat(64)}`, "code_candidate"], ["visual_baseline_version", "2.0.0", "视觉基线"]]) { const report = summarizeReport([], { ...contract(), resize: { required: false }, viewports: [] }, { ...identity, [field]: value }); assert(report.identityErrors.some((item) => item.includes(message)), field); } });
 

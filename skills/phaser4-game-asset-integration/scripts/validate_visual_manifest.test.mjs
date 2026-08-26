@@ -197,11 +197,10 @@ function attachSceneReconstructionContract(manifest) {
       } : {}),
     };
   });
-  const layoutNodes = manifest.coverage_audit.regions.map((region, index) => ({
-    layout_node_id: region.layout_node_ids[0], region_id: region.id, scene_id: region.scene_id, state_id: region.state_id, coordinate_space: "viewport", reference_id: "viewport",
-    self_anchor: { horizontal: "center", vertical: "center" }, reference_anchor: { horizontal: "center", vertical: "center" }, offset: { x: 0, y: 0 },
-    target_bounds: { ...region.bounds }, size_policy: { mode: "target-bound" }, z_order: index, clip_policy: "none", responsive_rule: "preserve-relative-anchors", planned_test_id: `layout-${region.id}`,
-  }));
+  const layoutNodes = manifest.coverage_audit.regions.map((region, index) => {
+    const bounds = { ...region.bounds }; const parentBounds = { x: 0, y: 0, width: 390, height: 844 }; const left = bounds.x - parentBounds.x; const right = parentBounds.x + parentBounds.width - bounds.x - bounds.width; const top = bounds.y - parentBounds.y; const bottom = parentBounds.y + parentBounds.height - bounds.y - bounds.height; const horizontal = left <= right ? "left" : "right"; const vertical = top <= bottom ? "top" : "bottom";
+    return { layout_node_id: region.layout_node_ids[0], region_id: region.id, scene_id: region.scene_id, state_id: region.state_id, coordinate_space: "viewport", reference_id: "viewport", parent_layout_node_id: "viewport", parent_target_bounds: parentBounds, relative_position: { left, right, top, bottom }, nearest_edge_docking: { horizontal, vertical }, self_anchor: `${vertical}-${horizontal}`, reference_anchor: `${vertical}-${horizontal}`, offset: { x: horizontal === "left" ? left : -right, y: vertical === "top" ? top : -bottom }, target_bounds: bounds, size_policy: { mode: "target-bound" }, z_order: index, clip_policy: "none", responsive_rule: "preserve-relative-anchors", planned_test_id: `layout-${region.id}` };
+  });
   const layoutGeometry = {
     formal_layout_structure: "MainGameplayScene/ContainerGraph",
     result: "passed",
@@ -612,6 +611,7 @@ test("普通 visual manifest fidelity DPR 允许动态有效值并拒绝非法�
   for (const dpr of [0.5, 1, 1.25, 1.5]) { const manifest = validManifest(); manifest.fidelity_cases[0].dpr = dpr; assert.deepEqual(validateManifest(manifest, STRUCTURAL_FILE_GATE_OPTIONS), [], `fidelity dpr=${dpr}`); }
   for (const dpr of [0, -1, 1.5001, 2, 3, "1.5", NaN, Infinity]) { const manifest = validManifest(); manifest.fidelity_cases[0].dpr = dpr; assert(validateManifest(manifest, STRUCTURAL_FILE_GATE_OPTIONS).some((item) => item.includes("正有限数字且不超过 1.5")), `fidelity dpr=${dpr}`); }
 });
+test("visual manifest 独立入口拒绝伪造父子相对几何", () => { for (const mutate of [node => delete node.parent_layout_node_id, node => { node.relative_position.left += 1; }, node => { node.nearest_edge_docking.horizontal = "right"; }, node => { node.offset.x = 999; }, node => { node.self_anchor = "center-center"; }]) { const manifest = validManifest(); mutate(manifest.scene_reconstruction_contract.layout_decomposition.layout_nodes[0]); assert(validateManifest(manifest).some((item) => item.includes("parent_layout_node_id") || item.includes("relative_position") || item.includes("nearest_edge_docking") || item.includes("offset.x") || item.includes("self_anchor")), JSON.stringify(mutate)); } });
 test("不保留 visual-assets 1.4 兼容", () => { const manifest = validManifest(); manifest.schema_version = "1.4"; assert(validateManifest(manifest).some((item) => item.includes("schema_version 必须为 1.5"))); });
 test("非效果图 1.5 清单通过", () => assert.deepEqual(validateManifest(validOrdinaryManifest()), []));
 test("effect-image V3-ready 允许 fidelity case 尚未产生", () => { const manifest = validManifest(); manifest.effect_image_reconstruction.lifecycle = "v3-ready"; manifest.fidelity_cases = []; assert.deepEqual(validateManifest(manifest), []); });

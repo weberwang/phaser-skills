@@ -52,7 +52,9 @@ V2 必须产出关键状态和动态可玩样片，并完成 V2a、V2b 机器检
 
 三方绑定顺序固定为“整屏构图 → 布局节点与元素/状态同步拆解 → coverage/布局合同/placement 三方绑定 → 按布局合同装配 → V5 布局与视觉双验收”。`target_bounds` 是参考图测量事实，不是运行时硬编码；布局合同负责运行时计算和响应式变换；runtime measurement 只是候选证据，不能回写或替代参考事实。技术 proposal 的 `technical_analysis.regions[].layout_node_ids` 与 `placements[].layout_node_id`、PNG 区域元数据的 `layout_node_ids` 与 `placement_layout_node_ids`，以及 confirmation 的 `region_definition_sha256` 都必须自然覆盖布局节点及 placement 字段，并同时绑定 target SHA、scene/state、layout contract version；任一身份或布局字段漂移都使旧确认失效。`visual-assets.json` 仍是视觉机器权威，布局合同保持布局领域权威，只通过 SHA/ID 关联，不新增第二套清单或状态机。
 
-V3 `executionUnits` 推荐固定为：布局基础串行 → 视觉资源/程序元素并行 → 显示层/场景装配串行 → 联合验收串行。显示层可独立使用 `DISPLAY_LAYER` 实施单元，但必须绑定 `displayLayerId` 与 `hostSceneId`，不能填写 `sceneId`。V4 组合预验收必须同时使用正式资源、正式布局和宿主场景同屏组合；V5 必须满足 coverage=1、零孤立节点、逐节点 target/candidate 几何差异与证据、整屏 fidelity，以及显示层打开→交互→关闭→底层状态/焦点恢复轨迹，任一项缺失都不能通过。
+效果图拆解时必须显式分析每个元素的父容器和父子相对关系：先确定 `parent_layout_node_id`（只能是现有布局节点或 `viewport`/`safe-area`），再冻结 `parent_target_bounds`，测量 child 到父内容框四边的 `relative_position.left/right/top/bottom`。`reference_id` 必须与父 ID 相等，子 bounds 必须完全位于父 bounds 内，父子图不得循环；`safe-area` 首次测量作为同一场景唯一根 bounds。水平取较近的 left/right，垂直取较近的 top/bottom，相等时确定性选择 left/top；`nearest_edge_docking`、`offset`、`self_anchor`、`reference_anchor` 必须由这些测量推导，禁止凭感觉补坐标。相对距离允许的浮点误差最多 `1e-6`，父子几何字段同时参与布局合同身份 SHA。
+
+全局视觉效果图冻结是进入 A3 实施包/代码单元的前置门：必须先覆盖全部授权 gameplay/supporting 场景的 scene master，以及所有必需瞬态显示层状态的宿主场景上下文效果图；集合按 scene/state 分项冻结，不是一张合并图。冻结门保留 V0-V2 方向与唯一真人视觉审批，并登记完整 coverage/layout/fidelity obligations；effect-image 仍完整执行 V1→V5，V3-V5 在对应场景阶段生产、组合和运行验收。通过后，`executionUnits` 的权威顺序为 `SHARED` 最小骨架 → `MODULE` → 按场景组织的 `SCENE`+紧邻 `DISPLAY_LAYER` → `INTEGRATION`/联合验收；不新增视觉冻结 `unitType`。布局与视觉资源拆解、显示层装配只能作为对应宿主场景内部职责，不能在所有场景之后另设显示层阶段。`DISPLAY_LAYER` 必须绑定 `displayLayerId` 与 `hostSceneId`，不能填写 `sceneId`。V4 组合预验收必须同时使用正式资源、正式布局和宿主场景同屏组合；V5 必须满足 coverage=1、零孤立节点、逐节点 target/candidate 几何差异与证据、整屏 fidelity，以及显示层打开→交互→关闭→底层状态/焦点恢复轨迹，任一项缺失都不能通过。
 
 ## V3-V4
 

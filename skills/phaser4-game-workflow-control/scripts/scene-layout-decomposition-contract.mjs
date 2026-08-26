@@ -5,6 +5,8 @@
  * 运行时 placement 能够在 V4/V5 形成确定性的双向绑定与逐节点证据。
  */
 
+import { validateEffectImageParentChildLayoutNodes } from "./layout-node-parent-geometry.mjs";
+
 /** 判断是否为普通对象。 */
 function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -284,6 +286,11 @@ export function validateLayoutDecomposition(contract, targetInfo, stage, errors,
     if (!nonEmptyString(nodeId)) continue;
     if (nodeById.has(nodeId)) errors.push(contractError(stage, contract, node, "layout_node_id 重复", { actual: nodeId, returnStage: "V1/PROPOSAL" }));
     else nodeById.set(nodeId, node);
+  }
+  // effect-image 的 parent_layout_node_id、parent_target_bounds、relative_position、nearest_edge_docking 统一由共享几何合同校验。
+  for (const issue of validateEffectImageParentChildLayoutNodes(nodes, targetInfo?.viewport, { label: "layout_nodes" })) {
+    const node = issue.index >= 0 ? nodes[issue.index] : decomposition;
+    errors.push(contractError(stage, contract, node, issue.message, { returnStage: "V1/PROPOSAL" }));
   }
   return { decomposition, nodes, nodeById, binding };
 }

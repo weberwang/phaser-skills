@@ -30,6 +30,8 @@ UI 设计与实现优先用符合全局视觉基线且含义清晰、熟悉的�
 
 当 Work Item 的 `effect_image_reconstruction.applicability=effect-image` 时，布局合同必须携带 `scene_reconstruction_binding`：绑定冻结目标 SHA、scene/state、visual baseline、reconstruction contract 版本、`layout_contract_sha256`、`layout_decomposition_version` 和精确目标 viewport。`layout_nodes` 中每个节点必须同时绑定一个 `regions`/`scope.ui_ids` 区域和已声明坐标空间，记录参照、双轴锚点、目标 bounds、尺寸策略、层级、裁切、响应式规则与计划测试 ID；同一 coverage region 可以承载多个 layout nodes，但节点间必须使用唯一 `layout_node_id`，多节点区域不能用 region ID 作为有歧义的参照；关键对齐通过 `layout_node_id` 复用这些几何事实。该绑定描述正式 Scene 的目标关系，不能用旧通用布局合同、整屏截图、隐藏覆盖层或绝对叠图代替；target SHA、构图关系或响应式不变量漂移时，V2→V3 必须退回 V1/PROPOSAL。其他 viewport 只验证合同声明的不变量，不能把目标 viewport 的精确还原让位给跨项目固定误差阈值。
 
+效果图节点还必须声明 `parent_layout_node_id`、`parent_target_bounds`、`relative_position` 和 `nearest_edge_docking`。拆解先建立父子关系，再在父内容框内测量 child 到 left/right/top/bottom 的距离；`reference_id` 必须等于父 ID，父级仅可为具体节点或 `viewport`/`safe-area`，不得循环。水平/垂直分别停靠较近边，相等时确定性选 left/top；`offset` 与 `self_anchor`/`reference_anchor` 必须由该测量推导（如 `top-left`），不能凭感觉填写。父子几何字段会进入布局合同身份 SHA，所有入口统一使用 workflow-control 的父子几何校验。
+
 ## 资源导航
 
 场景规划涉及 HUD、modal、popup、drawer 或 toast 时，必须同步在场景 `display_layer_planning` 中记录宿主场景、生命周期、输入阻断、层级、遮罩、焦点恢复和响应式事实。scene master 只承载常驻层；瞬态层按状态使用带宿主场景上下文的效果图，V4/V5 回到宿主场景同屏验证打开→交互→关闭后的底层布局恢复。

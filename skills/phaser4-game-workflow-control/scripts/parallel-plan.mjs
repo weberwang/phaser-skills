@@ -44,6 +44,21 @@ export function validateExecutionPlan(pkg, pathMatches, fail) {
     unitsById.set(unit.unitId, unit);
   }
 
+  // 数组位置是唯一执行顺序：显示层只能紧跟匹配的宿主 Scene，不能跨过场景或落到独立尾部。
+  const phaseByType = { SHARED: 0, MODULE: 1, SCENE: 2, DISPLAY_LAYER: 2, INTEGRATION: 3 };
+  let lastPhase = -1;
+  let hostSceneId = null;
+  for (const unit of pkg.executionUnits) {
+    if (unit.unitType === 'DISPLAY_LAYER') {
+      if (hostSceneId === null || unit.hostSceneId !== hostSceneId) fail(`DISPLAY_LAYER execution unit ${unit.unitId} 必须紧邻同包中 hostSceneId 匹配的宿主 SCENE`);
+      continue;
+    }
+    const phase = phaseByType[unit.unitType];
+    if (phase < lastPhase) fail(`executionUnits 类型顺序非法：${unit.unitId}(${unit.unitType}) 必须遵循 SHARED→MODULE→SCENE/DISPLAY_LAYER→INTEGRATION`);
+    lastPhase = phase;
+    hostSceneId = unit.unitType === 'SCENE' ? unit.sceneId : null;
+  }
+
   for (const unit of pkg.executionUnits) {
     for (const ownedPath of unit.ownedPaths) {
       if (!pkg.allowedPaths.some((pattern) => pathMatches(ownedPath, pattern)) || pkg.forbiddenPaths.some((pattern) => pathMatches(ownedPath, pattern))) fail(`execution unit ${unit.unitId} 写范围超出 Implementation Package：${ownedPath}`);
@@ -64,6 +79,8 @@ export function validateExecutionPlan(pkg, pathMatches, fail) {
   // 数组是计划制定者冻结的唯一执行顺序；同组并行单元必须占据连续位置，避免控制面重新推导阶段。
   const groups = Map.groupBy(pkg.executionUnits.filter((unit) => unit.parallelMode === 'PARALLEL'), (unit) => unit.parallelGroup);
   for (const [group, units] of groups) {
+    // 并行只允许发生在同一全局阶段，避免模块尚未完成就与场景同时执行。
+    if (new Set(units.map((unit) => phaseByType[unit.unitType])).size > 1) fail(`并行组 ${group} 不得跨越全局阶段：组内单元必须属于同一阶段`);
     if (units.length < 2) fail(`并行组至少需要两个实施单元：${group}`);
     const indexes = units.map((unit) => pkg.executionUnits.indexOf(unit)).sort((left, right) => left - right);
     if (indexes[indexes.length - 1] - indexes[0] + 1 !== indexes.length) fail(`并行组 ${group} 必须在 executionUnits 中连续出现`);
