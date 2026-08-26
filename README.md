@@ -56,6 +56,8 @@ node <skill-dir>\scripts\workflow-control.mjs diff-audit --work-item .workflow-c
 | V4 | `v4-formal-acceptance-complete` | 正式资产/组件状态和同屏组合验收 |
 | V5 | `v5-runtime-integration-candidate` | 当前候选身份、内容/基线/diff 哈希和运行时集成候选 |
 
+V0 的高保真/效果图还原适用性唯一看 Work Item 是否把效果图或参考截图指定为正式运行画面的视觉目标，与是否生成、制作或新增资源无关。只要指定为正式视觉目标，即使全部实现采用 `reuse-existing`/`runtime-program`、零新资源且零 ImageGen，也必须走 `effect-image` 的 V1→V5 高保真/忠实还原链，完成布局绑定、coverage、宿主场景同屏组合与 fidelity 验收。仅仅生成新资源，或仅把图片作为灵感、说明或临时参考，不触发 `effect-image`，仍按普通资产、组件或场景路径分类。`image_generation_required`、`generate-now`、资源数量和 `production_method` 只能在触发后于 V3 决定生产路线，不能参与 V0 applicability 判定。
+
 `global-static-baseline-frozen` 只冻结颜色、字体、栅格等静态规则，不等于 V2。裸 `frozen`、未知阶段、`stageId=main/production-entry/integration`、根 `PASS`/布尔值、说明文字或用户回复均不能代替阶段证据。V2→V5 证据必须由 Work Item 的 `path + sha256` 不可变引用加载并复算文件哈希；任一引用、基线、diff、候选或审查变化都会使 pending 变为 stale，恢复路径固定回到 V2。
 
 灰盒/Graphics/诊断文本可以在隔离环境作为 A2 或安全 A3 候选，但不得注册正式入口、宣称 V2/V4/V5、删除旧实现或作为正式资产验收证据；进入 Scene/Boot 生产链必须重新完成 V2→V5。
@@ -77,7 +79,7 @@ node <skill-dir>\scripts\workflow-control.mjs diff-audit --work-item .workflow-c
 
 效果图还原使用 schema 1.5 的 `visual-assets.json`。G0/V1 采用“规划时一起规划、视觉目标按状态分图、验收时重新同屏组合”：`scene_reconstruction_contract.display_layer_planning` 必须显式声明 `scene_master` 和 `inventory`；scene master 只冻结基础场景与常驻 HUD，modal/popup/drawer/toast 等瞬态层分别生成包含宿主场景、遮罩/层级和当前状态的上下文效果图，孤立透明组件图不能作为完整效果图或最终验收证据。V3 再按 component×state 拆解，V4/V5 回到宿主场景同屏组合并重放打开→交互→关闭→底层状态/焦点恢复。随后生成 PNG 用户图示：左侧保持原图尺寸并只绘制框选、稳定编号和原子框，右侧说明栏只显示用户可读摘要及“本次生成 / 复用既有资源 / 程序实现”标签，不绘制 placement ID、坐标尺寸或组件/状态/资产字段。不含显示层时也必须写 `inventory: []`，防止规划遗漏。
 
-只有 `bitmap-decomposition` 下的 `generate-now` 区域需要在生产前等待用户精确确认。确认前禁止裁切、抠图、分层、AI 分割或补全；`reuse-existing` 与 `runtime-program` 区域仍须在同一 PNG 标注图中可见，但不触发位图拆解确认。校验器会用确定性 PNG 渲染器重建标注图并逐字节复验，防止隐藏、覆盖或篡改标注。
+只有 `bitmap-decomposition` 下的 `generate-now` 区域需要在生产前等待用户精确确认。确认前禁止裁切、抠图、分层、AI 分割或补全；`reuse-existing` 与 `runtime-program` 区域仍须在同一 PNG 标注图中可见，但不触发位图拆解确认，也不会因此绕过已经触发的 `effect-image` V1→V5 高保真/忠实还原链。校验器会用确定性 PNG 渲染器重建标注图并逐字节复验，防止隐藏、覆盖或篡改标注。
 
 `reuse-existing` 必须引用独立且不可变的 `asset-reuse-snapshot/1.0`，并校验资源为 `accepted`、基线、许可、scene/state 适用性、源文件 SHA 和兼容证据 SHA；不得把当前 `visual-assets.json` 自引用为复用快照。
 

@@ -17,6 +17,8 @@ effect-image ImageGen 的 canonical 提示词与生成记录合同统一引用[E
 - V4 生产正式资源并完成 `validationMode=MACHINE` 的确定性资源与跨资源 F2；不重复要求真人审阅，且不能修改或替代 V2 唯一真人审批。
 - V5 结构化集成、动态玩法视觉验证、响应式证据和低保真清理；视觉 `USER_DECISION` 不授权 Scene 或玩法代码操作。
 
+V0 的高保真/效果图还原适用性唯一看 Work Item 是否把效果图或参考截图指定为正式运行画面的视觉目标，与是否生成、制作或新增资源无关。只要是正式视觉目标，即使全部 coverage 区域采用 `reuse-existing`/`runtime-program`、零新资源且零 ImageGen，也必须走 `effect-image` 的 V1→V5 高保真/忠实还原链，包含布局绑定、coverage、宿主场景同屏组合和 fidelity 验收。仅仅生成新资源，或仅把图片作为灵感、说明或临时参考，不触发 `effect-image`，仍按普通资产、组件或场景路径分类。`image_generation_required`、`generate-now`、资源数量和 `production_method` 只能在触发后于 V3 决定生产路线，不能参与 V0 applicability 判定。
+
 效果图必须采用同步拆解工作流：先整屏构图，再同步冻结布局节点与元素/状态，再把 coverage region、布局合同和 placement 三方绑定，最后按布局合同装配，V5 进行布局+视觉双验收。每个 region 的 `layout_node_ids` 非空唯一，`layout_decomposition.layout_nodes` 与 coverage 双向关联；placement 只能引用本区域节点，运行时布局实现必须声明消费节点，禁止孤立、跨区域和重复消费。`target_bounds` 是参考事实，布局合同是运行计算，runtime measurement 是候选证据。proposal/PNG/confirmation 的 `region_definition_sha256` 必须覆盖布局字段并绑定 target SHA、scene/state、layout contract version；不新增第二套清单或状态机，visual-assets.json 和布局合同继续各自作为领域权威。V3 `executionUnits` 推荐布局基础串行→视觉资源/程序元素并行→场景装配串行→联合验收串行；V4 组合预验收同时检查正式资源和正式布局，V5 必须 coverage=1、零孤立、逐节点几何差异及整屏 fidelity。
 
 场景内显示层沿用同一条 V0-V5 链：G0/V1 必须同步盘点 HUD、modal、popup、drawer、toast 等层，并在 `scene_reconstruction_contract.display_layer_planning` 中显式登记；即使没有显示层也写入空 `inventory`。主效果图只冻结基础场景与 persistent/HUD，transient 层按必需状态分别提供绑定宿主场景、遮罩/层级和当前状态的 contextual effect image，孤立透明组件图不能作为完整视觉证据。V3 可按 component×state 独立生产，V4/V5 必须重新回到宿主场景同屏组合，并提交打开→交互→关闭/恢复轨迹，验证焦点、输入阻断、响应式与恢复后的场景状态。
