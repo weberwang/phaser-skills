@@ -13,12 +13,14 @@ description: Phaser 4 游戏仓库的唯一全局工作流控制面。基于任�
 2. 为每项工作建立独立 Work Item；需求变化建立 Change Request，发布建立独立 Work Item。
 3. 把用户当前明确请求冻结为 `taskAuthorization`，绑定原文、目标和范围。A0、A1、A2 及安全 A3 以此为任务授权，不生成 Approval Ledger 记录，也不得称为“自动批准”。
 4. 在任何写入、命令副作用或外部操作前运行 `preflight`。只有无法从用户请求、代码、配置、权威工件或确定性证据判断，且会改变产品范围、用户可见行为、视觉方向、预算、合规或数据边界时才请求决定；首次模块或边界本身不是触发器。
-5. A3 进入 `IMPLEMENTING` 前冻结 Implementation Package，包括任务授权 ID、基线、范围、实施单元及其数组顺序、并行组、文件/状态所有权、输出、验证与退出条件；全局视觉效果图冻结是 A3 实施包/代码单元的前置门，覆盖全部授权 gameplay/supporting 场景的 scene master 与必需瞬态宿主场景上下文效果图，不新增视觉冻结 `unitType`。通过前置门后，数组顺序由计划制定者预设并作为唯一执行顺序，固定为 `SHARED` 最小骨架→`MODULE`→按场景组织的 `SCENE`+紧邻 `DISPLAY_LAYER`→`INTEGRATION`/联合验收；控制面只校验和执行，不从依赖图推导顺序。模块和场景均须逐单元标注，A2 不要求 A3 包。
+5. 场景实现只允许一条 Work Item 生命周期：任务授权/范围 → 功能规格与契约（只定义，不写正式功能代码）→ V1 视觉合同/参考冻结 → V2 当前场景 Work Item 的前置视觉验收 → V3 实施拆解/Implementation Package → V4 正式视觉资源生产与宿主场景同屏组合预验收 → 正式功能代码实现 → V5 运行态视觉接入与功能/视觉联合验收 → A4 正式入口接入。参考/效果图还原只是同一场景 Work Item 内的可选视觉实现模式和合同叠加，不是独立任务，也不重复建立另一条 V1→V5。V2 必须汇总完整场景候选、动态视觉样片、F2 `MACHINE/PASS` 和唯一真人视觉审批，并以 `COMPLETE/frozen` 作为任何正式 A3 Implementation Package、`SHARED`、`MODULE`、`SCENE` 或 `DISPLAY_LAYER` 功能代码的唯一前置视觉边界；V2 前只允许隔离灰盒或无正式业务逻辑的视觉样片，不得注册正式入口。A3 包可在 V2 后为 V3/V4 规划冻结，但正式功能代码只能在 V4 后启动。`SCENE`/`DISPLAY_LAYER` execution unit 还必须填写严格的 `highFidelityPrerequisite`，在每次准备、委派、READY 或状态激活前读取当前场景 Work Item 的 V2 完成证据，复核 scene/layer/host/target 身份、仓库内证据路径、文件存在性和 SHA；全局冻结、内联 PASS 或布尔值不能旁路该门。通过前置门后，数组顺序由计划制定者预设并作为唯一执行顺序，固定为 `SHARED` 最小骨架→`MODULE`→按场景组织的 `SCENE`+紧邻 `DISPLAY_LAYER`→`INTEGRATION`/联合验收；该数组描述 V4 后正式实现的执行顺序，不把 SHARED/MODULE 提前到 V4 之前。控制面只校验和执行，不从依赖图推导顺序。模块和场景均须逐单元标注，A2 不要求 A3 包。
 6. 主动识别安全并行。READY 只按 `executionUnits` 数组位置校验当前有效的 PASS Execution Unit Result：串行单元等待其前面全部单元；并行单元等待其并行组首项之前全部单元，同组 peer 不互相等待。同一非空并行组必须在数组中连续出现，且 READY 模块/场景单元必须组成完整 Parallel Delegation Batch，并一次运行 `parallel-check`，不能逐委派放行。批次必须冻结排序后的委派路径及逐文件哈希，并记录从内容推导的排序唯一实施单元和代理数组；批次后委派变化或历史批次损坏一律阻断。A0-A2 委派不携带实施单元字段，A3 委派必须绑定实施单元；A4-A6 操作批准不能转换成委派授权。进入 `IMPLEMENTING` 时必须同时初始化 `evidence/<workItemId>/execution-state.json`；之后仅 `unit-check` 可推进该状态，当前单元完成即为 `COMPLETE`，下一串行单元或下一并行组立即为 `IN_PROGRESS`，并行组未齐不得提前推进。
 7. 先运行 `route` 自动推导通道、缺失工件和下一条命令。实施后运行 `diff-audit`：A1/A2 或仅外部回执可用真实 `--artifact` 哈希，A3/A4 必须有真实 Git diff；验证后生成 Evidence Manifest。
 8. 使用 `advance` 一次最多推进一个状态。A1/A2 在审计和证据满足后闭环；安全 A3 在 F0-F3 通过后由 `PASSED` 直接 `COMPLETE`，不强制 A4/F4。正式入口替换、迁移、删除旧实现和跨模块高影响集成进入 A4。
 
-任务状态硬门：`delegate-check`、`parallel-check`、`unit-check`、`evidence-check` 以及进入 `VALIDATING` 的迁移都必须读取并复核当前 Execution State；缺失、过期、篡改或与 Work Item/Package/基线/`executionUnits` 顺序不一致时 fail closed。V2 单元序列完成后必须在机器输出中给出下一任务 `V3-PRODUCTION-PLANNING`；只有唯一 `v2ToV3Contract` 同时绑定 `status=PASS`、`contractId`、evidenceRoot 内的 `evidenceFile` 和复算一致的 `evidenceSha256` 后才可标记 `IN_PROGRESS`，否则保持 `BLOCKED`。合同补齐必须通过正式 `refresh-v2-v3` 命令在排他锁内刷新，V2 合同 PASS 后允许当前工作项进入 `VALIDATING → PASSED → COMPLETE`，V3 规划由后续工作项执行。
+任务状态硬门：`delegate-check`、`parallel-check`、`unit-check`、`evidence-check` 以及进入 `VALIDATING` 的迁移都必须读取并复核当前 Execution State；缺失、过期、篡改或与 Work Item/Package/基线/`executionUnits` 顺序不一致时 fail closed。上述入口对 SCENE/DISPLAY_LAYER 还必须复核当前场景 Work Item 的不可变 V2 结果；缺失、PENDING、身份不匹配、越界、缺文件或 SHA 漂移时明确退回该 Work Item 的 V2。V2→V3 规划合同补齐后才可输出 `V3-PRODUCTION-PLANNING`，不得把 V5 运行态复验写成前置视觉方向审批；V5 必须发生在正式功能实现之后。
+
+`highFidelityPrerequisite` 虽保留字段名，但只引用同一场景 Work Item 的 V2 结果，严格包含 `workItemId`、`status=COMPLETE`、`stage=V2`、`frozen=true`、scene/layer/host、target/candidate/diff、证据文件和证据 SHA；不得出现 `taskId`、`sourceWorkItemId` 或独立任务身份。证据文件统一为 `phaser4-scene-v2-result/1.0` 的单一场景根结果：根提供 `sceneMaster`、完整场景候选、动态视觉样片、机器 F2 PASS 和唯一真人视觉审批 PASS；多个显示层放入 `displayLayerContexts[]`，每项必须包含 `displayLayerId`、`hostSceneId`、`hostContextImage`。SCENE 与 DISPLAY_LAYER 必须引用同一 `evidenceFile`，并由控制面复算文件字节 SHA。该引用不创建第二个场景生命周期，也不把 V5 运行态复验提前为 V2 审批。
 
 ## 硬限制
 
@@ -34,7 +36,7 @@ description: Phaser 4 游戏仓库的唯一全局工作流控制面。基于任�
 
 视觉顺序固定为 `V0 → V1 → V2 → V3 → V4 → V5`。`global-static-baseline-frozen` 只表示静态视觉基线冻结，绝不等价于 `v2-direction-frozen`；V3、V4、V5 分别使用 `v3-production-planning-complete`、`v4-formal-acceptance-complete`、`v5-runtime-integration-candidate`。裸 `frozen`、未知阶段、缺语义和互相矛盾的字段 fail closed。
 
-V0 的高保真/效果图还原适用性唯一看 Work Item 是否把效果图或参考截图指定为正式运行画面的视觉目标，与是否生成、制作或新增资源无关。指定为正式视觉目标即触发 `effect-image` 的 V1→V5 高保真/忠实还原合同，必须完成布局绑定、coverage、宿主场景同屏组合和 fidelity 验收；即使全部实现采用 `reuse-existing`/`runtime-program`、零新资源且零 ImageGen，也不得降级。仅仅生成新资源，或仅把图片作为灵感、说明或临时参考，不触发 `effect-image`，仍按普通资产、组件或场景路径分类。`image_generation_required`、`generate-now`、资源数量和 `production_method` 只能在触发后于 V3 决定生产路线，不能参与 V0 applicability 判定。
+效果图/参考图是否启用 `effect-image` 只看 Work Item 是否将其指定为正式运行视觉目标，与是否生成新资源无关。启用后仍属于同一场景实现 Work Item，沿用 V1→V5 证据链：V1 冻结参考与视觉合同，V2 在当前 Work Item 内完成完整场景候选、动态样片、机器 PASS 和唯一真人方向审批，V3/V4 负责拆解、正式资源与组合预验收，V5 在正式功能实现后做运行态联合复验；仅作灵感、说明或临时参考时为 `not-applicable`，仍按普通场景/资源路径执行。
 
 effect-image 布局拆解必须同时冻结父子几何：每个节点声明 `parent_layout_node_id`、`parent_target_bounds`、`relative_position`、`nearest_edge_docking`，并使 `reference_id` 等于父 ID。先测量 child 在父内容框内到四边的相对距离，再按最近边（相等取 left/top）推导运行时 `offset`、`self_anchor` 和 `reference_anchor`；父级仅可为节点、`viewport` 或 `safe-area`，不得循环或越界，全部字段纳入布局合同身份 SHA。
 

@@ -71,7 +71,7 @@
     "executionUnit": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["unitId", "unitType", "scopeId", "moduleId", "sceneId", "displayLayerId", "hostSceneId", "owner", "parallelMode", "parallelGroup", "ownedPaths", "stateOwnership", "acceptanceCommands", "serializationReason"],
+      "required": ["unitId", "unitType", "scopeId", "moduleId", "sceneId", "displayLayerId", "hostSceneId", "owner", "parallelMode", "parallelGroup", "ownedPaths", "stateOwnership", "acceptanceCommands", "serializationReason", "highFidelityPrerequisite"],
       "properties": {
         "unitId": {"type": "string", "minLength": 1},
         "unitType": {"enum": ["MODULE", "SCENE", "DISPLAY_LAYER", "SHARED", "INTEGRATION"]},
@@ -86,7 +86,8 @@
         "ownedPaths": {"$ref": "#/$defs/nonEmptyStrings"},
         "stateOwnership": {"$ref": "#/$defs/nonEmptyStrings"},
         "acceptanceCommands": {"$ref": "#/$defs/nonEmptyStrings"},
-        "serializationReason": {"type": ["string", "null"], "minLength": 1}
+        "serializationReason": {"type": ["string", "null"], "minLength": 1},
+        "highFidelityPrerequisite": {"type": ["object", "null"]}
       },
       "allOf": [
         {
@@ -98,6 +99,19 @@
           "if": {"properties": {"unitType": {"const": "DISPLAY_LAYER"}}},
           "then": {"properties": {"sceneId": {"type": "null"}, "displayLayerId": {"type": "string", "minLength": 1}, "hostSceneId": {"type": "string", "minLength": 1}}},
           "else": {"properties": {"displayLayerId": {"type": "null"}, "hostSceneId": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"unitType": {"enum": ["SCENE", "DISPLAY_LAYER"]}}},
+          "then": {"properties": {"highFidelityPrerequisite": {"$ref": "#/$defs/highFidelityPrerequisite"}}},
+          "else": {"properties": {"highFidelityPrerequisite": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"unitType": {"const": "SCENE"}}},
+          "then": {"properties": {"highFidelityPrerequisite": {"properties": {"sceneId": {"type": "string", "minLength": 1}, "displayLayerId": {"type": "null"}, "hostSceneId": {"type": "null"}}}}}
+        },
+        {
+          "if": {"properties": {"unitType": {"const": "DISPLAY_LAYER"}}},
+          "then": {"properties": {"highFidelityPrerequisite": {"properties": {"sceneId": {"type": "string", "minLength": 1}, "displayLayerId": {"type": "string", "minLength": 1}, "hostSceneId": {"type": "string", "minLength": 1}}}}}
         },
         {
           "if": {"properties": {"unitType": {"enum": ["SHARED", "INTEGRATION"]}}},
@@ -112,6 +126,26 @@
           "then": {"properties": {"parallelGroup": {"type": "null"}, "serializationReason": {"type": "string", "minLength": 1}}}
         }
       ]
+    },
+    "highFidelityPrerequisite": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "同一场景 Work Item 的 V2 前置视觉验收结果引用；evidenceFile 指向单一场景根结果，多个 DISPLAY_LAYER 从其中的 displayLayerContexts 查找各自唯一宿主上下文。",
+      "required": ["workItemId", "status", "stage", "frozen", "sceneId", "displayLayerId", "hostSceneId", "targetSha256", "candidateSha256", "diffFingerprint", "evidenceFile", "evidenceSha256"],
+      "properties": {
+        "workItemId": {"type": "string", "minLength": 1},
+        "status": {"const": "COMPLETE"},
+        "stage": {"const": "V2"},
+        "frozen": {"const": true},
+        "sceneId": {"type": "string", "minLength": 1},
+        "displayLayerId": {"type": ["string", "null"], "minLength": 1},
+        "hostSceneId": {"type": ["string", "null"], "minLength": 1},
+        "targetSha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "candidateSha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "diffFingerprint": {"type": "string", "minLength": 1},
+        "evidenceFile": {"type": "string", "minLength": 1},
+        "evidenceSha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+      }
     },
     "strings": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
     "nonEmptyStrings": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true},

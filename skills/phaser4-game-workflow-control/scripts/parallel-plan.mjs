@@ -1,5 +1,7 @@
+import { validateHighFidelityPrerequisiteShape } from './high-fidelity-prerequisite.mjs';
+
 /** Implementation Package 中实施单元的必填字段。数组位置就是计划制定者冻结的执行顺序。 */
-const UNIT_FIELDS = ['unitId', 'unitType', 'scopeId', 'moduleId', 'sceneId', 'displayLayerId', 'hostSceneId', 'owner', 'parallelMode', 'parallelGroup', 'ownedPaths', 'stateOwnership', 'acceptanceCommands', 'serializationReason'];
+const UNIT_FIELDS = ['unitId', 'unitType', 'scopeId', 'moduleId', 'sceneId', 'displayLayerId', 'hostSceneId', 'owner', 'parallelMode', 'parallelGroup', 'ownedPaths', 'stateOwnership', 'acceptanceCommands', 'serializationReason', 'highFidelityPrerequisite'];
 
 /** 判断两个路径范围是否相交。 */
 function rangesOverlap(left, right, pathMatches) {
@@ -30,6 +32,8 @@ export function validateExecutionPlan(pkg, pathMatches, fail) {
     if (unit.unitType === 'DISPLAY_LAYER') {
       if (typeof unit.displayLayerId !== 'string' || !unit.displayLayerId || typeof unit.hostSceneId !== 'string' || !unit.hostSceneId) fail(`DISPLAY_LAYER execution unit ${unit.unitId} 必须绑定 displayLayerId 和 hostSceneId`);
     } else if (unit.displayLayerId !== null || unit.hostSceneId !== null) fail(`execution unit ${unit.unitId}.displayLayerId/hostSceneId 只允许 DISPLAY_LAYER 使用`);
+    const highFidelityErrors = validateHighFidelityPrerequisiteShape(unit);
+    if (highFidelityErrors.length) fail(highFidelityErrors[0]);
     for (const field of ['ownedPaths', 'stateOwnership', 'acceptanceCommands']) {
       if (!Array.isArray(unit[field]) || unit[field].some((item) => typeof item !== 'string' || !item.trim())) fail(`execution unit ${unit.unitId}.${field} 必须为非空字符串数组`);
       if (new Set(unit[field]).size !== unit[field].length) fail(`execution unit ${unit.unitId}.${field} 不得重复`);

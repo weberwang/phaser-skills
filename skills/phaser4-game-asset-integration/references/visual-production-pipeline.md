@@ -6,19 +6,19 @@ effect-image ImageGen 的完整提示词与实际参考输入合同统一见[Eff
 
 先记录范围、视觉方向是否冻结、结构/交互/布局是否变化、正式资源数量与跨域风险，再选择且只选择一条路径；资源数量和生产方式只服务后续路径、预算与执行规划，不参与效果图适用性判断。Work Item 指定效果图或参考截图为还原目标时启用[忠实还原模式](visual-reconstruction.md)，指定参考是冻结视觉目标而非可自由优化的灵感输入。
 
-V0 的高保真/效果图还原适用性唯一看 Work Item 是否把效果图或参考截图指定为正式运行画面的视觉目标，与是否生成、制作或新增资源无关。只要它是正式视觉目标，即使所有覆盖区域均为 `reuse-existing`/`runtime-program`、零新资源且零 ImageGen，也必须走 `effect-image` 的 V1→V5 高保真/忠实还原合同，并完成布局绑定、coverage、宿主场景同屏组合和 fidelity 验收。仅仅生成新资源，或仅把图片作为灵感、说明或临时参考，不足以触发 `effect-image`，仍按普通资产、组件或场景路径分类。`image_generation_required`、`generate-now`、资源数量和 `production_method` 只能在触发后于 V3 决定生产路线，不能参与 V0 applicability 判定。
+效果图/参考图是否适用只看当前场景 Work Item 是否把它指定为正式运行画面的视觉目标，与是否生成、制作或新增资源无关。适用时，参考还原是同一场景实现生命周期内的视觉模式与合同叠加，即使所有覆盖区域均为 `reuse-existing`/`runtime-program`、零新资源且零 ImageGen，也必须走 `effect-image` 的 V1→V5 还原合同，并完成布局绑定、coverage、宿主场景同屏组合和 fidelity 验收；不创建第二个场景 Work Item 或第二条 V1→V5。仅仅生成新资源，或仅把图片作为灵感、说明或临时参考，不足以触发 `effect-image`，仍按普通资产、组件或场景路径分类。`image_generation_required`、`generate-now`、资源数量和 `production_method` 只能在触发后于 V3 决定生产路线，不能参与 V0 applicability 判定。
 
 | 类型 | 判定 | 阶段 | 审核 |
 | --- | --- | --- | --- |
 | 原子资源 | 视觉方向已冻结，结构、交互、布局不变，并有适用、有效、绑定当前范围的玩法视觉契约、V1/V2 决策记录、视觉可交付与预算基线；缺少任一项时升级路径 | V3 → V4 → V5 | F0 授权合规；F1 规格一致；V4 确定性机器 F2；V5 生成 F3 动态集成工程证据；F4 精确集成操作批准 |
 | 组件/资源集 | 同一组件、角色状态组、图标集或可复用资源集，需要局部探索与一致性控制 | V1 → V2 → V3 → V4 → V5 | 普通候选执行 F0-F3；V4 做确定性机器 F2，V5 形成 F3 工程证据；仅实际 A4-A6 操作执行 F4 |
-| 场景/视觉系统/参考还原及重做类任务 | 场景、整套 UI、世界环境、跨场景视觉系统、参考还原或重做 | V1 → V2 → V3 → V4 → V5 | V1/V2 确定性机器检查强制；实质取舍按条件记录一次 `USER_DECISION` |
+| 场景/视觉系统/重做类任务 | 场景、整套 UI、世界环境、跨场景视觉系统或重做；参考还原作为可选视觉模式 | V1 → V2 → V3 → V4 → 正式功能实现 → V5 | V1/V2 确定性机器检查强制；实质取舍按条件记录一次 `USER_DECISION` |
 
 局部修复仍完整执行 F0 授权、F1 规格、适用 F2 与 F3 工程证据；仅实际 A4-A6 操作执行 F4。记录缺失或任务超出边界时重新执行 V0。
 
 所有任务执行适用 V1/V2 确定性机器检查。已有明确需求或冻结基线且候选不改变冻结视觉事实时可记录 `AUTO`；修复、提升游戏感或工程适配只要产生可见变化，就按差异列出影响和候选方案，请求一次精确选择并记录 `USER_DECISION` 与已批准例外。后续绑定当前决策记录。
 
-资源生产服从新的全局实施顺序：在任何骨架代码前先冻结覆盖全部授权 gameplay/supporting 场景的 scene master，以及所有必需瞬态显示层状态的宿主场景上下文效果图；该前置门继续绑定 V0-V5、V2 唯一真人视觉审批、coverage/layout/fidelity 等硬门。随后搭建 `SHARED` 最小运行骨架，再实现 `MODULE`，最后在各宿主 `SCENE` 阶段完成 V3 规划、V4 `accepted`、V5 正式接入、全部 UI/显示层、占位清理和联合证据；`DISPLAY_LAYER` 必须紧邻并归属于宿主场景，不能在全部场景之后独立生产。`gameplay`/`supporting` 只作场景分类，实际场景顺序由计划制定者冻结；全部场景闭环后才做跨场景 `INTEGRATION`/联合验收。
+资源生产服从同一场景 Work Item 的顺序：任务授权/范围与功能规格 → V1 视觉合同/参考冻结 → V2 完整场景候选、动态样片、F2 `MACHINE/PASS` 与唯一真人视觉审批 → V3 实施拆解 → V4 正式视觉资源与宿主场景同屏组合预验收 → 正式功能代码实现 → V5 运行态视觉接入与联合验收 → A4 正式入口。全局 `visual_baseline` 只负责静态风格一致性，全局场景集合只作规划/聚合事实；V2 `COMPLETE/frozen` 是正式 A3 包及 `SHARED`/`MODULE`/`SCENE`/`DISPLAY_LAYER` 功能代码的唯一前置视觉边界，V2 前仅允许隔离灰盒或无正式业务逻辑视觉样片。V4 通过后才按 `SHARED` 最小运行骨架→`MODULE`→各宿主 `SCENE`+紧邻从属 `DISPLAY_LAYER` 实施正式代码与资源，全部场景闭环后才做跨场景 `INTEGRATION`/联合验收；参考还原仍只是当前场景 Work Item 内的可选模式。
 
 F2 必须由确定性机器验证执行，并绑定当前 baseline/diff 身份。V1/V2 只保留机器事实和唯一 `visual_human_approval`；V1/V2 使用 `AUTO` 或 `USER_DECISION` 记录，只覆盖所列对象且不写 Approval Ledger；F4 只处理当前 V5 候选集成或独立发布 Work Item 的具体操作。
 
@@ -31,8 +31,8 @@ F2 必须由确定性机器验证执行，并绑定当前 baseline/diff 身份�
 5. 保留已批准的功能语义、业务状态、交互语义和状态所有权，同时检查构图、信息层级、资源槽、页面模板和布局几何是否足以承载核心玩具、专属场景对象、关键反馈与奖励表达。必要灰盒是功能与结构证据，不是必须原样换皮的最终视觉模板。
 6. 建立全局视觉基线候选，记录基线 ID/版本、风格指纹、主锚点与分系统锚点、世界幻想及形状、比例、镜头、色彩、材质、光源、描边、密度、字体、图标、面板、动画和 VFX 规则，并明确允许变量与禁止项。未冻结内容不得作为批量生产依据。
 
-7. 场景、整套 UI、视觉系统和参考还原必须同时读取并冻结 [`phaser4-game-ui-layout` 的布局合同](../../phaser4-game-ui-layout/references/layout-contract.md)：浏览器 viewport、Canvas、逻辑坐标、safe area 四层关系，FIT/RESIZE/COVER/响应式锚点/断点重排，背景覆盖目标，留白/裁切/拉伸许可，基准/最窄/最宽/横屏/安全区矩阵，以及动态文本、显隐、滚动、触控、resize 和横屏策略。任一项缺失标记“响应式契约缺失”，阻断 V2。
-8. 忠实还原在 V1 前冻结参考身份、版本、权属、文件指纹、目标视口/状态及对比条件；V2 前建立逐状态、逐区域忠实度矩阵，字段、容差、冲突处理和失败条件以[视觉还原](visual-reconstruction.md)为准。项目必须在实施前定义容差，禁止使用事后阈值或通用固定百分比。
+7. 场景、整套 UI、视觉系统和可选参考模式必须同时读取并冻结 [`phaser4-game-ui-layout` 的布局合同](../../phaser4-game-ui-layout/references/layout-contract.md)：浏览器 viewport、Canvas、逻辑坐标、safe area 四层关系，FIT/RESIZE/COVER/响应式锚点/断点重排，背景覆盖目标，留白/裁切/拉伸许可，基准/最窄/最宽/横屏/安全区矩阵，以及动态文本、显隐、滚动、触控、resize 和横屏策略。任一项缺失标记“响应式契约缺失”，阻断当前场景 Work Item 的 V2。
+8. 参考模式在当前场景 Work Item 的 V1 前冻结参考身份、版本、权属、文件指纹、目标视口/状态及对比条件；V2 前建立逐状态、逐区域忠实度矩阵，字段、容差、冲突处理和失败条件以[视觉还原](visual-reconstruction.md)为准。项目必须在实施前定义容差，禁止使用事后阈值或通用固定百分比。
 
 玩法拥有规则、状态、交互和功能灰盒。美术拥有视觉契约中的表现目标，不得通过视觉实现改写玩法规则。
 
@@ -46,7 +46,7 @@ F2 必须由确定性机器验证执行，并绑定当前 baseline/diff 身份�
 
 ## V2 视觉探索与动态可玩样片
 
-V1 的 `AUTO` 或 `USER_DECISION` 有效后进入 V2。V2 必须执行 V2a、V2b、动态样片、结构化机器检查与唯一一次真人视觉方向审批。
+当前场景 Work Item 的 V1 `AUTO` 或 `USER_DECISION` 有效后进入 V2。V2 必须在任何正式功能代码前执行 V2a、V2b、完整场景候选、动态样片、F2 `MACHINE/PASS` 与唯一一次真人视觉方向审批；V2 前只允许隔离灰盒或无正式业务逻辑视觉样片。
 
 ### V2a 方向基准
 
@@ -73,7 +73,7 @@ V2a/V2b 机器证据通过后，明确参考/基线且不存在可见偏差或�
 
 ## V3 生产设计与机器清单
 
-进入 V3 的硬前置是当前冻结目标已经通过合同回对门：GDD、TDD、玩法视觉/功能合同、布局合同、模块/Scene 所有权和预算基线绑定齐全，范围、状态机、输入、碰撞、状态所有权、坐标空间、布局、预算逐项 `passed`。变化时退回 V1/模块审计，不得静默继续。
+进入 V3 的硬前置是当前场景 Work Item 的 V2 已达到 `COMPLETE/frozen`，且冻结目标已经通过合同回对门：GDD、TDD、玩法视觉/功能合同、布局合同、模块/Scene 所有权和预算基线绑定齐全，范围、状态机、输入、碰撞、状态所有权、坐标空间、布局、预算逐项 `passed`。变化时退回 V1/模块审计，不得静默继续。V3 只做实施拆解，V4 完成正式视觉资源与同屏组合预验收，之后才开始正式功能代码。
 
 `docs/visual-assets.json` 使用 schema 1.5。普通资产声明 `not-applicable`；效果图还原进入 V3 前声明 `effect-image/v3-ready`，此时冻结目标、候选、合同回对和 coverage 必需，而 fidelity case 可为空。coverage 必须逐冻结 scene/state 声明目标画布、画布内 region 和完整性摘要，覆盖率为 1、未覆盖列表为空、状态通过且绑定证据；不能用单个微小区域冒充全覆盖。每个固定视觉 region 还要有稳定编号、实现分类和七个生产合同字段；`production_method` 使用 `imagegen`、`authored-raster`、`authored-svg`、`phaser-graphics`、`runtime-program`、`reuse`，`delivery_kind` 使用 `raster-image`、`vector-image`、`runtime-drawing`、`runtime-program`、`existing-asset`。实现分类为 `generate-now`、`reuse-existing`、`runtime-program`，并在冻结效果图标注图中同时呈现。
 

@@ -9,7 +9,11 @@ function makeOrderedPackage() {
   const unit = (unitId, unitType, ownedPath, overrides = {}) => ({
     unitId, unitType, scopeId: unitId.toLowerCase(), moduleId: 'core', sceneId: null, displayLayerId: null, hostSceneId: null,
     owner: 'worker', parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: [ownedPath], stateOwnership: [unitId.toLowerCase()],
-    acceptanceCommands: ['node --test'], serializationReason: '按全局阶段顺序串行', ...overrides,
+    acceptanceCommands: ['node --test'], serializationReason: '按全局阶段顺序串行', highFidelityPrerequisite: unitType === 'SCENE'
+      ? { workItemId: 'WI-1', status: 'COMPLETE', stage: 'V2', frozen: true, sceneId: 'play', displayLayerId: null, hostSceneId: null, targetSha256: 'sha256:' + 'a'.repeat(64), candidateSha256: 'sha256:' + 'b'.repeat(64), diffFingerprint: 'sha256:scene-v2-diff', evidenceFile: 'docs/scene-v2-result.json', evidenceSha256: 'sha256:' + 'c'.repeat(64) }
+      : unitType === 'DISPLAY_LAYER'
+        ? { workItemId: 'WI-1', status: 'COMPLETE', stage: 'V2', frozen: true, sceneId: 'play', displayLayerId: 'pause', hostSceneId: 'play', targetSha256: 'sha256:' + 'a'.repeat(64), candidateSha256: 'sha256:' + 'b'.repeat(64), diffFingerprint: 'sha256:scene-v2-diff', evidenceFile: 'docs/scene-v2-result.json', evidenceSha256: 'sha256:' + 'c'.repeat(64) }
+        : null, ...overrides,
   });
   const executionUnits = [
     unit('SHARED-1', 'SHARED', 'src/shared'),

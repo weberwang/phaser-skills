@@ -34,7 +34,7 @@ UI 设计与实现优先用符合全局视觉基线且含义清晰、熟悉的�
 
 ## 资源导航
 
-场景规划涉及 HUD、modal、popup、drawer 或 toast 时，必须同步在场景 `display_layer_planning` 中记录宿主场景、生命周期、输入阻断、层级、遮罩、焦点恢复和响应式事实。scene master 只承载常驻层；瞬态层按状态使用带宿主场景上下文的效果图，V4/V5 回到宿主场景同屏验证打开→交互→关闭后的底层布局恢复。
+场景规划涉及 HUD、modal、popup、drawer 或 toast 时，必须同步在场景 `display_layer_planning` 中记录宿主场景、生命周期、输入阻断、层级、遮罩、焦点恢复和响应式事实。scene master 只承载常驻层；瞬态层按状态使用带宿主场景上下文的效果图，V4/V5 回到宿主场景同屏验证打开→交互→关闭后的底层布局恢复。V2 `COMPLETE/frozen` 前仅允许隔离灰盒或无正式业务逻辑视觉样片；V4 正式资源与组合预验收通过后，正式功能代码才可启动。每个 SCENE/DISPLAY_LAYER 代码单元开始前，控制面还必须读取当前场景 Work Item 的 `highFidelityPrerequisite` V2 结果引用；显示层证据必须同时绑定 scene/layer/host，不能用全局冻结或内联 PASS 代替。
 
 - 需要字段、关系表达或不变量写法时，读取 [references/layout-contract.md](references/layout-contract.md)。
 - 需要 Phaser Scale、Camera、Container、DOM Overlay、resize 或重排边界时，读取 [references/phaser-adapter.md](references/phaser-adapter.md)。

@@ -1,4 +1,5 @@
 import { closeSync, mkdirSync, openSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { assertFormalExecutionAfterV4, assertHighFidelityPrerequisite, assertHighFidelityPrerequisites } from './high-fidelity-prerequisite.mjs';
 
 /** 实施单元结果允许的顶层字段。 */
 const RESULT_FIELDS = ['resultId', 'workItemId', 'packageId', 'unitId', 'baselineHash', 'codeFingerprint', 'diffFingerprint', 'completedAt', 'commands', 'files', 'fileHashes', 'verdict'];
@@ -111,6 +112,7 @@ function executionPlanSnapshot(pkg) {
     ownedPaths: [...unit.ownedPaths],
     stateOwnership: [...unit.stateOwnership],
     acceptanceCommands: [...unit.acceptanceCommands],
+    highFidelityPrerequisite: unit.highFidelityPrerequisite,
   }));
 }
 
@@ -247,6 +249,10 @@ function deriveNextTask(units, work, repo, io) {
 
 /** 生成初始状态：首个串行单元或首个并行组立即标记 IN_PROGRESS。 */
 export function createExecutionState(work, pkg, io, now = new Date().toISOString()) {
+  // V4 是正式功能执行的硬边界；先校验 V4，再复核整个包的 V2 结果，避免规划包提前激活。
+  assertFormalExecutionAfterV4(work, pkg, io.repo ?? null, io);
+  assertHighFidelityPrerequisites(pkg, work, io.repo ?? null, io);
+  const firstUnit = pkg.executionUnits[0];
   const units = pkg.executionUnits.map((unit, order) => ({ unitId: unit.unitId, order, parallelMode: unit.parallelMode, parallelGroup: unit.parallelGroup, state: 'PENDING', resultId: null, resultPath: null, resultFingerprint: null, startedAt: null, completedAt: null }));
   const first = units[0];
   if (first.parallelMode === 'PARALLEL') for (const unit of units.filter((item) => item.parallelGroup === first.parallelGroup)) { unit.state = 'IN_PROGRESS'; unit.startedAt = now; }
@@ -274,8 +280,15 @@ export function createExecutionState(work, pkg, io, now = new Date().toISOString
   return state;
 }
 
+/** V3 Implementation Package 规划阶段只复核当前 Work Item 的 V2 结果，避免控制 CLI 重复实现视觉门逻辑。 */
+export function assertImplementationPackagePlanningPrerequisites(pkg, work, repo, io) {
+  return assertHighFidelityPrerequisites(pkg, work, repo, io);
+}
+
 /** 校验执行状态与当前 Work Item、Implementation Package、基线和数组顺序精确绑定。 */
 export function validateExecutionState(state, statePath, work, pkg, repo, io) {
+  // 状态文件每次读取都重新检查 V4，防止阶段回退或 V4 证据漂移后继续执行正式单元。
+  assertFormalExecutionAfterV4(work, pkg, repo, io);
   if (!state || typeof state !== 'object' || Array.isArray(state)) throw new Error('Execution State 必须为对象');
   const missing = EXECUTION_STATE_FIELDS.filter((field) => state[field] === undefined);
   const extra = Object.keys(state).filter((field) => !EXECUTION_STATE_FIELDS.includes(field));
@@ -297,6 +310,7 @@ export function validateExecutionState(state, statePath, work, pkg, repo, io) {
     if (item.unitId !== unit.unitId || item.order !== order || item.parallelMode !== unit.parallelMode || item.parallelGroup !== unit.parallelGroup || !UNIT_STATES.has(item.state)) throw new Error(`Execution State 单元顺序或模式不一致：${item.unitId ?? order}`);
     for (const field of ['startedAt', 'completedAt']) if (item[field] !== null && Number.isNaN(Date.parse(item[field]))) throw new Error(`Execution State 单元时间无效：${item.unitId}`);
     if (item.state === 'PENDING' || item.state === 'IN_PROGRESS') {
+      if (item.state === 'IN_PROGRESS' && (unit.unitType === 'SCENE' || unit.unitType === 'DISPLAY_LAYER')) assertHighFidelityPrerequisite(unit, work, pkg, repo, io);
       if (item.resultId !== null || item.resultPath !== null || item.resultFingerprint !== null || item.completedAt !== null) throw new Error(`未完成单元不得携带完成结果：${item.unitId}`);
       if (item.state === 'IN_PROGRESS' && !item.startedAt) throw new Error(`IN_PROGRESS 单元缺少 startedAt：${item.unitId}`);
     } else {
@@ -395,6 +409,12 @@ export function completeExecutionUnit(work, pkg, unit, result, resultPath, repo,
     const nextPending = state.units.find((entry) => entry.state === 'PENDING');
     const hasActivePeer = state.units.some((entry) => entry.state === 'IN_PROGRESS');
     if (nextPending && !hasActivePeer) {
+      const activatingStates = nextPending.parallelMode === 'PARALLEL' ? state.units.filter((entry) => entry.parallelGroup === nextPending.parallelGroup) : [nextPending];
+      // 并行阶段激活前逐项复核，防止同组第二个场景或显示层绕过已漂移的高保真证据。
+      for (const activatingState of activatingStates) {
+        const nextUnit = pkg.executionUnits.find((candidate) => candidate.unitId === activatingState.unitId);
+        if (nextUnit.unitType === 'SCENE' || nextUnit.unitType === 'DISPLAY_LAYER') assertHighFidelityPrerequisite(nextUnit, work, pkg, repo, io);
+      }
       if (nextPending.parallelMode === 'PARALLEL') {
         for (const entry of state.units.filter((candidate) => candidate.parallelGroup === nextPending.parallelGroup)) { entry.state = 'IN_PROGRESS'; entry.startedAt = new Date().toISOString(); }
       } else { nextPending.state = 'IN_PROGRESS'; nextPending.startedAt = new Date().toISOString(); }
@@ -448,9 +468,11 @@ export function assertExecutionWorkflowComplete(work, pkg, repo, io) {
 /** 只按预设数组位置和当前有效 PASS Result 判定 READY，不推导依赖图。 */
 export function assertUnitReady(unit, work, pkg, repo, io) {
   if (work.globalState !== 'IMPLEMENTING') throw new Error(`A3 unit-check 仅允许 IMPLEMENTING 状态，当前为 ${work.globalState}`);
+  assertFormalExecutionAfterV4(work, pkg, repo, io);
   const { state } = loadExecutionState(work, pkg, repo, io);
   const current = state.units.find((item) => item.unitId === unit.unitId);
   if (!current || current.state !== 'IN_PROGRESS') throw new Error(`实施单元尚未 READY，当前状态不是 IN_PROGRESS：${unit.unitId}`);
+  if (unit.unitType === 'SCENE' || unit.unitType === 'DISPLAY_LAYER') assertHighFidelityPrerequisite(unit, work, pkg, repo, io);
   for (const preceding of precedingUnitsForReady(unit, pkg)) {
     const precedingState = state.units.find((item) => item.unitId === preceding.unitId);
     if (!precedingState || precedingState.state !== 'COMPLETE' || !findValidUnitResult(work, pkg, preceding, repo, io)) throw new Error(`实施单元尚未 READY，缺少预设顺序前序证据：${unit.unitId} <- ${preceding.unitId}`);

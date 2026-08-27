@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
@@ -12,7 +12,7 @@ import { parallelBatchFingerprint } from './parallel-batch-control.mjs';
 
 const CLI = resolve(import.meta.dirname, 'workflow-control.mjs');
 const INITIALIZER = resolve(import.meta.dirname, '..', '..', 'phaser4-game-orchestrator', 'scripts', 'initialize_project_docs.mjs');
-const HASH = `sha256:${'a'.repeat(64)}`;
+const HASH = `sha256:${'a'.repeat(64)}`; const CANDIDATE_HASH = `sha256:${'b'.repeat(64)}`; const VISUAL_DIFF = `sha256:${'c'.repeat(64)}`;
 
 /** 写入格式稳定的 JSON 测试工件。 */
 function writeJson(path, value) {
@@ -36,6 +36,19 @@ function makeRepo() {
   writeFileSync(join(repo, 'src', 'main.js'), 'export const value = 1;\n');
   writeFileSync(join(repo, 'src', 'old.js'), 'export const old = true;\n');
   writeFileSync(join(repo, 'docs', 'spec.md'), '# spec\n');
+  const sceneMasterPath = join(repo, 'docs', 'high-fidelity-scene.png');
+  const candidatePath = join(repo, 'docs', 'high-fidelity-candidate.png');
+  const dynamicPath = join(repo, 'docs', 'high-fidelity-dynamic.mp4');
+  const machinePath = join(repo, 'docs', 'v2-machine.json');
+  const humanPath = join(repo, 'docs', 'v2-human.json');
+  const pauseContextPath = join(repo, 'docs', 'pause-context.png');
+  const settingsContextPath = join(repo, 'docs', 'settings-context.png');
+  const v4Path = join(repo, 'docs', 'v4-acceptance.json');
+  writeFileSync(sceneMasterPath, 'scene-master\n'); writeFileSync(candidatePath, 'scene-candidate\n'); writeFileSync(dynamicPath, 'dynamic-sample\n');
+  writeFileSync(pauseContextPath, 'pause-context\n'); writeFileSync(settingsContextPath, 'settings-context\n');
+  writeFileSync(machinePath, 'machine-review\n'); writeFileSync(humanPath, 'human-approval\n');
+  writeJson(join(repo, 'docs', 'high-fidelity-scene.json'), { schemaVersion: 'phaser4-scene-v2-result/1.0', workItemId: 'WI-1', status: 'COMPLETE', stage: 'V2', frozen: true, sceneId: 'play', targetSha256: HASH, candidateSha256: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF, sceneMaster: { file: 'docs/high-fidelity-scene.png', sha256: hashFile(sceneMasterPath), sceneId: 'play' }, completeSceneCandidate: { file: 'docs/high-fidelity-candidate.png', sha256: hashFile(candidatePath), sceneId: 'play' }, dynamicVisualSample: { file: 'docs/high-fidelity-dynamic.mp4', sha256: hashFile(dynamicPath), sceneId: 'play' }, machineValidation: { validationMode: 'MACHINE', status: 'PASS', targetSha256: HASH, candidateSha256: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF, evidenceFile: 'docs/v2-machine.json', evidenceSha256: hashFile(machinePath) }, visualHumanApproval: { approvalId: 'V2-HUMAN-1', reviewMode: 'SINGLE_HUMAN', status: 'PASS', targetSha256: HASH, candidateSha256: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF, evidenceFile: 'docs/v2-human.json', evidenceSha256: hashFile(humanPath) }, displayLayerContexts: [{ displayLayerId: 'pause', hostSceneId: 'play', hostContextImage: { file: 'docs/pause-context.png', sha256: hashFile(pauseContextPath), sceneId: 'play', displayLayerId: 'pause', hostSceneId: 'play' } }, { displayLayerId: 'settings', hostSceneId: 'play', hostContextImage: { file: 'docs/settings-context.png', sha256: hashFile(settingsContextPath), sceneId: 'play', displayLayerId: 'settings', hostSceneId: 'play' } }] });
+  writeJson(v4Path, { evidenceType: 'v4-formal-acceptance', status: 'PASS', acceptanceId: 'V4-ACCEPT-1', workItemId: 'WI-1', baselineHash: HASH, contentHash: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF, candidateIdentity: { sha256: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF }, formalAssets: ['docs/high-fidelity-scene.png'], components: ['scene-master'], combinationPreacceptance: { status: 'PASS' } });
   execFileSync('git', ['add', '.'], { cwd: repo });
   execFileSync('git', ['commit', '-qm', 'baseline'], { cwd: repo });
   return { repo, head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim() };
@@ -50,6 +63,7 @@ function makeWork(head, overrides = {}) {
     assignedAgent: 'implementer', delegatedAgents: [], expectedOutputs: ['src/main.js'], validationPlan: ['node --test'], exitCriteria: ['tests pass'], nextGate: 'F0', rollbackPolicy: '不自动回滚共享工作区', evidenceRoot: '.workflow-control/evidence/WI-1',
     pendingApprovalId: 'PENDING-1', pendingApprovalObject: 'core implementation', pendingApprovalStage: 'G1', pendingApprovalActionLevel: 'A3', pendingApprovalGate: 'F0', pendingApprovalState: 'IMPLEMENTING', pendingApprovalContext: 'implementation', pendingApprovalActionType: 'phaser-code-change', pendingApprovalImpactSummary: [], pendingApprovalFileScope: ['src'], pendingApprovalServices: [], pendingApprovalAllowServiceStart: false, pendingApprovalAllowDelete: false, pendingApprovalExternalWrite: false, pendingApprovalDestructive: false, pendingApprovalPhysicalDevice: false, pendingApprovalRelease: false, pendingApprovalExternalTargets: [], pendingApprovalPreparedAt: '2026-08-11T00:00:00.000Z', pendingApprovalPresentedId: null, pendingApprovalPresentedAt: null,
     validationBatchId: 'BATCH-1', changeRequestFiles: [], moduleGateRequired: false, substantiveTradeoffRequired: false, visualDecisionRequired: false, releaseWorkItem: false,
+    visualStage: 'V4', visualStageState: 'v4-formal-acceptance-complete', visualStageEvidenceRefs: { V2: { path: 'docs/high-fidelity-scene.json', sha256: '', workItemId: 'WI-1' }, V4: { path: 'docs/v4-acceptance.json', sha256: '', workItemId: 'WI-1' } },
     ...overrides
   };
 }
@@ -57,9 +71,9 @@ function makeWork(head, overrides = {}) {
 /** 构造绑定任务授权而非审批记录的 Implementation Package。 */
 function makePackage(overrides = {}) {
   return { packageId: 'PKG-1', workItemId: 'WI-1', baselineVersion: '1', baselineHash: HASH, taskAuthorizationId: 'TASK-WI-1', approvedRequirements: ['REQ-1'], approvedArchitecture: 'ARCH-FACT', fileOwnership: { 'src/main.js': 'implementer', 'src/module': 'implementer', 'src/scene': 'implementer' }, executionUnits: [
-    { unitId: 'SHARED-1', unitType: 'SHARED', scopeId: 'runtime-contract', moduleId: 'core', sceneId: null, displayLayerId: null, hostSceneId: null, owner: 'implementer', parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: ['src/main.js'], stateOwnership: ['runtime-contract'], acceptanceCommands: ['node --test'], serializationReason: '先冻结共享契约' },
-    { unitId: 'MODULE-1', unitType: 'MODULE', scopeId: 'core-module', moduleId: 'core', sceneId: null, displayLayerId: null, hostSceneId: null, owner: 'implementer', parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: ['src/module'], stateOwnership: ['core-state'], acceptanceCommands: ['node --test'], serializationReason: '等待共享契约冻结' },
-    { unitId: 'SCENE-1', unitType: 'SCENE', scopeId: 'play-scene', moduleId: 'scene', sceneId: 'play', displayLayerId: null, hostSceneId: null, owner: 'implementer', parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: ['src/scene'], stateOwnership: ['scene-state'], acceptanceCommands: ['node --test'], serializationReason: '等待全部模块完成' }
+    { unitId: 'SHARED-1', unitType: 'SHARED', scopeId: 'runtime-contract', moduleId: 'core', sceneId: null, displayLayerId: null, hostSceneId: null, owner: 'implementer', parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: ['src/main.js'], stateOwnership: ['runtime-contract'], acceptanceCommands: ['node --test'], serializationReason: '先冻结共享契约', highFidelityPrerequisite: null },
+    { unitId: 'MODULE-1', unitType: 'MODULE', scopeId: 'core-module', moduleId: 'core', sceneId: null, displayLayerId: null, hostSceneId: null, owner: 'implementer', parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: ['src/module'], stateOwnership: ['core-state'], acceptanceCommands: ['node --test'], serializationReason: '等待共享契约冻结', highFidelityPrerequisite: null },
+    { unitId: 'SCENE-1', unitType: 'SCENE', scopeId: 'play-scene', moduleId: 'scene', sceneId: 'play', displayLayerId: null, hostSceneId: null, owner: 'implementer', parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: ['src/scene'], stateOwnership: ['scene-state'], acceptanceCommands: ['node --test'], serializationReason: '等待全部模块完成', highFidelityPrerequisite: { workItemId: 'WI-1', status: 'COMPLETE', stage: 'V2', frozen: true, sceneId: 'play', displayLayerId: null, hostSceneId: null, targetSha256: HASH, candidateSha256: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF, evidenceFile: 'docs/high-fidelity-scene.json', evidenceSha256: '' } }
   ], allowedPaths: ['src', 'docs'], forbiddenPaths: ['.git', 'src/secret'], expectedAddedFiles: [], expectedDeletedFiles: [], testScope: ['node --test'], outOfScope: ['release'], compatibilityStrategy: '不保留旧版兼容', definitionOfDone: ['tests pass'], stopConditions: ['scope changes'], ...overrides };
 }
 
@@ -124,9 +138,14 @@ function setup(workOverrides = {}, approvals = []) {
   const ledgerPath = join(root, 'approvals', 'ledger.json');
   const packagePath = join(root, 'implementation-package.json');
   mkdirSync(join(root, 'evidence', 'WI-1'), { recursive: true });
-  writeJson(workPath, makeWork(head, workOverrides));
+  const workValue = makeWork(head, workOverrides);
+  const packageValue = makePackage();
+  const visualEvidenceSha = hashFile(join(repo, 'docs', 'high-fidelity-scene.json')); const v4EvidenceSha = hashFile(join(repo, 'docs', 'v4-acceptance.json'));
+  workValue.visualStageEvidenceRefs.V2.sha256 = visualEvidenceSha; workValue.visualStageEvidenceRefs.V4.sha256 = v4EvidenceSha;
+  packageValue.executionUnits.find((unit) => unit.unitId === 'SCENE-1').highFidelityPrerequisite.evidenceSha256 = visualEvidenceSha;
+  writeJson(workPath, { ...workValue, ...workOverrides });
   writeJson(ledgerPath, { schemaVersion: '1.0', approvals });
-  writeJson(packagePath, makePackage());
+  writeJson(packagePath, packageValue);
   const work = JSON.parse(readFileSync(workPath, 'utf8'));
   if (work.globalState === 'IMPLEMENTING') writeExecutionState({ repo, workPath, packagePath });
   return { repo, head, root, workPath, ledgerPath, packagePath };
@@ -136,7 +155,9 @@ function setup(workOverrides = {}, approvals = []) {
 function writeExecutionState(fixture) {
   const work = JSON.parse(readFileSync(fixture.workPath, 'utf8'));
   const pkg = JSON.parse(readFileSync(fixture.packagePath, 'utf8'));
-  const state = createExecutionState(work, pkg, { hashText: (value) => `sha256:${createHash('sha256').update(value).digest('hex')}` }, '2026-08-11T00:01:00.000Z');
+  for (const unit of pkg.executionUnits) if (unit.highFidelityPrerequisite) unit.highFidelityPrerequisite.evidenceSha256 = work.visualStageEvidenceRefs.V2.sha256;
+  writeJson(fixture.packagePath, pkg);
+  const state = createExecutionState(work, pkg, { hashText: (value) => `sha256:${createHash('sha256').update(value).digest('hex')}`, resolve, existsSync, readFileSync, fileHash: hashFile, repo: fixture.repo }, '2026-08-11T00:01:00.000Z');
   writeJson(join(fixture.repo, executionStatePath(work)), state);
 }
 
@@ -841,68 +862,6 @@ test('状态合同：缺失或篡改 Execution State 时所有单元放行路径
   writeUnitResults(tampered, {}, { completeState: false });
   const state = JSON.parse(readFileSync(statePath, 'utf8')); state.executionUnitIds = ['SCENE-1', 'MODULE-1', 'SHARED-1']; writeJson(statePath, state);
   rejects(run('unit-check', ['--work-item', tampered.workPath, '--implementation-package', tampered.packagePath, '--result', resultPath], tampered.repo), /executionUnits 预设顺序|Execution State/);
-});
-
-test('V2→V3 状态合同：V2 完成后只输出 V3 生产规划，合同回对未通过不得推进', () => {
-  const blocked = setup({ visualStage: 'V2', visualStageState: 'v2-direction-frozen' });
-  writeJson(blocked.packagePath, makeSerialPackage()); writeExecutionState(blocked); writeUnitResults(blocked, {}, { completeState: false });
-  const blockedResult = run('unit-check', ['--work-item', blocked.workPath, '--implementation-package', blocked.packagePath, '--result', join(blocked.root, 'evidence', 'WI-1', 'units', 'SHARED-1.json')], blocked.repo); assert.equal(blockedResult.status, 0, blockedResult.stderr);
-  for (const unitId of ['MODULE-1', 'SCENE-1']) {
-    const result = run('unit-check', ['--work-item', blocked.workPath, '--implementation-package', blocked.packagePath, '--result', join(blocked.root, 'evidence', 'WI-1', 'units', `${unitId}.json`)], blocked.repo); assert.equal(result.status, 0, result.stderr);
-    if (unitId === 'SCENE-1') { const output = JSON.parse(result.stdout).executionState; assert.equal(output.nextTask.kind, 'V3_PRODUCTION_PLANNING'); assert.equal(output.nextTask.state, 'BLOCKED'); assert.equal(output.nextTask.gate, 'V2_TO_V3_CONTRACT'); }
-  }
-  const passed = setup({ visualStage: 'V2', visualStageState: 'v2-direction-frozen' });
-  const v2ContractEvidence = join(passed.root, 'evidence', 'WI-1', 'v2-v3-contract.json');
-  writeJson(v2ContractEvidence, { contractId: 'V2-V3-1', verdict: 'PASS', reviewedAt: '2026-08-11T00:01:00.000Z' });
-  const passedWork = JSON.parse(readFileSync(passed.workPath, 'utf8'));
-  passedWork.v2ToV3Contract = { status: 'PASS', contractId: 'V2-V3-1', evidenceFile: '.workflow-control/evidence/WI-1/v2-v3-contract.json', evidenceSha256: hashFile(v2ContractEvidence) };
-  writeJson(passed.workPath, passedWork);
-  writeJson(passed.packagePath, makeSerialPackage()); writeExecutionState(passed); writeUnitResults(passed, {}, { completeState: false });
-  for (const unitId of ['SHARED-1', 'MODULE-1', 'SCENE-1']) {
-    const result = run('unit-check', ['--work-item', passed.workPath, '--implementation-package', passed.packagePath, '--result', join(passed.root, 'evidence', 'WI-1', 'units', `${unitId}.json`)], passed.repo); assert.equal(result.status, 0, result.stderr);
-    if (unitId === 'SCENE-1') { const output = JSON.parse(result.stdout).executionState; assert.equal(output.nextTask.kind, 'V3_PRODUCTION_PLANNING'); assert.equal(output.nextTask.state, 'IN_PROGRESS'); assert.equal(output.nextTask.gateStatus, 'PASS'); }
-  }
-});
-
-test('V2→V3 合同门：BLOCKED 后只能通过正式刷新命令按当前证据解锁', () => {
-  const f = setup({ visualStage: 'V2', visualStageState: 'v2-direction-frozen' });
-  writeJson(f.packagePath, makeSerialPackage()); writeExecutionState(f); writeUnitResults(f, {}, { completeState: false });
-  completeUnits(f, ['SHARED-1', 'MODULE-1', 'SCENE-1']);
-  const statePath = join(f.root, 'evidence', 'WI-1', 'execution-state.json');
-  const blockedBytes = readFileSync(statePath, 'utf8');
-  const contractPath = join(f.root, 'evidence', 'WI-1', 'v2-v3-contract.json'); writeJson(contractPath, { contractId: 'V2-V3-REFRESH', verdict: 'PASS' });
-  const work = JSON.parse(readFileSync(f.workPath, 'utf8'));
-  for (const contract of [
-    { status: 'PENDING', contractId: 'V2-V3-REFRESH', evidenceFile: '.workflow-control/evidence/WI-1/v2-v3-contract.json', evidenceSha256: hashFile(contractPath) },
-    { status: 'PASS', contractId: 'V2-V3-REFRESH', evidenceFile: '../outside.json', evidenceSha256: hashFile(contractPath) },
-    { status: 'PASS', contractId: 'V2-V3-REFRESH', evidenceFile: '.workflow-control/evidence/WI-1/v2-v3-contract.json', evidenceSha256: `sha256:${'c'.repeat(64)}` }
-  ]) {
-    work.v2ToV3Contract = contract; writeJson(f.workPath, work);
-    rejects(run('refresh-v2-v3', ['--work-item', f.workPath, '--implementation-package', f.packagePath], f.repo), /合同证据|evidenceRoot|SHA-256|不匹配|越出仓库/);
-    assert.equal(readFileSync(statePath, 'utf8'), blockedBytes);
-  }
-  work.v2ToV3Contract.evidenceSha256 = hashFile(contractPath); writeJson(f.workPath, work);
-  const refreshed = run('refresh-v2-v3', ['--work-item', f.workPath, '--implementation-package', f.packagePath], f.repo);
-  assert.equal(refreshed.status, 0, refreshed.stderr);
-  const output = JSON.parse(refreshed.stdout).executionState;
-  assert.equal(output.workflowState, 'IN_PROGRESS'); assert.equal(output.nextTask.kind, 'V3_PRODUCTION_PLANNING'); assert.equal(output.nextTask.state, 'IN_PROGRESS'); assert.equal(output.nextTask.gateStatus, 'PASS');
-  const unlockedBytes = readFileSync(statePath, 'utf8'); assert.notEqual(unlockedBytes, blockedBytes);
-  rejects(run('refresh-v2-v3', ['--work-item', f.workPath, '--implementation-package', f.packagePath], f.repo), /不是待刷新|nextTask.*不一致/);
-  assert.equal(readFileSync(statePath, 'utf8'), unlockedBytes);
-});
-
-test('V2→V3 合同 PASS：VALIDATING 迁移消费显式交接，不被 COMPLETE 门永久阻断', () => {
-  const f = setup({ visualStage: 'V2', visualStageState: 'v2-direction-frozen' });
-  writeJson(f.packagePath, makeSerialPackage());
-  const contractPath = join(f.root, 'evidence', 'WI-1', 'v2-v3-contract.json'); writeJson(contractPath, { contractId: 'V2-V3-CLOSE', verdict: 'PASS' });
-  const work = JSON.parse(readFileSync(f.workPath, 'utf8'));
-  work.v2ToV3Contract = { status: 'PASS', contractId: 'V2-V3-CLOSE', evidenceFile: '.workflow-control/evidence/WI-1/v2-v3-contract.json', evidenceSha256: hashFile(contractPath) }; writeJson(f.workPath, work);
-  writeExecutionState(f);
-  const { audit } = auditA3(f);
-  const evidencePath = join(f.root, 'evidence', 'WI-1', 'v2-close-evidence.json'); writeJson(evidencePath, makeEvidence(f, audit));
-  const validating = run('transition', ['--work-item', f.workPath, '--to', 'VALIDATING'], f.repo);
-  assert.equal(validating.status, 0, validating.stderr);
-  assert.equal(JSON.parse(readFileSync(f.workPath, 'utf8')).globalState, 'VALIDATING');
 });
 
 test('并行 unit-check：两个独立进程并发完成同阶段 MODULE 后再完成场景', async () => {

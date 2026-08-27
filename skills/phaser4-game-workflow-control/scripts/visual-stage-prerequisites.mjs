@@ -152,7 +152,8 @@ function firstObject(...values) { return values.find(isObject) ?? null; }
 function firstValue(...values) { return values.find((value) => value !== undefined && value !== null && value !== '') ?? null; }
 
 /** 读取不可变 JSON 引用；内联对象永远不作为跨阶段证据。 */
-function loadImmutableReference(reference, label, options = {}) {
+/** 读取并校验视觉阶段的不可变 JSON 引用，供其他控制门复用同一文件哈希规则。 */
+export function loadImmutableVisualStageReference(reference, label, options = {}) {
   if (!isObject(reference)) return null;
   // 跨阶段引用只接受 schema 的 path + sha256；旧别名会让调用者绕过不可变引用约束。
   const file = reference.path;
@@ -185,10 +186,10 @@ function evidenceObjects(subject = {}, options = {}) {
   const evidence = firstObject(options.evidence, options.visualEvidence, options.visualStageEvidence, subject.visualStageEvidence, subject.visual_stage_evidence, subject.visualDependencyChain, subject.visual_dependency_chain) ?? {};
   const refFor = (stage) => firstObject(refs[stage], refs[stage.toLowerCase()], refs[`V${stage.slice(1)}`], refs[`${stage.toLowerCase()}Evidence`], refs[`${stage.toLowerCase()}_evidence`]);
   const v2Ref = refFor('V2'); const v3Ref = refFor('V3'); const v4Ref = refFor('V4'); const v5Ref = refFor('V5');
-  const v2 = loadImmutableReference(v2Ref, 'V2 Execution Unit Result', options)?.value ?? null;
-  const v3 = loadImmutableReference(v3Ref, 'V3 production plan', options)?.value ?? null;
-  const v4 = loadImmutableReference(v4Ref, 'V4 formal acceptance', options)?.value ?? null;
-  const v5 = loadImmutableReference(v5Ref, 'V5 runtime candidate', options)?.value ?? null;
+  const v2 = loadImmutableVisualStageReference(v2Ref, 'V2 Execution Unit Result', options)?.value ?? null;
+  const v3 = loadImmutableVisualStageReference(v3Ref, 'V3 production plan', options)?.value ?? null;
+  const v4 = loadImmutableVisualStageReference(v4Ref, 'V4 formal acceptance', options)?.value ?? null;
+  const v5 = loadImmutableVisualStageReference(v5Ref, 'V5 runtime candidate', options)?.value ?? null;
   return { evidence: { ...evidence, __references: { V2: v2Ref, V3: v3Ref, V4: v4Ref, V5: v5Ref } }, v2, v3, v4, v5, refs: { V2: v2Ref, V3: v3Ref, V4: v4Ref, V5: v5Ref } };
 }
 
@@ -406,7 +407,7 @@ export function validateVisualStagePrerequisites(subject = {}, options = {}) {
   for (const stage of ['V2', 'V3', 'V4', 'V5']) {
     const reference = refs[stage];
     if (!isObject(reference) || !nonEmpty(reference.path) || !nonEmpty(reference.sha256)) missingEvidence.push(`${stage} immutable evidence reference (path + sha256)`);
-    else if (!loadImmutableReference(reference, `${stage} immutable evidence`, options)) missingEvidence.push(`${stage} immutable evidence hash/identity`);
+    else if (!loadImmutableVisualStageReference(reference, `${stage} immutable evidence`, options)) missingEvidence.push(`${stage} immutable evidence hash/identity`);
   }
   if (!isObject(v2) || v2.verdict !== 'PASS') missingEvidence.push('V2 Execution Unit Result PASS');
   if (!hasIdentity(v2) || !nonEmpty(v2.resultId) || !nonEmpty(v2.workItemId ?? v2.work_item_id) || (subject.workItemId && (v2.workItemId ?? v2.work_item_id) !== subject.workItemId) || !nonEmpty(v2.packageId) || !nonEmpty(v2.unitId) || !hashValue(v2.baselineHash) || (subject.baselineHash && v2.baselineHash !== subject.baselineHash) || !hashValue(v2.diffFingerprint ?? v2.diff_fingerprint) || !nonEmpty(v2.codeFingerprint) || Number.isNaN(Date.parse(v2.completedAt))) missingEvidence.push('V2 immutable Work Item/Package/Unit/Result identity');

@@ -4,7 +4,7 @@
 
 视觉领域规则只能收紧 [`phaser4-game-workflow-control`](../../phaser4-game-workflow-control/SKILL.md)。V0-V5 是 `stageId`；全局状态、审批与 F0-F4 语义不得改写。
 
-全局实施顺序的视觉前置门：在任何 A3 实施包/代码单元前，必须先冻结覆盖全部授权 `gameplay`/`supporting` 场景的 `scene master`，以及所有必需 transient display-layer required state 的宿主场景上下文效果图；集合按 scene/state 分项冻结，不是一张合并图。该冻结沿用 V0-V2 方向与唯一真人视觉审批，并登记完整 coverage/layout/fidelity obligations；effect-image 仍完整执行 V1→V5，V3-V5 生产与运行接入归入对应场景阶段。它是进入实现的前置门，不新增 `executionUnits` 的 `unitType`。通过后，实施单元只能按 `SHARED` 最小骨架→`MODULE`→按场景组织的 `SCENE`+紧邻 `DISPLAY_LAYER`→`INTEGRATION`/联合验收推进。
+场景实现只有一条视觉与功能生命周期：任务授权/范围 → 功能规格与契约（只定义，不写正式功能代码）→ V1 视觉合同/参考冻结 → 当前场景 Work Item 的 V2 完整场景候选、动态样片、F2 `MACHINE/PASS` 与唯一真人视觉审批 → V3 实施拆解/Implementation Package → V4 正式视觉资源与宿主场景同屏组合预验收 → 正式功能代码实现 → V5 运行态视觉接入与功能/视觉联合复验 → A4 正式入口接入。全局 `visual_baseline` 只负责静态风格一致性；全局场景集合只能作为规划/聚合事实，不能替代逐场景 V2。V2 `COMPLETE/frozen` 是正式 A3 包及 `SHARED`/`MODULE`/`SCENE`/`DISPLAY_LAYER` 功能代码的唯一前置视觉边界；V2 前仅允许隔离灰盒或无正式业务逻辑视觉样片。V4 之后才按 `SHARED` 最小骨架→`MODULE`→按场景组织的 `SCENE`+紧邻 `DISPLAY_LAYER`→`INTEGRATION`/联合验收推进。每个 SCENE/DISPLAY_LAYER 在准备、委派、READY 和激活前都必须读取当前场景 Work Item 的 V2 结果引用，不能以全局冻结、手写 PASS 或数组前序代替。
 
 effect-image ImageGen 的 canonical 提示词与生成记录合同统一引用[Effect-image ImageGen 忠实还原提示词合同](../../phaser4-game-asset-integration/references/effect-image-prompt-contract.md)，本门只消费其校验结果。
 
@@ -12,20 +12,20 @@ effect-image ImageGen 的 canonical 提示词与生成记录合同统一引用[E
 
 ## 路径
 
-- V0 分流原子资源、组件/资源集、场景/整套 UI/视觉系统/参考还原。
-- V1 建立玩法视觉契约、必要低保真、布局合同和早期预算；忠实还原在 V1 前冻结参考身份、目标视口/状态与对比条件，并按[视觉还原](../../phaser4-game-asset-integration/references/visual-reconstruction.md)建立逐状态、逐区域忠实度矩阵。拆解前先完成状态分析，再登记原子可复用部件；annotation 编号不代表资产数量。
-- V2 建立并冻结视觉方向、高保真和动态样片；机器结构化审查必须绑定当前 target/candidate/diff。冻结只需一条唯一的 `visual_human_approval` 真人通过事件，不采集 reviewer_type/reviewer_id；忠实还原仅在候选不改变冻结视觉事实且处于项目预定义容差内时记录 `AUTO`，可见偏差必须绑定一次精确 `USER_DECISION` 和已批准例外。
+- V0 分流原子资源、组件/资源集、场景/整套 UI/视觉系统/重做；参考还原只作为场景实现的可选视觉模式。
+- V1 建立功能规格与玩法视觉契约、必要低保真、布局合同和早期预算，明确只定义不写正式业务代码；参考模式在 V1 前冻结参考身份、目标视口/状态与对比条件，并按[视觉还原](../../phaser4-game-asset-integration/references/visual-reconstruction.md)建立逐状态、逐区域忠实度矩阵。拆解前先完成状态分析，再登记原子可复用部件；annotation 编号不代表资产数量。
+- V2 在当前场景 Work Item 内建立并冻结完整场景候选、动态样片、F2 `MACHINE/PASS` 与唯一真人视觉审批；机器结构化审查必须绑定当前 target/candidate/diff。V2 `COMPLETE/frozen` 通过前不得创建正式 A3 Implementation Package、正式功能代码或正式入口；参考模式仅在候选不改变冻结视觉事实且处于项目预定义容差内时记录 `AUTO`，可见偏差必须绑定一次精确 `USER_DECISION` 和已批准例外。
 - 普通资产在 schema 1.5 使用 `not-applicable`。效果图 V2 冻结后、V3 前通过合同回对与 coverage 并标记 `v3-ready`；coverage 每个区域先登记 owner、`annotation_number` 和 `implementation_plan`，再在冻结原图上生成左原图+右侧说明栏 PNG，展示本次生成、复用既有资源和程序实现。V3/V4 可暂无 fidelity case，V5 完成态要求非空且全部通过。所有带 `annotation_number` 的区域（本次生成、复用既有资源、非图片逻辑）必须先提交绑定冻结目标 SHA/region ID/区域定义 SHA 的完整编号拆解提案，记录 `visual-decomposition-confirmation/1.0` 的 proposal/annotation/decision SHA、场景/状态、production_label、每个编号的 component/state/asset requirement、用户原文、accepted_at、work item 和 candidate identity；只有 `status=accepted`、`confirmation_mode=manual` 的人工记录才能进入 Implementation Package，AUTO、pending、旧字段、旧 SHA 或漏编号均拒绝。固定视觉图片只允许 imagegen/authored-raster PNG/JPG 或有证据的 reuse；authored-svg、phaser-graphics、Canvas/CanvasTexture、runtime-program 和 runtime drawing 只能用于非图片逻辑、热区、碰撞和布局，不能成为图片组件或资源。程序实现区域不生产图片，但不能绕过完整人工确认集合。`reuse-existing` 必须使用不可变 `asset-reuse-snapshot/1.0` 并记录、文件校验 `source_file`、`source_manifest_sha256`、`source_sha256`、`compatibility_evidence_sha256`；冻结原图必须是与目标画布同尺寸的完整合法 PNG。开始任何拆解生产前必须运行带 `--check-files --project-root .` 的校验且结构和文件证据均通过，确认前不得裁切、抠图、分层、AI 分割/补全或生产派生位图；owner_type 是合同/F2 专业事实，验证器不从像素推断。
 - V4 生产正式资源并完成 `validationMode=MACHINE` 的确定性资源与跨资源 F2；不重复要求真人审阅，且不能修改或替代 V2 唯一真人审批。
-- V5 结构化集成、动态玩法视觉验证、响应式证据和低保真清理；视觉 `USER_DECISION` 不授权 Scene 或玩法代码操作。
+- V5 在 V4 正式资源与组合预验收、正式功能代码实现之后执行运行态视觉接入、动态玩法视觉验证、功能/视觉联合复验、响应式证据和低保真清理；视觉 `USER_DECISION` 不授权 Scene 或玩法代码操作。
 
-V0 的高保真/效果图还原适用性唯一看 Work Item 是否把效果图或参考截图指定为正式运行画面的视觉目标，与是否生成、制作或新增资源无关。只要是正式视觉目标，即使全部 coverage 区域采用 `reuse-existing`/`runtime-program`、零新资源且零 ImageGen，也必须走 `effect-image` 的 V1→V5 高保真/忠实还原链，包含布局绑定、coverage、宿主场景同屏组合和 fidelity 验收。仅仅生成新资源，或仅把图片作为灵感、说明或临时参考，不触发 `effect-image`，仍按普通资产、组件或场景路径分类。`image_generation_required`、`generate-now`、资源数量和 `production_method` 只能在触发后于 V3 决定生产路线，不能参与 V0 applicability 判定。
+效果图/参考图的适用性只看当前场景 Work Item 是否把它指定为正式运行画面的视觉目标，与是否生成、制作或新增资源无关。适用时，参考还原作为同一场景实现生命周期内的视觉模式与合同叠加，全部 coverage 区域即使采用 `reuse-existing`/`runtime-program`、零新资源且零 ImageGen，也必须完成 `effect-image` 的 V1→V5 布局绑定、coverage、宿主场景同屏组合和 fidelity 验收；不创建第二个场景 Work Item 或第二条 V1→V5。仅仅生成新资源，或仅把图片作为灵感、说明或临时参考，不触发 `effect-image`，仍按普通资产、组件或场景路径分类。`image_generation_required`、`generate-now`、资源数量和 `production_method` 只能在触发后于 V3 决定生产路线，不能参与 V0 applicability 判定。
 
 效果图必须采用同步拆解工作流：先整屏构图，再同步冻结布局节点与元素/状态，再把 coverage region、布局合同和 placement 三方绑定，最后按布局合同装配，V5 进行布局+视觉双验收。每个 region 的 `layout_node_ids` 非空唯一，`layout_decomposition.layout_nodes` 与 coverage 双向关联；placement 只能引用本区域节点，运行时布局实现必须声明消费节点，禁止孤立、跨区域和重复消费。`target_bounds` 是参考事实，布局合同是运行计算，runtime measurement 是候选证据。proposal/PNG/confirmation 的 `region_definition_sha256` 必须覆盖布局字段并绑定 target SHA、scene/state、layout contract version；不新增第二套清单或状态机，visual-assets.json 和布局合同继续各自作为领域权威。布局、视觉资源和场景装配属于对应 `SCENE`+`DISPLAY_LAYER` 内部的实现职责；不得把场景内部子步骤提升为全局执行阶段。V4 组合预验收同时检查正式资源和正式布局，V5 必须 coverage=1、零孤立、逐节点几何差异及整屏 fidelity。
 
 布局质量门还必须复核父子几何：每个节点的 `parent_layout_node_id`、`parent_target_bounds`、`relative_position` 和 `nearest_edge_docking` 必须存在且可由目标 bounds 重算，`reference_id` 必须等于父 ID；父节点/`viewport`/`safe-area` 的边界必须一致，子节点不得越出父内容框，父子图不得成环。最近边相等时采用 left/top，`offset` 与 `self_anchor`/`reference_anchor` 必须采用同一测量推导值（例如 `top-left`）。这些字段纳入布局合同身份投影，任何父子关系或相对坐标变化都必须使旧 identity 失效。
 
-场景内显示层沿用同一条 V0-V5 链：全局冻结门必须覆盖所有授权场景，并在 `scene_reconstruction_contract.display_layer_planning` 中显式登记 HUD、modal、popup、drawer、toast 等层；即使没有显示层也写入空 `inventory`。主效果图只冻结基础场景与 persistent/HUD，transient 层按必需状态分别提供绑定宿主场景、遮罩/层级和当前状态的 contextual effect image，孤立透明组件图不能作为完整视觉证据。V3 可按 component×state 独立生产，但必须归入对应宿主 `SCENE`+`DISPLAY_LAYER`；V4/V5 必须重新回到宿主场景同屏组合，并提交打开→交互→关闭/恢复轨迹，验证焦点、输入阻断、响应式与恢复后的场景状态。
+场景内显示层沿用同一条 V0-V5 链：在当前场景 Work Item 的 V2 中冻结完整 scene master 与宿主上下文，并在 `scene_reconstruction_contract.display_layer_planning` 中显式登记 HUD、modal、popup、drawer、toast 等层；即使没有显示层也写入空 `inventory`。主效果图只冻结基础场景与 persistent/HUD，transient 层按必需状态分别提供绑定宿主场景、遮罩/层级和当前状态的 contextual effect image，孤立透明组件图不能作为完整视觉证据。V3 可按 component×state 生产，但必须归入对应宿主 `SCENE`+`DISPLAY_LAYER`；V4/V5 必须重新回到宿主场景同屏组合，并提交打开→交互→关闭/恢复轨迹，验证焦点、输入阻断、响应式与恢复后的场景状态。控制面要求 `highFidelityPrerequisite` 证据文件明确为当前场景 Work Item 的 V2、`COMPLETE`、`frozen` 结果引用，包含 scene master 实际 SHA；DISPLAY_LAYER 还必须包含匹配宿主的上下文图和 scene/layer/host 身份，缺失或漂移即退回该 Work Item 的 V2。
 
 ImageGen 生产合同贯穿 V3-V5：`independent-production` 与 `generate-now` 不推断图片生成；每个区域必须完成 `state_analysis`，并让 `expected_assets` 逐唯一 `component_id × required state_id` 对应独立位图。重复视觉实例只登记一个 component，通过 placements 表达；② 六按钮逐组件，⑧ 三相同表面可一组件三 placements，⑨ 按实际复用关系登记。ImageGen 无条件要求 `delivery_mode=individual`、`atlas_allowed=false`，横向组图、图集和交互热区不能冒充原子视觉资产；固定视觉不允许程序绘制或 SVG 作为游戏图片。V4 必须审计 `production_contract_audit` 及逐部件 `component_usages`，F2 只消费 `validationMode=MACHINE` 的确定性机器事实，V5 再绑定 F3 runtime replay、非空 freshness-bound fidelity cases、实际消费及无未批准替换。V2 唯一人工确认通过后不得生成视觉复核工件。生产方法变化只接受绑定区域与用户原文的 `ACCEPTED` Change Request。
 

@@ -45,21 +45,27 @@ Work Item 的 `taskAuthorization` 保存用户原始请求、目标、范围、�
 视觉阶段是唯一的机器枚举 `V0`、`V1`、`V2`、`V3`、`V4`、`V5`，且必须同时声明有语义的 `visualStageState`。`global-static-baseline-frozen` 只冻结颜色、字体、栅格等静态规则；它不等于 `v2-direction-frozen`。V2 方向冻结还必须由不可变的代表画面、动态样片、人工审查和独立审查证据派生。
 
 ```text
-V0 分流 → V1 契约/低保真 → V2 方向冻结
-  → V3 生产规划完成 → V4 正式资产/组件/同屏验收
-  → V5 运行时集成候选 → A4/F4 正式入口
+任务授权/范围 → 功能规格与契约（只定义，不写正式功能代码）
+  → V1 视觉合同/参考冻结
+  → V2 当前场景 Work Item 的完整候选/动态样片/F2 MACHINE PASS/唯一真人审批
+  → V3 实施拆解/Implementation Package
+  → V4 正式资源与宿主场景同屏组合预验收
+  → 正式功能代码实现 → V5 运行态视觉接入与功能/视觉联合复验
+  → A4/F4 正式入口
 ```
 
-正式 Scene/UI 注册、Boot→可见 Scene 入口修改、正式消费可见资产、删除旧视觉实现或声明视觉完成，必须由共享视觉前置校验器复核 V2 Execution Unit Result、V3 生产合同、V4 验收和 V5 候选。阶段名、`stageId` 文本、根 PASS/布尔值、说明文字和 Approval Ledger 原文都不是证据；所有证据必须使用 Work Item、Unit Result、候选身份和内容哈希的不可变文件引用。任一哈希、审查或依赖漂移会使 pending 变为 stale，恢复路径固定为返回 V2。
+正式 Scene/UI 注册、Boot→可见 Scene 入口修改、正式消费可见资产、删除旧视觉实现或声明视觉完成，必须由共享视觉前置校验器复核当前场景 Work Item 的 V2 结果、V3 生产合同、V4 验收和 V5 候选。V2 `COMPLETE/frozen` 是正式 A3 Implementation Package 及 `SHARED`/`MODULE`/`SCENE`/`DISPLAY_LAYER` 功能代码的唯一前置视觉边界，V2 前只允许隔离灰盒或无正式业务逻辑视觉样片；V5 只能在正式功能实现后执行。阶段名、`stageId` 文本、根 PASS/布尔值、说明文字和 Approval Ledger 原文都不是证据；所有证据必须使用 Work Item、Unit Result、候选身份和内容哈希的不可变文件引用。任一哈希、审查或依赖漂移会使 pending 变为 stale，恢复路径固定为返回 V2。
 
 新审批不得让未授权的既往动作合法化。基线、对象、阶段、模块、文件范围或动作等级改变时，创建新审批。旧记录只读保留。
 
 ## 实施顺序状态硬门
 
-全局实施顺序在状态控制面固定为：先通过全局视觉效果图冻结前置门（全部授权 gameplay/supporting 场景的 `scene master` 与必需瞬态宿主场景上下文效果图，按 scene/state 分项而非一张合并图），保留 V0-V2 方向与唯一真人视觉审批并登记完整 coverage/layout/fidelity obligations；effect-image 仍完整执行 V1→V5，V3-V5 在对应场景阶段验证。之后才允许 A3 实施包/代码单元进入执行。该视觉冻结是前置条件而非新的 `unitType`；通过后 `executionUnits` 必须按 `SHARED` 最小骨架→`MODULE`→按场景组织的 `SCENE`+紧邻从属 `DISPLAY_LAYER`→`INTEGRATION`/联合验收排列。`DISPLAY_LAYER` 不能在全部场景之后另设尾部阶段，`gameplay`/`supporting` 只作为场景分类，实际场景顺序由计划制定者冻结。
+全局实施顺序在状态控制面固定为：任务授权/范围与功能规格完成后冻结 V1 视觉合同/参考；当前场景 Work Item 再完成 V2 前置视觉验收（完整 scene master/宿主上下文、完整场景候选、动态样片、F2 `MACHINE/PASS`、唯一真人视觉审批），并以 `COMPLETE/frozen` 结果作为正式 A3 包的唯一前置视觉边界。全局 `visual_baseline` 只冻结静态风格；全局场景效果图集合仅作规划/聚合事实，不能替代逐场景 V2。V2 前只允许隔离灰盒或无正式业务逻辑视觉样片；随后进入 V3 实施拆解、V4 正式视觉资源与同屏组合预验收，V4 后才允许正式功能代码。参考/效果图还原是当前场景 Work Item 内的可选视觉模式与合同叠加，`effect-image` 仍在同一条生命周期中执行 V1→V5。正式代码按 `SHARED` 最小骨架→`MODULE`→按场景组织的 `SCENE`+紧邻从属 `DISPLAY_LAYER`→`INTEGRATION`/联合验收排列；`DISPLAY_LAYER` 不能在全部场景之后另设尾部阶段，`gameplay`/`supporting` 只作为场景分类，实际场景顺序由计划制定者冻结。进入每个 SCENE/DISPLAY_LAYER 单元前还必须由控制面读取当前 Work Item 的严格 `highFidelityPrerequisite` V2 结果，复核 scene/layer/host/target 身份与文件 SHA；全局冻结状态、手写 PASS 或数组前序均不能替代该逐单元门。
 
 effect-image 的布局拆解在控制面也必须冻结父子几何事实：节点先声明 `parent_layout_node_id` 和 `parent_target_bounds`，再测量父内容框内的 `relative_position`，由最近边（相等取 left/top）推导 `nearest_edge_docking`、`offset` 和两个 `${vertical}-${horizontal}` 锚点。`reference_id` 必须等于父 ID，父级只能是节点、`viewport` 或 `safe-area`，不得循环或越界；父子几何字段变化会使布局身份 SHA 失效，V3/V4/V5 入口必须消费同一校验模块。
 
-进入 A3 `IMPLEMENTING` 时创建 `evidence/<workItemId>/execution-state.json`。该状态记录绑定当前 Work Item、Implementation Package、baseline、执行计划指纹和 `executionUnits` 数组位置；只有通过 `unit-check` 的当前 PASS Result 可以把当前单元更新为 `COMPLETE`，并按预设数组激活下一串行单元或下一并行组的 `IN_PROGRESS`。并行组未全部完成时，后续顺序阶段不得提前激活；没有下一任务时必须明确 `WORKFLOW_COMPLETE`。`delegate-check`、`parallel-check`、`unit-check`、`evidence-check` 和进入 `VALIDATING` 的迁移均必须读取并复核该状态，缺失、过期、篡改或身份/顺序不一致一律阻断。
+进入 A3 `IMPLEMENTING` 时创建 `evidence/<workItemId>/execution-state.json`，且只能发生在当前 Work Item 完成 V2、V3、V4 之后的正式功能实现阶段。该状态记录绑定当前 Work Item、Implementation Package、baseline、执行计划指纹和 `executionUnits` 数组位置；只有通过 `unit-check` 的当前 PASS Result 可以把当前单元更新为 `COMPLETE`，并按预设数组激活下一串行单元或下一并行组的 `IN_PROGRESS`。并行组未全部完成时，后续顺序阶段不得提前激活；没有下一任务时必须明确 `WORKFLOW_COMPLETE`。`delegate-check`、`parallel-check`、`unit-check`、`evidence-check` 和进入 `VALIDATING` 的迁移均必须读取并复核该状态，缺失、过期、篡改或身份/顺序不一致一律阻断；其中 SCENE/DISPLAY_LAYER 的 READY、委派和激活还必须复核当前 Work Item 的 V2 结果，失败时明确退回该 Work Item 的 V2。
+
+`highFidelityPrerequisite` 是 SCENE/DISPLAY_LAYER 必填、其他类型必须为 null 的严格 nullable 字段，表示同一场景 Work Item 的 V2 结果引用，严格包含 `workItemId`、`status=COMPLETE`、`stage=V2`、`frozen=true`、scene/layer/host 身份、冻结 `targetSha256`、`candidateSha256`、`diffFingerprint`、仓库内 `evidenceFile` 和 `evidenceSha256`。证据文件统一为 `phaser4-scene-v2-result/1.0` 的单一场景根结果：根提供带实际文件 SHA 的 `sceneMaster`、完整场景候选、动态视觉样片、机器验证 `PASS` 和唯一真人视觉审批 `PASS`；多个显示层收敛到 `displayLayerContexts[]`，每项包含 `displayLayerId`、`hostSceneId`、`hostContextImage`。SCENE 与 DISPLAY_LAYER 必须使用同一 `evidenceFile`，候选、差异、目标和宿主上下文身份必须彼此一致。不得使用独立工作项身份、独立任务字段或后续代码包 ID；缺字段、身份漂移、文件缺失或 SHA 漂移均 fail closed。
 
 V2 单元序列完成后，状态输出固定的下一任务为 `V3-PRODUCTION-PLANNING`，门为 `V2_TO_V3_CONTRACT`。只有 Work Item 唯一 `v2ToV3Contract` 对象同时绑定 `status=PASS`、`contractId`、evidenceRoot 内的 `evidenceFile` 和复算一致的 `evidenceSha256`，合同回对记录才能将该任务标为 `IN_PROGRESS`；否则任务保持 `BLOCKED`，不得推进 V3。合同在单元完成后补齐时，必须运行 `refresh-v2-v3` 在排他锁内复核旧 BLOCKED 状态并持久化刷新；错误路径、文件或 SHA 均保持阻断。V2 合同 PASS 的 `V3-PRODUCTION-PLANNING` 是当前 V2 工作项的显式交接任务，允许该工作项进入 `VALIDATING → PASSED → COMPLETE`，V3 规划由后续工作项执行。
