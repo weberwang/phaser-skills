@@ -78,11 +78,30 @@ test('独立 taskId/sourceWorkItemId 不能伪造场景 V2 前置', () => {
   rmSync(fixture.repo, { recursive: true, force: true });
 });
 
-test('V2 前正式功能实施包被拒绝，视觉样片不改变正式入口边界', () => {
+test('冻结全局静态 visual_baseline 后 foundation-only 包可在 V2/V4 前规划和执行', () => {
   const fixture = makeFixture();
   const packageValue = { executionUnits: [{ unitType: 'SHARED' }, { unitType: 'MODULE' }] };
-  fixture.work.visualStage = 'V1'; fixture.work.visualStageState = 'in-progress';
+  fixture.work.visualStage = 'V1'; fixture.work.visualStageState = 'global-static-baseline-frozen'; fixture.work.globalStaticBaselineState = 'global-static-baseline-frozen';
+  assert.doesNotThrow(() => assertFormalImplementationAfterV2(fixture.work, packageValue));
+  assert.doesNotThrow(() => assertFormalExecutionAfterV4(fixture.work, packageValue));
+  rmSync(fixture.repo, { recursive: true, force: true });
+});
+
+test('foundation-only 包缺少全局静态 visual_baseline 时拒绝', () => {
+  const fixture = makeFixture();
+  const packageValue = { executionUnits: [{ unitType: 'SHARED' }, { unitType: 'MODULE' }] };
+  fixture.work.visualStage = 'V1'; fixture.work.visualStageState = 'global-static-baseline-frozen';
+  assert.throws(() => assertFormalImplementationAfterV2(fixture.work, packageValue), /globalStaticBaselineState|基础实施包/);
+  assert.throws(() => assertFormalExecutionAfterV4(fixture.work, packageValue), /globalStaticBaselineState|基础实施包/);
+  rmSync(fixture.repo, { recursive: true, force: true });
+});
+
+test('混入 SCENE 的实施包仍受 V2/V4 正式门约束', () => {
+  const fixture = makeFixture();
+  const packageValue = { executionUnits: [{ unitType: 'SHARED' }, { unitType: 'SCENE' }] };
+  fixture.work.visualStage = 'V1'; fixture.work.visualStageState = 'global-static-baseline-frozen'; fixture.work.globalStaticBaselineState = 'global-static-baseline-frozen';
   assert.throws(() => assertFormalImplementationAfterV2(fixture.work, packageValue), /V2 前置视觉验收/);
+  assert.throws(() => assertFormalExecutionAfterV4(fixture.work, packageValue), /V4 正式资源/);
   rmSync(fixture.repo, { recursive: true, force: true });
 });
 
@@ -153,7 +172,7 @@ test('缺字段、非 COMPLETE、宿主身份漂移和 SHA 漂移均 fail closed
 
   const pending = makeFixture();
   writeEvidenceFile(pending, { status: 'PENDING' });
-  assert.throws(() => assertHighFidelityPrerequisite(pending.unit, pending.work, pending.pkg, pending.repo, pending.io), /COMPLETE/);
+  assert.throws(() => assertHighFidelityPrerequisite(pending.unit, pending.work, pending.pkg, pending.repo, pending.io), /V2 根结果未绑定当前 Work Item、scene 或 target\/candidate\/diff/);
   rmSync(pending.repo, { recursive: true, force: true });
 
   const identity = makeFixture('DISPLAY_LAYER');

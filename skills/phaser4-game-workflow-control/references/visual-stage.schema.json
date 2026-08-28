@@ -8,7 +8,7 @@
   "properties": {
     "visualStage": {"enum": ["V0", "V1", "V2", "V3", "V4", "V5"]},
     "visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "global-static-baseline-frozen", "v2-direction-frozen", "v3-production-planning-complete", "v4-formal-acceptance-complete", "v5-runtime-integration-candidate"]},
-    "globalStaticBaselineState": {"const": "global-static-baseline-frozen"},
+    "globalStaticBaselineState": {"const": "global-static-baseline-frozen", "description": "全局静态 visual_baseline 已冻结；它是基础实施包的前置，不代表任一授权场景已完成 V2。"},
     "visualHumanApproval": {"$ref": "#/$defs/visualHumanApproval"},
     "visual_human_approval": {"$ref": "#/$defs/visualHumanApproval"},
     "visualStageEvidenceRefs": {

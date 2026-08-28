@@ -1,5 +1,5 @@
 import { closeSync, mkdirSync, openSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { assertFormalExecutionAfterV4, assertHighFidelityPrerequisite, assertHighFidelityPrerequisites } from './high-fidelity-prerequisite.mjs';
+import { assertFormalExecutionAfterV4, assertHighFidelityPrerequisite, assertHighFidelityPrerequisites, isFoundationOnlyPackage } from './high-fidelity-prerequisite.mjs';
 
 /** 实施单元结果允许的顶层字段。 */
 const RESULT_FIELDS = ['resultId', 'workItemId', 'packageId', 'unitId', 'baselineHash', 'codeFingerprint', 'diffFingerprint', 'completedAt', 'commands', 'files', 'fileHashes', 'verdict'];
@@ -217,7 +217,7 @@ function v2ToV3ContractPassed(work, repo, io) {
 }
 
 /** 根据执行单元状态计算下一任务；数组位置是唯一权威，不重新推导依赖图。 */
-function deriveNextTask(units, work, repo, io) {
+function deriveNextTask(units, work, repo, io, pkg = null) {
   const active = units.filter((unit) => unit.state === 'IN_PROGRESS');
   if (active.length) {
     const firstActiveIndex = units.findIndex((unit) => unit.state === 'IN_PROGRESS');
@@ -236,7 +236,8 @@ function deriveNextTask(units, work, repo, io) {
       : { kind: 'SERIAL_UNIT', taskId: active[0].unitId, state: 'IN_PROGRESS', unitIds: [active[0].unitId], parallelGroup: null, gate: 'UNIT_CHECK', gateStatus: 'NOT_REQUIRED', reason: '按 executionUnits 预设顺序执行当前串行单元' };
   }
   if (units.every((unit) => unit.state === 'COMPLETE')) {
-    if (String(work.visualStage ?? '').toUpperCase() === 'V2') {
+    // 基础实施包在全局基线后即可闭环，不能因当前工作项恰好处于 V2 再误触发场景 V2→V3 合同。
+    if (!isFoundationOnlyPackage(pkg) && String(work.visualStage ?? '').toUpperCase() === 'V2') {
       const passed = String(work.visualStageState ?? '') === 'v2-direction-frozen' && v2ToV3ContractPassed(work, repo, io);
       return { kind: 'V3_PRODUCTION_PLANNING', taskId: 'V3-PRODUCTION-PLANNING', state: passed ? 'IN_PROGRESS' : 'BLOCKED', unitIds: [], parallelGroup: null, gate: 'V2_TO_V3_CONTRACT', gateStatus: passed ? 'PASS' : 'BLOCKED', reason: passed ? 'V2 已完成且 V2→V3 合同回对门通过，下一任务为 V3 生产规划' : 'V2 已完成但未通过 V2→V3 合同回对门，禁止推进 V3 生产规划' };
     }
@@ -273,7 +274,7 @@ export function createExecutionState(work, pkg, io, now = new Date().toISOString
     units,
     unitSequenceState: 'IN_PROGRESS',
     workflowState: 'IN_PROGRESS',
-    nextTask: deriveNextTask(units, work, null, io),
+    nextTask: deriveNextTask(units, work, null, io, pkg),
     updatedAt: now,
     lastTransition: { type: 'INITIALIZE', unitId: null, resultId: null },
   };
@@ -329,7 +330,7 @@ export function validateExecutionState(state, statePath, work, pkg, repo, io) {
   const allComplete = state.units.every((unit) => unit.state === 'COMPLETE');
   const expectedUnitSequenceState = allComplete ? 'COMPLETE' : 'IN_PROGRESS';
   if (state.unitSequenceState !== expectedUnitSequenceState) throw new Error('Execution State.unitSequenceState 与单元状态不一致');
-  const expectedTask = deriveNextTask(state.units, work, repo, io);
+  const expectedTask = deriveNextTask(state.units, work, repo, io, pkg);
   const taskMissing = NEXT_TASK_FIELDS.filter((field) => state.nextTask?.[field] === undefined);
   const taskExtra = state.nextTask && typeof state.nextTask === 'object' ? Object.keys(state.nextTask).filter((field) => !NEXT_TASK_FIELDS.includes(field)) : [];
   if (taskMissing.length || taskExtra.length || !NEXT_TASK_KINDS.has(state.nextTask?.kind) || !NEXT_TASK_STATES.has(state.nextTask?.state) || !NEXT_TASK_GATE_STATUSES.has(state.nextTask?.gateStatus) || !Array.isArray(state.nextTask?.unitIds)) throw new Error('Execution State.nextTask 字段或枚举无效');
@@ -380,7 +381,7 @@ export function refreshV2ToV3Contract(work, pkg, repo, io) {
     const blockedState = validateExecutionState(rawState, statePath, blockedWork, pkg, repo, io);
     if (blockedState.nextTask.kind !== 'V3_PRODUCTION_PLANNING' || blockedState.nextTask.state !== 'BLOCKED' || blockedState.nextTask.gateStatus !== 'BLOCKED' || blockedState.workflowState !== 'BLOCKED') throw new Error('Execution State 当前不是待刷新 V2→V3 BLOCKED 门');
     if (!v2ToV3ContractPassed(work, repo, io)) throw new Error('V2→V3 合同证据缺失、路径越出 evidenceRoot 或 SHA-256 不匹配，仍保持 BLOCKED');
-    const state = { ...rawState, nextTask: deriveNextTask(rawState.units, work, repo, io), workflowState: 'IN_PROGRESS', updatedAt: new Date().toISOString(), lastTransition: { type: 'V2_TO_V3_CONTRACT_REFRESH', unitId: null, resultId: null } };
+    const state = { ...rawState, nextTask: deriveNextTask(rawState.units, work, repo, io, pkg), workflowState: 'IN_PROGRESS', updatedAt: new Date().toISOString(), lastTransition: { type: 'V2_TO_V3_CONTRACT_REFRESH', unitId: null, resultId: null } };
     validateExecutionState(state, statePath, work, pkg, repo, io);
     writeExecutionStateAtomically(statePath, state);
     return { state, statePath };
@@ -421,7 +422,7 @@ export function completeExecutionUnit(work, pkg, unit, result, resultPath, repo,
     }
     const allComplete = state.units.every((entry) => entry.state === 'COMPLETE');
     state.unitSequenceState = allComplete ? 'COMPLETE' : 'IN_PROGRESS';
-    state.nextTask = deriveNextTask(state.units, work, repo, io);
+    state.nextTask = deriveNextTask(state.units, work, repo, io, pkg);
     state.workflowState = state.nextTask.kind === 'WORKFLOW_COMPLETE' ? 'COMPLETE' : state.nextTask.state === 'BLOCKED' ? 'BLOCKED' : 'IN_PROGRESS';
     state.updatedAt = new Date().toISOString();
     state.lastTransition = { type: state.workflowState === 'COMPLETE' ? 'WORKFLOW_COMPLETE' : 'UNIT_COMPLETE', unitId: unit.unitId, resultId: result.resultId };

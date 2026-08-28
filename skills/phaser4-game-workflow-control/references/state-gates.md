@@ -1,6 +1,6 @@
 # 状态、阶段与停止门
 
-效果图还原是当前场景实现 Work Item 内的可选视觉模式，在 V1/V2 先冻结 `scene_reconstruction_contract`；缺少整屏构图、布局绑定、逐区域视觉事实、运行时 fidelity obligation 或项目容差时，根因分类为 `方案缺失`，最早退回 `V1/PROPOSAL`。合同完整但正式 Scene、比例或同屏组合不符属于 `执行问题`，退回 V3/V4；已有差异或证据不足却标记 PASS 属于 `验收问题`，退回 `VALIDATING` 或最早受影响阶段。资源 loaded/used 只能是工程子门，不能绕过 V5 fidelity/F2/正式 Scene consumption，也不创建第二条场景生命周期。
+效果图还原是当前场景实现 Work Item 内的可选视觉模式；基础实施完成后、场景 V1/V2 开始前先冻结 `scene_reconstruction_contract`、scene master 和必需宿主上下文图，再进入场景视觉门。缺少整屏构图、布局绑定、逐区域视觉事实、运行时 fidelity obligation 或项目容差时，根因分类为 `方案缺失`，最早退回 `V1/PROPOSAL`。合同完整但正式 Scene、比例或同屏组合不符属于 `执行问题`，退回 V3/V4；已有差异或证据不足却标记 PASS 属于 `验收问题`，退回 `VALIDATING` 或最早受影响阶段。资源 loaded/used 只能是工程子门，不能绕过 V5 fidelity/F2/正式 Scene consumption，也不创建第二条场景生命周期。
 
 ## 全局状态
 
@@ -40,7 +40,7 @@ V0-V5、G0-G3 与领域阶段是 `stageId`，不是另一套状态机。只有�
 
 ### 全局视觉冻结与实施顺序前置门
 
-进入 A3 Implementation Package 或任何正式功能代码单元前，当前场景 Work Item 必须先完成 V1 视觉合同/参考冻结和 V2 前置视觉验收：冻结完整 scene master、必需 transient display-layer 宿主上下文图、完整场景候选、动态样片、F2 `MACHINE/PASS` 与唯一真人视觉审批；集合按 scene/state 分项而非一张合并图。V2 `COMPLETE/frozen` 是正式代码的唯一前置视觉边界，V2 前只允许隔离灰盒或无正式业务逻辑视觉样片。全局 `visual_baseline` 只负责静态风格一致性，全局场景集合只能作规划/聚合事实，不能替代逐场景 V2。随后按 V3 实施拆解、V4 正式资源与同屏组合预验收推进，V4 后才进入正式功能代码；参考模式的 `effect-image` 仍在同一 Work Item 内完成 V1→V5。正式代码的 `executionUnits` 唯一顺序为 `SHARED` 最小骨架→`MODULE`→按场景连续的 `SCENE`+紧邻从属 `DISPLAY_LAYER`→`INTEGRATION`/联合验收；模块才可按互斥所有权并行，显示层不得在所有场景之后另设尾部阶段，实际场景顺序由计划制定者冻结。代码面在每个 SCENE/DISPLAY_LAYER 单元准备、委派、READY 和激活前读取当前 Work Item 的 V2 结果；全局视觉冻结、手写布尔/PASS、数组前序均不构成该证据。
+先冻结全局静态 `visual_baseline`，再以独立 foundation-only 包完成 `SHARED` 最小项目骨架和 `MODULE` 场景无关基础模块；基础实施完成后、进入场景 V1/V2 前，冻结全部授权场景的 scene master、必需 transient display-layer 宿主上下文图和 `scene_reconstruction_contract`，集合按 scene/state 分项而非一张合并图；随后各场景才完成完整场景候选、动态样片、F2 `MACHINE/PASS` 与唯一真人视觉审批。基础阶段允许最小 Boot/Preload 生命周期、公开契约、游戏数据配置加载与 schema 校验、状态/存档仓库、输入/平台适配、资源目录/加载基础设施和测试支撑；禁止具体场景玩法规则、场景 UI/布局、正式可见资产消费、Boot→正式可见 Scene 接入和删除旧视觉实现。foundation-only 包只需 `globalStaticBaselineState=global-static-baseline-frozen`，缺失时 fail closed；混入 SCENE/DISPLAY_LAYER/INTEGRATION 的包仍以 V2 `COMPLETE/frozen` 为规划边界，并以 V4 正式资源与同屏组合预验收为执行边界。参考模式的 `effect-image` 仍在同一 Work Item 内完成 V1→V5。正式代码的 `executionUnits` 唯一顺序为 `SHARED`→`MODULE`→按场景连续的 `SCENE`+紧邻从属 `DISPLAY_LAYER`→`INTEGRATION`/联合验收；模块才可按互斥所有权并行，显示层不得在所有场景之后另设尾部阶段，实际场景顺序由计划制定者冻结。代码面在每个 SCENE/DISPLAY_LAYER 单元准备、委派、READY 和激活前读取当前 Work Item 的 V2 结果；全局冻结、手写布尔/PASS、数组前序均不构成该证据。
 
 `highFidelityPrerequisite` 必须是不可变引用：`workItemId`、`status=COMPLETE`、`stage=V2`、`frozen=true`、`sceneId`/`displayLayerId`/`hostSceneId`、冻结 `targetSha256`/`candidateSha256`/`diffFingerprint`、仓库内相对 `evidenceFile` 与当前 `evidenceSha256`。证据文件须为 `phaser4-scene-v2-result/1.0` 的单一场景根结果：根提供 `sceneMaster`、完整场景候选、动态视觉样片、机器验证 `PASS`、唯一真人视觉审批 `PASS` 及实际文件 SHA；多个显示层放入 `displayLayerContexts[]`，每项包含 `displayLayerId`、`hostSceneId`、`hostContextImage`。SCENE 与 DISPLAY_LAYER 使用同一 `evidenceFile`，candidate/diff/target 与 scene/layer/host 身份必须一致。缺字段、非 COMPLETE、身份不匹配、越界、缺文件或任一 SHA 漂移均 fail closed，并退回当前场景 Work Item 的 V2；不得引入其他 Work Item 或另行任务身份，也不绑定后续代码包 ID。
 

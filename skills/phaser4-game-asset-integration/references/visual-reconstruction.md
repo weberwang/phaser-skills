@@ -54,7 +54,7 @@ V2 必须产出关键状态和动态可玩样片，并完成 V2a、V2b 机器检
 
 效果图拆解时必须显式分析每个元素的父容器和父子相对关系：先确定 `parent_layout_node_id`（只能是现有布局节点或 `viewport`/`safe-area`），再冻结 `parent_target_bounds`，测量 child 到父内容框四边的 `relative_position.left/right/top/bottom`。`reference_id` 必须与父 ID 相等，子 bounds 必须完全位于父 bounds 内，父子图不得循环；`safe-area` 首次测量作为同一场景唯一根 bounds。水平取较近的 left/right，垂直取较近的 top/bottom，相等时确定性选择 left/top；`nearest_edge_docking`、`offset`、`self_anchor`、`reference_anchor` 必须由这些测量推导，禁止凭感觉补坐标。相对距离允许的浮点误差最多 `1e-6`，父子几何字段同时参与布局合同身份 SHA。
 
-全局视觉效果图冻结是进入 A3 实施包/代码单元的前置门：必须先覆盖全部授权 gameplay/supporting 场景的 scene master，以及所有必需瞬态显示层状态的宿主场景上下文效果图；集合按 scene/state 分项冻结，不是一张合并图。冻结门保留 V0-V2 方向与唯一真人视觉审批，并登记完整 coverage/layout/fidelity obligations；effect-image 仍完整执行 V1→V5，V3-V5 在对应场景阶段生产、组合和运行验收。通过后，`executionUnits` 的权威顺序为 `SHARED` 最小骨架 → `MODULE` → 按场景组织的 `SCENE`+紧邻 `DISPLAY_LAYER` → `INTEGRATION`/联合验收；不新增视觉冻结 `unitType`。布局与视觉资源拆解、显示层装配只能作为对应宿主场景内部职责，不能在所有场景之后另设显示层阶段。`DISPLAY_LAYER` 必须绑定 `displayLayerId` 与 `hostSceneId`，不能填写 `sceneId`。V4 组合预验收必须同时使用正式资源、正式布局和宿主场景同屏组合；V5 必须满足 coverage=1、零孤立节点、逐节点 target/candidate 几何差异与证据、整屏 fidelity，以及显示层打开→交互→关闭→底层状态/焦点恢复轨迹，任一项缺失都不能通过。
+全局静态 `visual_baseline` 冻结是 foundation-only 基础实施的前置；基础实施完成后，才在进入场景 V1/V2 前冻结全部授权 gameplay/supporting 场景的 scene master，以及所有必需瞬态显示层状态的宿主场景上下文效果图。集合按 scene/state 分项冻结，不是一张合并图。场景冻结门保留 V0-V2 方向与唯一真人视觉审批，并登记完整 coverage/layout/fidelity obligations；effect-image 仍完整执行 V1→V5，V3-V5 在对应场景阶段生产、组合和运行验收。通过后，`executionUnits` 的权威顺序为 `SHARED` 最小骨架 → `MODULE` → 按场景组织的 `SCENE`+紧邻 `DISPLAY_LAYER` → `INTEGRATION`/联合验收；不新增视觉冻结 `unitType`。布局与视觉资源拆解、显示层装配只能作为对应宿主场景内部职责，不能在所有场景之后另设显示层阶段。`DISPLAY_LAYER` 必须绑定 `displayLayerId` 与 `hostSceneId`，不能填写 `sceneId`。V4 组合预验收必须同时使用正式资源、正式布局和宿主场景同屏组合；V5 必须满足 coverage=1、零孤立节点、逐节点 target/candidate 几何差异与证据、整屏 fidelity，以及显示层打开→交互→关闭→底层状态/焦点恢复轨迹，任一项缺失都不能通过。
 
 ## V3-V4
 
@@ -125,7 +125,7 @@ V3 实施包把每个 region 与正式 Scene 的实现、owner、状态/部件�
 
 ## 先冻结全局视觉，再生成效果图
 
-场景还原的生成顺序固定为：冻结 `visual_baseline` 与全部全局锚点 → 生成/接收 scene master 与 reference target → 按 required state 生成宿主场景上下文效果图 → 以完整冻结效果图为主参考、额外继承全局锚点生成 effect-image 原子资产。基线状态 `global-static-baseline-frozen` 只是静态真值，不冒充 V2 的 `v2-direction-frozen`。
+场景还原的生成顺序固定为：冻结 `visual_baseline` 与全部全局锚点 → 完成 foundation-only 基础实施 → 生成/接收 scene master 与 reference target → 按 required state 生成宿主场景上下文效果图 → 以完整冻结效果图为主参考、额外继承全局锚点生成 effect-image 原子资产。基线状态 `global-static-baseline-frozen` 只是静态真值，不冒充 V2 的 `v2-direction-frozen`。
 
 生成记录必须明确 `origin=generated|provided`；只有 generated 强制绑定基线四元组、全部 `style_reference_inputs`、canonical 全局一致性段、`style_drift_policy=forbid`、实际完整提示词、输出 SHA 与一致性证据。provided 图不得伪造生成记录。基线、锚点、target SHA 或实际提示词变化会令旧记录失效，并按合同返回最早受影响阶段。
 ```

@@ -77,6 +77,15 @@ function makePackage(overrides = {}) {
   ], allowedPaths: ['src', 'docs'], forbiddenPaths: ['.git', 'src/secret'], expectedAddedFiles: [], expectedDeletedFiles: [], testScope: ['node --test'], outOfScope: ['release'], compatibilityStrategy: '不保留旧版兼容', definitionOfDone: ['tests pass'], stopConditions: ['scope changes'], ...overrides };
 }
 
+/** 构造只包含项目骨架和场景无关基础模块的 foundation-only 包。 */
+function makeFoundationPackage(overrides = {}) {
+  const pkg = makePackage(overrides);
+  pkg.executionUnits = pkg.executionUnits.filter((unit) => unit.unitType === 'SHARED' || unit.unitType === 'MODULE');
+  const ownedPaths = new Set(pkg.executionUnits.flatMap((unit) => unit.ownedPaths));
+  pkg.fileOwnership = Object.fromEntries(Object.entries(pkg.fileOwnership).filter(([file]) => ownedPaths.has(file)));
+  return pkg;
+}
+
 /** 构造仅在 MODULE 阶段并行、场景随后串行的顺序包。 */
 function makePhaseOrderedParallelPackage() {
   const pkg = makePackage();
@@ -249,6 +258,47 @@ function makeEvidence(fixture, audit) {
   const common = { status: 'PASS', baselineHash: HASH, diffFingerprint: audit.diffFingerprint };
   return { evidenceId: 'EV-1', batchId: 'BATCH-1', workItemId: 'WI-1', baselineHash: HASH, codeFingerprint: `git:${fixture.head}`, diffFingerprint: audit.diffFingerprint, recordedAt: new Date(Date.parse(audit.recordedAt) + 1000).toISOString(), commands: [{ command: 'node --test', exitCode: 0, outputFile: rel, outputHash: hashFile(output) }], environment: { node: process.version }, dataSources: ['git diff'], files: [rel], fileHashes: { [rel]: hashFile(output) }, gateResults: { F0: { ...common, authorizationId: 'TASK-WI-1' }, F1: { ...common }, F2: { ...common, reviewer: 'independent-reviewer', reviewMode: 'INDEPENDENT' }, F3: { ...common, evidenceId: 'EV-1' } }, verdict: 'PASS', uncoveredItems: [], completedOutputs: ['src/main.js'], completedUnitIds: ['SHARED-1', 'MODULE-1', 'SCENE-1'], satisfiedExitCriteria: ['tests pass'] };
 }
+
+test('基础实施包：冻结全局静态 visual_baseline 后可在 V2/V4 前规划并初始化', () => {
+  const f = setup();
+  const work = JSON.parse(readFileSync(f.workPath, 'utf8'));
+  work.visualStage = 'V1'; work.visualStageState = 'global-static-baseline-frozen'; work.globalStaticBaselineState = 'global-static-baseline-frozen';
+  writeJson(f.workPath, work);
+  writeJson(f.packagePath, makeFoundationPackage());
+  writeExecutionState(f);
+  const result = run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo);
+  assert.equal(result.status, 0, result.stderr);
+  const state = JSON.parse(readFileSync(join(f.root, 'evidence', 'WI-1', 'execution-state.json'), 'utf8'));
+  assert.equal(state.nextTask.kind, 'SERIAL_UNIT');
+  assert.deepEqual(state.executionUnitIds, ['SHARED-1', 'MODULE-1']);
+});
+
+test('基础实施包：缺少全局静态 visual_baseline 冻结声明时 fail closed', () => {
+  const f = setup();
+  const work = JSON.parse(readFileSync(f.workPath, 'utf8'));
+  work.visualStage = 'V1'; work.visualStageState = 'global-static-baseline-frozen'; delete work.globalStaticBaselineState;
+  writeJson(f.workPath, work);
+  writeJson(f.packagePath, makeFoundationPackage());
+  rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /globalStaticBaselineState|基础实施包/);
+});
+
+test('混合场景实施包：包含 SCENE 时仍必须通过 V2 规划门', () => {
+  const f = setup();
+  const work = JSON.parse(readFileSync(f.workPath, 'utf8'));
+  work.visualStage = 'V1'; work.visualStageState = 'global-static-baseline-frozen'; work.globalStaticBaselineState = 'global-static-baseline-frozen';
+  writeJson(f.workPath, work);
+  rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /V2 前置门|V2/);
+});
+
+test('正式场景执行：V4 未完成时仍拒绝 unit-check', () => {
+  const f = setup();
+  writeUnitResults(f, {}, { completeState: false });
+  const work = JSON.parse(readFileSync(f.workPath, 'utf8'));
+  work.visualStageState = 'pending';
+  writeJson(f.workPath, work);
+  const resultPath = join(f.root, 'evidence', 'WI-1', 'units', 'SHARED-1.json');
+  rejects(run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', resultPath], f.repo), /V4 前置门|V4/);
+});
 
 test('A0-A2：只读、文档和隔离原型依任务授权直接通过', () => {
   const f = setup({ globalState: 'REVIEW' });

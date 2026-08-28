@@ -25,7 +25,13 @@ A0-A6 只描述 Phaser 项目生命周期：A0 项目只读调查；A1 项目规
 
 Work Item 的 `taskAuthorization` 保存用户原始请求、目标和范围；它是 A0-A3 本地工作的任务授权，不写入 Approval Ledger。产品、视觉或架构取舍属于 `USER_DECISION`：澄清后更新任务授权、权威工件或决策记录，不生成审批。只有 A4、A5、A6 的具体操作才生成 pending 和操作批准记录；记录精确冻结操作、影响、对象、门、基线、路径、服务、外部目标与副作用，A6 永不自动放行。
 
-Work Item 使用已排序的 `moduleIds` 精确覆盖多模块/多场景范围。A3 采用静态 Implementation Package、路径级 Execution Unit Result 和原子 Parallel Delegation Batch：依赖单元只有存在当前基线、当前路径 diff 的 PASS Result 才派生为 READY；共享基础和集成单元强制串行，模块/场景/显示层安全并行必须一次提交完整批次。`DISPLAY_LAYER` 实施单元绑定 `displayLayerId` 与 `hostSceneId`，`sceneId` 仅属于 `SCENE`。
+Work Item 使用已排序的 `moduleIds` 精确覆盖多模块/多场景范围。A3 采用静态 Implementation Package、路径级 Execution Unit Result 和原子 Parallel Delegation Batch：依赖单元只有存在当前基线、当前路径 diff 的 PASS Result 才派生为 READY；共享基础和集成单元强制串行，模块/场景/显示层安全并行必须一次提交完整批次。全局静态 `visual_baseline` 冻结后，可以用仅含 `SHARED`/`MODULE` 的 foundation-only 包先落地项目最小骨架和场景无关基础模块；混入场景或集成单元的包仍按场景 V2/V4 门执行。`DISPLAY_LAYER` 实施单元绑定 `displayLayerId` 与 `hostSceneId`，`sceneId` 仅属于 `SCENE`。
+
+### 完整项目实施顺序
+
+项目级完整顺序固定为：冻结全局静态 `visual_baseline` → 用 foundation-only 包实现 `SHARED` 最小项目骨架和 `MODULE` 场景无关基础模块 → 冻结全部授权场景的 scene master 与必需宿主上下文效果图 → 逐场景执行 V1/V2/V3/V4 → 正式实现 `SCENE`/`DISPLAY_LAYER` → V5 运行态联合复验 → 跨场景 `INTEGRATION`。全局基线只定义静态视觉语言，不等同于任一场景 V2，也不能替代场景候选、宿主上下文或 V2/V4 证据。
+
+基础实施阶段允许工程入口与最小 Boot/Preload 生命周期、公开契约、游戏数据配置加载与 schema 校验、状态/存档仓库、输入/平台适配、资源目录与加载基础设施及测试支撑。该阶段禁止具体场景玩法规则、场景 UI/布局、正式可见资产消费、Boot→正式可见 Scene 接入和删除旧视觉实现；这些动作仍须在对应场景 V2/V4/V5/A4 门内完成。机器控制面仅在 `globalStaticBaselineState=global-static-baseline-frozen` 时放行 foundation-only 包，缺失冻结声明必须 fail closed。
 
 ## CLI
 
@@ -47,7 +53,7 @@ node <skill-dir>\scripts\workflow-control.mjs diff-audit --work-item .workflow-c
 
 任何注册/替换正式 Phaser Scene、修改 Boot→可见 Scene 入口、正式消费可见资产、删除旧视觉实现或声明视觉完成的 Work Item，都必须通过同一个视觉阶段前置校验器：
 
-场景实现只有一条 Work Item 生命周期：任务授权/范围 → 功能规格与契约（只定义，不写正式功能代码）→ V1 视觉合同/参考冻结 → V2 当前场景 Work Item 的完整候选、动态样片、F2 `MACHINE/PASS` 与唯一真人视觉审批 → V3 实施拆解/Implementation Package → V4 正式视觉资源与宿主场景同屏组合预验收 → 正式功能代码实现 → V5 运行态视觉接入与功能/视觉联合复验 → A4 正式入口接入。参考还原仅在适用时作为该 Work Item 的视觉模式，不另建生命周期；全局 `visual_baseline` 只负责静态风格一致性。
+场景实现只有一条 Work Item 生命周期：任务授权/范围 → 功能规格与契约（只定义，不写正式功能代码）→ V1 视觉合同/参考冻结 → V2 当前场景 Work Item 的完整候选、动态样片、F2 `MACHINE/PASS` 与唯一真人视觉审批 → V3 实施拆解/Implementation Package → V4 正式视觉资源与宿主场景同屏组合预验收 → 正式功能代码实现 → V5 运行态视觉接入与功能/视觉联合复验 → A4 正式入口接入。项目基础实施是全局基线之后、场景 V1/V2 之前的独立 foundation-only Work Item；参考还原仅在适用时作为该场景 Work Item 的视觉模式，不另建生命周期；全局 `visual_baseline` 只负责静态风格一致性。
 
 | 阶段 | 唯一机器状态 | 必须绑定的下游证据 |
 | --- | --- | --- |
@@ -62,7 +68,7 @@ node <skill-dir>\scripts\workflow-control.mjs diff-audit --work-item .workflow-c
 
 `global-static-baseline-frozen` 只冻结颜色、字体、栅格等静态规则，不等于 V2。裸 `frozen`、未知阶段、`stageId=main/production-entry/integration`、根 `PASS`/布尔值、说明文字或用户回复均不能代替阶段证据。V2→V5 证据必须由 Work Item 的 `path + sha256` 不可变引用加载并复算文件哈希；任一引用、基线、diff、候选或审查变化都会使 pending 变为 stale，恢复路径固定回到 V2。
 
-V2 前只允许在隔离环境制作灰盒、Graphics 或诊断文本视觉样片；它们不得注册正式入口、实现正式业务逻辑、宣称 V2/V4/V5、删除旧实现或作为正式资产验收证据。V2 的当前场景候选经唯一真人视觉审批并冻结后，按 V3→V4 生产资源与组合预验收，之后才进入正式功能代码实现，最后在 V5 做运行态联合复验。
+基础实施阶段可在全局基线冻结后、场景 V2/V4 前执行，但仅限 foundation-only 包及其场景无关职责；它不构成逐场景 V2，也不得注册 Boot→正式可见 Scene 入口或消费正式可见资产。场景 V2 前仍只允许在隔离环境制作灰盒、Graphics 或诊断文本视觉样片；它们不得实现具体场景正式业务逻辑、宣称 V2/V4/V5、删除旧实现或作为正式资产验收证据。场景 V2 的当前候选经唯一真人视觉审批并冻结后，按 V3→V4 生产资源与组合预验收，之后才进入正式场景功能代码实现，最后在 V5 做运行态联合复验。
 
 视觉硬门失败输出结构化 `errorCode`、`missingStages`、`missingEvidence`、`invalidatedDependencies` 和 `nextAction`。`lint`、`preflight`、`route`、`advance`、`prepare-approval`、`handoff`、`approve`、`unit-check`、`evidence-check`、`status` 均复用同一校验器；`prepare-approval` 失败不创建 pending，`approve` 会在写入 Ledger 前重新校验。
 
@@ -79,7 +85,7 @@ V2 前只允许在隔离环境制作灰盒、Graphics 或诊断文本视觉样�
 
 ## 效果图还原与位图拆解
 
-效果图还原使用 schema 1.5 的 `visual-assets.json`。G0/V1 采用“规划时一起规划、视觉目标按状态分图、验收时重新同屏组合”：`scene_reconstruction_contract.display_layer_planning` 必须显式声明 `scene_master` 和 `inventory`；scene master 只冻结基础场景与常驻 HUD，modal/popup/drawer/toast 等瞬态层分别生成包含宿主场景、遮罩/层级和当前状态的上下文效果图，孤立透明组件图不能作为完整效果图或最终验收证据。V3 再按 component×state 拆解，V4/V5 回到宿主场景同屏组合并重放打开→交互→关闭→底层状态/焦点恢复。随后生成 PNG 用户图示：左侧保持原图尺寸并只绘制框选、稳定编号和原子框，右侧说明栏只显示用户可读摘要及“本次生成 / 复用既有资源 / 程序实现”标签，不绘制 placement ID、坐标尺寸或组件/状态/资产字段。不含显示层时也必须写 `inventory: []`，防止规划遗漏。
+效果图还原使用 schema 1.5 的 `visual-assets.json`。全局静态基线冻结并完成基础实施后，再冻结全部授权场景的 scene master 与必需宿主上下文效果图；随后各场景按 V1/V2 采用“规划时一起规划、视觉目标按状态分图、验收时重新同屏组合”：`scene_reconstruction_contract.display_layer_planning` 必须显式声明 `scene_master` 和 `inventory`；scene master 只冻结基础场景与常驻 HUD，modal/popup/drawer/toast 等瞬态层分别生成包含宿主场景、遮罩/层级和当前状态的上下文效果图，孤立透明组件图不能作为完整效果图或最终验收证据。V3 再按 component×state 拆解，V4/V5 回到宿主场景同屏组合并重放打开→交互→关闭→底层状态/焦点恢复。随后生成 PNG 用户图示：左侧保持原图尺寸并只绘制框选、稳定编号和原子框，右侧说明栏只显示用户可读摘要及“本次生成 / 复用既有资源 / 程序实现”标签，不绘制 placement ID、坐标尺寸或组件/状态/资产字段。不含显示层时也必须写 `inventory: []`，防止规划遗漏。
 
 只有 `bitmap-decomposition` 下的 `generate-now` 区域需要在生产前等待用户精确确认。确认前禁止裁切、抠图、分层、AI 分割或补全；`reuse-existing` 与 `runtime-program` 区域仍须在同一 PNG 标注图中可见，但不触发位图拆解确认，也不会因此绕过已经触发的 `effect-image` V1→V5 高保真/忠实还原链。校验器会用确定性 PNG 渲染器重建标注图并逐字节复验，防止隐藏、覆盖或篡改标注。
 
@@ -124,7 +130,7 @@ Phaser 验证流程启动本地服务前必须检查同项目健康实例并复�
 
 ### 全局视觉一致性生成硬门
 
-所有生成式效果图都必须先冻结同一份全局 `visual_baseline`：`status=global-static-baseline-frozen`、`document=docs/visual-baseline.md`、`id`、`version`、`style_fingerprint` 与完整 `anchor_evidence`。场景主效果图/reference target、modal/popup/drawer/toast 等宿主场景上下文效果图，以及 effect-image 拆解后的原子 ImageGen 资产，都必须在生成记录中绑定当前基线身份和全部锚点；原子资产仍以完整冻结效果图作为主参考，全局锚点只能作为额外强制 style references。
+所有生成式效果图都必须先冻结同一份全局 `visual_baseline`：`status=global-static-baseline-frozen`、`document=docs/visual-baseline.md`、`id`、`version`、`style_fingerprint` 与完整 `anchor_evidence`。这是基础实施和后续场景视觉生产的共同静态前置，但不意味着全部场景 master/context 已经冻结；后者在基础实施完成后、场景 V1/V2 与正式 `SCENE`/`DISPLAY_LAYER` 实现之前分别完成。场景主效果图/reference target、modal/popup/drawer/toast 等宿主场景上下文效果图，以及 effect-image 拆解后的原子 ImageGen 资产，都必须在生成记录中绑定当前基线身份和全部锚点；原子资产仍以完整冻结效果图作为主参考，全局锚点只能作为额外强制 style references。
 
 生成记录必须声明 `origin=generated`、`visual_baseline_id`、`visual_baseline_version`、`style_fingerprint`、`baseline_document`、完整 `style_reference_inputs`（路径与 SHA）、canonical 全局一致性提示词、`style_drift_policy=forbid`、实际发送的 `full_prompt`、`output_sha256`、`consistency_status=passed` 及 `consistency_evidence`（路径与 SHA）。全局提示词固定为“保持当前项目全局视觉语言、颜色材质、光照、线条、装饰密度、UI形状与全局视觉锚点一致，禁止风格迁移、重设计、跨项目风格混用。”；项目具体美术风格只能从基线正文与锚点证据读取，不写入通用 Skill。外部/用户提供的效果图使用 `origin=provided`，不得补写伪生成记录。
 

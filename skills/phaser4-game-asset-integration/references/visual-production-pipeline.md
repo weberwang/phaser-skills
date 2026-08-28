@@ -18,7 +18,7 @@ effect-image ImageGen 的完整提示词与实际参考输入合同统一见[Eff
 
 所有任务执行适用 V1/V2 确定性机器检查。已有明确需求或冻结基线且候选不改变冻结视觉事实时可记录 `AUTO`；修复、提升游戏感或工程适配只要产生可见变化，就按差异列出影响和候选方案，请求一次精确选择并记录 `USER_DECISION` 与已批准例外。后续绑定当前决策记录。
 
-资源生产服从同一场景 Work Item 的顺序：任务授权/范围与功能规格 → V1 视觉合同/参考冻结 → V2 完整场景候选、动态样片、F2 `MACHINE/PASS` 与唯一真人视觉审批 → V3 实施拆解 → V4 正式视觉资源与宿主场景同屏组合预验收 → 正式功能代码实现 → V5 运行态视觉接入与联合验收 → A4 正式入口。全局 `visual_baseline` 只负责静态风格一致性，全局场景集合只作规划/聚合事实；V2 `COMPLETE/frozen` 是正式 A3 包及 `SHARED`/`MODULE`/`SCENE`/`DISPLAY_LAYER` 功能代码的唯一前置视觉边界，V2 前仅允许隔离灰盒或无正式业务逻辑视觉样片。V4 通过后才按 `SHARED` 最小运行骨架→`MODULE`→各宿主 `SCENE`+紧邻从属 `DISPLAY_LAYER` 实施正式代码与资源，全部场景闭环后才做跨场景 `INTEGRATION`/联合验收；参考还原仍只是当前场景 Work Item 内的可选模式。
+资源生产服从项目顺序：冻结全局静态 `visual_baseline` → foundation-only 实现 `SHARED` 最小项目骨架与 `MODULE` 场景无关基础模块 → 冻结全部授权场景的 scene master/宿主上下文效果图 → 场景 Work Item 的任务授权/范围与功能规格 → V1 视觉合同/参考冻结 → V2 完整场景候选、动态样片、F2 `MACHINE/PASS` 与唯一真人视觉审批 → V3 实施拆解 → V4 正式视觉资源与宿主场景同屏组合预验收 → 正式 `SCENE`/`DISPLAY_LAYER` 功能代码实现 → V5 运行态视觉接入与联合验收 → 跨场景 `INTEGRATION`/联合验收 → A4 正式入口。基础阶段允许配置、状态、输入、平台、资源基础设施和测试支撑，禁止具体场景玩法、UI/布局、正式可见资产消费和正式 Scene 接入；foundation-only 包必须带 `globalStaticBaselineState=global-static-baseline-frozen`，混入场景/集成单元仍触发 V2/V4 门。全局基线只负责静态风格一致性，全局场景集合只作规划/聚合事实；参考还原仍只是当前场景 Work Item 内的可选模式。
 
 F2 必须由确定性机器验证执行，并绑定当前 baseline/diff 身份。V1/V2 只保留机器事实和唯一 `visual_human_approval`；V1/V2 使用 `AUTO` 或 `USER_DECISION` 记录，只覆盖所列对象且不写 Approval Ledger；F4 只处理当前 V5 候选集成或独立发布 Work Item 的具体操作。
 
@@ -129,7 +129,7 @@ V2 完成代表画面、动态样片和结构化机器检查后，只需一条�
 拆解顺序固定为“先状态分析，再按可复用部件拆解”：`component_count` 只计算唯一原子视觉部件，`visible_instance_count` 通过多个 `placements` 表达重复实例。② 的六个顶部按钮分别登记六个 component；⑧ 的三个相同表面可登记一个 component 加三个 placements，⑨ 的三个动作图标按实际复用关系登记。ImageGen 每个唯一 `component×required state` 必须独立位图，强制 `individual + atlas_allowed=false`，不能以编号级组合图或图集替代；atlas 仅适用于非 ImageGen 方法的显式切片合同。交互热区绑定 placement 且不计入视觉资产。状态证据 SHA、冻结目标 SHA、分析 ID 和完成时间必须先于 component inventory。
 # 场景级效果图还原门
 
-效果图路线先建立 `scene_reconstruction_contract`，再执行 V3 资源与正式 Scene/显示层计划。V1 负责冻结视觉事实、整屏构图、scene master、显示层 inventory、宿主场景上下文效果图、目标绑定布局、响应式关系和项目容差；V2 的 F2 审完整场景构图、比例、层级、颜色、材质和装饰密度；V2→V3 检查每个 coverage region（包括 runtime owner）均有 fidelity facts 与实现计划，并检查每个 transient required state 都绑定 host-scene-context 图。V4/V5 必须在宿主场景上组合并重放打开→交互→关闭/恢复轨迹。
+效果图路线在 foundation-only 基础实施完成后、场景 V1/V2 开始前建立并冻结 `scene_reconstruction_contract`、scene master、显示层 inventory 和宿主场景上下文效果图，再执行各场景 V1/V2 视觉冻结与 V3 资源/正式 Scene/显示层计划。V1 负责冻结视觉事实、整屏构图、目标绑定布局、响应式关系和项目容差；V2 的 F2 审完整场景构图、比例、层级、颜色、材质和装饰密度，并冻结完整候选与动态样片；V2→V3 检查每个 coverage region（包括 runtime owner）均有 fidelity facts 与实现计划，并检查每个 transient required state 都绑定 host-scene-context 图。V4/V5 必须在宿主场景上组合并重放打开→交互→关闭/恢复轨迹。
 
 V4 除逐资产生产合同外必须完成同屏组合预验收，使用正式 Scene 骨架或相同结构的布局计算。V5 只有在重建合同、layout、V3、V4、F2、F3、逐区域 fidelity、fresh runtime replay 和正式 Scene 消费证据全部通过时才可完成；资源 loaded/used 或 `missing=0` 只能构成工程子门。
 

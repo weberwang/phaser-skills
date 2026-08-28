@@ -90,7 +90,7 @@
     "visualStageState": {
       "enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "global-static-baseline-frozen", "v2-direction-frozen", "v3-production-planning-complete", "v4-formal-acceptance-complete", "v5-runtime-integration-candidate"]
     },
-    "globalStaticBaselineState": {"const": "global-static-baseline-frozen"},
+    "globalStaticBaselineState": {"const": "global-static-baseline-frozen", "description": "全局静态 visual_baseline 的冻结声明；foundation-only 实施包缺失此字段时必须拒绝。该字段不等同于逐场景 V2。"},
     "visualStageEvidenceRefs": {
       "type": "object",
       "properties": {

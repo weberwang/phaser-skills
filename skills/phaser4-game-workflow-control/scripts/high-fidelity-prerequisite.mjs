@@ -2,6 +2,7 @@ import { isAbsolute, relative } from 'node:path';
 import { loadImmutableVisualStageReference } from './visual-stage-prerequisites.mjs';
 
 const SCENE_UNIT_TYPES = new Set(['SCENE', 'DISPLAY_LAYER']);
+const FOUNDATION_UNIT_TYPES = new Set(['SHARED', 'MODULE']);
 const FORMAL_UNIT_TYPES = new Set(['SHARED', 'MODULE', 'SCENE', 'DISPLAY_LAYER', 'INTEGRATION']);
 const PREREQUISITE_FIELDS = [
   'workItemId', 'status', 'stage', 'frozen', 'sceneId', 'displayLayerId', 'hostSceneId',
@@ -74,8 +75,26 @@ function executionGateError(detail) {
   return new Error(`正式功能执行 V4 前置门拒绝：${detail}；应回到当前场景 Work Item 的 V4 正式资源与宿主场景同屏组合预验收`);
 }
 
+/**
+ * 判断实施包是否只包含项目骨架和场景无关基础模块。
+ * 通过单元类型推导而不是增加可手写的包类别，确保混入场景或集成单元时自动回到正式门。
+ */
+export function isFoundationOnlyPackage(pkg) {
+  const units = pkg?.executionUnits;
+  return Array.isArray(units) && units.length > 0 && units.every((unit) => FOUNDATION_UNIT_TYPES.has(unit?.unitType));
+}
+
+/** 校验基础实施包依赖的全局静态视觉基线；缺失时保持 fail closed。 */
+function assertFoundationBaselineFrozen(work) {
+  if (work?.globalStaticBaselineState !== 'global-static-baseline-frozen') {
+    throw prerequisiteError(null, '基础实施包只能在 globalStaticBaselineState=global-static-baseline-frozen 后创建或执行；当前全局静态 visual_baseline 尚未冻结');
+  }
+  return true;
+}
+
 /** 判断实施包规划是否已经越过当前场景 Work Item 的 V2 视觉验收边界。 */
 export function assertFormalImplementationAfterV2(work, pkg) {
+  if (isFoundationOnlyPackage(pkg)) return assertFoundationBaselineFrozen(work);
   const formalUnits = (pkg?.executionUnits ?? []).filter((unit) => FORMAL_UNIT_TYPES.has(unit?.unitType));
   if (!formalUnits.length) return true;
   const stage = String(work?.visualStage ?? '').trim().toUpperCase();
@@ -90,6 +109,7 @@ export function assertFormalImplementationAfterV2(work, pkg) {
  * V3 允许创建和校验实施包；只有执行状态、委派和 READY 才能调用本门。
  */
 export function assertFormalExecutionAfterV4(work, pkg, repo, io) {
+  if (isFoundationOnlyPackage(pkg)) return assertFoundationBaselineFrozen(work);
   const formalUnits = (pkg?.executionUnits ?? []).filter((unit) => FORMAL_UNIT_TYPES.has(unit?.unitType));
   if (!formalUnits.length) return true;
   const stage = String(work?.visualStage ?? '').trim().toUpperCase();
