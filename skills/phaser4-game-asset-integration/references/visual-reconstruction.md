@@ -125,7 +125,7 @@ V3 实施包把每个 region 与正式 Scene 的实现、owner、状态/部件�
 
 ## 先冻结全局视觉，再生成效果图
 
-场景还原的生成顺序固定为：冻结 `visual_baseline` 与全部全局锚点 → 完成 foundation-only 基础实施 → 生成/接收 scene master 与 reference target → 按 required state 生成宿主场景上下文效果图 → 以完整冻结效果图为主参考、额外继承全局锚点生成 effect-image 原子资产。基线状态 `global-static-baseline-frozen` 只是静态真值，不冒充 V2 的 `v2-direction-frozen`。
+场景还原的生成顺序固定为：建立全局基线 brief → 生成恰好三张同条件候选效果图 → 同屏交给人工 → 人工选择确认一张 → 以 `globalVisualBaselineSelectionRef` 冻结 `visual_baseline` 与全部全局锚点 → 完成 foundation-only 基础实施 → 生成/接收 scene master 与 reference target → 按 required state 生成宿主场景上下文效果图 → 以完整冻结效果图为主参考、额外继承全局锚点生成 effect-image 原子资产。人工选择前基线不得标记 frozen；全局选择是独立硬门，不能替代逐场景 V2 唯一真人审批。基线状态 `global-static-baseline-frozen` 只是静态真值，不冒充 V2 的 `v2-direction-frozen`。
 
 生成记录必须明确 `origin=generated|provided`；只有 generated 强制绑定基线四元组、全部 `style_reference_inputs`、canonical 全局一致性段、`style_drift_policy=forbid`、实际完整提示词、输出 SHA 与一致性证据。provided 图不得伪造生成记录。基线、锚点、target SHA 或实际提示词变化会令旧记录失效，并按合同返回最早受影响阶段。
 ```

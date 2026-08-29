@@ -95,6 +95,11 @@ test('静态基线 global-static-baseline-frozen 不能冒充 V2', () => {
   assert(errorCodes(result).includes('VISUAL_STAGE_NOT_V5'));
 });
 
+test('V0/V1 全局冻结状态缺少三候选人工选择引用时拒绝', () => {
+  const errors = validateVisualStageDeclaration({ workItemId: 'WI-GLOBAL', visualStage: 'V1', visualStageState: 'global-static-baseline-frozen' });
+  assert(errors.some((item) => item.errorCode === 'GLOBAL_VISUAL_BASELINE_SELECTION_MISSING'));
+});
+
 test('V2 PASS 但 V3/V4 缺失时 A4 硬门拒绝', () => {
   const f = tempFixture();
   delete f.work.visualStageEvidenceRefs.V3; delete f.work.visualStageEvidenceRefs.V4;

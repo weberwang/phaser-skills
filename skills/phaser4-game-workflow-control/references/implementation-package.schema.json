@@ -21,7 +21,7 @@
     "executionUnits": {
       "type": "array",
       "minItems": 1,
-      "description": "数组顺序由计划制定者预设并作为唯一执行顺序；串行单元各占一个位置，同一并行组必须连续出现。若全部单元仅为 SHARED/MODULE，则该包属于 foundation-only，可在 globalStaticBaselineState=global-static-baseline-frozen 后、场景 V2/V4 前实施；混入 SCENE/DISPLAY_LAYER/INTEGRATION 时仍受正式 V2/V4 门约束。",
+      "description": "数组顺序由计划制定者预设并作为唯一执行顺序；串行单元各占一个位置，同一并行组必须连续出现。若全部单元仅为 SHARED/MODULE，则该包属于 foundation-only，只有在完整复核 globalVisualBaselineSelectionRef（三张同条件 generated 候选、唯一 SINGLE_HUMAN/CONFIRMED 决定、冻结正文真实 SHA）且 globalStaticBaselineState=global-static-baseline-frozen 后，才能在场景 V2/V4 前实施；混入 SCENE/DISPLAY_LAYER/INTEGRATION 时仍受正式 V2/V4 门约束。",
       "items": {"$ref": "#/$defs/executionUnit"}
     },
     "allowedPaths": {"$ref": "#/$defs/nonEmptyStrings"},

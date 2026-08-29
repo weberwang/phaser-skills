@@ -259,18 +259,13 @@ function makeEvidence(fixture, audit) {
   return { evidenceId: 'EV-1', batchId: 'BATCH-1', workItemId: 'WI-1', baselineHash: HASH, codeFingerprint: `git:${fixture.head}`, diffFingerprint: audit.diffFingerprint, recordedAt: new Date(Date.parse(audit.recordedAt) + 1000).toISOString(), commands: [{ command: 'node --test', exitCode: 0, outputFile: rel, outputHash: hashFile(output) }], environment: { node: process.version }, dataSources: ['git diff'], files: [rel], fileHashes: { [rel]: hashFile(output) }, gateResults: { F0: { ...common, authorizationId: 'TASK-WI-1' }, F1: { ...common }, F2: { ...common, reviewer: 'independent-reviewer', reviewMode: 'INDEPENDENT' }, F3: { ...common, evidenceId: 'EV-1' } }, verdict: 'PASS', uncoveredItems: [], completedOutputs: ['src/main.js'], completedUnitIds: ['SHARED-1', 'MODULE-1', 'SCENE-1'], satisfiedExitCriteria: ['tests pass'] };
 }
 
-test('基础实施包：冻结全局静态 visual_baseline 后可在 V2/V4 前规划并初始化', () => {
+test('基础实施包：仅伪造冻结状态而缺少三候选人工证据时 fail closed', () => {
   const f = setup();
   const work = JSON.parse(readFileSync(f.workPath, 'utf8'));
   work.visualStage = 'V1'; work.visualStageState = 'global-static-baseline-frozen'; work.globalStaticBaselineState = 'global-static-baseline-frozen';
   writeJson(f.workPath, work);
   writeJson(f.packagePath, makeFoundationPackage());
-  writeExecutionState(f);
-  const result = run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo);
-  assert.equal(result.status, 0, result.stderr);
-  const state = JSON.parse(readFileSync(join(f.root, 'evidence', 'WI-1', 'execution-state.json'), 'utf8'));
-  assert.equal(state.nextTask.kind, 'SERIAL_UNIT');
-  assert.deepEqual(state.executionUnitIds, ['SHARED-1', 'MODULE-1']);
+  rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /3 张候选图|人工确认|globalVisualBaselineSelectionRef/);
 });
 
 test('基础实施包：缺少全局静态 visual_baseline 冻结声明时 fail closed', () => {
@@ -279,13 +274,14 @@ test('基础实施包：缺少全局静态 visual_baseline 冻结声明时 fail 
   work.visualStage = 'V1'; work.visualStageState = 'global-static-baseline-frozen'; delete work.globalStaticBaselineState;
   writeJson(f.workPath, work);
   writeJson(f.packagePath, makeFoundationPackage());
-  rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /globalStaticBaselineState|基础实施包/);
+  rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /globalStaticBaselineState|globalVisualBaselineSelectionRef|基础实施包/);
 });
 
 test('混合场景实施包：包含 SCENE 时仍必须通过 V2 规划门', () => {
   const f = setup();
   const work = JSON.parse(readFileSync(f.workPath, 'utf8'));
   work.visualStage = 'V1'; work.visualStageState = 'global-static-baseline-frozen'; work.globalStaticBaselineState = 'global-static-baseline-frozen';
+  work.globalVisualBaselineSelectionRef = { path: 'docs/global-baseline-selection.json', sha256: HASH, workItemId: 'WI-1' };
   writeJson(f.workPath, work);
   rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /V2 前置门|V2/);
 });

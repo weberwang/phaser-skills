@@ -79,7 +79,7 @@
 
 ## 全局视觉基线绑定
 
-effect-image 生成必须在生成前绑定当前 `visual_baseline`，而不是只绑定局部冻结效果图。基线只能处于 `global-static-baseline-frozen`，身份必须包含 `id`、`version`、`style_fingerprint`、`document=docs/visual-baseline.md` 和全部 `anchor_evidence`。原子资产的 `reference_inputs` 仍必须包含完整冻结效果图；`style_reference_inputs` 逐项继承全部全局锚点并记录真实 SHA，不能用锚点替代完整冻结图。
+effect-image 生成必须在生成前绑定已完成三候选人工选择且由 `globalVisualBaselineSelectionRef` 支持的当前 `visual_baseline`，而不是只绑定局部冻结效果图。基线只能处于 `global-static-baseline-frozen`，身份必须包含 `id`、`version`、`style_fingerprint`、`document=docs/visual-baseline.md` 和全部 `anchor_evidence`。原子资产的 `reference_inputs` 仍必须包含完整冻结效果图；`style_reference_inputs` 逐项继承全部全局锚点并记录真实 SHA，不能用锚点替代完整冻结图。
 
 实际生成记录至少包含 `origin=generated`、四个基线身份字段、`global_visual_consistency_prompt`、`style_drift_policy=forbid`、实际发送的 `full_prompt`、`target_sha256`、`output_sha256`、`consistency_status=passed` 与路径+SHA 的 `consistency_evidence`。`full_prompt` 必须同时含本文件既有的忠实重建 canonical 段、全局一致性段、asset/state/negative 段；缺少实际发送证明、漏传/多传锚点、允许风格迁移或身份漂移均失败。用户/外部提供图使用 `origin=provided`，不得补写伪生成记录。共享常量和合同位于 `global-visual-consistency-contract.mjs`。
 

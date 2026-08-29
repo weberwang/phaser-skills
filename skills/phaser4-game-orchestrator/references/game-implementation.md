@@ -4,17 +4,17 @@
 
 ## G1 强制实施序列
 
-1. G0 冻结全局静态 `visual_baseline`、授权范围和验收证据清单，建立“需求 → 功能 → 模块 → 场景 → 正式资源 → 测试证据”追踪；不得只冻结首个可玩切片。
-2. 全局基线冻结后，先用 foundation-only 包实现 `SHARED` 最小项目骨架和 `MODULE` 场景无关基础模块，再冻结全部授权场景的 scene master 与必需宿主上下文效果图。基础阶段允许最小 Boot/Preload 生命周期、公开契约、游戏数据配置加载与 schema 校验、状态/存档仓库、输入/平台适配、资源目录/加载基础设施和测试支撑；禁止具体场景玩法规则、场景 UI/布局、正式可见资产消费、Boot→正式可见 Scene 接入和删除旧视觉实现。
+1. G0 先建立全局基线 brief，生成恰好三张同条件候选效果图，同屏交给人工选择确认一张，再以不可变选择证据冻结全局静态 `visual_baseline`、授权范围和验收证据清单，建立“需求 → 功能 → 模块 → 场景 → 正式资源 → 测试证据”追踪；不得只冻结首个可玩切片。
+2. 三候选人工确认且 `globalStaticBaselineState=global-static-baseline-frozen` 后，先用 foundation-only 包实现 `SHARED` 最小项目骨架和 `MODULE` 场景无关基础模块，再冻结全部授权场景的 scene master 与必需宿主上下文效果图。基础阶段允许最小 Boot/Preload 生命周期、公开契约、游戏数据配置加载与 schema 校验、状态/存档仓库、输入/平台适配、资源目录/加载基础设施和测试支撑；禁止具体场景玩法规则、场景 UI/布局、正式可见资产消费、Boot→正式可见 Scene 接入和删除旧视觉实现。
 3. 基础实施完成后，任务授权和范围冻结的场景 Work Item 先完成功能规格与玩法契约（只定义行为、状态、输入、验收和边界，不写正式功能代码），再在 V1 冻结视觉合同、参考身份、目标视口/状态、布局和容差。全局 `visual_baseline` 只负责静态风格一致性，不等同于逐场景 V2。
-4. V2 是当前场景 Work Item 的唯一前置视觉验收：完整场景候选、动态视觉样片、F2 `MACHINE/PASS` 和唯一真人视觉审批必须收敛为同一份 `COMPLETE/frozen` 结果。场景 V2 通过前只允许隔离灰盒或无正式业务逻辑的视觉样片，不得注册正式入口；包含 `SCENE`/`DISPLAY_LAYER`/`INTEGRATION` 的正式包和功能代码都必须等待 V2。仅含 `SHARED`/`MODULE` 的 foundation-only 包不受该场景 V2 门约束，但必须带 `globalStaticBaselineState=global-static-baseline-frozen`，缺失时拒绝。
+4. V2 是当前场景 Work Item 的唯一前置视觉验收：完整场景候选、动态视觉样片、F2 `MACHINE/PASS` 和唯一真人视觉审批必须收敛为同一份 `COMPLETE/frozen` 结果。场景 V2 通过前只允许隔离灰盒或无正式业务逻辑的视觉样片，不得注册正式入口；包含 `SCENE`/`DISPLAY_LAYER`/`INTEGRATION` 的正式包和功能代码都必须等待 V2。仅含 `SHARED`/`MODULE` 的 foundation-only 包不受该场景 V2 门约束，但必须带经过机器复核的 `globalVisualBaselineSelectionRef`（三张 generated 候选、唯一 `SINGLE_HUMAN`/`CONFIRMED` 决定、冻结正文真实 SHA）和 `globalStaticBaselineState=global-static-baseline-frozen`，缺失任一项时拒绝；全局人工选择不能替代逐场景 V2。
 5. V3 进行场景实施拆解并冻结 Implementation Package，V4 生产正式视觉资源、完成正式布局与宿主场景同屏组合预验收。参考/效果图还原是当前场景 Work Item 内的可选视觉实现模式，不是独立任务或第二条 V1→V5；适用时其合同、候选、机器验证和真人审批均归入同一 V2 结果。
 6. V4 通过后才按计划制定者冻结的 `executionUnits` 顺序启动正式场景功能实现：`SCENE`→紧邻从属 `DISPLAY_LAYER`。每个场景必须把玩法、正式资源、全部 HUD/UI/modal/popup/drawer/toast、生命周期清理和联合证据闭环；显示层必须复核宿主上下文图与 scene/layer/host 身份，并紧邻、归属于宿主 `SCENE`，不得在全部场景之后另设 UI 或弹窗尾部阶段。`gameplay` 与 `supporting` 只用于分类，场景之间不得绕过公开契约直接访问其他场景状态。
 7. V5 在正式功能代码实现后执行运行态视觉接入、功能/视觉联合验收、响应式/性能与完整交互轨迹复验；V5 不是前置视觉方向审批。全部授权场景（含其显示层）闭环后，才实施跨场景导航、存档、音频、状态连续性、异常恢复等 `INTEGRATION`，并完成联合验收。A4 才负责正式入口接入、迁移和高影响集成；只有 V1/V2/V3/V4、正式功能实现、V5 和跨场景联合验收均关闭后，才允许退出 G1。首个可玩切片只是中间里程碑，不是 G1 出口。
 
 ## 单场景完成闭环
 
-每个场景只有一个宿主 `SCENE` Work Item 闭环：它在基础实施完成后依次完成 V1 视觉合同/参考、V2 完整候选与唯一真人审批、V3 拆解、V4 正式资源和组合预验收，再实现正式功能并在 V5 做运行态接入与联合复验，A4 才接正式入口。`DISPLAY_LAYER` 只是宿主场景的紧邻子单元，不是独立实现任务；它必须复核宿主上下文图与 scene/layer/host 身份。全局 `visual_baseline` 只负责静态风格，不能替代场景 V2。灰盒只用于临时证明结构、交互或节奏；仍引用灰盒、占位纹理或未验收资源的场景不得标记完成。
+每个场景只有一个宿主 `SCENE` Work Item 闭环：全局 brief 完成三候选人工确认并完成基础实施后，它依次完成 V1 视觉合同/参考、V2 完整候选与唯一真人审批、V3 拆解、V4 正式资源和组合预验收，再实现正式功能并在 V5 做运行态接入与联合复验，A4 才接正式入口。`DISPLAY_LAYER` 只是宿主场景的紧邻子单元，不是独立实现任务；它必须复核宿主上下文图与 scene/layer/host 身份。全局 `visual_baseline` 只负责静态风格，三候选人工选择是独立硬门且不能替代场景 V2。灰盒只用于临时证明结构、交互或节奏；仍引用灰盒、占位纹理或未验收资源的场景不得标记完成。
 
 场景和显示层分别记录 `functional_status`、`resource_status`、`integration_status`、`lifecycle_cleanup_status` 和 `verification_status`。这些字段是领域完成事实，不得冒充或驱动全局状态。显示层仍复用同一 V0-V5、A0-A6、F0-F4，不建立第二套全局状态机；只有功能、资源、宿主集成、生命周期清理和验证五项均关闭、所有资源归属明确且证据绑定当前候选时，显示层或场景整体才完成。
 

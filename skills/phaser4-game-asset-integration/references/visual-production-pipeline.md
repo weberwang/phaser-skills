@@ -18,7 +18,7 @@ effect-image ImageGen 的完整提示词与实际参考输入合同统一见[Eff
 
 所有任务执行适用 V1/V2 确定性机器检查。已有明确需求或冻结基线且候选不改变冻结视觉事实时可记录 `AUTO`；修复、提升游戏感或工程适配只要产生可见变化，就按差异列出影响和候选方案，请求一次精确选择并记录 `USER_DECISION` 与已批准例外。后续绑定当前决策记录。
 
-资源生产服从项目顺序：冻结全局静态 `visual_baseline` → foundation-only 实现 `SHARED` 最小项目骨架与 `MODULE` 场景无关基础模块 → 冻结全部授权场景的 scene master/宿主上下文效果图 → 场景 Work Item 的任务授权/范围与功能规格 → V1 视觉合同/参考冻结 → V2 完整场景候选、动态样片、F2 `MACHINE/PASS` 与唯一真人视觉审批 → V3 实施拆解 → V4 正式视觉资源与宿主场景同屏组合预验收 → 正式 `SCENE`/`DISPLAY_LAYER` 功能代码实现 → V5 运行态视觉接入与联合验收 → 跨场景 `INTEGRATION`/联合验收 → A4 正式入口。基础阶段允许配置、状态、输入、平台、资源基础设施和测试支撑，禁止具体场景玩法、UI/布局、正式可见资产消费和正式 Scene 接入；foundation-only 包必须带 `globalStaticBaselineState=global-static-baseline-frozen`，混入场景/集成单元仍触发 V2/V4 门。全局基线只负责静态风格一致性，全局场景集合只作规划/聚合事实；参考还原仍只是当前场景 Work Item 内的可选模式。
+资源生产服从项目顺序：建立全局基线 brief → 生成恰好三张同条件候选效果图 → 同屏交给人工 → 人工选择确认一张 → 以 `globalVisualBaselineSelectionRef` 正式冻结全局静态 `visual_baseline` → foundation-only 实现 `SHARED` 最小项目骨架与 `MODULE` 场景无关基础模块 → 冻结全部授权场景的 scene master/宿主上下文效果图 → 场景 Work Item 的任务授权/范围与功能规格 → V1 视觉合同/参考冻结 → V2 完整场景候选、动态样片、F2 `MACHINE/PASS` 与唯一真人视觉审批 → V3 实施拆解 → V4 正式视觉资源与宿主场景同屏组合预验收 → 正式 `SCENE`/`DISPLAY_LAYER` 功能代码实现 → V5 运行态视觉接入与联合验收 → 跨场景 `INTEGRATION`/联合验收 → A4 正式入口。人工选择前不得写入 `global-static-baseline-frozen`；三候选人工选择是独立硬门，不能替代逐场景 V2 唯一真人审批。基础阶段允许配置、状态、输入、平台、资源基础设施和测试支撑，禁止具体场景玩法、UI/布局、正式可见资产消费和正式 Scene 接入；foundation-only 包必须同时带完整验证的 `globalVisualBaselineSelectionRef` 和 `globalStaticBaselineState=global-static-baseline-frozen`，混入场景/集成单元仍触发 V2/V4 门。全局基线只负责静态风格一致性，全局场景集合只作规划/聚合事实；参考还原仍只是当前场景 Work Item 内的可选模式。
 
 F2 必须由确定性机器验证执行，并绑定当前 baseline/diff 身份。V1/V2 只保留机器事实和唯一 `visual_human_approval`；V1/V2 使用 `AUTO` 或 `USER_DECISION` 记录，只覆盖所列对象且不写 Approval Ledger；F4 只处理当前 V5 候选集成或独立发布 Work Item 的具体操作。
 
@@ -54,7 +54,7 @@ F2 必须由确定性机器验证执行，并绑定当前 baseline/diff 身份�
 2. 每个候选必须引用截图、具体区域和可观察事实，证明玩家幻想、核心玩具、行动召唤、反馈强度、奖励期待、情绪峰值、移除文字后的场景用途与狐狸主题、视觉一致性、页面场景差异和沉浸完整性。
 3. 先执行确定性机器 F2 验证。任一核心项缺证、失败或只有主观声明时不得通过；选定方向完成 V2a 决策记录后，才制作完整关键状态与动态样片。`USER_DECISION` 不能替代机器验证事实。
 4. V2a 或对应 F2 发现 V1 构图、信息层级、资源槽、页面模板或布局几何无法支持游戏感时，提交包含标注截图、失败事实、待修订结构、保持不变的功能语义/业务状态和新验收条件的结构修订包，退回 V1。不得在候选图中静默改玩法或勉强套用灰盒。
-5. 将选定方向固化为唯一 `frozen` 全局视觉基线，冻结 ID、版本、风格指纹、主/分系统锚点、全局不变量、允许变量、禁止项和 AI 固定提示前缀。局部方向不得自行创造新材质、光源、描边、比例或图标语法。
+5. 将选定方向固化为当前场景的版本化 `v2-direction-frozen` 候选，记录场景 Work Item、候选 ID、目标视口/状态与差异；全局 `global-static-baseline-frozen` 只由 G0/V0 的三候选人工选择硬门产生。局部方向必须继承全局 ID、版本、风格指纹、主/分系统锚点、全局不变量、允许变量、禁止项和 AI 固定提示前缀，不得自行创造新材质、光源、描边、比例或图标语法。
 
 ### V2b 整体视觉机器验证
 
@@ -150,4 +150,4 @@ V4 除逐资产生产合同外必须完成同屏组合预验收，使用正式 S
 
 ### 全局视觉一致性输入
 
-在任何效果图生成调用前先冻结全局 `visual_baseline`（`global-static-baseline-frozen`、`docs/visual-baseline.md`、身份字段、风格指纹和全部锚点）。该基线同时作用于 scene master/reference target、显示层上下文图和原子 ImageGen 资产；原子资产必须保留完整冻结效果图主参考，再把所有全局锚点作为额外 style references。generated 记录必须留下实际完整提示词、canonical 一致性段、禁止风格迁移策略、输出 SHA 和一致性证据；provided 只登记外部来源。文件门复算这些文件身份，基线或锚点变化会让旧证据失效。
+在任何场景效果图或正式资源生成调用前，必须先完成全局 brief 的三张候选、同屏人工选择和唯一 `SINGLE_HUMAN`/`CONFIRMED` 决定，再冻结全局 `visual_baseline`（`global-static-baseline-frozen`、`docs/visual-baseline.md`、身份字段、风格指纹和全部锚点）。该基线同时作用于 scene master/reference target、显示层上下文图和原子 ImageGen 资产；原子资产必须保留完整冻结效果图主参考，再把所有全局锚点作为额外 style references。generated 记录必须留下实际完整提示词、canonical 一致性段、禁止风格迁移策略、输出 SHA 和一致性证据；provided 只登记外部来源。文件门复算这些文件身份，基线或锚点变化会让旧证据失效。

@@ -1,4 +1,5 @@
 import { isAbsolute, relative } from 'node:path';
+import { assertGlobalVisualBaselineSelection } from './global-visual-baseline-contract.mjs';
 import { loadImmutableVisualStageReference } from './visual-stage-prerequisites.mjs';
 
 const SCENE_UNIT_TYPES = new Set(['SCENE', 'DISPLAY_LAYER']);
@@ -84,17 +85,23 @@ export function isFoundationOnlyPackage(pkg) {
   return Array.isArray(units) && units.length > 0 && units.every((unit) => FOUNDATION_UNIT_TYPES.has(unit?.unitType));
 }
 
-/** 校验基础实施包依赖的全局静态视觉基线；缺失时保持 fail closed。 */
-function assertFoundationBaselineFrozen(work) {
+/** 校验基础实施包依赖的三候选人工确认基线；缺失或文件漂移时保持 fail closed。 */
+function assertFoundationBaselineFrozen(work, repo, io) {
   if (work?.globalStaticBaselineState !== 'global-static-baseline-frozen') {
-    throw prerequisiteError(null, '基础实施包只能在 globalStaticBaselineState=global-static-baseline-frozen 后创建或执行；当前全局静态 visual_baseline 尚未冻结');
+    throw prerequisiteError(null, '基础实施包只能在完成 3 张候选图 + 人工确认并写入 globalStaticBaselineState=global-static-baseline-frozen 后创建或执行；当前全局静态 visual_baseline 尚未冻结');
+  }
+  if (!repo || !io) throw prerequisiteError(null, '基础实施包缺少三张候选图、人工确认及冻结文件的不可变读取能力');
+  try {
+    assertGlobalVisualBaselineSelection(work, repo, io);
+  } catch (error) {
+    throw prerequisiteError(null, error.message);
   }
   return true;
 }
 
 /** 判断实施包规划是否已经越过当前场景 Work Item 的 V2 视觉验收边界。 */
-export function assertFormalImplementationAfterV2(work, pkg) {
-  if (isFoundationOnlyPackage(pkg)) return assertFoundationBaselineFrozen(work);
+export function assertFormalImplementationAfterV2(work, pkg, repo, io) {
+  if (isFoundationOnlyPackage(pkg)) return assertFoundationBaselineFrozen(work, repo, io);
   const formalUnits = (pkg?.executionUnits ?? []).filter((unit) => FORMAL_UNIT_TYPES.has(unit?.unitType));
   if (!formalUnits.length) return true;
   const stage = String(work?.visualStage ?? '').trim().toUpperCase();
@@ -109,7 +116,7 @@ export function assertFormalImplementationAfterV2(work, pkg) {
  * V3 允许创建和校验实施包；只有执行状态、委派和 READY 才能调用本门。
  */
 export function assertFormalExecutionAfterV4(work, pkg, repo, io) {
-  if (isFoundationOnlyPackage(pkg)) return assertFoundationBaselineFrozen(work);
+  if (isFoundationOnlyPackage(pkg)) return assertFoundationBaselineFrozen(work, repo, io);
   const formalUnits = (pkg?.executionUnits ?? []).filter((unit) => FORMAL_UNIT_TYPES.has(unit?.unitType));
   if (!formalUnits.length) return true;
   const stage = String(work?.visualStage ?? '').trim().toUpperCase();
@@ -218,7 +225,7 @@ export function assertHighFidelityPrerequisite(unit, work, pkg, repo, io) {
 
 /** 复核实施包的 V2 规划前置；V4 执行门由 Execution State/READY 入口另行校验。 */
 export function assertHighFidelityPrerequisites(pkg, work, repo, io) {
-  assertFormalImplementationAfterV2(work, pkg);
+  assertFormalImplementationAfterV2(work, pkg, repo, io);
   for (const unit of pkg.executionUnits) assertHighFidelityPrerequisite(unit, work, pkg, repo, io);
   return true;
 }

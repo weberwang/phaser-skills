@@ -24,6 +24,6 @@ description: Phaser 4 移动端 2D 游戏的制作与策划角色。需要把游
 3. 变更获确认后，列出受影响角色与需复核的质量门，不替其他角色重写其交付物。
 4. 标准、发布通道向总控提交一条制作状态、证据链接或阻断项，由总控更新控制面；快速通道仅在产生未决决策或阻断项时提交。
 
-项目完整实施统一按“冻结全局静态 `visual_baseline` → foundation-only 实现 `SHARED` 最小项目骨架与 `MODULE` 场景无关基础模块 → 冻结全部授权场景的 scene master/宿主上下文效果图 → 各场景 Work Item V1/V2/V3/V4 → 正式 `SCENE`/`DISPLAY_LAYER` 功能实现 → V5 → 跨场景 `INTEGRATION`/联合验收 → A4 正式入口接入”推进。基础阶段允许最小 Boot/Preload 生命周期、公开契约、游戏数据配置加载/schema 校验、状态/存档仓库、输入/平台适配、资源目录/加载基础设施和测试支撑；禁止具体场景玩法规则、UI/布局、正式可见资产消费、Boot→正式可见 Scene 接入和删除旧视觉实现。foundation-only 包必须携带 `globalStaticBaselineState=global-static-baseline-frozen`，缺失时 fail closed；混入场景或集成单元仍按场景 V2/V4 门。场景 V2 前仅允许隔离灰盒或无正式业务逻辑视觉样片；全局基线只负责静态风格一致性，不构成逐场景 V2 或第二条生命周期。
+项目完整实施统一按“建立全局基线 brief → 生成三张同条件候选效果图 → 同屏交给人工 → 人工选择确认一张 → 以 `globalVisualBaselineSelectionRef` 正式冻结全局静态 `visual_baseline` → foundation-only 实现 `SHARED` 最小项目骨架与 `MODULE` 场景无关基础模块 → 冻结全部授权场景的 scene master/宿主上下文效果图 → 各场景 Work Item V1/V2/V3/V4 → 正式 `SCENE`/`DISPLAY_LAYER` 功能实现 → V5 → 跨场景 `INTEGRATION`/联合验收 → A4 正式入口接入”推进。人工选择确认前只能保持 draft/pending，不能写入 `global-static-baseline-frozen`。基础阶段允许最小 Boot/Preload 生命周期、公开契约、游戏数据配置加载/schema 校验、状态/存档仓库、输入/平台适配、资源目录/加载基础设施和测试支撑；禁止具体场景玩法规则、UI/布局、正式可见资产消费、Boot→正式可见 Scene 接入和删除旧视觉实现。foundation-only 包必须携带完整验证的 `globalVisualBaselineSelectionRef` 和 `globalStaticBaselineState=global-static-baseline-frozen`，缺失任一项时 fail closed；三候选人工选择是独立硬门，不能替代逐场景 V2 唯一真人审批；混入场景或集成单元仍按场景 V2/V4 门。场景 V2 前仅允许隔离灰盒或无正式业务逻辑视觉样片；全局基线只负责静态风格一致性，不构成逐场景 V2 或第二条生命周期。
 
 交给技术架构的是范围、验收、渠道与能力开关；交给数值、美术、音频的是体验意图与资产边界；交给测试的是可判定玩家行为。

@@ -8,7 +8,8 @@
   "properties": {
     "visualStage": {"enum": ["V0", "V1", "V2", "V3", "V4", "V5"]},
     "visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "global-static-baseline-frozen", "v2-direction-frozen", "v3-production-planning-complete", "v4-formal-acceptance-complete", "v5-runtime-integration-candidate"]},
-    "globalStaticBaselineState": {"const": "global-static-baseline-frozen", "description": "全局静态 visual_baseline 已冻结；它是基础实施包的前置，不代表任一授权场景已完成 V2。"},
+    "globalStaticBaselineState": {"const": "global-static-baseline-frozen", "description": "全局静态 visual_baseline 只有在三张候选效果图经唯一人工选择确认后才能冻结；它不代表任一授权场景已完成 V2。"},
+    "globalVisualBaselineSelectionRef": {"$ref": "#/$defs/globalVisualBaselineSelectionReference", "description": "不可变三候选人工选择证据引用；冻结状态缺失该引用时必须拒绝。"},
     "visualHumanApproval": {"$ref": "#/$defs/visualHumanApproval"},
     "visual_human_approval": {"$ref": "#/$defs/visualHumanApproval"},
     "visualStageEvidenceRefs": {
@@ -45,9 +46,28 @@
         "resultId": {"type": "string", "minLength": 1},
         "unitResultId": {"type": "string", "minLength": 1}
       }
+    },
+    "globalVisualBaselineSelectionReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "workItemId": {"type": "string", "minLength": 1}
+      }
     }
   },
   "allOf": [
+    {
+      "if": {
+        "anyOf": [
+          {"required": ["globalStaticBaselineState"]},
+          {"required": ["visualStage", "visualStageState"], "properties": {"visualStage": {"enum": ["V0", "V1"]}, "visualStageState": {"const": "global-static-baseline-frozen"}}}
+        ]
+      },
+      "then": {"required": ["globalVisualBaselineSelectionRef"]}
+    },
     {"if": {"properties": {"visualStage": {"enum": ["V0", "V1"]}}}, "then": {"properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "global-static-baseline-frozen"]}}}},
     {"if": {"properties": {"visualStage": {"const": "V2"}}}, "then": {"properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "v2-direction-frozen"]}}}},
     {"if": {"properties": {"visualStage": {"const": "V3"}}}, "then": {"properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "v3-production-planning-complete"]}}}},

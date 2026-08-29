@@ -1,6 +1,6 @@
 # 全局视觉控制约束
 
-为每个项目维护单一、版本化且处于 `frozen` 状态的全局视觉基线。`docs/visual-baseline.md` 只保存不可变冻结规则正文，`docs/visual-design.md` 保存可追加的方向探索、版本索引及 V2b/V4/V5 证据，`docs/visual-assets.json` 保存机器绑定与证据索引。
+为每个项目维护单一、版本化的全局视觉基线。基线必须先经过 brief → 恰好三张同条件候选效果图 → 同屏人工选择确认一张的流程，候选文件只允许真实 PNG/JPEG（文件门检查图片魔数），完成不可变 `globalVisualBaselineSelectionRef` 后才进入 `global-static-baseline-frozen` 状态。`docs/global-visual-baseline-selection.json` 是唯一选择根证据模板；`docs/visual-baseline.md` 只保存不可变冻结规则正文，`docs/visual-design.md` 保存可追加的方向探索、版本索引及 V2b/V4/V5 证据，`docs/visual-assets.json` 只保存机器绑定与选择证据索引；选择根证据单独保存，不在其中内嵌第二份根对象。
 
 ## 基线身份与风格指纹
 
@@ -14,9 +14,22 @@
 
 基线 ID 表达视觉系统身份，版本表达已批准规则集合，风格指纹只计算 `docs/visual-baseline.md` 完整文件字节。不得把摘要或 V2b/V4/V5 留痕写回被哈希正文；阶段证据追加到 `visual-design.md`。规则变化生成新版本和新哈希，使全部受影响决定与证据失效并重验。`--check-files` 重新计算冻结正文 SHA-256。
 
+## 三候选生成与人工冻结门
+
+全局视觉基线必须从一个明确的视觉 brief 开始。使用相同 brief、目标视口、参考输入和条件指纹生成恰好三张候选效果图，并将三张图同屏交给人工比较；候选必须分别绑定图片文件 SHA-256 和 generated generation record 文件 SHA-256。`global-visual-baseline-selection/1.0` 证据还必须绑定 Work Item、brief、generation batch、唯一候选 ID、唯一 `SINGLE_HUMAN`/`CONFIRMED` 选择、selectedCandidateId、决定记录文件/SHA、确认时间和用户原文。
+
+人工确认完成前，`visual_baseline.status` 和 Work Item `globalStaticBaselineState` 只能保持 draft/pending，不能写入 `global-static-baseline-frozen`。确认后冻结身份必须同时绑定 baseline ID/version、`docs/visual-baseline.md`、正文真实 SHA（style fingerprint）、primary anchor 和 selected candidate；任一候选、决定、brief、正文或锚点文件 SHA 漂移均使引用失效并回到三候选流程。该全局人工选择是独立硬门，不能替代每个场景 V2 的唯一真人方向审批。
+
+| 阶段 | 必须产物 | 允许状态 | 禁止旁路 |
+| --- | --- | --- | --- |
+| brief | brief 文件与 SHA、generation batch、conditions fingerprint | draft/in-progress | 直接冻结 |
+| 候选生成 | 恰好 3 张 `origin=generated` PNG/JPEG 效果图及各自 generation record、图片/记录 SHA（文件门检查真实魔数） | generated | 2/4 张、provided、重复 ID、扩展名伪装 |
+| 人工选择 | 同屏呈现三张、唯一 `SINGLE_HUMAN`/`CONFIRMED` 决定文件、selectedCandidateId、用户原文 | pending → confirmed | AUTO、pending、说明文字 |
+| 正式冻结 | `globalVisualBaselineSelectionRef`、冻结正文、真实风格指纹、primary anchor/selected candidate | global-static-baseline-frozen | 只写状态字段 |
+
 ## 全局视觉冻结表
 
-在 V1 建立规则，在 V2a 结合选定方向与锚点冻结。每项写明不变量、量化范围、允许变量、禁止项和证据：
+全局规则在 G0/V0 的 brief 与三候选人工选择门中建立，并在确认后正式冻结；之后每个场景的 V1/V2a 只冻结该场景的方向和候选，不得把场景 V2a 当作全局基线选择。每项写明不变量、量化范围、允许变量、禁止项和证据：
 
 | 系统 | 必须冻结的内容 |
 | --- | --- |
@@ -111,7 +124,7 @@ V4 为每个生产包提交多资源联系表，并至少生成一张同屏组�
 
 ## 生成前全局基线硬门
 
-所有场景主图、reference target、宿主场景 contextual effect image 和原子 ImageGen 资产都必须先引用同一份 `visual_baseline`。冻结基线必须是 `global-static-baseline-frozen`，并固定 `id`、`version`、`style_fingerprint`、`document=docs/visual-baseline.md` 与完整 `anchor_evidence`。项目具体美术风格只写入该正文和锚点证据，通用提示词不硬编码项目风格。
+全局三候选人工选择并正式冻结后，所有场景主图、reference target、宿主场景 contextual effect image 和原子 ImageGen 资产都必须引用同一份 `visual_baseline`。冻结基线必须是 `global-static-baseline-frozen`，并固定 `id`、`version`、`style_fingerprint`、`document=docs/visual-baseline.md` 与完整 `anchor_evidence`。项目具体美术风格只写入该正文和锚点证据，通用提示词不硬编码项目风格；候选阶段的生成记录使用 `global-visual-baseline-candidate-generation/1.0`，不冒充已经冻结的全局基线。
 
 | 记录 | 必填生成身份 | 全局锚点 | 实际提示词 | 输出/证据 | 失效条件 |
 | --- | --- | --- | --- | --- | --- |

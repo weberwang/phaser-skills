@@ -25,13 +25,13 @@ A0-A6 只描述 Phaser 项目生命周期：A0 项目只读调查；A1 项目规
 
 Work Item 的 `taskAuthorization` 保存用户原始请求、目标和范围；它是 A0-A3 本地工作的任务授权，不写入 Approval Ledger。产品、视觉或架构取舍属于 `USER_DECISION`：澄清后更新任务授权、权威工件或决策记录，不生成审批。只有 A4、A5、A6 的具体操作才生成 pending 和操作批准记录；记录精确冻结操作、影响、对象、门、基线、路径、服务、外部目标与副作用，A6 永不自动放行。
 
-Work Item 使用已排序的 `moduleIds` 精确覆盖多模块/多场景范围。A3 采用静态 Implementation Package、路径级 Execution Unit Result 和原子 Parallel Delegation Batch：依赖单元只有存在当前基线、当前路径 diff 的 PASS Result 才派生为 READY；共享基础和集成单元强制串行，模块/场景/显示层安全并行必须一次提交完整批次。全局静态 `visual_baseline` 冻结后，可以用仅含 `SHARED`/`MODULE` 的 foundation-only 包先落地项目最小骨架和场景无关基础模块；混入场景或集成单元的包仍按场景 V2/V4 门执行。`DISPLAY_LAYER` 实施单元绑定 `displayLayerId` 与 `hostSceneId`，`sceneId` 仅属于 `SCENE`。
+Work Item 使用已排序的 `moduleIds` 精确覆盖多模块/多场景范围。A3 采用静态 Implementation Package、路径级 Execution Unit Result 和原子 Parallel Delegation Batch：依赖单元只有存在当前基线、当前路径 diff 的 PASS Result 才派生为 READY；共享基础和集成单元强制串行，模块/场景/显示层安全并行必须一次提交完整批次。全局基线必须先经过“建立 brief → 生成恰好三张同条件候选效果图 → 同屏交给人工 → 人工选择确认一张”，并由 `globalVisualBaselineSelectionRef` 绑定不可变选择证据后才能冻结；随后可以用仅含 `SHARED`/`MODULE` 的 foundation-only 包先落地项目最小骨架和场景无关基础模块。全局选择是独立硬门，不能替代逐场景 V2 唯一真人审批；混入场景或集成单元的包仍按场景 V2/V4 门执行。`DISPLAY_LAYER` 实施单元绑定 `displayLayerId` 与 `hostSceneId`，`sceneId` 仅属于 `SCENE`。
 
 ### 完整项目实施顺序
 
-项目级完整顺序固定为：冻结全局静态 `visual_baseline` → 用 foundation-only 包实现 `SHARED` 最小项目骨架和 `MODULE` 场景无关基础模块 → 冻结全部授权场景的 scene master 与必需宿主上下文效果图 → 逐场景执行 V1/V2/V3/V4 → 正式实现 `SCENE`/`DISPLAY_LAYER` → V5 运行态联合复验 → 跨场景 `INTEGRATION`。全局基线只定义静态视觉语言，不等同于任一场景 V2，也不能替代场景候选、宿主上下文或 V2/V4 证据。
+项目级完整顺序固定为：建立全局基线 brief → 生成三张同条件候选效果图 → 同屏交给人工 → 人工选择确认一张 → 正式冻结全局静态 `visual_baseline` → 用 foundation-only 包实现 `SHARED` 最小项目骨架和 `MODULE` 场景无关基础模块 → 冻结全部授权场景的 scene master 与必需宿主上下文效果图 → 逐场景执行 V1/V2/V3/V4 → 正式实现 `SCENE`/`DISPLAY_LAYER` → V5 运行态联合复验 → 跨场景 `INTEGRATION`。全局基线人工选择是单独硬门，不能替代任一场景 V2 唯一真人审批；全局基线只定义静态视觉语言，也不能替代场景候选、宿主上下文或 V2/V4 证据。
 
-基础实施阶段允许工程入口与最小 Boot/Preload 生命周期、公开契约、游戏数据配置加载与 schema 校验、状态/存档仓库、输入/平台适配、资源目录与加载基础设施及测试支撑。该阶段禁止具体场景玩法规则、场景 UI/布局、正式可见资产消费、Boot→正式可见 Scene 接入和删除旧视觉实现；这些动作仍须在对应场景 V2/V4/V5/A4 门内完成。机器控制面仅在 `globalStaticBaselineState=global-static-baseline-frozen` 时放行 foundation-only 包，缺失冻结声明必须 fail closed。
+基础实施阶段允许工程入口与最小 Boot/Preload 生命周期、公开契约、游戏数据配置加载与 schema 校验、状态/存档仓库、输入/平台适配、资源目录与加载基础设施及测试支撑。该阶段禁止具体场景玩法规则、场景 UI/布局、正式可见资产消费、Boot→正式可见 Scene 接入和删除旧视觉实现；这些动作仍须在对应场景 V2/V4/V5/A4 门内完成。机器控制面仅在 `globalStaticBaselineState=global-static-baseline-frozen` 且完整验证 `globalVisualBaselineSelectionRef`（三张 generated 候选、唯一 `SINGLE_HUMAN`/`CONFIRMED` 决定、冻结正文真实 SHA）时放行 foundation-only 包，缺失任一证据必须 fail closed。
 
 ## CLI
 
@@ -66,9 +66,9 @@ node <skill-dir>\scripts\workflow-control.mjs diff-audit --work-item .workflow-c
 
 效果图/参考图是否适用只看当前场景 Work Item 是否把它指定为正式运行画面的视觉目标，与是否生成、制作或新增资源无关。适用时，参考还原是同一场景实现生命周期内的视觉实现模式与合同叠加，即使全部实现采用 `reuse-existing`/`runtime-program`、零新资源且零 ImageGen，也必须完成 `effect-image` 的 V1→V5 布局绑定、coverage、宿主场景同屏组合与 fidelity 验收；不创建第二个场景 Work Item 或第二条 V1→V5。仅仅生成新资源，或仅把图片作为灵感、说明或临时参考，不触发 `effect-image`，仍按普通资产、组件或场景路径分类。`image_generation_required`、`generate-now`、资源数量和 `production_method` 只能在触发后于 V3 决定生产路线，不能参与 V0 applicability 判定。
 
-`global-static-baseline-frozen` 只冻结颜色、字体、栅格等静态规则，不等于 V2。裸 `frozen`、未知阶段、`stageId=main/production-entry/integration`、根 `PASS`/布尔值、说明文字或用户回复均不能代替阶段证据。V2→V5 证据必须由 Work Item 的 `path + sha256` 不可变引用加载并复算文件哈希；任一引用、基线、diff、候选或审查变化都会使 pending 变为 stale，恢复路径固定回到 V2。
+`global-static-baseline-frozen` 只冻结颜色、字体、栅格等静态规则；它必须建立在三张同条件候选图同屏呈现且唯一人工 `SINGLE_HUMAN`/`CONFIRMED` 选择的不可变证据上，不能只靠状态字段写入，也不等于 V2。裸 `frozen`、未知阶段、`stageId=main/production-entry/integration`、根 `PASS`/布尔值、说明文字或用户回复均不能代替阶段证据。V2→V5 证据必须由 Work Item 的 `path + sha256` 不可变引用加载并复算文件哈希；任一引用、基线、diff、候选或审查变化都会使 pending 变为 stale，恢复路径固定回到 V2。
 
-基础实施阶段可在全局基线冻结后、场景 V2/V4 前执行，但仅限 foundation-only 包及其场景无关职责；它不构成逐场景 V2，也不得注册 Boot→正式可见 Scene 入口或消费正式可见资产。场景 V2 前仍只允许在隔离环境制作灰盒、Graphics 或诊断文本视觉样片；它们不得实现具体场景正式业务逻辑、宣称 V2/V4/V5、删除旧实现或作为正式资产验收证据。场景 V2 的当前候选经唯一真人视觉审批并冻结后，按 V3→V4 生产资源与组合预验收，之后才进入正式场景功能代码实现，最后在 V5 做运行态联合复验。
+基础实施阶段可在完成全局三候选人工选择、全局基线冻结后、场景 V2/V4 前执行，但仅限 foundation-only 包及其场景无关职责；它不构成逐场景 V2，也不得注册 Boot→正式可见 Scene 入口或消费正式可见资产。场景 V2 前仍只允许在隔离环境制作灰盒、Graphics 或诊断文本视觉样片；它们不得实现具体场景正式业务逻辑、宣称 V2/V4/V5、删除旧实现或作为正式资产验收证据。场景 V2 的当前候选经唯一真人视觉审批并冻结后，按 V3→V4 生产资源与组合预验收，之后才进入正式场景功能代码实现，最后在 V5 做运行态联合复验。
 
 视觉硬门失败输出结构化 `errorCode`、`missingStages`、`missingEvidence`、`invalidatedDependencies` 和 `nextAction`。`lint`、`preflight`、`route`、`advance`、`prepare-approval`、`handoff`、`approve`、`unit-check`、`evidence-check`、`status` 均复用同一校验器；`prepare-approval` 失败不创建 pending，`approve` 会在写入 Ledger 前重新校验。
 
@@ -130,7 +130,7 @@ Phaser 验证流程启动本地服务前必须检查同项目健康实例并复�
 
 ### 全局视觉一致性生成硬门
 
-所有生成式效果图都必须先冻结同一份全局 `visual_baseline`：`status=global-static-baseline-frozen`、`document=docs/visual-baseline.md`、`id`、`version`、`style_fingerprint` 与完整 `anchor_evidence`。这是基础实施和后续场景视觉生产的共同静态前置，但不意味着全部场景 master/context 已经冻结；后者在基础实施完成后、场景 V1/V2 与正式 `SCENE`/`DISPLAY_LAYER` 实现之前分别完成。场景主效果图/reference target、modal/popup/drawer/toast 等宿主场景上下文效果图，以及 effect-image 拆解后的原子 ImageGen 资产，都必须在生成记录中绑定当前基线身份和全部锚点；原子资产仍以完整冻结效果图作为主参考，全局锚点只能作为额外强制 style references。
+所有场景生成式效果图都必须在全局基线 brief 完成三张同条件候选、同屏人工选择确认一张并正式冻结后，引用同一份全局 `visual_baseline`：`status=global-static-baseline-frozen`、`document=docs/visual-baseline.md`、`id`、`version`、`style_fingerprint` 与完整 `anchor_evidence`。三候选人工选择通过 `globalVisualBaselineSelectionRef` 绑定，是基础实施和后续场景视觉生产的共同静态前置，但不意味着全部场景 master/context 已经冻结，也不能替代逐场景 V2 唯一真人审批；后者在基础实施完成后、场景 V1/V2 与正式 `SCENE`/`DISPLAY_LAYER` 实现之前分别完成。场景主效果图/reference target、modal/popup/drawer/toast 等宿主场景上下文效果图，以及 effect-image 拆解后的原子 ImageGen 资产，都必须在生成记录中绑定当前基线身份和全部锚点；原子资产仍以完整冻结效果图作为主参考，全局锚点只能作为额外强制 style references。
 
 生成记录必须声明 `origin=generated`、`visual_baseline_id`、`visual_baseline_version`、`style_fingerprint`、`baseline_document`、完整 `style_reference_inputs`（路径与 SHA）、canonical 全局一致性提示词、`style_drift_policy=forbid`、实际发送的 `full_prompt`、`output_sha256`、`consistency_status=passed` 及 `consistency_evidence`（路径与 SHA）。全局提示词固定为“保持当前项目全局视觉语言、颜色材质、光照、线条、装饰密度、UI形状与全局视觉锚点一致，禁止风格迁移、重设计、跨项目风格混用。”；项目具体美术风格只能从基线正文与锚点证据读取，不写入通用 Skill。外部/用户提供的效果图使用 `origin=provided`，不得补写伪生成记录。
 

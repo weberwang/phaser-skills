@@ -5,6 +5,8 @@ description: Phaser 4 移动端 2D 游戏的玩法开发角色。用于依据 GD
 
 # Phaser 4 玩法开发
 
+全局视觉基线必须先建立 brief，生成恰好三张同条件候选效果图，同屏交给人工选择确认一张，再通过 `globalVisualBaselineSelectionRef` 正式冻结；人工选择是独立硬门，不能替代逐场景 V2 唯一真人审批。只有完成该流程并写入 `globalStaticBaselineState=global-static-baseline-frozen` 后，才进入 foundation-only 骨架与场景无关基础模块，最后按场景 V1→V5 实施。
+
 ## 全局控制接入
 
 控制面边界：可提议、可审查、可在已建立且任务授权有效的 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审计和状态迁移；仅实际 A4-A6 操作请求批准。
@@ -18,7 +20,7 @@ description: Phaser 4 移动端 2D 游戏的玩法开发角色。用于依据 GD
 ## 实现
 
 1. 读取 GDD、TDD、控制面、总控的审核漏斗和游戏实现规则。视觉任务同时读取视觉质量门、玩法视觉契约；UI 读取 [`phaser4-game-ui-layout`](../phaser4-game-ui-layout/SKILL.md)；参考还原读取视觉还原规则。
-2. 按 TDD 的 G1 项目顺序执行：冻结全局静态 `visual_baseline` → foundation-only 实现 `SHARED` 最小项目骨架与 `MODULE` 场景无关基础模块 → 冻结全部授权场景的 scene master/宿主上下文效果图 → 各场景 Work Item 的任务授权/功能规格与 V1/V2/V3/V4 → 正式 `SCENE`/`DISPLAY_LAYER` 功能实现 → V5 → 跨场景 `INTEGRATION`/联合验收 → A4 正式入口。基础阶段允许游戏数据配置加载/schema 校验、状态/存档仓库、输入/平台适配、资源目录/加载基础设施和测试支撑等场景无关职责；禁止具体场景玩法规则、UI/布局、正式可见资产消费和 Boot→正式可见 Scene 接入。foundation-only 包必须带 `globalStaticBaselineState=global-static-baseline-frozen`，缺失时拒绝；含场景/集成单元的包仍需场景 V2/V4。全局基线只负责静态风格一致性，V2 `COMPLETE/frozen` 仍是场景包和正式场景功能代码的唯一前置视觉边界，场景 V2 前只允许隔离灰盒或无正式业务逻辑视觉样片，不得注册正式入口。gameplay/supporting 只保留场景分类，首个可玩切片只作为中间里程碑，不停止后续实施。
+2. 按 TDD 的 G1 项目顺序执行：建立全局基线 brief → 生成恰好三张同条件候选效果图 → 同屏交给人工 → 人工选择确认一张 → 以不可变 `globalVisualBaselineSelectionRef` 正式冻结全局静态 `visual_baseline` → foundation-only 实现 `SHARED` 最小项目骨架与 `MODULE` 场景无关基础模块 → 冻结全部授权场景的 scene master/宿主上下文效果图 → 各场景 Work Item 的任务授权/功能规格与 V1/V2/V3/V4 → 正式 `SCENE`/`DISPLAY_LAYER` 功能实现 → V5 → 跨场景 `INTEGRATION`/联合验收 → A4 正式入口。基础阶段允许游戏数据配置加载/schema 校验、状态/存档仓库、输入/平台适配、资源目录/加载基础设施和测试支撑等场景无关职责；禁止具体场景玩法规则、UI/布局、正式可见资产消费和 Boot→正式可见 Scene 接入。foundation-only 包必须同时通过 `globalVisualBaselineSelectionRef` 的三候选人工确认文件门和 `globalStaticBaselineState=global-static-baseline-frozen`，缺失任一项时拒绝；含场景/集成单元的包仍需场景 V2/V4。全局基线人工选择是独立硬门，不能替代逐场景 V2 唯一真人审批；全局基线只负责静态风格一致性，V2 `COMPLETE/frozen` 仍是场景包和正式场景功能代码的唯一前置视觉边界，场景 V2 前只允许隔离灰盒或无正式业务逻辑视觉样片，不得注册正式入口。gameplay/supporting 只保留场景分类，首个可玩切片只作为中间里程碑，不停止后续实施。
 3. 对当前场景明确可观察玩家行为、状态迁移、时序、反馈、成功/失败和异常恢复。截图无法证明的行为标为待定义，不自行推断。
 4. 只在 V1 需要证明结构、交互或节奏时建立隔离的可运行灰盒，记录稳定 ID、层级、交互区和资源依赖。已冻结结构不为形式重复灰盒；灰盒不得作为场景完成证据。
 5. foundation-only 阶段先完成场景无关的 `SHARED`/`MODULE`，可按互斥文件和状态所有权并行，共享契约/入口保持串行；场景 V4 正式资源与同屏组合预验收通过后才启动正式场景功能代码，随后按计划顺序推进各场景。场景实现必须读取当前场景 Work Item 的 `highFidelityPrerequisite` V2 `COMPLETE/frozen` 结果引用，并把玩法、正式资源、全部 HUD/UI/modal/popup/drawer/toast 显示层、清理和联合证据一起闭环；显示层还需复核宿主上下文图与 scene/layer/host 身份；不得把纯规则或 UI/弹窗拆到宿主场景之外。Work Item 指定效果图为还原目标时，玩法实现必须保留冻结视觉目标及已批准例外，不得以工程便利、提升游戏感或专业修复为由产生未登记的可见偏差；静态图无法证明的玩法、交互或动画仍标为待定义。不得自行裁切合成效果图，也不得把整屏效果图、低保真或关键画面当正式交互资源。

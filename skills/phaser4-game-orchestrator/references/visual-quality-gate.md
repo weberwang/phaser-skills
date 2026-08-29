@@ -4,7 +4,7 @@
 
 视觉领域规则只能收紧 [`phaser4-game-workflow-control`](../../phaser4-game-workflow-control/SKILL.md)。V0-V5 是 `stageId`；全局状态、审批与 F0-F4 语义不得改写。
 
-场景实现只有一条视觉与功能生命周期：基础实施完成后，任务授权/范围 → 功能规格与契约（只定义，不写正式功能代码）→ V1 视觉合同/参考冻结 → 当前场景 Work Item 的 V2 完整场景候选、动态样片、F2 `MACHINE/PASS` 与唯一真人视觉审批 → V3 实施拆解/Implementation Package → V4 正式视觉资源与宿主场景同屏组合预验收 → 正式 `SCENE`/`DISPLAY_LAYER` 功能代码实现 → V5 运行态视觉接入与功能/视觉联合复验 → 跨场景 `INTEGRATION`/联合验收 → A4 正式入口接入。全局 `visual_baseline` 只负责静态风格一致性；全局场景集合只能作为规划/聚合事实，不能替代逐场景 V2。foundation-only 阶段仅包含 `SHARED`/`MODULE`，在 `globalStaticBaselineState=global-static-baseline-frozen` 后即可实施，缺失时 fail closed；包含场景或集成单元的包仍以 V2 `COMPLETE/frozen` 为规划门、V4 为执行门。场景 V2 前仅允许隔离灰盒或无正式业务逻辑视觉样片。每个 SCENE/DISPLAY_LAYER 在准备、委派、READY 和激活前都必须读取当前场景 Work Item 的 V2 结果引用，不能以全局冻结、手写 PASS 或数组前序代替。
+场景实现只有一条视觉与功能生命周期：先建立全局基线 brief，生成三张同条件候选效果图并同屏交给人工选择确认一张，再以 `globalVisualBaselineSelectionRef` 正式冻结全局基线；完成基础实施后，任务授权/范围 → 功能规格与契约（只定义，不写正式功能代码）→ V1 视觉合同/参考冻结 → 当前场景 Work Item 的 V2 完整场景候选、动态样片、F2 `MACHINE/PASS` 与唯一真人视觉审批 → V3 实施拆解/Implementation Package → V4 正式视觉资源与宿主场景同屏组合预验收 → 正式 `SCENE`/`DISPLAY_LAYER` 功能代码实现 → V5 运行态视觉接入与功能/视觉联合复验 → 跨场景 `INTEGRATION`/联合验收 → A4 正式入口接入。全局 `visual_baseline` 只负责静态风格一致性；全局三候选人工选择是单独硬门，不能替代逐场景 V2。全局场景集合只能作为规划/聚合事实，不能替代逐场景 V2。foundation-only 阶段仅包含 `SHARED`/`MODULE`，必须同时通过三候选人工选择证据和 `globalStaticBaselineState=global-static-baseline-frozen` 后才可实施，缺失时 fail closed；包含场景或集成单元的包仍以 V2 `COMPLETE/frozen` 为规划门、V4 为执行门。场景 V2 前仅允许隔离灰盒或无正式业务逻辑视觉样片。每个 SCENE/DISPLAY_LAYER 在准备、委派、READY 和激活前都必须读取当前场景 Work Item 的 V2 结果引用，不能以全局冻结、手写 PASS 或数组前序代替。
 
 effect-image ImageGen 的 canonical 提示词与生成记录合同统一引用[Effect-image ImageGen 忠实还原提示词合同](../../phaser4-game-asset-integration/references/effect-image-prompt-contract.md)，本门只消费其校验结果。
 
@@ -47,4 +47,4 @@ V1/V2 是条件门：严格复刻可免三方向探索，但不能免 V2a/V2b、
 
 需求或结构变化返回 V1；方向/基线变化返回 V2；生产规格或绑定变化返回 V3；资源执行偏差返回 V4；运行态问题返回 V5。模块边界变化仅在存在实质取舍时进入 grilling。任何基线、范围、路径、对象或代码/diff 指纹变化都会让覆盖事实的决定与证据失效。
 
-效果图生成另有统一的全局视觉输入门：生成前必须冻结 `visual_baseline`（`global-static-baseline-frozen`、`docs/visual-baseline.md`、`id/version/style_fingerprint`、完整锚点），先供 foundation-only 基础实施使用；基础实施完成后，再冻结全局 scene master 与必需宿主上下文图集合，随后进入正式场景实现。身份与全部锚点必须传给每个 scene master、显示层上下文图和原子 ImageGen；局部冻结图不能代替全局锚点，原子资产仍必须把完整冻结效果图作为主参考。基线、锚点、target SHA、实际 full prompt 或 consistency evidence 身份变化时，旧证据失效并按上述规则返回最早受影响门；该静态状态不等价于 V2。
+效果图生成另有统一的全局视觉输入门：先完成 brief → 三张同条件候选 → 同屏呈现 → 唯一 `SINGLE_HUMAN`/`CONFIRMED` 选择，并以不可变引用冻结 `visual_baseline`（`global-static-baseline-frozen`、`docs/visual-baseline.md`、`id/version/style_fingerprint`、完整锚点），再供 foundation-only 基础实施使用；人工选择前基线只能是 draft/pending，状态字段不能冒充冻结。基础实施完成后，再冻结全局 scene master 与必需宿主上下文图集合，随后进入正式场景实现。身份与全部锚点必须传给每个 scene master、显示层上下文图和原子 ImageGen；局部冻结图不能代替全局锚点，原子资产仍必须把完整冻结效果图作为主参考。基线、锚点、target SHA、实际 full prompt 或 consistency evidence 身份变化时，旧证据失效并按上述规则返回最早受影响门；该静态状态不等价于 V2。

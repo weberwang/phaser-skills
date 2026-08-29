@@ -90,7 +90,8 @@
     "visualStageState": {
       "enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "global-static-baseline-frozen", "v2-direction-frozen", "v3-production-planning-complete", "v4-formal-acceptance-complete", "v5-runtime-integration-candidate"]
     },
-    "globalStaticBaselineState": {"const": "global-static-baseline-frozen", "description": "全局静态 visual_baseline 的冻结声明；foundation-only 实施包缺失此字段时必须拒绝。该字段不等同于逐场景 V2。"},
+    "globalStaticBaselineState": {"const": "global-static-baseline-frozen", "description": "全局静态 visual_baseline 的冻结声明；只有三张候选效果图经过唯一人工选择确认后才能写入。该字段不等同于逐场景 V2。"},
+    "globalVisualBaselineSelectionRef": {"$ref": "#/$defs/globalVisualBaselineSelectionReference", "description": "不可变全局基线选择证据；必须绑定同一 brief 下恰好三张 generated 候选图、唯一 SINGLE_HUMAN/CONFIRMED 选择、冻结正文及其真实 SHA。"},
     "visualStageEvidenceRefs": {
       "type": "object",
       "properties": {
@@ -542,6 +543,15 @@
   },
   "allOf": [
     {
+      "if": {
+        "anyOf": [
+          {"required": ["globalStaticBaselineState"]},
+          {"required": ["visualStage", "visualStageState"], "properties": {"visualStage": {"enum": ["V0", "V1"]}, "visualStageState": {"const": "global-static-baseline-frozen"}}}
+        ]
+      },
+      "then": {"required": ["globalVisualBaselineSelectionRef"]}
+    },
+    {
       "if": {"required": ["visualStage"], "properties": {"visualStage": {"enum": ["V0", "V1"]}}},
       "then": {"required": ["visualStageState"], "properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "global-static-baseline-frozen"]}}}
     },
@@ -751,6 +761,16 @@
     }
   ],
   "$defs": {
+    "globalVisualBaselineSelectionReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "workItemId": {"type": "string", "minLength": 1}
+      }
+    },
     "visualStageEvidenceReference": {
       "type": "object",
       "additionalProperties": false,
