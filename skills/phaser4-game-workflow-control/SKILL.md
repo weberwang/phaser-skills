@@ -20,6 +20,14 @@ description: Phaser 4 游戏仓库的唯一全局工作流控制面。基于任�
 7. 先运行 `route` 自动推导通道、缺失工件和下一条命令。实施后运行 `diff-audit`：A1/A2 或仅外部回执可用真实 `--artifact` 哈希，A3/A4 必须有真实 Git diff；验证后生成 Evidence Manifest。
 8. 使用 `advance` 一次最多推进一个状态。A1/A2 在审计和证据满足后闭环；安全 A3 在 F0-F3 通过后由 `PASSED` 直接 `COMPLETE`，不强制 A4/F4。正式入口替换、迁移、删除旧实现和跨模块高影响集成进入 A4。
 
+## 执行优先与证据收敛
+
+证据用于确认“可以执行/实施”和“可以验证”，并绑定当前候选的真实性，不是把事实研究到穷尽。已定位入口、关键调用链或契约、任务授权范围、主要风险和验收目标，且没有直接冲突或未决实质取舍时，已满足最小条件，必须停止探索：A1/A2 冻结当前候选的范围、假设与验收边界，直接进入适用执行/验证；A3 冻结 `Implementation Package` 后进入 `IMPLEMENTING`。
+
+可逆、本地且在任务授权内的 A1/A2 修改允许基于记录的合理假设直接执行/验证；A3 修改允许基于记录的合理假设实施，但必须先冻结 `Implementation Package`。把假设和边界记录在候选、包或返回结构中，不能仅因缺少完全证明而停滞。仅 A3 包冻结后，implementer 只消费包并完成实施，不做开放式重新方案探索；只有需求/范围变化、实质冲突或无法实施时才返回控制面。A4-A6 精确批准、用户决定、V0-V5 视觉硬门、测试授权、证据哈希与真实性和共享工作区安全约束始终有效，执行优先不能旁路这些门。
+
+默认闭环为：`最小必要事实确认 → 冻结候选边界（A3 冻结 Implementation Package）→ 执行/实施 → diff-audit → 获授权的定向验证 → 仅按失败证据修正 → 完成`。已确认事实不得重复读取、搜索或复核，除非出现新的测试/类型/构建失败、运行异常、直接矛盾、需求/范围明确变化、候选身份实际变化或硬门明确失败；审查不得仅因存在另一种可行方案推翻已满足需求的候选。非阻塞发现记录为未覆盖项或后续事项，不扩大当前 Work Item。
+
 任务状态硬门：`delegate-check`、`parallel-check`、`unit-check`、`evidence-check` 以及进入 `VALIDATING` 的迁移都必须读取并复核当前 Execution State；缺失、过期、篡改或与 Work Item/Package/基线/`executionUnits` 顺序不一致时 fail closed。foundation-only 包必须同时满足三候选人工选择证据、全局静态基线冻结声明和自身状态/证据门，不生成场景 V2→V3 合同任务；其余包含 SCENE/DISPLAY_LAYER/INTEGRATION 的包仍必须复核当前场景 Work Item 的不可变 V2 结果，缺失、PENDING、身份不匹配、越界、缺文件或 SHA 漂移时明确退回该 Work Item 的 V2，并在执行入口保持 V4 门。场景包的 V2→V3 规划合同补齐后才可输出 `V3-PRODUCTION-PLANNING`，不得把 V5 运行态复验写成前置视觉方向审批；V5 必须发生在正式功能实现之后。
 
 `highFidelityPrerequisite` 虽保留字段名，但只引用同一场景 Work Item 的 V2 结果，严格包含 `workItemId`、`status=COMPLETE`、`stage=V2`、`frozen=true`、scene/layer/host、target/candidate/diff、证据文件和证据 SHA；不得出现 `taskId`、`sourceWorkItemId` 或独立任务身份。证据文件统一为 `phaser4-scene-v2-result/1.0` 的单一场景根结果：根提供 `sceneMaster`、完整场景候选、动态视觉样片、机器 F2 PASS 和唯一真人视觉审批 PASS；多个显示层放入 `displayLayerContexts[]`，每项必须包含 `displayLayerId`、`hostSceneId`、`hostContextImage`。SCENE 与 DISPLAY_LAYER 必须引用同一 `evidenceFile`，并由控制面复算文件字节 SHA。该引用不创建第二个场景生命周期，也不把 V5 运行态复验提前为 V2 审批。
