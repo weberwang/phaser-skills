@@ -1,7 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "phaser4-global-visual-baseline-selection.schema.json",
-  "title": "全局视觉基线三候选人工选择证据",
+  "title": "全局视觉基线三候选人工选择证据（生产者冻结根）",
+  "description": "该文件由生产者 Work Item 创建并在冻结后保持不可变；消费者 Work Item 通过 globalVisualBaselineSelectionRef 的 path+sha256 复用，不得改写根证据所有者。",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -10,7 +11,7 @@
   ],
   "properties": {
     "schemaVersion": {"const": "phaser4-global-visual-baseline-selection/1.0"},
-    "workItemId": {"type": "string", "minLength": 1},
+    "workItemId": {"type": "string", "minLength": 1, "description": "生成并冻结这份选择根证据的生产者 Work Item 身份；不是消费者 Work Item。"},
     "selectionId": {"type": "string", "minLength": 1},
     "brief": {"$ref": "#/$defs/brief"},
     "generationBatchId": {"type": "string", "minLength": 1},

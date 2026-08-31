@@ -43,6 +43,7 @@ const BASELINE_FIELDS = Object.freeze([
   'id', 'version', 'status', 'document', 'documentSha256', 'styleFingerprint',
   'primaryAnchor', 'selectedCandidateId', 'selectedCandidate',
 ]);
+// 引用属于消费者 Work Item；可选 workItemId 只记录生产者身份，不能改写成消费者身份。
 const REFERENCE_FIELDS = Object.freeze(['path', 'sha256', 'workItemId']);
 
 /** 判断值是否为不带数组的普通对象。 */
@@ -104,8 +105,12 @@ function validateFileRefShape(value, label, errors, fields = FILE_REF_FIELDS) {
   return true;
 }
 
-/** 将当前 Work Item 的引用字段校验为唯一的 path+sha256 合同。 */
-export function validateGlobalVisualBaselineSelectionReferenceShape(reference, workItemId = null) {
+/**
+ * 校验消费者对全局选择根证据的引用形状。
+ * 根证据的 workItemId 是生产者身份；消费者只凭不可变 path+sha256 复用，
+ * 因此这里不把可选的生产者标识与当前消费者 Work Item 比较。
+ */
+export function validateGlobalVisualBaselineSelectionReferenceShape(reference) {
   const errors = [];
   if (!isRecord(reference)) {
     errors.push('globalVisualBaselineSelectionRef 必须是 path+sha256 对象；必须完成 3 张候选图 + 人工确认');
@@ -115,7 +120,7 @@ export function validateGlobalVisualBaselineSelectionReferenceShape(reference, w
   const extra = Object.keys(reference).filter((field) => !REFERENCE_FIELDS.includes(field));
   if (missing.length || extra.length) errors.push(`globalVisualBaselineSelectionRef 字段不严格：缺少 ${missing.join('、') || '无'}；多余 ${extra.join('、') || '无'}`);
   if (!isRepositoryRelativePath(reference.path) || !isGlobalVisualBaselineSha256(reference.sha256)) errors.push('globalVisualBaselineSelectionRef 必须包含仓库内相对 path 与 sha256');
-  if (reference.workItemId !== undefined && (!isNonEmptyString(reference.workItemId) || (workItemId && reference.workItemId !== workItemId))) errors.push('globalVisualBaselineSelectionRef.workItemId 必须绑定当前 Work Item');
+  if (reference.workItemId !== undefined && !isNonEmptyString(reference.workItemId)) errors.push('globalVisualBaselineSelectionRef.workItemId 若提供必须为非空的生产者 Work Item 身份');
   return [...new Set(errors)];
 }
 
@@ -126,7 +131,10 @@ function validateImageRefShape(value, label, errors) {
   return valid;
 }
 
-/** 校验全局基线选择证据的结构、候选数量、唯一人工决定与冻结身份。 */
+/**
+ * 校验全局基线选择证据的结构、候选数量、唯一人工决定与冻结身份。
+ * value.workItemId 始终是生成这份冻结根证据的生产者 Work Item，不接受消费者身份覆盖。
+ */
 export function validateGlobalVisualBaselineSelection(value, options = {}) {
   const errors = [];
   const settings = isRecord(options) ? options : {};
@@ -135,7 +143,6 @@ export function validateGlobalVisualBaselineSelection(value, options = {}) {
   if (!rootValid) return [...new Set(errors)];
   if (value.schemaVersion !== GLOBAL_VISUAL_BASELINE_SELECTION_SCHEMA) errors.push(`${label}.schemaVersion 必须为 ${GLOBAL_VISUAL_BASELINE_SELECTION_SCHEMA}`);
   if (!isNonEmptyString(value.workItemId)) errors.push(`${label}.workItemId 必须为非空字符串`);
-  if (isNonEmptyString(settings.workItemId) && value.workItemId !== settings.workItemId) errors.push(`${label}.workItemId 未绑定当前 Work Item`);
   if (!isNonEmptyString(value.selectionId)) errors.push(`${label}.selectionId 必须为非空字符串`);
   if (!isNonEmptyString(value.generationBatchId)) errors.push(`${label}.generationBatchId 必须为非空字符串`);
   if (!isGlobalVisualBaselineSha256(value.conditionsFingerprint)) errors.push(`${label}.conditionsFingerprint 必须为 sha256`);
@@ -393,8 +400,11 @@ function validateGlobalVisualBaselineSelectionFiles(root, options) {
   return errors;
 }
 
-/** 读取并完整验证 Work Item 指向的不可变全局基线选择证据。 */
-export function loadGlobalVisualBaselineSelectionReference(reference, work = {}, options = {}) {
+/**
+ * 读取并完整验证消费者引用的不可变全局基线选择证据。
+ * 文件本身仍按生产者 Work Item 校验候选与人工决定链，消费者身份由调用方自己的场景证据门负责。
+ */
+export function loadGlobalVisualBaselineSelectionReference(reference, options = {}) {
   const settings = isRecord(options) ? options : {};
   // loader 默认保留 null 兼容；assert 路径打开 throwOnError 后保留第一条具体失败原因。
   const fail = (errors) => {
@@ -402,7 +412,7 @@ export function loadGlobalVisualBaselineSelectionReference(reference, work = {},
     if (settings.throwOnError && first) throw new Error(first);
     return null;
   };
-  const shapeErrors = validateGlobalVisualBaselineSelectionReferenceShape(reference, work?.workItemId ?? null);
+  const shapeErrors = validateGlobalVisualBaselineSelectionReferenceShape(reference);
   if (shapeErrors.length) return fail(shapeErrors);
   const repo = settings.projectRoot ?? settings.repo;
   if (!isNonEmptyString(repo)) return fail(['全局视觉基线选择证据文件门缺少 projectRoot；必须完成 3 张候选图 + 人工确认']);
@@ -412,9 +422,10 @@ export function loadGlobalVisualBaselineSelectionReference(reference, work = {},
   if (!target) return fail(errors);
   const value = readJsonFile(target, io, 'globalVisualBaselineSelectionRef', errors);
   if (value === null) return fail(errors);
+  // 可选引用身份若存在，只能复述根证据生产者；禁止把消费者 Work Item 冒充为根所有者。
+  if (reference.workItemId !== undefined && reference.workItemId !== value.workItemId) errors.push('globalVisualBaselineSelectionRef.workItemId 必须与根证据生产者 Work Item 一致');
   errors.push(...validateGlobalVisualBaselineSelection(value, {
     label: '全局视觉基线选择证据',
-    workItemId: work?.workItemId,
     checkFiles: true,
     projectRoot: repo,
     io,
@@ -429,9 +440,9 @@ export function assertGlobalVisualBaselineSelection(work, repo, io) {
     throw new Error(`全局视觉基线尚未冻结；必须先完成 3 张候选图 + 人工确认，再写入 ${GLOBAL_VISUAL_BASELINE_FROZEN_STATE}`);
   }
   const reference = work?.globalVisualBaselineSelectionRef;
-  const shapeErrors = validateGlobalVisualBaselineSelectionReferenceShape(reference, work?.workItemId ?? null);
+  const shapeErrors = validateGlobalVisualBaselineSelectionReferenceShape(reference);
   if (shapeErrors.length) throw new Error(`全局视觉基线选择证据门拒绝：${shapeErrors[0]}；必须完成 3 张候选图 + 人工确认`);
-  const loaded = loadGlobalVisualBaselineSelectionReference(reference, work, { projectRoot: repo, io, throwOnError: true });
+  const loaded = loadGlobalVisualBaselineSelectionReference(reference, { projectRoot: repo, io, throwOnError: true });
   if (!loaded) throw new Error('全局视觉基线选择证据门拒绝：三张候选图、唯一人工确认或冻结文件 SHA 无效；必须完成 3 张候选图 + 人工确认后才能正式冻结');
   if (loaded.value.baseline?.status !== GLOBAL_VISUAL_BASELINE_FROZEN_STATE) throw new Error('全局视觉基线选择证据门拒绝：冻结身份状态无效；必须完成 3 张候选图 + 人工确认');
   return loaded.value;

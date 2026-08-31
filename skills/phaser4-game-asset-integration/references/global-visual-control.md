@@ -2,6 +2,10 @@
 
 为每个项目维护单一、版本化的全局视觉基线。基线必须先经过 brief → 恰好三张同条件候选效果图 → 同屏人工选择确认一张的流程，候选文件只允许真实 PNG/JPEG（文件门检查图片魔数），完成不可变 `globalVisualBaselineSelectionRef` 后才进入 `global-static-baseline-frozen` 状态。`docs/global-visual-baseline-selection.json` 是唯一选择根证据模板；`docs/visual-baseline.md` 只保存不可变冻结规则正文，`docs/visual-design.md` 保存可追加的方向探索、版本索引及 V2b/V4/V5 证据，`docs/visual-assets.json` 只保存机器绑定与选择证据索引；选择根证据单独保存，不在其中内嵌第二份根对象。
 
+## 生产者与消费者绑定
+
+选择根证据的顶层 `workItemId` 永久表示创建三候选和人工决定的生产者 Work Item。三张候选的 generation record、唯一人工决定文件和根证据必须继续绑定同一生产者，不能因为场景 Work Item 消费该基线而改写这些文件的所有者。消费者只保存 `globalVisualBaselineSelectionRef` 的不可变 `path` + `sha256`；引用中的可选 `workItemId` 也只能复述生产者身份，不能填写或要求等于当前消费者 Work Item。这样同一冻结根证据可以被多个场景、显示层或基础模块 Work Item 复用，同时仍由文件门完整校验生产者链和每个文件的 SHA-256。
+
 ## 基线身份与风格指纹
 
 冻结基线时同时记录：
@@ -16,7 +20,7 @@
 
 ## 三候选生成与人工冻结门
 
-全局视觉基线必须从一个明确的视觉 brief 开始。使用相同 brief、目标视口、参考输入和条件指纹生成恰好三张候选效果图，并将三张图同屏交给人工比较；候选必须分别绑定图片文件 SHA-256 和 generated generation record 文件 SHA-256。`global-visual-baseline-selection/1.0` 证据还必须绑定 Work Item、brief、generation batch、唯一候选 ID、唯一 `SINGLE_HUMAN`/`CONFIRMED` 选择、selectedCandidateId、决定记录文件/SHA、确认时间和用户原文。
+全局视觉基线必须从一个明确的视觉 brief 开始。使用相同 brief、目标视口、参考输入和条件指纹生成恰好三张候选效果图，并将三张图同屏交给人工比较；候选必须分别绑定图片文件 SHA-256 和 generated generation record 文件 SHA-256。`global-visual-baseline-selection/1.0` 证据还必须绑定生产者 Work Item、brief、generation batch、唯一候选 ID、唯一 `SINGLE_HUMAN`/`CONFIRMED` 选择、selectedCandidateId、决定记录文件/SHA、确认时间和用户原文。
 
 人工确认完成前，`visual_baseline.status` 和 Work Item `globalStaticBaselineState` 只能保持 draft/pending，不能写入 `global-static-baseline-frozen`。确认后冻结身份必须同时绑定 baseline ID/version、`docs/visual-baseline.md`、正文真实 SHA（style fingerprint）、primary anchor 和 selected candidate；任一候选、决定、brief、正文或锚点文件 SHA 漂移均使引用失效并回到三候选流程。该全局人工选择是独立硬门，不能替代每个场景 V2 的唯一真人方向审批。
 

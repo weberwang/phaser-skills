@@ -104,8 +104,9 @@ export function validateVisualStageDeclaration(subject = {}) {
   const state = firstValue(subject.visualStageState, subject.visual_stage_state, subject.visualState, subject.visual_state);
   if (stage && state !== null && !VISUAL_STAGE_STATE_FOR[stage]?.has(String(state))) errors.push(error('VISUAL_STAGE_STATE_INVALID', `阶段 ${stage} 与状态 ${String(state)} 不匹配`, { missingEvidence: ['visualStageState'] }));
   // 全局冻结状态必须绑定三候选人工选择证据；只写状态字段不能绕过冻结前置。
+  // 这里仅校验消费者引用的 path+sha 形状；根证据的生产者链由 loader 完整复核。
   if (baselineState === 'global-static-baseline-frozen' || ((stage === 'V0' || stage === 'V1') && state === 'global-static-baseline-frozen')) {
-    const selectionErrors = validateGlobalVisualBaselineSelectionReferenceShape(subject.globalVisualBaselineSelectionRef, subject.workItemId ?? subject.work_item_id ?? null);
+    const selectionErrors = validateGlobalVisualBaselineSelectionReferenceShape(subject.globalVisualBaselineSelectionRef);
     for (const message of selectionErrors) errors.push(error('GLOBAL_VISUAL_BASELINE_SELECTION_MISSING', message, { missingEvidence: ['globalVisualBaselineSelectionRef'] }));
   }
   if (/^V[0-5]$/i.test(rawStageId) && stage && rawStageId.toUpperCase() !== stage) errors.push(error('VISUAL_STAGE_DECLARATION_CONFLICT', 'stageId 仅作范围标签，必须与显式 visualStage 一致且不能替代它', { missingEvidence: ['visualStage'] }));

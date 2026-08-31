@@ -104,4 +104,6 @@ Spine 换皮的 `spine_batch_acceptance` 只表示 V4 局部批次生产锁定�
 
 ### 全局视觉生成顺序与失效
 
+全局选择根证据的顶层 `workItemId` 是生产者 Work Item 身份，三张候选的 generation record 与唯一人工决定必须继续绑定该生产者并保持不可变。场景或基础模块等消费者 Work Item 只通过 `globalVisualBaselineSelectionRef` 的 `path` + `sha256` 复用；引用中的可选 `workItemId` 只能复述生产者，不能要求等于消费者。全局冻结证据可以跨 Work Item 复用，但每个消费者的 V2/V4/V5 证据仍必须绑定自身 Work Item。
+
 效果图生成前必须先建立全局基线 brief，完成三张同条件候选效果图、同屏人工选择和唯一 `SINGLE_HUMAN`/`CONFIRMED` 决定，再以 `globalVisualBaselineSelectionRef` 把 `visual_baseline` 冻结为 `global-static-baseline-frozen`，并绑定 `docs/visual-baseline.md`、基线身份、`style_fingerprint` 和全部 `anchor_evidence`。人工选择前基线不得标记 frozen。该输入同时约束 scene master/reference target、宿主场景 contextual effect image 和 effect-image 原子资产；原子资产必须同时携带完整冻结效果图主参考与全局锚点，不得用局部冻结图替代全局基线。`origin=provided` 只表示外部文件，`origin=generated` 才要求 generation_record。基线、锚点、目标 SHA、实际提示词或一致性证据身份缺失/路径错误时先 `repair` 并重验当前门；这些冻结事实真实变化时才使旧记录失效，按 `return` 回到最早受影响阶段并只使其下游失效。

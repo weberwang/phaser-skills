@@ -60,7 +60,7 @@ Work Item 的 `taskAuthorization` 保存用户原始请求、目标、范围、�
 
 ## V0→V5 跨阶段硬门
 
-视觉阶段是唯一的机器枚举 `V0`、`V1`、`V2`、`V3`、`V4`、`V5`，且必须同时声明有语义的 `visualStageState`。V0/V1 必须先建立全局基线 brief、生成恰好三张同条件候选效果图、同屏交给人工并确认其中一张；`globalVisualBaselineSelectionRef` 通过后才可写入 `global-static-baseline-frozen`。该状态只冻结颜色、字体、栅格等静态规则；它不等于 `v2-direction-frozen`，三候选人工选择也不能替代逐场景 V2 唯一真人方向审批。V2 方向冻结还必须由不可变的代表画面、动态样片、人工审查和独立审查证据派生。
+视觉阶段是唯一的机器枚举 `V0`、`V1`、`V2`、`V3`、`V4`、`V5`，且必须同时声明有语义的 `visualStageState`。V0/V1 必须先建立全局基线 brief、生成恰好三张同条件候选效果图、同屏交给人工并确认其中一张；`globalVisualBaselineSelectionRef` 通过后才可写入 `global-static-baseline-frozen`。该引用通过不可变 `path` + `sha256` 跨 Work Item 复用，根证据顶层 `workItemId` 始终是生产者身份，不是当前消费者；该状态只冻结颜色、字体、栅格等静态规则；它不等于 `v2-direction-frozen`，三候选人工选择也不能替代逐场景 V2 唯一真人方向审批。V2 方向冻结还必须由不可变的代表画面、动态样片、人工审查和独立审查证据派生。
 
 ```text
 建立全局视觉基线 brief
@@ -79,7 +79,7 @@ Work Item 的 `taskAuthorization` 保存用户原始请求、目标、范围、�
   → 跨场景 INTEGRATION/联合验收 → A4/F4 正式入口
 ```
 
-正式 Scene/UI 注册、Boot→可见 Scene 入口修改、正式消费可见资产、删除旧视觉实现或声明视觉完成，必须由共享视觉前置校验器复核当前场景 Work Item 的 V2 结果、V3 生产合同、V4 验收和 V5 候选。仅含 `SHARED`/`MODULE` 的 foundation-only 包不消费正式可见资产、不实现具体场景玩法或 UI，也不需要场景 V2/V4；但必须满足经过机器复核的 `globalVisualBaselineSelectionRef`（三张 generated 候选、唯一 SINGLE_HUMAN/CONFIRMED 决定、冻结正文真实 SHA）和 `globalStaticBaselineState=global-static-baseline-frozen`，缺失任一项时 fail closed。包含 `SCENE`、`DISPLAY_LAYER` 或 `INTEGRATION` 的包不享受该例外，仍以 V2 `COMPLETE/frozen` 作为规划边界、以 V4 正式资源与同屏组合预验收作为执行边界。阶段名、`stageId` 文本、根 PASS/布尔值、说明文字和 Approval Ledger 原文都不是证据；所有证据必须使用 Work Item、Unit Result、候选身份和内容哈希的不可变文件引用。证据字段、路径或 SHA 缺失/格式错误先 `repair`，候选未变的机器验证失败按 `revalidate` 只重跑当前门；仅当 target/candidate/diff/baseline、授权或冻结候选身份真实变化时，才使 pending 变为 stale 并 `return` 到最早受影响阶段。下游按受影响范围失效，不默认整 Work Item 重做。
+正式 Scene/UI 注册、Boot→可见 Scene 入口修改、正式消费可见资产、删除旧视觉实现或声明视觉完成，必须由共享视觉前置校验器复核当前场景 Work Item 的 V2 结果、V3 生产合同、V4 验收和 V5 候选。仅含 `SHARED`/`MODULE` 的 foundation-only 包不消费正式可见资产、不实现具体场景玩法或 UI，也不需要场景 V2/V4；但必须满足经过机器复核的 `globalVisualBaselineSelectionRef`（三张 generated 候选、唯一 SINGLE_HUMAN/CONFIRMED 决定、冻结正文真实 SHA）和 `globalStaticBaselineState=global-static-baseline-frozen`，缺失任一项时 fail closed。包含 `SCENE`、`DISPLAY_LAYER` 或 `INTEGRATION` 的包不享受该例外，仍以 V2 `COMPLETE/frozen` 作为规划边界、以 V4 正式资源与同屏组合预验收作为执行边界。全局选择根证据的生产者 Work Item 可被多个消费者引用，但场景 V2/V3/V4/V5 证据仍必须绑定当前场景 Work Item；阶段名、`stageId` 文本、根 PASS/布尔值、说明文字和 Approval Ledger 原文都不是证据；所有证据必须使用 Work Item、Unit Result、候选身份和内容哈希的不可变文件引用。证据字段、路径或 SHA 缺失/格式错误先 `repair`，候选未变的机器验证失败按 `revalidate` 只重跑当前门；仅当 target/candidate/diff/baseline、授权或冻结候选身份真实变化时，才使 pending 变为 stale 并 `return` 到最早受影响阶段。下游按受影响范围失效，不默认整 Work Item 重做。
 
 新审批不得让未授权的既往动作合法化。基线、对象、阶段、模块、文件范围或动作等级改变时，创建新审批。旧记录只读保留。
 

@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
+import { assertGlobalVisualBaselineSelection } from './global-visual-baseline-contract.mjs';
 import { assertFormalExecutionAfterV4, assertFormalImplementationAfterV2, assertHighFidelityPrerequisite } from './high-fidelity-prerequisite.mjs';
 
 const TARGET_SHA = `sha256:${'a'.repeat(64)}`;
@@ -27,6 +28,7 @@ function writeEvidenceFile(fixture, changes = {}) {
 
 /** 为 foundation-only 门构造三张同条件候选、唯一人工确认和冻结正文证据。 */
 function writeGlobalBaselineSelectionEvidence(fixture, overrides = {}) {
+  const producerWorkItemId = overrides.producerWorkItemId ?? 'WI-1';
   const baselineFiles = {
     brief: join(fixture.repo, 'docs', 'global-baseline-brief.md'),
     candidates: [join(fixture.repo, 'docs', 'global-baseline-a.png'), join(fixture.repo, 'docs', 'global-baseline-b.png'), join(fixture.repo, 'docs', 'global-baseline-c.png')],
@@ -45,7 +47,7 @@ function writeGlobalBaselineSelectionEvidence(fixture, overrides = {}) {
     const candidateId = `GLOBAL-CANDIDATE-${String.fromCharCode(65 + index)}`;
     const image = { path: path.slice(fixture.repo.length + 1).replaceAll('\\', '/'), sha256: hashFile(path) };
     const generationRecord = {
-      schemaVersion: 'phaser4-global-visual-baseline-candidate-generation/1.0', workItemId: 'WI-1', briefId: brief.briefId,
+      schemaVersion: 'phaser4-global-visual-baseline-candidate-generation/1.0', workItemId: producerWorkItemId, briefId: brief.briefId,
       briefSha256: brief.sha256, generationBatchId, conditionsFingerprint, candidateId, origin: 'generated', outputPath: image.path,
       outputSha256: image.sha256, generatedAt: '2026-08-29T00:00:00.000Z', prompt: `全局基线候选 ${candidateId}`,
     };
@@ -60,7 +62,7 @@ function writeGlobalBaselineSelectionEvidence(fixture, overrides = {}) {
     confirmedAt: '2026-08-29T00:01:00.000Z', userOriginalText: '我选择候选 A 作为全局视觉基线。',
   };
   const decision = {
-    schemaVersion: 'phaser4-global-visual-baseline-selection-decision/1.0', selectionId: 'GLOBAL-SELECTION-1', workItemId: 'WI-1',
+    schemaVersion: 'phaser4-global-visual-baseline-selection-decision/1.0', selectionId: 'GLOBAL-SELECTION-1', workItemId: producerWorkItemId,
     briefId: brief.briefId, briefSha256: brief.sha256, generationBatchId, conditionsFingerprint, presentedCandidateIds,
     reviewMode: humanSelection.reviewMode, status: humanSelection.status, selectedCandidateId: humanSelection.selectedCandidateId,
     confirmedAt: humanSelection.confirmedAt, userOriginalText: humanSelection.userOriginalText,
@@ -75,13 +77,20 @@ function writeGlobalBaselineSelectionEvidence(fixture, overrides = {}) {
     primaryAnchor: selected.image, selectedCandidateId, selectedCandidate: selected.image,
   };
   const selection = {
-    schemaVersion: 'phaser4-global-visual-baseline-selection/1.0', workItemId: 'WI-1', selectionId: 'GLOBAL-SELECTION-1',
+    schemaVersion: 'phaser4-global-visual-baseline-selection/1.0', workItemId: producerWorkItemId, selectionId: 'GLOBAL-SELECTION-1',
     brief, generationBatchId, conditionsFingerprint, candidates, humanSelection, baseline, frozenAt: '2026-08-29T00:02:00.000Z',
   };
   writeFileSync(baselineFiles.selection, `${JSON.stringify(selection, null, 2)}\n`, 'utf8');
   fixture.work.globalStaticBaselineState = 'global-static-baseline-frozen';
-  fixture.work.globalVisualBaselineSelectionRef = { path: 'docs/global-baseline-selection.json', sha256: hashFile(baselineFiles.selection), workItemId: 'WI-1' };
-  return { ...baselineFiles, selection, candidates };
+  const selectionReference = {
+    path: 'docs/global-baseline-selection.json',
+    sha256: hashFile(baselineFiles.selection),
+  };
+  // null 模拟仅保存 path+sha 的消费者引用；未指定时保留生产者标识用于交叉校验。
+  if (overrides.referenceWorkItemId !== null) selectionReference.workItemId = overrides.referenceWorkItemId ?? producerWorkItemId;
+  fixture.work.globalVisualBaselineSelectionRef = selectionReference;
+  // 保留 files.candidates 作为原始图片路径；候选合同对象单独命名，避免覆盖文件夹具。
+  return { ...baselineFiles, selection, selectionFile: baselineFiles.selection, candidateEntries: candidates };
 }
 
 /** 重写选择证据并同步 Work Item 引用，便于定向覆盖结构错误分支。 */
@@ -153,6 +162,70 @@ test('三张候选经唯一人工确认后 foundation-only 包可在 V2/V4 前�
   assert.doesNotThrow(() => assertFormalImplementationAfterV2(fixture.work, packageValue, fixture.repo, fixture.io));
   assert.doesNotThrow(() => assertFormalExecutionAfterV4(fixture.work, packageValue, fixture.repo, fixture.io));
   rmSync(fixture.repo, { recursive: true, force: true });
+});
+
+test('生产者冻结的全局基线根证据可被多个消费者 Work Item 通过 path+sha 复用', () => {
+  const fixture = makeFixture();
+  const files = writeGlobalBaselineSelectionEvidence(fixture, { producerWorkItemId: 'WI-GLOBAL' });
+  const packageValue = { executionUnits: [{ unitType: 'SHARED' }] };
+  const sharedReference = { path: 'docs/global-baseline-selection.json', sha256: hashFile(files.selectionFile) };
+
+  for (const consumerWorkItemId of ['WI-SCENE-A', 'WI-SCENE-B']) {
+    const consumer = {
+      ...fixture.work,
+      workItemId: consumerWorkItemId,
+      // 消费者只需保存根文件的不可变引用，不复制或改写生产者所有权。
+      globalVisualBaselineSelectionRef: sharedReference,
+    };
+    assert.doesNotThrow(() => assertFormalImplementationAfterV2(consumer, packageValue, fixture.repo, fixture.io));
+  }
+
+  assert.equal(files.selection.workItemId, 'WI-GLOBAL');
+  assert.equal(JSON.parse(readFileSync(files.generationRecords[0], 'utf8')).workItemId, 'WI-GLOBAL');
+  assert.equal(JSON.parse(readFileSync(files.decision, 'utf8')).workItemId, 'WI-GLOBAL');
+  rmSync(fixture.repo, { recursive: true, force: true });
+});
+
+test('引用误写消费者 Work Item 身份时拒绝，path+sha-only 引用仍通过', () => {
+  const fixture = makeFixture();
+  const files = writeGlobalBaselineSelectionEvidence(fixture, {
+    producerWorkItemId: 'WI-GLOBAL',
+    referenceWorkItemId: 'WI-SCENE-A',
+  });
+  const consumer = { ...fixture.work, workItemId: 'WI-SCENE-A' };
+  assert.throws(
+    () => assertGlobalVisualBaselineSelection(consumer, fixture.repo, fixture.io),
+    /必须与根证据生产者 Work Item 一致/,
+  );
+
+  consumer.globalVisualBaselineSelectionRef = { path: 'docs/global-baseline-selection.json', sha256: hashFile(files.selectionFile) };
+  assert.doesNotThrow(() => assertGlobalVisualBaselineSelection(consumer, fixture.repo, fixture.io));
+  rmSync(fixture.repo, { recursive: true, force: true });
+});
+
+test('全局基线根证据或候选生成记录生产者不一致时拒绝', () => {
+  const rootMismatchFixture = makeFixture();
+  const rootMismatchFiles = writeGlobalBaselineSelectionEvidence(rootMismatchFixture, { producerWorkItemId: 'WI-GLOBAL' });
+  rootMismatchFiles.selection.workItemId = 'WI-OTHER';
+  refreshGlobalBaselineSelectionReference(rootMismatchFixture, rootMismatchFiles.selection);
+  assert.throws(
+    () => assertGlobalVisualBaselineSelection(rootMismatchFixture.work, rootMismatchFixture.repo, rootMismatchFixture.io),
+    /未绑定当前三候选生成合同|未绑定唯一人工确认|生产者 Work Item 一致/,
+  );
+  rmSync(rootMismatchFixture.repo, { recursive: true, force: true });
+
+  const candidateMismatchFixture = makeFixture();
+  const candidateMismatchFiles = writeGlobalBaselineSelectionEvidence(candidateMismatchFixture, { producerWorkItemId: 'WI-GLOBAL' });
+  const generationRecord = JSON.parse(readFileSync(candidateMismatchFiles.generationRecords[1], 'utf8'));
+  generationRecord.workItemId = 'WI-OTHER';
+  writeFileSync(candidateMismatchFiles.generationRecords[1], `${JSON.stringify(generationRecord, null, 2)}\n`, 'utf8');
+  candidateMismatchFiles.selection.candidates[1].generationRecord.sha256 = hashFile(candidateMismatchFiles.generationRecords[1]);
+  refreshGlobalBaselineSelectionReference(candidateMismatchFixture, candidateMismatchFiles.selection);
+  assert.throws(
+    () => assertGlobalVisualBaselineSelection(candidateMismatchFixture.work, candidateMismatchFixture.repo, candidateMismatchFixture.io),
+    /未绑定当前三候选生成合同/,
+  );
+  rmSync(candidateMismatchFixture.repo, { recursive: true, force: true });
 });
 
 test('foundation-only 包仅伪造冻结状态或缺少三候选人工证据时拒绝', () => {

@@ -20,6 +20,8 @@
 
 全局基线冻结前必须先建立视觉 brief，生成恰好三张同条件候选效果图，同屏交给人工并由唯一 `SINGLE_HUMAN`/`CONFIRMED` 记录选择其中一张；候选图片路径只允许 PNG/JPEG，文件门还会检查真实图片魔数，不能用同后缀文本伪装。`globalVisualBaselineSelectionRef` 必须绑定独立的选择根证据、三张 generated 图片及生成记录、决定文件和冻结正文真实 SHA。完整字段见 [`global-visual-baseline-selection.schema.json`](global-visual-baseline-selection.schema.json)，机器文件门由 `global-visual-baseline-contract.mjs` 复算。只有该引用完整通过文件门后才能写入 `global-static-baseline-frozen`；全局选择是独立硬门，不能替代逐场景 V2 唯一真人审批。
 
+选择根证据顶层 `workItemId` 是生成并冻结三候选及人工决定的生产者身份；消费者 Work Item 只通过引用的 `path` + `sha256` 复用该根证据，不得将消费者身份写回根、候选生成记录或人工决定。
+
 正式可见视觉集成的 `visualStageEvidenceRefs` 必须逐阶段提供 `path` 与 `sha256`，由控制面从文件读取并复算内容身份；内联对象、根 `PASS`、布尔值、说明文字和 Ledger 文本不能满足依赖。V2 引用必须是有效 Execution Unit Result，且包含代表画面、动态样片、结构化机器证据和唯一 `visual_human_approval`；V3/V4/V5 引用必须分别绑定生产合同、正式资产/组件/同屏验收和运行时候选身份。唯一审批不能被 V4/V5/F2 的重复人工记录替代。
 
 建议项目布局：
