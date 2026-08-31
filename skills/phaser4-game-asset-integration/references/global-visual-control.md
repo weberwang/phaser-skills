@@ -67,7 +67,7 @@
 
 生成结果仍须以锚点和跨资源证据审阅。相同模型、种子、提示前缀或调色板只能证明生产条件相近，不能证明视觉一致。
 
-上述 AI 专用字段只强制用于路线为 `ai-composite-raster` 且状态为 `producing`、`review` 或 `accepted` 的资源，不泛化到非 AI 生产路线。机器清单中的 AI `generation_record` 必须至少包含非空 `global_prompt_prefix`、`asset_prompt`、`state_prompt`、`negative_prompt`、`model`、`model_version`、`seed`、非空 `reference_inputs` 路径列表和字符串 `postprocess` 数组；所有路线的 accepted 资源若没有 `source_file/source_files`，仍须满足公共生成身份：record ID、生成器及版本、时间、可执行命令/配方、输入来源和参数。状态段不适用时也必须显式说明原因；`--check-files` 必须验证每个 `reference_inputs` 文件。若 `expected_assets.alpha=true`，唯一透明路线是生成非透明高对比纯色背景后执行一次背景移除，记录 `source_background_mode=opaque`、`final_background_mode=transparent`、`transparency_strategy=background-removal` 及完整的 `background_removal_attempts[0]`；原图和去背输出的 Alpha 状态、路径、完成时间与 evidence 必须可审计，失败立即返回 V3/V4。
+上述 AI 专用字段只强制用于路线为 `ai-composite-raster` 且状态为 `producing`、`review` 或 `accepted` 的资源，不泛化到非 AI 生产路线。机器清单中的 AI `generation_record` 必须至少包含非空 `global_prompt_prefix`、`asset_prompt`、`state_prompt`、`negative_prompt`、`model`、`model_version`、`seed`、非空 `reference_inputs` 路径列表和字符串 `postprocess` 数组；所有路线的 accepted 资源若没有 `source_file/source_files`，仍须满足公共生成身份：record ID、生成器及版本、时间、可执行命令/配方、输入来源和参数。状态段不适用时也必须显式说明原因；`--check-files` 必须验证每个 `reference_inputs` 文件。若 `expected_assets.alpha=true`，唯一透明路线是生成非透明高对比纯色背景后执行一次背景移除，记录 `source_background_mode=opaque`、`final_background_mode=transparent`、`transparency_strategy=background-removal` 及完整的 `background_removal_attempts[0]`；原图和去背输出的 Alpha 状态、路径、完成时间与 evidence 必须可审计，失败时原地修复或重验当前 V3/V4 门。
 
 ## 多资源一致性证据
 
@@ -78,7 +78,7 @@ V4 为每个生产包提交多资源联系表，并至少生成一张同屏组�
 
 同屏截图必须覆盖会同时出现或由玩家连续看到的角色、图标、面板、按钮、场景对象与 VFX，并标注具体区域和可观察事实。V5 再在目标视口、关键状态和动态时间点检查运行态一致性；孤立透明图、单图文件检查或作者声明不得单独通过。
 
-## 漂移判定与退回
+## 漂移判定与处置
 
 出现下列任一情况即判定视觉漂移或未验证：
 
@@ -89,7 +89,7 @@ V4 为每个生产包提交多资源联系表，并至少生成一张同屏组�
 - 只有关键词、模型、调色板、单图或主观一致声明，没有联系表、同屏截图和区域事实；
 - 新版本资源使旧锚点、状态、页面、图集、布局或运行证据失效。
 
-按根因退回：方向或全局规则漂移退 V2；生产规格、绑定或生成包缺失退 V3；正式文件的执行偏差退 V4；构图、信息层级、资源槽或布局结构根因退 V1。总控只核对绑定、版本和证据完整性；F2 由确定性机器事实判断视觉一致性。
+按根因处置：字段、路径、绑定或生成包记录缺失先 `repair`；冻结身份未变的正式文件、执行或机器证据偏差按 `revalidate` 重验当前门。只有方向/全局规则、冻结生产规格、构图、信息层级、资源槽、布局结构或候选身份真实变化时才 `return` 到 V1/V2/V3/V4 中最早受影响阶段。总控只核对绑定、版本和证据完整性；F2 由确定性机器事实判断视觉一致性。
 
 ## 基线变更提案
 
@@ -116,7 +116,7 @@ V4 为每个生产包提交多资源联系表，并至少生成一张同屏组�
 ## 结论
 
 - 漂移：无 / 方向规则 / 生产规格 / 资源执行 / 结构根因
-- 退回：无 / V1 / V2 / V3 / V4
+- 处置：repair / revalidate / return（仅 return 填 V1/V2/V3/V4）
 - 基线变更提案：无 / 路径与版本
 - 失效证据与影响面重验：
 - 视觉一致性 F2：通过 / 失败 / 缺少机器事实
@@ -131,6 +131,6 @@ V4 为每个生产包提交多资源联系表，并至少生成一张同屏组�
 | generated | baseline 四元组、`origin`、`style_drift_policy=forbid` | 全部 `style_reference_inputs`，路径与真实 SHA | `global_visual_consistency_prompt` + `full_prompt`，并证明实际发送 | `output_sha256`、`consistency_status=passed`、证据路径与 SHA | 基线/锚点/目标/提示词/证据身份变化 |
 | provided | 仅 `origin=provided` | 不伪造生成输入 | 不要求生成记录 | 外部文件按普通文件门核验 | 文件路径或 SHA 变化 |
 
-原子资产仍以完整冻结效果图作为主参考，全局锚点只作为额外强制 style references。文件门会复算基线正文、锚点、冻结目标、输出和一致性证据的真实 SHA，旧记录不能跨身份复用；发现漂移时返回最早受影响阶段。
+原子资产仍以完整冻结效果图作为主参考，全局锚点只作为额外强制 style references。文件门会复算基线正文、锚点、冻结目标、输出和一致性证据的真实 SHA，旧记录不能跨身份复用；记录或路径问题先原地修复，候选未变的证据更新只重验当前门，冻结身份真实漂移时才返回最早受影响阶段。
 
-生成式单图在绑定全局基线后仍按“生成非透明原图 → 一次背景移除 → Sharp 尺寸归一化 → V4/final/runtime”交付；`padding_policy=none`，源图与目标宽高比不一致必须重生，禁止 crop、padding、contain 或静默拉伸。归一化后的 PNG/JPEG 才是最终输出（`alpha=true` 只能是 PNG，`alpha=false` 可是 JPEG），透明目标前后都要保留 Alpha，并以 `normalization_record` 绑定背景移除输出、尺寸、路径、SHA 和工具版本。
+生成式单图在绑定全局基线后仍按“生成原图 →（透明路线一次背景移除）→ Sharp 尺寸归一化 → V4/final/runtime”交付；首次输出比例不符时最多重生一次，第二次仍不符时，若已冻结裁切焦点和安全事实，则使用 `crop-and-resize-to-contract` 并绑定两次真实原始 ImageGen attempt、SHA、尺寸、focus 和 `crop_rect`，否则先由生产流程对不透明生成结果生成式延展到目标比例，再执行一次背景移除（如为透明路线）和普通归一化。透明路线的两次 attempt 仍是去背前的不透明原始输出，受控裁切可在唯一一次背景移除后的同尺寸含 Alpha 输入上执行。该分流适用于所有 ImageGen 图片；`padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘、以及裁切冻结 `reference_target`。归一化后的 PNG/JPEG 才是最终输出（`alpha=true` 只能是 PNG，`alpha=false` 可是 JPEG），透明目标前后都要保留 Alpha，并以 `normalization_record` 绑定当前输入、尺寸、路径、SHA 和工具版本。

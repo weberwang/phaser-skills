@@ -1,18 +1,28 @@
 # 状态、阶段与停止门
 
-效果图还原是当前场景实现 Work Item 内的可选视觉模式；基础实施完成后、场景 V1/V2 开始前先冻结 `scene_reconstruction_contract`、scene master 和必需宿主上下文图，再进入场景视觉门。缺少整屏构图、布局绑定、逐区域视觉事实、运行时 fidelity obligation 或项目容差时，根因分类为 `方案缺失`，最早退回 `V1/PROPOSAL`。合同完整但正式 Scene、比例或同屏组合不符属于 `执行问题`，退回 V3/V4；已有差异或证据不足却标记 PASS 属于 `验收问题`，退回 `VALIDATING` 或最早受影响阶段。资源 loaded/used 只能是工程子门，不能绕过 V5 fidelity/F2/正式 Scene consumption，也不创建第二条场景生命周期。
+效果图还原是当前场景实现 Work Item 内的可选视觉模式；基础实施完成后、场景 V1/V2 开始前先冻结 `scene_reconstruction_contract`、scene master 和必需宿主上下文图，再进入场景视觉门。工作流默认沿 V0→V5 和当前全局状态向前推进：缺字段、格式、路径或可补证据问题先在当前阶段原地修复，候选与上游冻结身份未变的机器验证失败只重验当前门。只有上游方案、视觉方向、基线、授权范围或冻结候选身份真实失效，或继续推进会绕过硬门并使下游无效，才使用 `RETURN` 回到最早受影响阶段。资源 loaded/used 只能是工程子门，不能绕过 V5 fidelity/F2/正式 Scene consumption，也不创建第二条场景生命周期。
 
 ## 全局状态
 
 生产主路径按风险跳过不适用的人工状态：A1 走候选、验证与完成；A2 走隔离实现、验证与完成；安全 A3 走 `IMPLEMENTING → VALIDATING → PASSED → COMPLETE`。实质用户取舍形成 `USER_INPUT_REQUIRED` 澄清阻塞而不进入审批状态；只有 A4-A6 具体操作进入操作批准门，A4 进入 `INTEGRATING`，发布工作项进入 `RELEASE_APPROVAL_REQUIRED → RELEASING`。
 
-任一活动状态可在有理由时进入 `RETURN` 或 `BLOCKED`；`RETURN` 只能回到 `BASELINE`、`PROPOSAL`、`REVIEW` 或 `IMPLEMENTING`；阻断解除后必须回到明确的前序状态，不得跳门。
+任一活动状态可在硬门失败或真实范围变化时进入 `BLOCKED`；只有满足 `return` 条件并显式记录分类、理由和最小影响范围时才可进入 `RETURN`。`RETURN` 只能回到 `BASELINE`、`PROPOSAL`、`REVIEW` 或 `IMPLEMENTING`；阻断解除后必须回到明确的前序状态，不得跳门。
+
+### 前进优先与三级处置
+
+所有门禁失败必须先给出以下三类处置之一，并只使真实受影响范围及其下游失效：
+
+1. `repair`（原地修复）：修复当前记录、字段、路径、文件绑定或可补的证据；不改变冻结候选，不回退阶段，修复后重新运行当前门。
+2. `revalidate`（当前门重验）：候选及其上游冻结 target/candidate/diff/baseline 身份未变，但机器证据缺失、过期或验证失败；只补生成或重跑当前门的证据，不回退阶段。
+3. `return`（必要回退）：上游方案、视觉方向、基线、授权范围或冻结候选身份发生实质变化，或者继续推进会绕过硬门并使下游无效；必须记录分类、理由和最小 `affectedScope`，再回到最早受影响阶段。`RETURN` 不能用于掩盖 repair/revalidate。
+
+`route` 默认推荐当前阶段的下一步，`advance` 只执行合法的前向迁移且永不自动选择 `RETURN`。显式 `transition --to RETURN` 必须提供必要回退分类、非空理由和唯一的 `stage:`/`scene:`/`artifact:` 影响范围；控制面据此推导 `returnState`，清空 approval/pending 视觉快照与展示/Diff Audit，失效实施包和 Execution State，轮换 `validationBatchId` 并写入 `invalidatedArtifacts`、`recordedAt`、`resolvedAt=null`。历史账本和证据文件可保留但不得再被 `effectiveApproval` 使用；退出 RETURN 只能迁移到 `returnState`，确认失效完成后写入 `resolvedAt`，不删除审计文件或用户数据。
 
 ## 实施优先与返工收敛
 
 状态门使用最小充分证据而非穷尽式研究：入口、关键调用链或契约、授权范围、主要风险和验收目标明确且无直接冲突时，必须停止探索；A1/A2 冻结当前候选的范围、假设与验收边界，直接进入适用执行/验证；A3 冻结 `Implementation Package` 后进入 `IMPLEMENTING`。可逆、本地且授权内的 A1/A2 可以记录合理假设后执行/验证；A3 可以记录合理假设后实施，但必须先冻结包；A4-A6 批准、用户决定、视觉硬门、测试授权及真实证据门仍不可旁路。
 
-进入 `IMPLEMENTING` 后的返工必须由新增失败证据驱动：测试/类型/构建失败、运行异常、需求不满足、安全或越界问题、可复现缺陷或硬门明确失败；用户明确改变需求/范围或候选身份实际变化时，按真实受影响门重跑。另一种可行方案、重复确认已知事实或非阻塞发现不能单独触发 `RETURN`；后者记录为未覆盖项/后续事项。默认闭环为“最小必要事实确认 → 冻结候选边界（A3 冻结 Implementation Package）→ 执行/实施 → diff 审计 → 获授权定向验证 → 仅按失败证据修正 → 完成”。
+进入 `IMPLEMENTING` 后的返工必须由新增失败证据驱动：测试/类型/构建失败、运行异常、需求不满足、安全或越界问题、可复现缺陷或硬门明确失败；先按 `repair` 原地修复或按 `revalidate` 重验当前门，只有用户明确改变需求/范围、上游冻结事实或候选身份实际变化时才按真实受影响门 `return`。另一种可行方案、重复确认已知事实或非阻塞发现不能单独触发 `RETURN`；后者记录为未覆盖项/后续事项。默认闭环为“最小必要事实确认 → 冻结候选边界（A3 冻结 Implementation Package）→ 执行/实施 → diff 审计 → 获授权定向验证 → 仅按失败证据修正 → 完成”。
 
 ## 既有阶段映射
 
@@ -48,7 +58,7 @@ V0-V5、G0-G3 与领域阶段是 `stageId`，不是另一套状态机。只有�
 
 先建立全局基线 brief，生成恰好三张同条件候选效果图并同屏交给人工，人工选择确认一张后以 `globalVisualBaselineSelectionRef` 正式冻结 `visual_baseline`，再以独立 foundation-only 包完成 `SHARED` 最小项目骨架和 `MODULE` 场景无关基础模块；基础实施完成后、进入场景 V1/V2 前，冻结全部授权场景的 scene master、必需 transient display-layer 宿主上下文图和 `scene_reconstruction_contract`，集合按 scene/state 分项而非一张合并图；随后各场景才完成完整场景候选、动态样片、F2 `MACHINE/PASS` 与唯一真人视觉审批。人工选择前只能保持 draft/pending，状态字段不能冒充冻结。基础阶段允许最小 Boot/Preload 生命周期、公开契约、游戏数据配置加载与 schema 校验、状态/存档仓库、输入/平台适配、资源目录/加载基础设施和测试支撑；禁止具体场景玩法规则、场景 UI/布局、正式可见资产消费、Boot→正式可见 Scene 接入和删除旧视觉实现。foundation-only 包必须同时通过 `globalVisualBaselineSelectionRef` 的三候选/唯一人工确认/真实 SHA 文件门和 `globalStaticBaselineState=global-static-baseline-frozen`，缺失任一项时 fail closed；混入 SCENE/DISPLAY_LAYER/INTEGRATION 的包仍以 V2 `COMPLETE/frozen` 为规划边界，并以 V4 正式资源与同屏组合预验收为执行边界。全局选择是独立硬门，不能替代逐场景 V2。参考模式的 `effect-image` 仍在同一 Work Item 内完成 V1→V5。正式代码的 `executionUnits` 唯一顺序为 `SHARED`→`MODULE`→按场景连续的 `SCENE`+紧邻从属 `DISPLAY_LAYER`→`INTEGRATION`/联合验收；模块才可按互斥所有权并行，显示层不得在所有场景之后另设尾部阶段，实际场景顺序由计划制定者冻结。代码面在每个 SCENE/DISPLAY_LAYER 单元准备、委派、READY 和激活前读取当前 Work Item 的 V2 结果；全局冻结、手写布尔/PASS、数组前序均不构成该证据。
 
-`highFidelityPrerequisite` 必须是不可变引用：`workItemId`、`status=COMPLETE`、`stage=V2`、`frozen=true`、`sceneId`/`displayLayerId`/`hostSceneId`、冻结 `targetSha256`/`candidateSha256`/`diffFingerprint`、仓库内相对 `evidenceFile` 与当前 `evidenceSha256`。证据文件须为 `phaser4-scene-v2-result/1.0` 的单一场景根结果：根提供 `sceneMaster`、完整场景候选、动态视觉样片、机器验证 `PASS`、唯一真人视觉审批 `PASS` 及实际文件 SHA；多个显示层放入 `displayLayerContexts[]`，每项包含 `displayLayerId`、`hostSceneId`、`hostContextImage`。SCENE 与 DISPLAY_LAYER 使用同一 `evidenceFile`，candidate/diff/target 与 scene/layer/host 身份必须一致。缺字段、非 COMPLETE、身份不匹配、越界、缺文件或任一 SHA 漂移均 fail closed，并退回当前场景 Work Item 的 V2；不得引入其他 Work Item 或另行任务身份，也不绑定后续代码包 ID。
+`highFidelityPrerequisite` 必须是不可变引用：`workItemId`、`status=COMPLETE`、`stage=V2`、`frozen=true`、`sceneId`/`displayLayerId`/`hostSceneId`、冻结 `targetSha256`/`candidateSha256`/`diffFingerprint`、仓库内相对 `evidenceFile` 与当前 `evidenceSha256`。证据文件须为 `phaser4-scene-v2-result/1.0` 的单一场景根结果：根提供 `sceneMaster`、完整场景候选、动态视觉样片、机器验证 `PASS`、唯一真人视觉审批 `PASS` 及实际文件 SHA；多个显示层放入 `displayLayerContexts[]`，每项包含 `displayLayerId`、`hostSceneId`、`hostContextImage`。SCENE 与 DISPLAY_LAYER 使用同一 `evidenceFile`，candidate/diff/target 与 scene/layer/host 身份必须一致。缺字段、格式、路径、越界、缺文件或可补的 SHA 绑定错误先 `repair` 并重验当前门；候选与上游冻结身份未变但机器证据过期/失败时为 `revalidate`。只有 target/candidate/diff/baseline、授权或冻结 V2 身份真实变化才 `return` 到最早受影响阶段；不得引入其他 Work Item 或另行任务身份，也不绑定后续代码包 ID。
 
 ## 强制停止门
 
@@ -66,16 +76,16 @@ V0-V5、G0-G3 与领域阶段是 `stageId`，不是另一套状态机。只有�
 视觉生产硬门：V3 必须完成逐 region 状态分析（普通、selected/active、disabled、pressed/hover 及 victory/defeat/paused；不适用项必须写 reason），绑定分析证据 SHA、冻结目标 SHA、分析 ID 和完成时间后，才能声明 `component_inventory`。`annotation_number` 只是审阅区域编号，不是资产数量单位；唯一原子部件由 `component_id/atomic_visual_key` 标识，重复实例用 `placements` 表达。效果图拆解分析 PNG、原子部件、状态和资产需求清单必须使用 `visual-decomposition-confirmation/1.0` 记录并由用户人工 `status=accepted`、`confirmation_mode=manual` 确认后才能进入 Implementation Package；缺失、pending、AUTO、旧字段、旧 SHA、漏编号或区域定义变化一律拒绝。ImageGen 的每个唯一 `component_id × required state_id` 必须绑定一个独立位图，并强制 `delivery_mode=individual`、`atlas_allowed=false`，不能使用图集；其尺寸由验证器按逻辑像素 `ceil(max placement width/height × intended_scale_range.max × 1.5)` 自动计算，`expected_assets.width/height` 必须精确等于该最小值，`max_dpr=1.5` 和 `padding_policy=none` 必须存在；1.5 是最大生产 DPR，运行时实际 DPR 动态封顶，不改变资产尺寸合同，该数值合同不进入人工审阅门。固定视觉组件只允许 `imagegen`、`authored-raster` 或有证据的 `reuse`，交付为真实 PNG/JPG 位图；非 ImageGen 的 `authored-raster` 或 `reuse` 若使用图集，必须显式 `delivery_mode=atlas`、`atlas_allowed=true`，且不得绕过独立组件、状态和运行时消费绑定。`authored-svg`、`phaser-graphics`、`runtime-program`、Canvas/CanvasTexture 和 runtime drawing 只能服务非图片逻辑、交互热区、碰撞或布局，不得作为图片 component、expected_asset、actual_asset 或 runtime consumption。每个 placement 显式声明 `interaction_required`，真实热区通过 `interaction_hotspots` 逐 placement 一一绑定且不得计入资产。Implementation Package `visualProductionUnits` 必须复制这套状态/部件映射并冻结同一确认 ID/SHA；V4 `production_contract_audit` 必须逐部件核对实际输出和 `component_usages`；F2 只消费 `validationMode=MACHINE` 的确定性机器事实，不再产生 `production_contract_review` 或 `component_reviews`；V5 还必须绑定 F3 runtime replay、非空 freshness-bound fidelity cases、运行时实际消费及无未批准替换。任何 `image_generation_required=true` 的区域缺少 imagegen 位图或生成/提示词记录时，不能以 SVG、Graphics、CanvasTexture 或 runtime drawing 放行，横向组合图也不能冒充多个原子部件。
 
 补充跨阶段硬门：同一 annotation/proposal/decision 确认集合必须覆盖全部带编号区域，包括本次生成、复用既有资源和非图片逻辑，并冻结 `production_label`、组件/状态/资产需求与权威 SHA；程序实现区域不得借“不产图”跳过人工确认。
-### 效果图 V1→V5 硬门与退回
+### 效果图 V1→V5 硬门与处置
 
 1. **V1/PROPOSAL**：冻结 target 条件、整屏 composition、layout/responsive 绑定、逐 region 视觉事实、`reference_technical_conflicts`（空数组也必须存在）、项目预声明 tolerance、实现计划和 `display_layer_planning`。其中 `scene_master` 只记录基础场景与常驻 HUD；每个 modal/popup/drawer/toast 的 required state 都要绑定宿主场景上下文效果图。
 
-V1 的布局冻结还必须包含父子几何测量：每个 effect-image 节点声明 `parent_layout_node_id`、`parent_target_bounds`、`relative_position` 和 `nearest_edge_docking`，且 `reference_id` 等于父 ID。父级只能是布局节点、`viewport` 或 `safe-area`，父子图不得循环；子 bounds 必须在父内容框内。相对四边距离由 bounds 精确计算，最近边相等时固定停靠 left/top，并据此推导 `offset`、`self_anchor`、`reference_anchor`；伪造或缺失任一字段都属于方案缺失并退回 V1。该组字段纳入布局身份 SHA。
+V1 的布局冻结还必须包含父子几何测量：每个 effect-image 节点声明 `parent_layout_node_id`、`parent_target_bounds`、`relative_position` 和 `nearest_edge_docking`，且 `reference_id` 等于父 ID。父级只能是布局节点、`viewport` 或 `safe-area`，父子图不得循环；子 bounds 必须在父内容框内。相对四边距离由 bounds 精确计算，最近边相等时固定停靠 left/top，并据此推导 `offset`、`self_anchor`、`reference_anchor`；字段缺失、格式错误或路径/绑定错误先原地 `repair`，随后重验当前门。只有测量事实证明冻结构图或布局方案本身已失效时，才以 `return` 回到 V1。该组字段纳入布局身份 SHA。
 2. **V2/REVIEW**：提交带 code/build SHA 与 diff identity 的完整场景候选、动态样片和结构化 F2 机器验证；验证必须覆盖整屏、逐 region、构图、几何、颜色/材质、字体、装饰密度和响应式。
-3. **V2→V3**：以上字段任一缺失均拒绝进入 V3，根因标记 `方案缺失`，退回最早阶段 `V1/PROPOSAL`。
+3. **V2→V3**：以上字段任一缺失均拒绝进入 V3，但先按 `repair` 原地补齐记录/字段/路径并重验当前门；候选身份未变而机器事实缺失或失败时按 `revalidate` 重跑当前门。只有补齐后确认冻结构图、视觉方向或 target/candidate/diff 身份实质变化，才 `return` 到最早受影响阶段 `V1/PROPOSAL` 或 `V2/REVIEW`。
 4. **V3/IMPLEMENTING**：绑定 `visualProductionUnits`、状态/部件合同、预声明 tolerance ID 和正式 Scene 实现计划；运行时 owner 也必须承担 fidelity obligations。
-5. **V4/VALIDATING**：逐资源执行 production contract audit，并完成 `combination_preacceptance`、宿主场景同屏组合与每个固定视觉单元的 `scene_asset_usage`；瞬态显示层必须具备打开/交互/关闭/恢复轨迹证据。偏差属于 `执行问题`，退回 V3/V4。
-6. **V5/PASSED**：必须显式执行真实文件门，F2 `validationMode=MACHINE` 确定性机器检查、F3 runtime replay、fresh fidelity cases、逐区域差异证据、宿主场景正式 Scene consumption 和显示层底层状态/焦点恢复全部通过；不重复要求真人审阅。候选身份漂移、证据缺失或错误 PASS 属于 `验收问题`，退回 `VALIDATING` 或最早受影响阶段。
+5. **V4/VALIDATING**：逐资源执行 production contract audit，并完成 `combination_preacceptance`、宿主场景同屏组合与每个固定视觉单元的 `scene_asset_usage`；瞬态显示层必须具备打开/交互/关闭/恢复轨迹证据。字段、路径、资源绑定或可补证据偏差先 `repair`，候选身份未变的机器检查失败按 `revalidate` 重跑当前门；只有生产合同或候选身份实质改变才 `return` 到 V3/V4 的最早受影响点。
+6. **V5/PASSED**：必须显式执行真实文件门，F2 `validationMode=MACHINE` 确定性机器检查、F3 runtime replay、fresh fidelity cases、逐区域差异证据、宿主场景正式 Scene consumption 和显示层底层状态/焦点恢复全部通过；不重复要求真人审阅。证据缺失、路径/格式错误或候选未变的验证失败按 `repair`/`revalidate` 处理；只有 target/candidate/diff/baseline、授权或冻结候选身份真实漂移，才 `return` 到最早受影响阶段。
 
 结构化 fidelity 的 `normalization_equivalence` 必须同时证明 viewport、有效 DPR（target/candidate 均在 (0,1.5]、彼此相等且 `equivalent=true`）和逻辑坐标；`difference_evidence` 只能是有效证据，或 `not-applicable` 且附 reason。逐区域 `target_measurement`、`candidate_measurement`、`delta`、`tolerance_reference`、`result`、`evidence` 和 `exception_ids` 缺一不可；数值差异按场景预声明 tolerance 判定，非数值差异只允许精确批准例外。
 
@@ -88,10 +98,10 @@ V1 的布局冻结还必须包含父子几何测量：每个 effect-image 节点
 输出：scene contract、F2、fidelity、runtime 和文件门均通过，退出码 0。
 ```
 
-视觉人工确认是上述阶段的附加硬门，不改变非视觉 A0-A6/F0-F4 语义：整条 V0→V5 链只要求 V2 视觉方向冻结的一条唯一 `visual_human_approval`，不采集 reviewer_type/reviewer_id/reviewer 字符串，仅要求非空 `review_id`、`reviewed_at`、`evidence`、`evidence_sha256`、`status=PASS`，并绑定冻结 target、V2 candidate、diff、基线和审批证据哈希。V2 代表画面/动态样片/结构化机器验证与 V4 actual asset、combination preacceptance、V5 fidelity、F2 component/contract 检查均需当前身份绑定的确定性机器证据和 PASS，不再重复要求 `human_review` 或第二 reviewer；AI reviewer 字段不能替代 V2 真人通过事件。审批绑定或其哈希漂移即失效；根节点 PASS、裸批准文本或 `all_visual_artifacts_human_reviewed=true` 不得代替结构化证据。缺少机器证据、过期 candidate/target、漏覆盖均按根因分类返回最早受影响阶段。
+视觉人工确认是上述阶段的附加硬门，不改变非视觉 A0-A6/F0-F4 语义：整条 V0→V5 链只要求 V2 视觉方向冻结的一条唯一 `visual_human_approval`，不采集 reviewer_type/reviewer_id/reviewer 字符串，仅要求非空 `review_id`、`reviewed_at`、`evidence`、`evidence_sha256`、`status=PASS`，并绑定冻结 target、V2 candidate、diff、基线和审批证据哈希。V2 代表画面/动态样片/结构化机器验证与 V4 actual asset、combination preacceptance、V5 fidelity、F2 component/contract 检查均需当前身份绑定的确定性机器证据和 PASS，不再重复要求 `human_review` 或第二 reviewer；AI reviewer 字段不能替代 V2 真人通过事件。审批绑定或其哈希只有在 target/candidate/diff/baseline 或审批证据真实变化时才失效，并按 `return` 回到 V2；缺字段、路径、格式或可补证据问题先 `repair`，候选未变的机器验证问题按 `revalidate` 重验当前门。根节点 PASS、裸批准文本或 `all_visual_artifacts_human_reviewed=true` 不得代替结构化证据。
 
 Spine 换皮的 `spine_batch_acceptance` 只表示 V4 局部批次生产锁定。它必须绑定批次 revision、审阅图 SHA、候选 Cell SHA 和 Region 顺序，但不写入全局 Approval Ledger、不计为第二次 `visual_human_approval`，也不得绕过 V2 唯一人工审批或 V5 运行态证据。
 
 ### 全局视觉生成顺序与失效
 
-效果图生成前必须先建立全局基线 brief，完成三张同条件候选效果图、同屏人工选择和唯一 `SINGLE_HUMAN`/`CONFIRMED` 决定，再以 `globalVisualBaselineSelectionRef` 把 `visual_baseline` 冻结为 `global-static-baseline-frozen`，并绑定 `docs/visual-baseline.md`、基线身份、`style_fingerprint` 和全部 `anchor_evidence`。人工选择前基线不得标记 frozen。该输入同时约束 scene master/reference target、宿主场景 contextual effect image 和 effect-image 原子资产；原子资产必须同时携带完整冻结效果图主参考与全局锚点，不得用局部冻结图替代全局基线。`origin=provided` 只表示外部文件，`origin=generated` 才要求 generation_record。基线、锚点、目标 SHA、实际提示词或一致性证据身份变化时，旧记录失效并从最早受影响阶段重验。
+效果图生成前必须先建立全局基线 brief，完成三张同条件候选效果图、同屏人工选择和唯一 `SINGLE_HUMAN`/`CONFIRMED` 决定，再以 `globalVisualBaselineSelectionRef` 把 `visual_baseline` 冻结为 `global-static-baseline-frozen`，并绑定 `docs/visual-baseline.md`、基线身份、`style_fingerprint` 和全部 `anchor_evidence`。人工选择前基线不得标记 frozen。该输入同时约束 scene master/reference target、宿主场景 contextual effect image 和 effect-image 原子资产；原子资产必须同时携带完整冻结效果图主参考与全局锚点，不得用局部冻结图替代全局基线。`origin=provided` 只表示外部文件，`origin=generated` 才要求 generation_record。基线、锚点、目标 SHA、实际提示词或一致性证据身份缺失/路径错误时先 `repair` 并重验当前门；这些冻结事实真实变化时才使旧记录失效，按 `return` 回到最早受影响阶段并只使其下游失效。

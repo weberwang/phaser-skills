@@ -24,7 +24,7 @@
 透明目标要求：生成非透明、轮廓清晰、与主体高对比、便于去背的纯色背景；禁止直接输出透明 Alpha。随后仅执行一次受控背景移除，产出含真实 Alpha 的 PNG。
 ```
 
-这表示 ImageGen 先交付非透明原图；生成记录必须声明 `source_background_mode=opaque`、`final_background_mode=transparent`、`transparency_strategy=background-removal`，并提供 `raw_source_file`、`source_file`（背景移除输出）和 `source_has_alpha=true`。`background_removal_attempts` 必须恰好一条，记录 `operation=background-removal`、`status=completed`、源/输出路径、完成时间、源/输出 Alpha 和可审计 evidence；`normalization_record.source_file` 必须绑定该输出。失败立即退回 V3/V4，禁止无限重试或自动多次去背；最终 PNG 由 V4 文件解码复核真实 Alpha。
+这表示 ImageGen 先交付非透明原图；生成记录必须声明 `source_background_mode=opaque`、`final_background_mode=transparent`、`transparency_strategy=background-removal`，并提供 `raw_source_file`、`source_file`（背景移除输出）和 `source_has_alpha=true`。`background_removal_attempts` 必须恰好一条，记录 `operation=background-removal`、`status=completed`、源/输出路径、完成时间、源/输出 Alpha 和可审计 evidence；`normalization_record.source_file` 必须绑定该输出。失败时阻断并原地修复 V3/V4，候选身份未变时只重验当前门，禁止无限重试或自动多次去背；最终 PNG 由 V4 文件解码复核真实 Alpha。
 
 `background_mode`、`direct_generation_attempt` 和旧的策略值均不属于本合同；`postprocess` 必须是字符串数组，背景移除操作以结构化 `background_removal_attempts` 为权威记录。
 
@@ -55,7 +55,7 @@
 - 不应烘焙进该资产的其他对象；
 - 文字、数值、热区、运行时前景和状态等所有权。
 
-字段允许使用 scene contract 的 snake_case/camelCase 别名或 `visual_facts`/`fidelity_facts` 容器，但必须保留原始值。region 缺少事实时，生成器不得用资产名补全；校验器应退回方案/执行问题。
+字段允许使用 scene contract 的 snake_case/camelCase 别名或 `visual_facts`/`fidelity_facts` 容器，但必须保留原始值。region 缺少事实时，生成器不得用资产名补全；校验器先输出 `repair` 并阻断当前门，只有冻结方案事实真实失效时才建议 `return`。
 
 ## 结构化生成记录
 
@@ -75,7 +75,7 @@
 
 普通非 `effect-image` ImageGen 不要求以上三个重建字段，也不要求冻结效果图作为参考输入；其现有通用 ImageGen 合同保持不变。
 
-透明单图原图只是中间产物。生产顺序必须是“生成非透明原图 → 一次背景移除 → 尺寸归一化 → V4/final/runtime”；归一化使用 Sharp，写入 `normalization_record`，并把 `normalization_record.source_file` 绑定到背景移除输出、最终 `actual_output` 绑定到归一化后的 PNG。`padding_policy=none`，源图与 `expected_assets.width/height` 必须同宽高比，比例不符必须重生，禁止 crop、padding、contain 或静默拉伸；透明目标归一化前后都必须保留 Alpha。
+透明单图原图只是中间产物。生产顺序必须是“生成非透明原图 →（必要时在去背前生成式延展）→ 一次背景移除 → 尺寸归一化 → V4/final/runtime”；归一化使用 Sharp，写入 `normalization_record`，并把 `normalization_record.source_file` 绑定到背景移除输出、最终 `actual_output` 绑定到归一化后的 PNG。所有 ImageGen 图片首次输出比例不符时最多重生一次；第二次仍不符时，若冻结裁切焦点和安全事实允许，使用 `crop-and-resize-to-contract`，记录 `aspect_ratio_correction` 中两次真实原始 ImageGen attempt、SHA、尺寸、focus 和最大目标比例 `crop_rect`；透明路线的两条 attempt 仍是去背前的不透明输出，受控裁切可在唯一一次背景移除后的同尺寸含 Alpha 输入上执行。若裁切会损伤主体、文字、透明轮廓或关键构图，则先由生产流程对不透明生成结果生成式延展到目标比例，再执行一次背景移除和普通归一化。`padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘或裁切冻结 `reference_target`；透明目标归一化前后都必须保留 Alpha。
 
 ## 全局视觉基线绑定
 
@@ -85,4 +85,4 @@ effect-image 生成必须在生成前绑定已完成三候选人工选择且由 
 
 ## V4 同屏组合
 
-V4 不得只凭文件存在、MIME、尺寸、Alpha、component×state 齐全、运行时登记或 `missing=0` 判定视觉通过。`combination_preacceptance` 必须声明当前正式资产与正式布局结构，并以机器可复核事实确认轮廓、比例、姿态、图标语义和整屏构图未偏离冻结目标；还必须记录无未经批准的重新设计。提示词合同/实际 generation record 的绑定必须同时覆盖当前 target SHA、region ID 和候选身份。任一提示词合同失败都属于执行问题，退回 V3/V4，阻止进入 V5。
+V4 不得只凭文件存在、MIME、尺寸、Alpha、component×state 齐全、运行时登记或 `missing=0` 判定视觉通过。`combination_preacceptance` 必须声明当前正式资产与正式布局结构，并以机器可复核事实确认轮廓、比例、姿态、图标语义和整屏构图未偏离冻结目标；还必须记录无未经批准的重新设计。提示词合同/实际 generation record 的绑定必须同时覆盖当前 target SHA、region ID 和候选身份。提示词合同失败属于执行问题，先在 V3/V4 原地修复或重验当前门并阻止进入 V5；只有冻结 target/方向/候选身份真实变化时才进入必要回退。

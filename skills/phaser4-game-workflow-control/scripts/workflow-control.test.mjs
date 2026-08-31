@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { createExecutionState, executionStatePath, scopedDiffFingerprint } from './execution-unit-control.mjs';
 import { parallelBatchFingerprint } from './parallel-batch-control.mjs';
+import { createReturnRecord } from './return-disposition.mjs';
 
 const CLI = resolve(import.meta.dirname, 'workflow-control.mjs');
 const INITIALIZER = resolve(import.meta.dirname, '..', '..', 'phaser4-game-orchestrator', 'scripts', 'initialize_project_docs.mjs');
@@ -158,6 +159,15 @@ function setup(workOverrides = {}, approvals = []) {
   const work = JSON.parse(readFileSync(workPath, 'utf8'));
   if (work.globalState === 'IMPLEMENTING') writeExecutionState({ repo, workPath, packagePath });
   return { repo, head, root, workPath, ledgerPath, packagePath };
+}
+
+/** 写入自定义实施包时重新绑定当前 Work Item 的不可变 V2 证据，避免测试误命中无关前置门。 */
+function writeBoundPackage(fixture, pkg) {
+  const work = JSON.parse(readFileSync(fixture.workPath, 'utf8'));
+  for (const unit of pkg.executionUnits) {
+    if (unit.highFidelityPrerequisite) unit.highFidelityPrerequisite.evidenceSha256 = work.visualStageEvidenceRefs.V2.sha256;
+  }
+  writeJson(fixture.packagePath, pkg);
 }
 
 /** 为实现阶段测试夹具写入与当前包/阶段绑定的初始顺序状态。 */
@@ -357,10 +367,10 @@ test('A3：删除旧实现被拒绝并升级到 A4/A6', () => {
   const deletionPackage = makePackage({ expectedDeletedFiles: ['src/old.js'] });
   deletionPackage.fileOwnership['src/old.js'] = 'implementer';
   deletionPackage.executionUnits.find((unit) => unit.unitId === 'SHARED-1').ownedPaths.push('src/old.js');
-  writeJson(f.packagePath, deletionPackage);
+  writeBoundPackage(f, deletionPackage);
   rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/old.js'], f.repo), /A3.*不得删除|升级/);
   rmSync(join(f.repo, 'src', 'old.js'));
-  writeJson(f.packagePath, makePackage());
+  writeBoundPackage(f, makePackage());
   rejects(run('diff-audit', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--baseline', f.head, '--baseline-hash', HASH, '--action-level', 'A3', '--record', join(f.root, 'delete.json')], f.repo), /A3.*不得删除|升级/);
 });
 
@@ -454,7 +464,7 @@ test('模块与视觉：已有事实基线不机械触发人工门', () => {
 test('任务授权：范围外路径和伪造 Implementation Package 均被拒绝', () => {
   const f = setup();
   rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', '../outside.js'], f.repo), /越出仓库|allowedPaths/);
-  writeJson(f.packagePath, makePackage({ taskAuthorizationId: 'FAKE' }));
+  writeBoundPackage(f, makePackage({ taskAuthorizationId: 'FAKE' }));
   rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /任务授权/);
 });
 
@@ -582,11 +592,11 @@ test('操作审批：操作与影响精确匹配可通过，篡改或遗漏影�
 
 test('基线与实施包：旧 hash、范围漂移和所有权缺失均拒绝', () => {
   const f = setup();
-  writeJson(f.packagePath, makePackage({ baselineHash: `sha256:${'b'.repeat(64)}` }));
+  writeBoundPackage(f, makePackage({ baselineHash: `sha256:${'b'.repeat(64)}` }));
   rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /当前工作项与基线/);
-  writeJson(f.packagePath, makePackage({ allowedPaths: ['src'] }));
+  writeBoundPackage(f, makePackage({ allowedPaths: ['src'] }));
   rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /范围不一致/);
-  writeJson(f.packagePath, makePackage({ fileOwnership: { docs: 'implementer' } }));
+  writeBoundPackage(f, makePackage({ fileOwnership: { docs: 'implementer' } }));
   writeFileSync(join(f.repo, 'src', 'main.js'), 'export const value = 9;\n');
   rejects(run('diff-audit', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--baseline', f.head, '--baseline-hash', HASH, '--action-level', 'A3', '--record', join(f.root, 'bad-owner.json')], f.repo), /未归属|未唯一映射/);
 });
@@ -731,7 +741,7 @@ test('并行计划：预设顺序、同阶段连续组、阶段隔离和所有�
     [(pkg) => { pkg.fileOwnership['src/unplanned'] = 'implementer'; }, /fileOwnership 未唯一反向绑定/],
     [(pkg) => { pkg.expectedAddedFiles = ['src/unplanned/new.js']; }, /预期增删文件未唯一绑定/]
   ]) {
-    const f = setup({ delegatedAgents: ['worker'] }); const pkg = makePhaseOrderedParallelPackage(); mutate(pkg); writeJson(f.packagePath, pkg);
+    const f = setup({ delegatedAgents: ['worker'] }); const pkg = makePhaseOrderedParallelPackage(); mutate(pkg); writeBoundPackage(f, pkg);
     rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), pattern);
   }
   const f = setup({ delegatedAgents: ['scene-agent', 'worker'] });
@@ -935,7 +945,9 @@ test('unit-check 状态门：BLOCKED、RETURN、VALIDATING 均拒绝且 Executio
   for (const globalState of ['BLOCKED', 'RETURN', 'VALIDATING']) {
     const f = setup(); const statePath = join(f.root, 'evidence', 'WI-1', 'execution-state.json');
     writeUnitResults(f, {}, { completeState: false });
-    const work = JSON.parse(readFileSync(f.workPath, 'utf8')); work.globalState = globalState; writeJson(f.workPath, work);
+    const work = JSON.parse(readFileSync(f.workPath, 'utf8'));
+    if (globalState === 'RETURN') work.returnRecord = createReturnRecord({ classification: 'hard-gate-would-be-bypassed', reason: '验证 RETURN 状态禁止继续执行实施单元', affectedScope: ['stage:V2'] }, work);
+    work.globalState = globalState; writeJson(f.workPath, work);
     const resultPath = join(f.root, 'evidence', 'WI-1', 'units', 'SHARED-1.json'); const before = readFileSync(statePath, 'utf8');
     rejects(run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', resultPath], f.repo), /仅允许 IMPLEMENTING|禁止动作|生产实现只能在 IMPLEMENTING/);
     assert.equal(readFileSync(statePath, 'utf8'), before);
@@ -971,9 +983,9 @@ test('正向：initializer 使用 A1 任务授权且不强制读取 Ledger', () 
   assert.equal(readFileSync(join(f.repo, 'docs', 'GDD.md'), 'utf8').startsWith('# 游戏设计文档'), true);
 });
 
-test('V3 视觉 Work Item 缺失 visualProductionUnits 时 CLI 拒绝绕过 coverage', () => {
-  const f = setup({ domain: 'visual-assets', stageId: 'V3', visualStage: 'V3', visualStageState: 'v3-production-planning-complete' });
-  rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /visualManifestFile|visualProductionUnits/);
+test('V3 视觉 Work Item 缺失 visualProductionUnits 时规划迁移拒绝绕过 coverage', () => {
+  const f = setup({ domain: 'visual-assets', stageId: 'V3', globalState: 'REVIEW', pendingApprovalState: 'REVIEW', visualStage: 'V3', visualStageState: 'v3-production-planning-complete' });
+  rejects(run('transition', ['--work-item', f.workPath, '--to', 'IMPLEMENTING', '--implementation-package', f.packagePath], f.repo), /visualManifestFile|visualProductionUnits/);
 });
 
 test('V4 视觉门不允许 domain=code 通过自由文本绕过', () => {
@@ -982,7 +994,7 @@ test('V4 视觉门不允许 domain=code 通过自由文本绕过', () => {
 });
 
 test('V3 视觉 Implementation Package 的 ImageGen 编号未映射 coverage 时 CLI 拒绝', () => {
-  const f = setup({ domain: 'visual-assets', stageId: 'V3', visualStage: 'V3', visualStageState: 'v3-production-planning-complete' });
+  const f = setup({ domain: 'visual-assets', stageId: 'V3', globalState: 'REVIEW', pendingApprovalState: 'REVIEW', visualStage: 'V3', visualStageState: 'v3-production-planning-complete' });
   const manifestPath = join(f.repo, 'docs', 'visual-assets.json');
   writeJson(manifestPath, {
     schema_version: '1.5',
@@ -994,6 +1006,6 @@ test('V3 视觉 Implementation Package 的 ImageGen 编号未映射 coverage 时
     visualManifestFile: 'docs/visual-assets.json', visualManifestSha256: hashFile(manifestPath),
     visualProductionUnits: [{ unitId: 'VIS-2', annotation_number: 2, region_id: 'other', production_origin: 'independent-production', production_method: 'authored-raster', delivery_kind: 'raster-image', image_generation_required: false, generation_record_required: false, substitution_policy: 'forbid', expected_assets: ['other'], owner: 'implementer', ownedPaths: ['src'], outputPaths: ['docs/other.png'] }],
   });
-  writeJson(f.packagePath, pkg);
-  rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /未映射|visualProductionUnits|annotation_number/);
+  writeBoundPackage(f, pkg);
+  rejects(run('transition', ['--work-item', f.workPath, '--to', 'IMPLEMENTING', '--implementation-package', f.packagePath], f.repo), /未映射|visualProductionUnits|annotation_number/);
 });

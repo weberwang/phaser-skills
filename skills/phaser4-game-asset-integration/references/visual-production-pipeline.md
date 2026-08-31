@@ -60,7 +60,7 @@ F2 必须由确定性机器验证执行，并绑定当前 baseline/diff 身份�
 
 1. 将选定候选装入最小可玩切片，覆盖关键状态、运动、反馈和遮挡峰值；响应式路径按契约矩阵覆盖完整 viewport、背景覆盖、安全区、层级、最小可读性、多比例重锚定、间距、显隐、滚动、触控和同页面 resize。V2 必须提供动态可玩片段或可复现交互轨迹；仅有基准静态图阻断 V3。
 2. 以当前完整候选执行确定性机器 F2，逐截图、区域和可观察事实核对游戏感，并对照全局基线的风格指纹与锚点检查第一视觉目标、形状、比例、材质、光源、描边、图标语法、预警、反馈、遮挡、小屏缩放、灰阶/色觉差异、动态时序和方向一致性。
-3. F2 结论只使用“通过”“失败”或“退回 V1”；缺证、身份漂移或机器事实不一致时阻断 V3。
+3. F2 结论使用“通过”或“失败”，失败同时标注 `repair`、`revalidate` 或 `return`。缺证先原地修复，候选未变的机器事实问题重验当前门；只有冻结结构或身份真实漂移时才 `return V1`。任一失败都阻断 V3。
 4. V2a 的 `USER_DECISION` 不能替代 V2b 机器出口结论。方向对象绑定当前决策记录，不使用 pending approval；F4 只做 A4-A6 精确集成/发布操作批准。明显审美缺陷、游戏感缺失和缺证留在 V2 候选修复后重新生成机器验证事实。
 
 ### V2 条件门：高保真机器验证与决策记录
@@ -73,7 +73,7 @@ V2a/V2b 机器证据通过后，明确参考/基线且不存在可见偏差或�
 
 ## V3 生产设计与机器清单
 
-进入 V3 的硬前置是当前场景 Work Item 的 V2 已达到 `COMPLETE/frozen`，且冻结目标已经通过合同回对门：GDD、TDD、玩法视觉/功能合同、布局合同、模块/Scene 所有权和预算基线绑定齐全，范围、状态机、输入、碰撞、状态所有权、坐标空间、布局、预算逐项 `passed`。变化时退回 V1/模块审计，不得静默继续。V3 只做实施拆解，V4 完成正式视觉资源与同屏组合预验收，之后才开始正式功能代码。
+进入 V3 的硬前置是当前场景 Work Item 的 V2 已达到 `COMPLETE/frozen`，且冻结目标已经通过合同回对门：GDD、TDD、玩法视觉/功能合同、布局合同、模块/Scene 所有权和预算基线绑定齐全，范围、状态机、输入、碰撞、状态所有权、坐标空间、布局、预算逐项 `passed`。记录缺失先 `repair`，候选未变的机器证据问题按 `revalidate` 重验；只有冻结事实真实变化时才 `return` 到 V1/模块审计，不得静默继续。V3 只做实施拆解，V4 完成正式视觉资源与同屏组合预验收，之后才开始正式功能代码。
 
 `docs/visual-assets.json` 使用 schema 1.5。普通资产声明 `not-applicable`；效果图还原进入 V3 前声明 `effect-image/v3-ready`，此时冻结目标、候选、合同回对和 coverage 必需，而 fidelity case 可为空。coverage 必须逐冻结 scene/state 声明目标画布、画布内 region 和完整性摘要，覆盖率为 1、未覆盖列表为空、状态通过且绑定证据；不能用单个微小区域冒充全覆盖。每个固定视觉 region 还要有稳定编号、实现分类和七个生产合同字段；`production_method` 使用 `imagegen`、`authored-raster`、`authored-svg`、`phaser-graphics`、`runtime-program`、`reuse`，`delivery_kind` 使用 `raster-image`、`vector-image`、`runtime-drawing`、`runtime-program`、`existing-asset`。实现分类为 `generate-now`、`reuse-existing`、`runtime-program`，并在冻结效果图标注图中同时呈现。
 
@@ -87,18 +87,18 @@ V2a/V2b 机器证据通过后，明确参考/基线且不存在可见偏差或�
 
 V3 使用仍适用的 V1/V2 `AUTO` 或 `USER_DECISION` 记录、视觉可交付与全局基线；忠实还原还必须绑定冻结视觉目标、忠实度矩阵和已批准例外。
 
-V3 的生产合同字段必须逐 `annotation_number/region_id` 显式记录 `production_origin`、`production_method`、`delivery_kind`、`image_generation_required`、`generation_record_required`、`substitution_policy` 和 `expected_assets`。拆解顺序固定为“先 `state_analysis`，再 `component_inventory`”：所有普通、selected/active、disabled、pressed/hover、victory/defeat/paused 状态必须写 `required` 或 `not-applicable+reason`；`annotation_number` 不是资产数量单位。`component_inventory.component_count` 必须对应可复用部件清单，ImageGen 的 `expected_assets` 必须按 `component_id × required state_id` 一一对应。ImageGen 无条件使用 individual 位图并声明 `atlas_allowed=false`，一张横向组图或图集均不能满足多个部件；验证器按逻辑像素 `ceil(max placement width/height × intended_scale_range.max × 1.5)` 自动计算 `width/height`，只能使用精确最小尺寸；`scene_asset_usage.max_dpr` 必须严格为数字 `1.5`，`padding_policy` 必须为 `none`，这部分机器合同不要求 human_review。这里的 1.5 是最大生产 DPR；运行时实际 DPR 按设备动态取值并封顶，不改变资产尺寸合同。仅 authored-raster/authored-svg/reuse 等非 ImageGen 方法可在显式 `atlas_allowed=true` 且每个部件×状态登记完整 `atlas_slice` 时使用图集。交互热区单独登记，不计入视觉资产数量。`independent-production` 与 `generate-now` 不推断 ImageGen；独立生产不等于图片生成，视觉相似不等于生产合同完成。若 `image_generation_required=true`，必须是 `imagegen+raster-image`，并交付独立源/运行时位图、完整提示词与生成记录、MIME/宽高/alpha/SHA、运行时消费证据；SVG、Graphics、CanvasTexture、runtime drawing 和裁切参考图均不合格。实施包的 `visualProductionUnits` 必须与 coverage 一一映射，编号、部件/状态、输出共享、路径、所有权和格式冲突均退回 V3。
+V3 的生产合同字段必须逐 `annotation_number/region_id` 显式记录 `production_origin`、`production_method`、`delivery_kind`、`image_generation_required`、`generation_record_required`、`substitution_policy` 和 `expected_assets`。拆解顺序固定为“先 `state_analysis`，再 `component_inventory`”：所有普通、selected/active、disabled、pressed/hover、victory/defeat/paused 状态必须写 `required` 或 `not-applicable+reason`；`annotation_number` 不是资产数量单位。`component_inventory.component_count` 必须对应可复用部件清单，ImageGen 的 `expected_assets` 必须按 `component_id × required state_id` 一一对应。ImageGen 无条件使用 individual 位图并声明 `atlas_allowed=false`，一张横向组图或图集均不能满足多个部件；验证器按逻辑像素 `ceil(max placement width/height × intended_scale_range.max × 1.5)` 自动计算 `width/height`，只能使用精确最小尺寸；`scene_asset_usage.max_dpr` 必须严格为数字 `1.5`，`padding_policy` 必须为 `none`，这部分机器合同不要求 human_review。这里的 1.5 是最大生产 DPR；运行时实际 DPR 按设备动态取值并封顶，不改变资产尺寸合同。仅 authored-raster/authored-svg/reuse 等非 ImageGen 方法可在显式 `atlas_allowed=true` 且每个部件×状态登记完整 `atlas_slice` 时使用图集。交互热区单独登记，不计入视觉资产数量。`independent-production` 与 `generate-now` 不推断 ImageGen；独立生产不等于图片生成，视觉相似不等于生产合同完成。若 `image_generation_required=true`，必须是 `imagegen+raster-image`，并交付独立源/运行时位图、完整提示词与生成记录、MIME/宽高/alpha/SHA、运行时消费证据；SVG、Graphics、CanvasTexture、runtime drawing 和裁切参考图均不合格。实施包的 `visualProductionUnits` 必须与 coverage 一一映射；编号、部件/状态、输出共享、路径、所有权和格式冲突先在 V3 `repair`，只有冻结生产规格真实变化时才进入必要回退。
 
-ImageGen 的源文件、运行时文件和实际输出仅允许 `image/png` 或 `image/jpeg` 以及 `.png`、`.jpg`、`.jpeg` 后缀；通用 authored-raster 可使用其他位图格式。`expected_assets.alpha=true` 的透明 ImageGen 单图是例外中的收紧分支：必须使用 `image/png` 与 `.png`，先生成非透明、轮廓清晰、与主体高对比、便于去背的纯色背景，再执行唯一一次背景移除。生成记录必须声明 `source_background_mode=opaque`、`final_background_mode=transparent`、`transparency_strategy=background-removal`，并绑定包含 operation/status、源/输出路径、Alpha、完成时间和 evidence 的唯一 `background_removal_attempts[0]`；旧背景模式和旧策略字段均拒绝。失败即返回 V3/V4，禁止无限重试或自动多次去背；V4 须解码 PNG 证明存在透明像素。
+ImageGen 的源文件、运行时文件和实际输出仅允许 `image/png` 或 `image/jpeg` 以及 `.png`、`.jpg`、`.jpeg` 后缀；通用 authored-raster 可使用其他位图格式。`expected_assets.alpha=true` 的透明 ImageGen 单图是例外中的收紧分支：必须使用 `image/png` 与 `.png`，先生成非透明、轮廓清晰、与主体高对比、便于去背的纯色背景，再执行唯一一次背景移除。生成记录必须声明 `source_background_mode=opaque`、`final_background_mode=transparent`、`transparency_strategy=background-removal`，并绑定包含 operation/status、源/输出路径、Alpha、完成时间和 evidence 的唯一 `background_removal_attempts[0]`；旧背景模式和旧策略字段均拒绝。失败时阻断并原地修复 V3/V4，候选身份未变时只重验当前门，禁止无限重试或自动多次去背；V4 须解码 PNG 证明存在透明像素。
 
-ImageGen 单图必须按“生成非透明原图 → 一次背景移除 → 尺寸归一化 → V4/final/runtime”执行。归一化由 Sharp 完成并产生 `normalization_record`；透明路线的 `normalization_record.source_file` 必须绑定背景移除输出，最终 `actual_output` 只能指向归一化后的 PNG/JPEG（`alpha=true` 只能是 PNG，`alpha=false` 可是 JPEG）。`expected_assets.width/height` 与源图必须保持同一宽高比，`padding_policy=none`，比例不符就按目标比例重新生成，禁止裁剪、补边、contain 或静默变形。尺寸已满足时也要记录 `operation=not-required`；透明素材前后都必须保留 Alpha。归一化记录缺失、失败、尺寸、路径或 SHA 不一致均阻断 V4。
+ImageGen 单图必须按“生成原图 →（透明路线一次背景移除）→ 尺寸归一化 → V4/final/runtime”执行。归一化由 Sharp 完成并产生 `normalization_record`；透明路线的 `normalization_record.source_file` 必须绑定背景移除输出，最终 `actual_output` 只能指向归一化后的 PNG/JPEG（`alpha=true` 只能是 PNG，`alpha=false` 可是 JPEG）。首次输出比例不符时最多重生一次；第二次仍不符时，若已冻结裁切焦点和安全事实，使用 `crop-and-resize-to-contract` 并记录两次真实原始 ImageGen attempt、SHA、尺寸、focus 和最大目标比例 `crop_rect`，否则由生产流程先对不透明生成结果生成式延展到目标比例，再执行一次背景移除（如为透明路线）和普通归一化。透明路线的两次 attempt 仍指向去背前的不透明原始输出，受控裁切可在唯一一次背景移除后的同尺寸含 Alpha 输入上执行。该分流适用于所有 ImageGen 图片，`expected_assets.width/height` 最终必须精确匹配，`padding_policy=none`，禁止非等比拉伸、裁剪冻结 `reference_target`、补边、contain、复制边缘或静默变形。尺寸已满足时也要记录 `operation=not-required`；透明素材前后都必须保留 Alpha。归一化记录缺失、失败、尺寸、路径或 SHA 不一致均阻断 V4。
 
 ## V4 正式资源生产与资源级验收
 
 1. 按冻结场景顺序和 V3 清单生产运行时文件，不静默覆盖已验收版本；同步登记来源、生成记录和授权。
 2. 逐资源验证透明边缘、尺寸、采样、锚点、九宫格、帧序、缩放、压缩、Phaser 加载、目标视口和预算；F2 还要分别验证满幅背景资源能力与响应式绑定。
 3. `accepted` 资源必须有可编辑来源或生成记录、授权记录、运行时输出、Phaser 证据和玩法视觉证据。无 `source_file/source_files` 时，生成记录必须带公共 record ID、生成器/版本、时间、可执行命令或配方、输入来源和参数；AI 路线在此基础上保留专用提示词、模型、种子、参考输入和后处理字段。运行清单验证器；启用 `--check-files` 时所有声明文件必须存在。
-4. V4 只验证 V1 已定义或原子资源已引用且在 V3 写入的预算；超预算返回 V3 调整生产计划，不能在验收时临时放宽。
+4. V4 只验证 V1 已定义或原子资源已引用且在 V3 写入的预算；超预算先阻断并重验当前门，只有预算基线或冻结生产计划必须实质修改时才 `return` 到 V3，不能在验收时临时放宽。
 5. 所有标准路径都在 V4 做确定性机器 F2。资源问题留在 V4；跨域集成风险不在资源层提前做 F3。
 6. 每个生产包提交跨资源联系表与同屏组合截图，引用具体区域和可观察事实，由机器校验器检查角色、图标、面板、按钮、场景对象与 VFX 的形状、比例、材质、光源、描边、色彩和渲染密度。总控只核对基线绑定和证据完整性。
 7. 忠实还原逐资源和同屏核对其是否支持冻结视觉事实；不得用整屏铺图、隐藏层或不可交互栅格绕过结构化实现及差异审计。
@@ -112,7 +112,7 @@ V4 以文件、性能、加载、响应式、`production_contract_audit` 和一�
 2. 玩法独占规则、状态、碰撞和交互代码；美术可以调整不改变玩法的布局与表现集成。视觉接入只改变表现，不得改变玩法规则、碰撞语义或状态所有权；跨边界改动停止并交回所有者。
 3. 提供动态可玩片段、同屏截图或可复现交互轨迹，对照主锚点和分系统锚点验证跨场景/状态的视觉质量；响应式路径提供完整 viewport、resize 前后测量、安全区和多比例证据，并作为 V5 候选的 F2/F3 证据。
 4. 清除低保真纹理、占位纹理键、临时路径、fallback、代码分支和运行时引用；保留调试工具必须与正式运行隔离。
-5. 所有路径在 V5 后由 F3 绑定当前候选工程证据；只有实际 A4-A6 集成/发布操作在 F4 请求精确操作批准。资源执行偏差返回 V4，生产设计或基线绑定问题返回 V3，方向漂移返回 V2，结构问题返回 V1；冻结基线变更后使旧决策记录、操作批准与证据失效。
+5. 所有路径在 V5 后由 F3 绑定当前候选工程证据；只有实际 A4-A6 集成/发布操作在 F4 请求精确操作批准。资源执行和候选未变的机器证据偏差在当前门 `repair`/`revalidate`；只有生产设计、冻结基线、方向或结构真实变化时才 `return` 到 V1/V2/V3/V4 中最早受影响阶段，并使对应下游决策、操作批准与证据失效。
 6. 忠实还原在冻结目标视口/状态以同条件完整 viewport 为主证据，逐项验证忠实度矩阵；ROI、叠加和像素差仅作补充，动画/VFX 不得只看像素差。其他视口按布局合同验证视觉意图与关系不变量。未解释或超容差差异、缺同条件双方证据、缺已批准例外或仅有主观结论均不得通过。
 7. V5 硬门必须同时绑定 V3、`visualProductionUnits` 实施包、V4 production contract audit、F2 `validationMode=MACHINE` 机器验证事实、F3 runtime replay、非空 freshness-bound fidelity cases、运行时实际消费和无未批准替换；任一项缺失或候选/区域身份漂移都不得声明完成。V2 `visual_human_approval` 通过后不再产生任何视觉 review 工件。
 
@@ -137,7 +137,7 @@ V4 除逐资产生产合同外必须完成同屏组合预验收，使用正式 S
 
 效果图路线按 `V1 → V2 → V3 → V4 → V5` 单向推进：V1 冻结 `reference_technical_conflicts`、整屏构图、布局/响应式关系、逐区域事实和项目 tolerance；V2 绑定完整场景候选、动态样片、候选 code/build SHA + diff identity、结构化机器检查及唯一真人方向审批；V2→V3 缺字段直接以 `方案缺失` 回 `V1/PROPOSAL`。V3 绑定实施包和正式 Scene 结构；V4 通过 `combination_preacceptance`、`scene_asset_usage` 与资源合同；V5 执行真实文件门、F2 两类机器证据、F3 runtime replay 和正式 Scene consumption。
 
-每个 fidelity case 必须带 viewport/DPR/逻辑坐标 `normalization_equivalence` 和非空 `difference_evidence`（不适用时必须附 reason）。每个 region 必须记录 target/candidate、delta、预声明 `tolerance_reference`、result、evidence 和 `exception_ids`；局部临时 tolerance 不具备合同效力。超出数值容差属于验收失败；非数值差异没有精确例外 ID 时也不得 PASS。合同字段缺失是 `方案缺失`，Scene/资源执行偏差是 `执行问题`，证据或错误放行是 `验收问题`，退回最早受影响阶段。
+每个 fidelity case 必须带 viewport/DPR/逻辑坐标 `normalization_equivalence` 和非空 `difference_evidence`（不适用时必须附 reason）。每个 region 必须记录 target/candidate、delta、预声明 `tolerance_reference`、result、evidence 和 `exception_ids`；局部临时 tolerance 不具备合同效力。超出数值容差属于验收失败；非数值差异没有精确例外 ID 时也不得 PASS。合同字段缺失是 `方案缺失`，Scene/资源执行偏差是 `执行问题`，证据或错误放行是 `验收问题`；先按 `repair`/`revalidate` 收敛，只有冻结上游事实真实失效时才 `return` 到最早受影响阶段。
 
 门禁回执示例：
 

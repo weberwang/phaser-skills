@@ -12,7 +12,7 @@ import { repositoryLint } from './repository-lint.mjs';
 import { pathMatches } from './path-matcher.mjs';
 import { isVisualProductionWork, loadVisualManifestSnapshot, validateVisualChangeRequest, validateVisualDelegationBinding, validateVisualEvidence, validateVisualImplementationPackage, validateVisualImplementationPackageBinding } from './visual-production-contract.mjs';
 import { computeVisualConfirmationPrerequisiteFilesSha256, validateVisualConfirmationReferences, visualConfirmationAuthority } from './visual-confirmation-authority.mjs';
-import { enforceVisualStageGate, validateVisualStageDeclaration } from './visual-stage-prerequisites.mjs';
+import { enforceVisualStageGate, validateVisualStageDeclaration, VISUAL_REMEDIATION } from './visual-stage-prerequisites.mjs'; import { createReturnRecord, invalidateReturnArtifacts, parseReturnRequest, validateReturnRecord, validateReturnResume } from './return-disposition.mjs';
 const STATES = ['INTAKE', 'BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING', 'VALIDATING', 'PASSED', 'INTEGRATING', 'RELEASE_APPROVAL_REQUIRED', 'RELEASING', 'COMPLETE', 'RETURN', 'BLOCKED'];
 const LEVELS = ['A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6'];
 const GATES = ['F0', 'F1', 'F2', 'F3', 'F4'];
@@ -36,8 +36,7 @@ const TRANSITIONS = {
 };
 const SHORT_APPROVAL = /^(批准|同意|可以|继续|就这个|选\s*[a-zA-Z]|按流程推进|你看着办|做完它|批准然后按(?:照)?工作流推进)[。！!\s]*$/i;
 const AFFIRMATIVE_APPROVAL = /^(批准|同意|确认|接受|通过)(?:$|[\s，,：:。！!].*)/;
-const NEGATIVE_APPROVAL = /(不同意|不批准|拒绝|取消|停止)/;
-/** 输出中文错误并使用稳定的非零退出码终止。 */ function fail(message, code = 2) { process.stderr.write(`拒绝：${message}\n`); process.exit(code); }
+const NEGATIVE_APPROVAL = /(不同意|不批准|拒绝|取消|停止)/; /** 输出中文错误并使用稳定的非零退出码终止。 */ function fail(message, code = 2) { process.stderr.write(`拒绝：${message}\n`); process.exit(code); }
 const visualStageGate = enforceVisualStageGate;
 /** 校验 Phaser 生命周期动作白名单及其唯一等级，未知 phaser-* 也不得旁路。 */ function validatePhaserAction(actionType, level = null, label = 'actionType') {
   if (!PHASER_ACTIONS.has(actionType)) fail(`${label} 不是受控 Phaser 动作白名单成员：${actionType}`);
@@ -91,7 +90,7 @@ function validateWorkItem(work) {
   requireFields(work, WORK_REQUIRED, 'Work Item');
   const visualDeclarationErrors = validateVisualStageDeclaration(work);
   if (visualDeclarationErrors.length) {
-    const failure = { ok: false, command: 'work-item-schema', errorCode: visualDeclarationErrors[0].errorCode, message: visualDeclarationErrors[0].message, missingStages: visualDeclarationErrors[0].missingStages ?? [], missingEvidence: visualDeclarationErrors[0].missingEvidence ?? [], invalidatedDependencies: [], nextAction: visualDeclarationErrors[0].nextAction ?? '补齐 V0→V5 的显式阶段和语义状态' };
+    const declarationError = visualDeclarationErrors[0]; const disposition = declarationError.disposition ?? VISUAL_REMEDIATION.REPAIR; const failure = { ok: false, command: 'work-item-schema', errorCode: declarationError.errorCode, message: declarationError.message, disposition, remediation: declarationError.remediation ?? (disposition === VISUAL_REMEDIATION.RETURN ? 'RETURN_REQUIRED' : disposition === VISUAL_REMEDIATION.REVALIDATE ? 'REVALIDATION_REQUIRED' : 'REPAIR_REQUIRED'), missingStages: declarationError.missingStages ?? [], missingEvidence: declarationError.missingEvidence ?? [], invalidatedDependencies: declarationError.invalidatedDependencies ?? [], affectedScope: declarationError.affectedScope ?? [], invalidatesDownstream: declarationError.invalidatesDownstream === true, nextAction: declarationError.nextAction ?? '原地修复视觉阶段声明后，重新运行当前门；沿工作流继续推进' };
     process.stderr.write(`${JSON.stringify(failure, null, 2)}\n`);
     process.exit(2);
   }
@@ -100,6 +99,7 @@ function validateWorkItem(work) {
   requireStringArray(work.moduleIds, 'Work Item.moduleIds');
   if (!work.moduleIds.length || new Set(work.moduleIds).size !== work.moduleIds.length || JSON.stringify(work.moduleIds) !== JSON.stringify([...work.moduleIds].sort())) fail('Work Item.moduleIds 必须为非空、唯一且已排序数组');
   if (!STATES.includes(work.globalState)) fail(`未知全局状态 ${work.globalState}`);
+  const returnRecordError = validateReturnRecord(work.returnRecord, { required: work.globalState === 'RETURN', work }); if (returnRecordError) fail(returnRecordError);
   if (!GATES.includes(work.nextGate) || !GATES.includes(work.pendingApprovalGate)) fail('Work Item nextGate/pendingApprovalGate 必须为 F0-F4');
   if (!LEVELS.includes(work.pendingApprovalActionLevel)) fail('Work Item pendingApprovalActionLevel 无效');
   validatePhaserAction(work.pendingApprovalActionType, work.pendingApprovalActionLevel, 'Work Item.pendingApprovalActionType');
@@ -286,7 +286,8 @@ function matchingApprovals(work, ledger, options) {
 }
 /** 返回当前冻结 pending 唯一对应且仍有效的审批记录。 */
 function effectiveApproval(work, ledger) {
-  if (!work.approvalRecord) return null;
+  // RETURN 是审批消费的硬断点；即使旧账本文件仍存在，也不得重新绑定历史批准。
+  if (work.globalState === 'RETURN' || work.pendingApprovalStatus === 'invalid' || !work.approvalRecord) return null;
   const matches = matchingApprovals(work, ledger, { approvalId: work.approvalRecord, level: work.pendingApprovalActionLevel, gate: work.pendingApprovalGate, object: work.pendingApprovalObject, actionType: work.pendingApprovalActionType, paths: work.pendingApprovalFileScope, targets: work.pendingApprovalExternalTargets, external: work.pendingApprovalExternalWrite, device: work.pendingApprovalPhysicalDevice, release: work.pendingApprovalRelease, destructive: work.pendingApprovalDestructive });
   return matches.length === 1 ? matches[0] : null;
 }
@@ -342,14 +343,14 @@ function route(args) {
   if (bypassOutsidePhaser(args)) return;
   const requestedType = String(args['action-type'] ?? '');
   if (requestedType) validatePhaserAction(requestedType, args['action-level'] ? String(args['action-level']) : null, 'route actionType');
-  const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
-  visualStageGate(work, { command: 'route', actionLevel: work.pendingApprovalActionLevel, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, projectRoot: resolve(String(args.repo ?? process.cwd())) });
+  const work = validateWorkItem(readJson(args['work-item'], 'Work Item')); if (work.globalState !== 'RETURN') visualStageGate(work, { command: 'route', actionLevel: work.pendingApprovalActionLevel, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, projectRoot: resolve(String(args.repo ?? process.cwd())) }); // RETURN 只表示进入恢复路径；允许 route 展示恢复出口，不让失效的前进证据阻塞回到 BASELINE/PROPOSAL。
   if (requestedType && requestedType !== work.pendingApprovalActionType) fail('route 显式 Phaser 动作必须匹配 Work Item 当前动作');
   const ledger = args.ledger ? readLedger(args.ledger) : { schemaVersion: '1.0', approvals: [] };
   const approval = effectiveApproval(work, ledger);
   const result = deriveRoute(work, approval);
   let nextCommand;
-  if (result.userInputRequired) nextCommand = '向用户提出一个精确选择问题；记录 USER_DECISION，更新 taskAuthorization/权威工件并清除未决标志';
+  if (work.globalState === 'RETURN') { result.blockers.push('已进入必要回退恢复路径；请选择最早受影响的前序状态并显式迁移'); nextCommand = `node <skill-dir>/scripts/workflow-control.mjs transition --work-item ${args['work-item']} --to ${result.nextLegalState ?? 'BASELINE'}`; }
+  else if (result.userInputRequired) nextCommand = '向用户提出一个精确选择问题；记录 USER_DECISION，更新 taskAuthorization/权威工件并清除未决标志';
   else if (result.explicitApprovalRequired && !approval) nextCommand = work.pendingApprovalPresentedId === work.pendingApprovalId ? `node <skill-dir>/scripts/workflow-control.mjs approve --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'} --approval-id <id> --user-text "批准"` : `node <skill-dir>/scripts/workflow-control.mjs handoff --work-item ${args['work-item']}`;
   else if (work.globalState === 'REVIEW' && result.actionLevel === 'A3') {
     result.blockers.push('A3 进入 IMPLEMENTING 需要严格 Implementation Package');
@@ -367,7 +368,7 @@ function route(args) {
     result.blockers.push('生产候选需要新的 A4/F4 集成审批点');
     nextCommand = `node <skill-dir>/scripts/workflow-control.mjs prepare-approval --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'} --action-level A4 --gate F4 ...`;
   } else nextCommand = `node <skill-dir>/scripts/workflow-control.mjs advance --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'}`;
-  process.stdout.write(JSON.stringify({ workItemId: work.workItemId, globalState: work.globalState, ...result, actionType: work.pendingApprovalActionType, nextCommand }, null, 2));
+  process.stdout.write(JSON.stringify({ workItemId: work.workItemId, globalState: work.globalState, ...result, returnRecord: work.returnRecord ?? null, actionType: work.pendingApprovalActionType, nextCommand }, null, 2));
 }
 
 /** 阻断影响当前模块且尚未形成用户决定的 Change Request。 */
@@ -515,7 +516,7 @@ function prepareApproval(args) {
     work.pendingApprovalStatus = 'pending';
   }
   work.nextGate = gate;
-  work.approvalRecord = null;
+  work.approvalRecord = null; work.pendingApprovalStatus = 'pending';
   // 先在内存中验证完整 pending，失败时不得把下次无法读取的半成品写回磁盘。
   validateWorkItem(work);
   writeJson(workPath, work);
@@ -853,11 +854,10 @@ function evidenceCheck(args, silent = false) {
 function transition(args) {
   const workPath = resolve(String(args['work-item']));
   const work = validateWorkItem(readJson(workPath, 'Work Item'));
-  requireResolvedUserInput(work);
   const target = String(args.to ?? '');
   if (!(TRANSITIONS[work.globalState] ?? []).includes(target)) fail(`禁止状态迁移：${work.globalState} → ${target}`);
   const repo = resolve(String(args.repo ?? process.cwd()));
-  visualStageGate(work, { command: 'transition', actionLevel: work.pendingApprovalActionLevel, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, projectRoot: repo, evidence: args.evidence ? readJson(args.evidence, 'Evidence Manifest') : null, implementationPackage: args['implementation-package'] ? readJson(args['implementation-package'], 'Implementation Package') : null });
+  const resumingReturn = work.globalState === 'RETURN' && target !== 'RETURN'; const returnRequest = target === 'RETURN' ? parseReturnRequest(args, work) : null; if (returnRequest?.error) fail(returnRequest.error); if (returnRequest) { try { work.returnRecord = createReturnRecord(returnRequest, work); invalidateReturnArtifacts(work, work.returnRecord, { projectRoot: repo }); } catch (error) { fail(error.message); } } if (resumingReturn) { const resumeError = validateReturnResume(work, target, { projectRoot: repo }); if (resumeError) fail(resumeError); work.globalState = target; work.pendingApprovalState = target; work.pendingApprovalContext = `return-recovery:${target}`; work.returnRecord.resolvedAt = new Date().toISOString(); } if (!returnRequest && !resumingReturn) requireResolvedUserInput(work); if (!returnRequest && !resumingReturn) visualStageGate(work, { command: 'transition', actionLevel: work.pendingApprovalActionLevel, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, projectRoot: repo, evidence: args.evidence ? readJson(args.evidence, 'Evidence Manifest') : null, implementationPackage: args['implementation-package'] ? readJson(args['implementation-package'], 'Implementation Package') : null });
   if (target === 'IMPLEMENTING') {
     const level = work.pendingApprovalActionLevel;
     if (!['A2', 'A3'].includes(level)) fail('进入 IMPLEMENTING 仅允许 A2/A3');
@@ -900,18 +900,18 @@ function transition(args) {
       if (!currentApproval || currentApproval.actionLevel !== requiredLevel || currentApproval.gate !== 'F4' || Date.parse(evidence.recordedAt) < Date.parse(currentApproval.approvedAt) || f4.status !== 'PASS' || f4.baselineHash !== work.baselineHash || f4.diffFingerprint !== evidence.diffFingerprint || f4.approvalId !== work.approvalRecord) fail('COMPLETE 缺少当前精确 F4 集成/发布审批与证据');
     }
   }
-  work.globalState = target;
+  work.globalState = target; validateWorkItem(work);
   if (args['next-gate']) {
     if (!GATES.includes(String(args['next-gate']))) fail('--next-gate 必须为 F0-F4');
     work.nextGate = String(args['next-gate']);
   }
   writeJson(workPath, work);
-  process.stdout.write(JSON.stringify({ ok: true, command: 'transition', workItemId: work.workItemId, globalState: target }, null, 2));
+  process.stdout.write(JSON.stringify({ ok: true, command: 'transition', workItemId: work.workItemId, globalState: target, return: returnRequest, returnRecord: work.returnRecord ?? null }, null, 2));
 }
 
 /** 自动推进一个状态；审批边界和外部动作始终停止，不自动准备或批准。 */
 function advance(args) {
-  const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
+  const work = validateWorkItem(readJson(args['work-item'], 'Work Item')); if (work.globalState === 'RETURN') fail('RETURN 恢复路径不能使用 advance；请按 returnRecord 的最小受影响范围显式迁移到 BASELINE、PROPOSAL、REVIEW 或 IMPLEMENTING');
   requireResolvedUserInput(work);
   visualStageGate(work, { command: 'advance', actionLevel: work.pendingApprovalActionLevel, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, projectRoot: resolve(String(args.repo ?? process.cwd())), evidence: args.evidence ? readJson(args.evidence, 'Evidence Manifest') : null, implementationPackage: args['implementation-package'] ? validateImplementationPackage(readJson(args['implementation-package'], 'Implementation Package'), work, resolve(String(args.repo ?? process.cwd()))) : null });
   const ledger = args.ledger ? readLedger(args.ledger) : { schemaVersion: '1.0', approvals: [] };
@@ -924,10 +924,9 @@ function advance(args) {
   else if (work.globalState === 'VALIDATING') target = 'PASSED';
   else if (work.globalState === 'PASSED' && ['A1', 'A2', 'A3'].includes(routeResult.actionLevel)) target = 'COMPLETE';
   else if (['INTAKE', 'BASELINE', 'PROPOSAL'].includes(work.globalState)) target = (TRANSITIONS[work.globalState] ?? [])[0];
-  if (!target) fail('当前状态不能自动推进；需要新的审批点、F4 决策或人工外部执行');
+  if (!target || target === 'RETURN') fail(target === 'RETURN' ? 'advance 只沿工作流向前推进，不会选择 RETURN；必要回退必须由 transition 显式声明分类、理由和最小受影响范围' : '当前状态不能自动推进；需要新的审批点、F4 决策或人工外部执行');
   transition({ ...args, to: target, object: work.pendingApprovalObject, 'action-type': work.pendingApprovalActionType, 'external-target': work.pendingApprovalExternalTargets });
 }
-
 /** 输出绑定真实候选与单次 pending 审批点的机器可执行交接包。 */
 function handoff(args) {
   const workPath = resolve(String(args['work-item']));
@@ -972,12 +971,13 @@ function handoff(args) {
 function status(args) {
   const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
   const repo = resolve(String(args.repo ?? process.cwd()));
-  const visualGate = visualStageGate(work, { command: 'status', actionLevel: work.pendingApprovalActionLevel, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, projectRoot: repo });
+  // RETURN 中的失效证据正是恢复原因；状态查询必须可读，重新进入前向路径后再恢复硬门校验。
+  const visualGate = work.globalState === 'RETURN' ? { required: false, ok: false } : visualStageGate(work, { command: 'status', actionLevel: work.pendingApprovalActionLevel, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, projectRoot: repo });
   const packagePath = args['implementation-package'] ?? work.implementationPackageRecord;
   let executionState = null;
   if (packagePath) { const pkg = validateImplementationPackage(readJson(packagePath, 'Implementation Package'), work, repo); try { executionState = executionStateSummary(work, loadExecutionState(work, pkg, repo, unitIo(repo)).state); } catch (error) { fail(error.message); } }
   if (args.ledger) readLedger(args.ledger);
-  process.stdout.write(JSON.stringify({ workItemId: work.workItemId, projectId: work.projectId, moduleIds: work.moduleIds, domain: work.domain, stageId: work.stageId, visualStage: work.visualStage ?? null, visualStageState: work.visualStageState ?? null, visualStageGate: visualGate.required ? { ok: visualGate.ok, errorCode: visualGate.errors?.[0]?.errorCode ?? null, missingStages: visualGate.missingStages, missingEvidence: visualGate.missingEvidence, invalidatedDependencies: visualGate.invalidatedDependencies, nextAction: visualGate.nextAction } : { required: false }, globalState: work.globalState, nextGate: work.nextGate, baselineId: work.baselineId, baselineVersion: work.baselineVersion, baselineHash: work.baselineHash, approvalRecord: work.approvalRecord, pendingApprovalId: work.pendingApprovalId, pendingApprovalState: work.pendingApprovalState, pendingApprovalStatus: work.pendingApprovalStatus ?? null, pendingApprovalContext: work.pendingApprovalContext, pendingApprovalPresentedId: work.pendingApprovalPresentedId, pendingApprovalPresentedAt: work.pendingApprovalPresentedAt, diffAuditRecord: work.diffAuditRecord ?? null, executionState, nextCommand: `node <skill-dir>/scripts/workflow-control.mjs route --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'}` }, null, 2));
+  process.stdout.write(JSON.stringify({ workItemId: work.workItemId, projectId: work.projectId, moduleIds: work.moduleIds, domain: work.domain, stageId: work.stageId, visualStage: work.visualStage ?? null, visualStageState: work.visualStageState ?? null, visualStageGate: visualGate.required ? { ok: visualGate.ok, errorCode: visualGate.errors?.[0]?.errorCode ?? null, disposition: visualGate.disposition ?? null, remediation: visualGate.remediation ?? null, missingStages: visualGate.missingStages, missingEvidence: visualGate.missingEvidence, invalidatedDependencies: visualGate.invalidatedDependencies, affectedScope: visualGate.affectedScope ?? [], invalidatesDownstream: visualGate.invalidatesDownstream === true, invalidatedStages: visualGate.invalidatedStages ?? [], returnStage: visualGate.returnStage ?? null, nextAction: visualGate.nextAction } : { required: false }, globalState: work.globalState, returnRecord: work.returnRecord ?? null, nextGate: work.nextGate, baselineId: work.baselineId, baselineVersion: work.baselineVersion, baselineHash: work.baselineHash, approvalRecord: work.approvalRecord, pendingApprovalId: work.pendingApprovalId, pendingApprovalState: work.pendingApprovalState, pendingApprovalStatus: work.pendingApprovalStatus ?? null, pendingApprovalContext: work.pendingApprovalContext, pendingApprovalPresentedId: work.pendingApprovalPresentedId, pendingApprovalPresentedAt: work.pendingApprovalPresentedAt, diffAuditRecord: work.diffAuditRecord ?? null, executionState, nextCommand: `node <skill-dir>/scripts/workflow-control.mjs route --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'}` }, null, 2));
 }
 /** 仅在控制目录不存在时创建空账本、目录和首个 Work Item。 */
 function init(args) {

@@ -40,7 +40,7 @@ test('DISPLAY_LAYER 必须绑定并紧邻同包宿主 SCENE', () => {
   assert.throws(() => validate(missing), /字段不严格|displayLayerId/);
   const isolated = structuredClone(pkg); isolated.executionUnits.splice(2, 1);
   assert.throws(() => validate(isolated), /紧邻同包中.*宿主 SCENE/);
-  const mismatched = structuredClone(pkg); mismatched.executionUnits[3].hostSceneId = 'menu';
+  const mismatched = structuredClone(pkg); mismatched.executionUnits[3].hostSceneId = 'menu'; mismatched.executionUnits[3].highFidelityPrerequisite.sceneId = 'menu'; mismatched.executionUnits[3].highFidelityPrerequisite.hostSceneId = 'menu';
   assert.throws(() => validate(mismatched), /紧邻同包中.*宿主 SCENE/);
 });
 

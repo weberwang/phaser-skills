@@ -122,6 +122,7 @@
     "isolatedPrototype": {"type": "boolean"},
     "pendingVisualPrerequisiteSnapshot": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}},
     "pendingApprovalStatus": {"enum": ["pending", "stale", "invalid"]},
+    "returnRecord": {"$ref": "#/$defs/returnRecord", "description": "必要回退的持久化审计记录；不允许用 RETURN 掩盖 repair/revalidate。"},
     "sceneReconstructionContract": {
       "type": "object",
       "description": "effect-image V1-V5 场景还原合同；缺失时不得把独立资源工件视为完整还原。",
@@ -543,6 +544,11 @@
   },
   "allOf": [
     {
+      "if": {"properties": {"globalState": {"const": "RETURN"}}},
+      "then": {"required": ["returnRecord", "pendingApprovalStatus"], "properties": {"pendingApprovalStatus": {"const": "invalid"}}},
+      "else": {"if": {"required": ["returnRecord"]}, "then": {"properties": {"returnRecord": {"properties": {"resolvedAt": {"type": "string"}}}}}}
+    },
+    {
       "if": {
         "anyOf": [
           {"required": ["globalStaticBaselineState"]},
@@ -790,7 +796,7 @@
       "properties": {
         "schema": {"const": "image-normalization/1"},
         "status": {"const": "passed"},
-        "operation": {"enum": ["resize-to-contract", "not-required"]},
+        "operation": {"enum": ["resize-to-contract", "not-required", "crop-and-resize-to-contract"]},
         "source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
         "source_sha256": {"$ref": "#/$defs/sha256"},
         "source_width": {"type": "integer", "minimum": 1},
@@ -804,7 +810,26 @@
         "preserve_alpha": {"type": "boolean"},
         "tool": {"const": "sharp"},
         "tool_version": {"type": "string", "minLength": 1},
+        "aspect_ratio_correction": {"$ref": "#/$defs/aspectRatioCorrection"},
         "completed_at": {"type": "string", "format": "date-time"}
+      },
+      "allOf": [
+        {"if": {"properties": {"operation": {"const": "crop-and-resize-to-contract"}}}, "then": {"required": ["aspect_ratio_correction"]}},
+        {"if": {"not": {"properties": {"operation": {"const": "crop-and-resize-to-contract"}}}}, "then": {"not": {"required": ["aspect_ratio_correction"]}}}
+      ],
+      "additionalProperties": true
+    },
+    "aspectRatioCorrection": {
+      "type": "object",
+      "required": ["schema", "status", "trigger", "strategy", "attempts", "focus", "crop_rect"],
+      "properties": {
+        "schema": {"const": "aspect-ratio-correction/1"},
+        "status": {"const": "passed"},
+        "trigger": {"const": "two-generation-attempts-mismatched"},
+        "strategy": {"const": "controlled-crop"},
+        "attempts": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "object", "required": ["attempt_id", "generation_record_id", "generated_at", "file", "sha256", "width", "height"], "properties": {"attempt_id": {"type": "string", "minLength": 1}, "generation_record_id": {"type": "string", "minLength": 1}, "generated_at": {"type": "string", "format": "date-time"}, "file": {"type": "string", "minLength": 1, "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "sha256": {"$ref": "#/$defs/sha256"}, "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1}}, "additionalProperties": false}},
+        "focus": {"type": "object", "required": ["x", "y"], "properties": {"x": {"type": "number", "minimum": 0, "maximum": 1}, "y": {"type": "number", "minimum": 0, "maximum": 1}}, "additionalProperties": true},
+        "crop_rect": {"type": "object", "required": ["left", "top", "width", "height"], "properties": {"left": {"type": "integer", "minimum": 0}, "top": {"type": "integer", "minimum": 0}, "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1}}, "additionalProperties": true}
       },
       "additionalProperties": true
     },
@@ -986,6 +1011,24 @@
           "phaser-balance-change",
           "phaser-qa-build"
         ]
+      }
+    },
+    "returnRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classification", "reason", "affectedScope", "fromState", "toState", "returnState", "invalidatedArtifacts", "previousValidationBatchId", "invalidatesDownstream", "recordedAt", "resolvedAt"],
+      "properties": {
+        "classification": {"enum": ["upstream-fact-invalidated", "candidate-identity-changed", "authorization-or-scope-changed", "hard-gate-would-be-bypassed"]},
+        "reason": {"type": "string", "minLength": 1},
+        "affectedScope": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "pattern": "^(?:stage|scene|artifact):[A-Za-z0-9][A-Za-z0-9._/-]*$"}},
+        "fromState": {"type": "string", "minLength": 1},
+        "toState": {"const": "RETURN"},
+        "returnState": {"enum": ["BASELINE", "PROPOSAL", "REVIEW", "IMPLEMENTING"]},
+        "invalidatedArtifacts": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["approvalRecord", "pendingApprovalStatus", "pendingVisualPrerequisiteSnapshot", "pendingApprovalPresentation", "diffAuditRecord", "validationBatchId", "implementationPackageRecord", "executionState", "visualStageEvidenceRefs", "visualHumanApproval"]}},
+        "previousValidationBatchId": {"type": ["string", "null"]},
+        "invalidatesDownstream": {"const": true},
+        "recordedAt": {"type": "string", "format": "date-time"},
+        "resolvedAt": {"type": ["string", "null"], "format": "date-time"}
       }
     },
     "visualConfirmationAuthorityRef": {

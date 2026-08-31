@@ -10,6 +10,7 @@ import { classifyVisibleVisualProductionIntegration, structuredVisualStageFailur
 
 const SHA = `sha256:${'a'.repeat(64)}`;
 const HASH2 = `sha256:${'b'.repeat(64)}`;
+const HASH3 = `sha256:${'d'.repeat(64)}`;
 const CLI = resolve(import.meta.dirname, 'workflow-control.mjs');
 
 function sha(path) { return `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`; }
@@ -104,7 +105,35 @@ test('V2 PASS 但 V3/V4 缺失时 A4 硬门拒绝', () => {
   const f = tempFixture();
   delete f.work.visualStageEvidenceRefs.V3; delete f.work.visualStageEvidenceRefs.V4;
   const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root });
-  assert.equal(result.ok, false); assert(result.missingEvidence.some((item) => item.startsWith('V3 immutable'))); assert(result.missingEvidence.some((item) => item.startsWith('V4 immutable')));
+  assert.equal(result.ok, false); assert.equal(result.disposition, 'repair'); assert(result.missingEvidence.some((item) => item.startsWith('V3 immutable'))); assert(result.missingEvidence.some((item) => item.startsWith('V4 immutable')));
+});
+
+test('候选未变的机器验证失败只要求重验当前门', () => {
+  const f = tempFixture({ evidence: { V2: { v2StructuredReview: { validationMode: 'MACHINE', status: 'FAIL', evidence: 'machine-v2-review.json', reviewed_target_identity: { sha256: SHA }, reviewed_candidate_identity: { sha256: HASH2, diff_fingerprint: HASH2 } } } } });
+  const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root });
+  assert.equal(result.ok, false);
+  assert.equal(result.disposition, 'revalidate');
+  assert.equal(result.returnStage, null);
+});
+
+test('V3-V5 候选正常演进不触发阶段回退', () => {
+  const f = tempFixture({ evidence: {
+    V3: { contentHash: HASH3, diffFingerprint: HASH3, candidateIdentity: { sha256: HASH3, diff_fingerprint: HASH3 } },
+    V4: { contentHash: SHA, diffFingerprint: SHA, candidateIdentity: { sha256: SHA, diff_fingerprint: SHA } },
+    V5: { contentHash: HASH2, diffFingerprint: HASH2, candidateIdentity: { sha256: HASH2, diff_fingerprint: HASH2 } },
+  } });
+  const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root });
+  assert.notEqual(result.disposition, 'return');
+  assert.equal(result.returnStage, null);
+});
+
+test('V2 审批绑定身份真实变化时才要求回退 V2', () => {
+  const f = tempFixture({ evidence: { V2: { visualHumanApproval: { review_id: 'V2-APPROVAL', reviewed_at: '2026-08-20T00:00:00Z', evidence: 'human.json', evidence_sha256: HASH2, status: 'PASS', target_sha256: SHA, candidate_sha256: HASH3, diff_fingerprint: HASH2, baseline_sha256: SHA } } } });
+  const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root });
+  assert.equal(result.ok, false);
+  assert.equal(result.disposition, 'return');
+  assert.equal(result.returnStage, 'V2');
+  assert(result.identityChanges.includes('V2 candidate identity'));
 });
 
 test('V2/V3/V4/V5 合法不可变证据允许准备 A4', () => {
@@ -144,7 +173,7 @@ test('上游证据文件、基线或候选哈希变化使 pending stale', () => 
   const updated = writeJson(f.root, 'evidence/V3.json', { ...JSON.parse(readFileSync(join(f.root, 'evidence/V3.json'), 'utf8')), marker: 'changed' });
   f.work.visualStageEvidenceRefs.V3 = updated;
   const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root, pendingSnapshot: first.snapshot });
-  assert.equal(result.ok, false); assert(errorCodes(result).includes('VISUAL_PENDING_STALE')); assert(result.invalidatedDependencies.includes('V3ReferenceHash'));
+  assert.equal(result.ok, false); assert.equal(result.disposition, 'revalidate'); assert.equal(result.returnStage, null); assert(errorCodes(result).includes('VISUAL_PENDING_STALE')); assert(result.invalidatedDependencies.includes('V3ReferenceHash'));
 });
 
 test('缺唯一 V2 真人审批时拒绝', () => {
@@ -230,7 +259,8 @@ test('CLI：route/preflight/prepare/handoff/approve 共享硬门，stale pending
   assert.notEqual(staleApprove.status, 0);
   const staleError = JSON.parse(staleApprove.stderr);
   assert.ok(['VISUAL_PENDING_STALE', 'VISUAL_PREREQUISITES_MISSING'].includes(staleError.errorCode));
-  assert.equal(staleError.nextAction.includes('V2'), true);
+  assert.equal(staleError.disposition, 'revalidate');
+  assert.equal(staleError.returnStage, null);
   assert.deepEqual(JSON.parse(readFileSync(fixture.ledgerPath, 'utf8')).approvals, []);
   assert.equal(JSON.parse(readFileSync(fixture.workPath, 'utf8')).approvalRecord, null);
 
@@ -240,4 +270,42 @@ test('CLI：route/preflight/prepare/handoff/approve 共享硬门，stale pending
   const ledger = JSON.parse(readFileSync(fixture.ledgerPath, 'utf8'));
   assert.equal(ledger.approvals.length, 1);
   assert.equal(ledger.approvals[0].approvalId, 'AP-V5');
+});
+
+test('CLI：RETURN 必须声明必要分类并持久化最小影响范围', () => {
+  const fixture = makeCliFixture();
+  const missing = runCli(fixture, 'transition', ['--work-item', fixture.workPath, '--to', 'RETURN']);
+  assert.notEqual(missing.status, 0);
+  assert.match(missing.stderr, /return-classification/i);
+
+  const accepted = runCli(fixture, 'transition', [
+    '--work-item', fixture.workPath,
+    '--to', 'RETURN',
+    '--return-classification', 'candidate-identity-changed',
+    '--return-reason', 'V2 冻结候选身份已变化',
+    '--affected-scope', 'stage:V2,scene:scene-main',
+  ]);
+  assert.equal(accepted.status, 0, accepted.stderr);
+  const work = JSON.parse(readFileSync(fixture.workPath, 'utf8'));
+  assert.equal(work.globalState, 'RETURN');
+  assert.equal(work.returnRecord.classification, 'candidate-identity-changed');
+  assert.deepEqual(work.returnRecord.affectedScope, ['stage:V2', 'scene:scene-main']);
+
+  const status = runCli(fixture, 'status', ['--work-item', fixture.workPath]);
+  assert.equal(status.status, 0, status.stderr);
+  assert.equal(JSON.parse(status.stdout).returnRecord.classification, 'candidate-identity-changed');
+  const automatic = runCli(fixture, 'advance', ['--work-item', fixture.workPath]);
+  assert.notEqual(automatic.status, 0);
+  assert.match(automatic.stderr, /不能使用 advance/);
+
+  const tampered = { ...work, returnRecord: { ...work.returnRecord, affectedScope: [] } };
+  writeFileSync(fixture.workPath, `${JSON.stringify(tampered, null, 2)}\n`, 'utf8');
+  const rejected = runCli(fixture, 'status', ['--work-item', fixture.workPath]);
+  assert.notEqual(rejected.status, 0);
+  assert.match(rejected.stderr, /affectedScope/);
+
+  writeFileSync(fixture.workPath, `${JSON.stringify(work, null, 2)}\n`, 'utf8');
+  const recovered = runCli(fixture, 'transition', ['--work-item', fixture.workPath, '--to', 'REVIEW']);
+  assert.equal(recovered.status, 0, recovered.stderr);
+  assert.equal(JSON.parse(readFileSync(fixture.workPath, 'utf8')).globalState, 'REVIEW');
 });

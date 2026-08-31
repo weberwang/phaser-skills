@@ -36,7 +36,7 @@ V2 必须产出关键状态和动态可玩样片，并完成 V2a、V2b 机器检
 
 ### V2→V3 合同回对门
 
-冻结目标后、进入 V3 前，逐项回对 GDD、TDD、玩法视觉合同、玩法功能合同、布局合同、模块/Scene 所有权和预算基线，并分别核对范围、状态机、输入、碰撞、状态所有权、世界/屏幕坐标空间、布局及预算。全部检查绑定当前目标 SHA、证据和决定 ID，结论为 `passed` 才能进入 V3。任一事实变化必须使旧证据失效并退回 V1/模块审计，不得以工程适配为由静默继续。
+冻结目标后、进入 V3 前，逐项回对 GDD、TDD、玩法视觉合同、玩法功能合同、布局合同、模块/Scene 所有权和预算基线，并分别核对范围、状态机、输入、碰撞、状态所有权、世界/屏幕坐标空间、布局及预算。全部检查绑定当前目标 SHA、证据和决定 ID，结论为 `passed` 才能进入 V3。记录或路径问题先 `repair`，候选未变的验证问题按 `revalidate`；只有冻结事实真实变化时才使旧证据失效并 `return` 到 V1/模块审计，不得以工程适配为由静默继续。
 
 ### ownership-first 覆盖审计
 
@@ -68,7 +68,7 @@ V3 的每个 annotation/region 必须先完成 `state_analysis` 再拆解 `compo
 
 ImageGen 源文件、运行时文件和实际输出只能使用 `image/png` 或 `image/jpeg`，路径扩展名只能为 `.png`、`.jpg`、`.jpeg`；通用 authored-raster 可依其合同使用其他位图。
 
-ImageGen 单图的生产顺序固定为“生成非透明原图 → 一次背景移除 → 尺寸归一化 → V4/final/runtime”。原图仅是中间产物，最终 PNG/JPEG 必须由 Sharp 按 `expected_assets.width/height` 归一化并写 `normalization_record`；透明 `alpha=true` 只能使用 PNG，不透明 `alpha=false` 可使用 JPEG，且 `normalization_record.source_file` 必须绑定背景移除输出。`padding_policy=none`，源图和目标必须同宽高比，比例不符必须重新生成，不得 crop、padding、contain 或拉伸。透明资产归一化前后都必须确认 Alpha，缺少或不一致的记录不能进入 V4。
+所有 ImageGen 单图的生产顺序固定为“生成原图 →（透明路线一次背景移除）→ 尺寸归一化 → V4/final/runtime”。原图仅是中间产物，最终 PNG/JPEG 必须由 Sharp 按 `expected_assets.width/height` 归一化并写 `normalization_record`；透明 `alpha=true` 只能使用 PNG，不透明 `alpha=false` 可使用 JPEG，且 `normalization_record.source_file` 必须绑定当前归一化输入。首次输出比例不符时最多重生一次；第二次仍不符时，若裁切焦点和安全事实允许，使用 `crop-and-resize-to-contract` 记录两次真实原始 ImageGen attempt、SHA、尺寸、focus 和最大目标比例 `crop_rect`；透明路线的两次 attempt 是去背前的不透明输出，受控裁切可在唯一一次背景移除后的同尺寸含 Alpha 输入上执行。若裁切会损伤主体、文字、透明轮廓或关键构图，则先由生产流程对不透明生成结果生成式延展，再执行一次背景移除（如为透明路线）和普通归一化。该规则适用于所有 ImageGen 图片，`padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘以及裁切冻结 `reference_target`。透明资产归一化前后都必须确认 Alpha，缺少或不一致的记录不能进入 V4。
 
 实施包的 `visualProductionUnits` 必须与覆盖区域按 annotation number 和 region ID 一一绑定，并校验输出共享、路径、所有权与格式。V4 记录 `production_contract_audit`；F2 只接受带 `validationMode=MACHINE` 的当前身份机器事实，并由现有组件合同校验 component×state、placement 和 runtime 输出。V5 还必须具备 V3、实施包、V4、F2 机器验证事实、F3 runtime replay、非空且 freshness-bound 的 fidelity cases、运行时消费证据及无未批准替换。生产方法变更只能由绑定区域、工作项、候选版本、用户原文和时间的 `ACCEPTED` Change Request 批准；V2 唯一人工确认通过后不再生成视觉复核工件。
 
@@ -105,15 +105,15 @@ V1 灰盒、V2 可玩视觉切片与 V5 正式场景沿用同一生产 Scene 入
 
 合同的 `coverage_regions` 逐区域记录 target bounds、坐标空间、锚点/参照、相对对齐、层级、可见状态、尺寸策略、留白、字体、颜色、材质、光影、装饰密度、裁切、响应式关系、owner、实现计划、证据、预声明容差和精确例外 ID。`runtime-data`、`runtime-rendered`、`runtime-program` 同样必须声明 `fidelity_obligations`，不能因为由代码绘制就免除还原责任。
 
-合同还必须声明整屏 `composition`、`responsive_contract`、`predeclared_tolerances` 和覆盖资源/布局/结构化运行时对象/视觉组合的 `implementation_plan`。layout contract 必须绑定当前 target SHA，旧通用布局或只有独立资源的计划在 V2→V3 退回 `V1/PROPOSAL`。
+合同还必须声明整屏 `composition`、`responsive_contract`、`predeclared_tolerances` 和覆盖资源/布局/结构化运行时对象/视觉组合的 `implementation_plan`。layout contract 必须绑定当前 target SHA；字段或绑定缺失先在 V2→V3 当前门 `repair`，只有冻结布局/目标身份真实变化时才 `return` 到 `V1/PROPOSAL`。
 
 V4 需要 `combination_preacceptance`，样片必须使用正式 Scene 同结构和布局计算，禁止整屏截图、隐藏覆盖层和绝对叠图。V5 fidelity case 必须提供原始尺寸、确定性归一化、完整参考/候选画面、side-by-side、overlay、diff 和逐 coverage region 的 target/candidate/delta/tolerance/result/evidence；任意 `unknown`、`unverified`、`missing` 或未解释差异均失败。
 
 ## V1→V5 硬门、证据与退回
 
-V1 合同必须显式包含 `reference_technical_conflicts`；空数组表示已完成冲突盘点，不表示字段可省略。V2 必须同时交付带候选身份的 `v2_scene_candidate`、动态样片 `v2_dynamic_sample` 和 `v2_structured_review`。结构化审查覆盖整屏比较、逐区域结果、构图、几何、颜色/材质、字体、装饰密度和响应式，缺任一项都在 V2→V3 退回 `V1/PROPOSAL`，根因为 `方案缺失`。
+V1 合同必须显式包含 `reference_technical_conflicts`；空数组表示已完成冲突盘点，不表示字段可省略。V2 必须同时交付带候选身份的 `v2_scene_candidate`、动态样片 `v2_dynamic_sample` 和 `v2_structured_review`。结构化审查覆盖整屏比较、逐区域结果、构图、几何、颜色/材质、字体、装饰密度和响应式；缺字段先在 V2→V3 当前门 `repair`，候选未变的机器检查失败按 `revalidate`，只有冻结结构或方向真实失效时才 `return` 到 `V1/PROPOSAL`。
 
-V3 实施包把每个 region 与正式 Scene 的实现、owner、状态/部件和预声明 tolerance ID 绑定；V4 还要通过 `combination_preacceptance`，并为固定视觉资源声明 `scene_asset_usage`。V4 真实生产偏差属于 `执行问题`，回到 V3/V4。V5 必须使用当前代码/构建 SHA 与 diff identity，提供 viewport/DPR/逻辑坐标的 `normalization_equivalence`、有效 `difference_evidence` 和完整逐区域差异矩阵。数值 delta 只按 scene contract 的 tolerance ID 判定，非数值事实差异必须有精确批准的 `exception_ids`；错误 PASS 或证据不足属于 `验收问题`，退回 `VALIDATING` 或最早受影响阶段。
+V3 实施包把每个 region 与正式 Scene 的实现、owner、状态/部件和预声明 tolerance ID 绑定；V4 还要通过 `combination_preacceptance`，并为固定视觉资源声明 `scene_asset_usage`。V4 真实生产偏差属于 `执行问题`，在 V3/V4 原地修复或重验当前门。V5 必须使用当前代码/构建 SHA 与 diff identity，提供 viewport/DPR/逻辑坐标的 `normalization_equivalence`、有效 `difference_evidence` 和完整逐区域差异矩阵。数值 delta 只按 scene contract 的 tolerance ID 判定，非数值事实差异必须有精确批准的 `exception_ids`；错误 PASS 或证据不足属于 `验收问题`，先重验 `VALIDATING`，只有上游冻结事实真实失效时才进入必要回退。
 
 常用命令：
 
@@ -127,5 +127,5 @@ V3 实施包把每个 region 与正式 Scene 的实现、owner、状态/部件�
 
 场景还原的生成顺序固定为：建立全局基线 brief → 生成恰好三张同条件候选效果图 → 同屏交给人工 → 人工选择确认一张 → 以 `globalVisualBaselineSelectionRef` 冻结 `visual_baseline` 与全部全局锚点 → 完成 foundation-only 基础实施 → 生成/接收 scene master 与 reference target → 按 required state 生成宿主场景上下文效果图 → 以完整冻结效果图为主参考、额外继承全局锚点生成 effect-image 原子资产。人工选择前基线不得标记 frozen；全局选择是独立硬门，不能替代逐场景 V2 唯一真人审批。基线状态 `global-static-baseline-frozen` 只是静态真值，不冒充 V2 的 `v2-direction-frozen`。
 
-生成记录必须明确 `origin=generated|provided`；只有 generated 强制绑定基线四元组、全部 `style_reference_inputs`、canonical 全局一致性段、`style_drift_policy=forbid`、实际完整提示词、输出 SHA 与一致性证据。provided 图不得伪造生成记录。基线、锚点、target SHA 或实际提示词变化会令旧记录失效，并按合同返回最早受影响阶段。
+生成记录必须明确 `origin=generated|provided`；只有 generated 强制绑定基线四元组、全部 `style_reference_inputs`、canonical 全局一致性段、`style_drift_policy=forbid`、实际完整提示词、输出 SHA 与一致性证据。provided 图不得伪造生成记录。记录或路径问题先原地修复，候选未变的提示词/输出证据更新重验当前门；基线、锚点、target SHA 或冻结生成合同真实变化时才令旧记录失效，并按合同返回最早受影响阶段。
 ```

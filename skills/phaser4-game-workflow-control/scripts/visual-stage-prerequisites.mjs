@@ -63,6 +63,46 @@ const VISUAL_CONTEXT_TEXT = /(?:visual|scene|ui|asset|resource|effect|sprite|bac
 const HASH_PATTERN = /^(?:sha256:[a-f0-9]{64}|git:[a-f0-9]{40}(?:[a-f0-9]{24})?)$/i;
 const PENDING_ASSET_STATUS = new Set(['planned', 'pending', 'unapproved', 'proposed', 'producing', 'review']);
 
+/**
+ * 视觉门失败的三种处置级别：默认沿当前工作流前进，只有冻结事实失效才允许回退。
+ * `disposition` 使用小写稳定值，`remediation` 作为面向机器的兼容别名输出。
+ */
+export const VISUAL_REMEDIATION = Object.freeze({
+  REPAIR: 'repair',
+  REVALIDATE: 'revalidate',
+  RETURN: 'return',
+});
+
+const REMEDIATION_LABEL = Object.freeze({
+  repair: 'REPAIR_REQUIRED',
+  revalidate: 'REVALIDATION_REQUIRED',
+  return: 'RETURN_REQUIRED',
+});
+
+const REMEDIATION_NEXT_ACTION = Object.freeze({
+  repair: '原地修复当前记录、字段、路径或可补证据后，重新运行当前门；沿工作流继续推进，不回退阶段',
+  revalidate: '候选与上游冻结身份未变（V2 方向身份保持不变），仅重验当前门并生成新的机器证据；沿工作流继续推进，不回退阶段',
+  return: '上游方案、视觉方向、基线、授权范围或冻结候选身份已失效；记录必要回退理由和受影响范围，再回退到最早受影响阶段',
+});
+
+const RETURN_SNAPSHOT_KEYS = new Set([
+  'workItemId',
+  'unitResultId',
+  'V2FrozenTargetHash',
+  'V2FrozenCandidateHash',
+  'V2FrozenDiffFingerprint',
+  'V2FrozenBaselineHash',
+  'V2ApprovalTargetHash',
+  'V2ApprovalCandidateHash',
+  'V2ApprovalDiffFingerprint',
+  'V2ApprovalBaselineHash',
+  'V2ApprovalId',
+  'V2ApprovalEvidenceHash',
+]);
+
+const REVALIDATION_EVIDENCE_PATTERN = /(?:runtime\s+(?:replay|candidate|consumption)|fidelity|机器(?:验证|检查)|运行态|验证失败|过期|stale)/i;
+const IDENTITY_MISMATCH_PATTERN = /(?:不一致|不匹配|漂移|旧候选|旧基线|冻结目标|冻结基线|diff identity)/i;
+
 /** 判断值是否为可承载证据字段的普通对象。 */
 function isObject(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
 /** 判断身份、路径与审查字段是否为非空字符串。 */
@@ -205,6 +245,23 @@ function statusPass(value) { return ['pass', 'passed', 'accepted', 'complete', '
 function hasIdentity(value) { return isObject(value) && [value.workItemId, value.work_item_id, value.resultId, value.unitResultId, value.executionUnitResultId].some(nonEmpty); }
 /** 校验并返回受支持的内容或 Git 候选哈希。 */
 function hashValue(value) { return nonEmpty(value) && HASH_PATTERN.test(value) ? value : null; }
+/** 读取第一个合法 SHA 身份；格式错误交由 repair 处理，不直接触发回退。 */
+function firstHash(...values) { return values.map(hashValue).find(Boolean) ?? null; }
+/** 读取第一个非空稳定指纹；diff identity 不强制使用 SHA-256。 */
+function firstIdentity(...values) { return values.map((value) => nonEmpty(value) ? String(value).trim() : null).find(Boolean) ?? null; }
+/** 判断引用指向的文件是否仅发生内容哈希漂移；缺路径、坏格式或文件不存在仍归 repair。 */
+function isStaleVisualReference(reference, options = {}) {
+  if (!isObject(reference) || !nonEmpty(reference.path) || !hashValue(reference.sha256)) return false;
+  const root = resolve(options.projectRoot ?? process.cwd());
+  const absolute = resolve(root, String(reference.path));
+  if (isAbsolute(String(reference.path)) || relative(root, absolute).startsWith('..') || !existsSync(absolute)) return false;
+  try {
+    const actual = `sha256:${createHash('sha256').update(readFileSync(absolute)).digest('hex')}`;
+    return actual !== reference.sha256;
+  } catch {
+    return false;
+  }
+}
 
 /** 从工作项和各阶段证据中收集可用于 pending 快照的哈希。 */
 function collectHashes(subject, evidence, ...objects) {
@@ -222,6 +279,14 @@ export function visualPrerequisiteSnapshot(subject = {}, options = {}) {
   const { evidence, v2, v3, v4, v5, refs } = evidenceObjects(subject, options);
   const hashes = collectHashes(subject, evidence, v2, v3, v4, v5);
   const approval = readVisualHumanApproval(subject, v2);
+  const v2FrozenTargetHash = firstHash(subject.targetHash, subject.target_hash, subject.targetSha256, subject.target_sha256, v2?.targetHash, v2?.target_hash, v2?.targetSha256, v2?.target_sha256);
+  const v2FrozenCandidateHash = firstHash(v2?.contentHash, v2?.content_hash, v2?.candidateHash, v2?.candidate_hash, v2?.candidate_sha256, v2?.candidateSha256, v2?.candidateIdentity?.sha256, v2?.candidate_identity?.sha256);
+  const v2FrozenDiffFingerprint = firstIdentity(v2?.diffFingerprint, v2?.diff_fingerprint, v2?.diffIdentity, v2?.diff_identity, v2?.candidateIdentity?.diffFingerprint, v2?.candidateIdentity?.diff_fingerprint, v2?.candidate_identity?.diffFingerprint, v2?.candidate_identity?.diff_fingerprint);
+  const v2FrozenBaselineHash = firstHash(subject.baselineHash, subject.baseline_hash, v2?.baselineHash, v2?.baseline_hash, v2?.baselineSha256, v2?.baseline_sha256);
+  const v2ApprovalTargetHash = firstHash(approval?.targetSha256, approval?.target_sha256, approval?.reviewedTargetSha256, approval?.reviewed_target_sha256);
+  const v2ApprovalCandidateHash = firstHash(approval?.candidateSha256, approval?.candidate_sha256, approval?.contentSha256, approval?.content_sha256);
+  const v2ApprovalDiffFingerprint = firstIdentity(approval?.diffFingerprint, approval?.diff_fingerprint, approval?.diffIdentity, approval?.diff_identity);
+  const v2ApprovalBaselineHash = firstHash(approval?.baselineHash, approval?.baseline_hash, approval?.baselineSha256, approval?.baseline_sha256);
   const identity = {
     workItemId: firstValue(subject.workItemId, subject.work_item_id, evidence.workItemId, evidence.work_item_id),
     unitResultId: firstValue(v2?.resultId, v2?.unitResultId, v2?.executionUnitResultId),
@@ -235,6 +300,14 @@ export function visualPrerequisiteSnapshot(subject = {}, options = {}) {
     visualManifestHash: firstValue(subject.visualManifestSha256, subject.visual_manifest_sha256, evidence.visualManifestSha256, evidence.visual_manifest_sha256),
     V2ApprovalId: firstValue(approval?.review_id, approval?.reviewId),
     V2ApprovalEvidenceHash: firstValue(approval?.evidence_sha256, approval?.evidenceSha256, approval?.approval_evidence_sha256, approval?.approvalEvidenceSha256),
+    V2FrozenTargetHash: v2FrozenTargetHash,
+    V2FrozenCandidateHash: v2FrozenCandidateHash,
+    V2FrozenDiffFingerprint: v2FrozenDiffFingerprint,
+    V2FrozenBaselineHash: v2FrozenBaselineHash,
+    V2ApprovalTargetHash: v2ApprovalTargetHash,
+    V2ApprovalCandidateHash: v2ApprovalCandidateHash,
+    V2ApprovalDiffFingerprint: v2ApprovalDiffFingerprint,
+    V2ApprovalBaselineHash: v2ApprovalBaselineHash,
     V2ReferenceHash: refs?.V2?.sha256,
     V3ReferenceHash: refs?.V3?.sha256,
     V4ReferenceHash: refs?.V4?.sha256,
@@ -253,7 +326,122 @@ function compareSnapshots(previous, current) {
 
 /** 创建所有控制入口共用的结构化视觉门错误。 */
 function error(errorCode, message, details = {}) {
-  return { errorCode, message, missingStages: details.missingStages ?? [], missingEvidence: details.missingEvidence ?? [], invalidatedDependencies: details.invalidatedDependencies ?? [], nextAction: details.nextAction ?? '返回视觉 V2，补齐有效证据后重新运行校验' };
+  const disposition = details.disposition ?? VISUAL_REMEDIATION.REPAIR;
+  if (!Object.hasOwn(REMEDIATION_LABEL, disposition)) throw new Error(`未知视觉处置级别：${String(disposition)}`);
+  const affectedScope = [...new Set(details.affectedScope ?? [])].filter(nonEmpty);
+  return {
+    errorCode,
+    message,
+    disposition,
+    remediation: REMEDIATION_LABEL[disposition],
+    missingStages: details.missingStages ?? [],
+    missingEvidence: details.missingEvidence ?? [],
+    invalidatedDependencies: details.invalidatedDependencies ?? [],
+    affectedScope,
+    invalidatesDownstream: details.invalidatesDownstream === true || disposition === VISUAL_REMEDIATION.RETURN,
+    nextAction: details.nextAction ?? REMEDIATION_NEXT_ACTION[disposition],
+  };
+}
+
+/** 从快照差异和证据错误中判定最小必要处置，不把普通缺字段升级为阶段回退。 */
+function classifyRemediation({ changed = [], missingEvidence = [], identityChanges = [], machineFailure = false } = {}) {
+  if (identityChanges.length > 0 || changed.some((key) => RETURN_SNAPSHOT_KEYS.has(key))) return VISUAL_REMEDIATION.RETURN;
+  if (machineFailure) return VISUAL_REMEDIATION.REVALIDATE;
+  if (missingEvidence.some((item) => IDENTITY_MISMATCH_PATTERN.test(String(item)))) return VISUAL_REMEDIATION.REVALIDATE;
+  if (changed.length > 0 || missingEvidence.some((item) => REVALIDATION_EVIDENCE_PATTERN.test(String(item)))) return VISUAL_REMEDIATION.REVALIDATE;
+  return VISUAL_REMEDIATION.REPAIR;
+}
+
+/** 判断机器结构化验证是否明确失败；缺少字段仍属于原地修复，不升级为重验或回退。 */
+function hasMachineEvidenceFailure(value) {
+  const review = firstObject(value?.v2StructuredReview, value?.v2_structured_review, value?.visualStructuredReview, value?.visual_structured_review);
+  return isObject(review) && ['fail', 'failed', 'invalid', 'stale'].includes(textStatus(review.status ?? review.verdict ?? review.result));
+}
+
+/** 从身份变化标签推导最早受影响的视觉阶段，避免默认整条链路重做。 */
+function earliestReturnStage(changes, fallback = 'V2') {
+  for (const stage of ['V2', 'V3', 'V4', 'V5']) if (changes.some((item) => String(item).startsWith(stage))) return stage;
+  return fallback;
+}
+
+/** 返回 V2 冻结身份或唯一审批绑定发生真实变化的最小证据列表。 */
+function collectIdentityChanges(subject, { v2, oldSnapshot, snapshot } = {}) {
+  const changes = [];
+  const read = (value, ...names) => firstValue(...names.map((name) => value?.[name]));
+  const candidateSha = (value) => read(value, 'contentHash', 'content_hash', 'candidateHash', 'candidate_sha256', 'candidateSha256')
+    ?? (isObject(value?.candidateIdentity) ? read(value.candidateIdentity, 'sha256', 'candidate_sha256', 'candidateSha256') : null)
+    ?? (isObject(value?.candidate_identity) ? read(value.candidate_identity, 'sha256', 'candidate_sha256', 'candidateSha256') : null);
+  const diff = (value) => read(value, 'diffFingerprint', 'diff_fingerprint', 'diffIdentity', 'diff_identity')
+    ?? (isObject(value?.candidateIdentity) ? read(value.candidateIdentity, 'diffFingerprint', 'diff_fingerprint', 'diffIdentity', 'diff_identity') : null)
+    ?? (isObject(value?.candidate_identity) ? read(value.candidate_identity, 'diffFingerprint', 'diff_fingerprint', 'diffIdentity', 'diff_identity') : null);
+  const target = (value) => read(value, 'targetHash', 'target_hash', 'targetSha256', 'target_sha256');
+  const baseline = (value) => read(value, 'baselineHash', 'baseline_hash', 'baselineSha256', 'baseline_sha256');
+  const approval = readVisualHumanApproval(subject, v2);
+  const approvalTarget = read(approval, 'targetSha256', 'target_sha256', 'reviewedTargetSha256', 'reviewed_target_sha256');
+  const approvalCandidate = read(approval, 'candidateSha256', 'candidate_sha256', 'contentSha256', 'content_sha256');
+  const approvalDiff = read(approval, 'diffFingerprint', 'diff_fingerprint', 'diffIdentity', 'diff_identity');
+  const approvalBaseline = read(approval, 'baselineHash', 'baseline_hash', 'baselineSha256', 'baseline_sha256');
+  const compare = (label, values, normalizer = hashValue) => {
+    // 只有两端都通过格式/非空校验的身份才足以证明真实变化；坏格式先按 repair 处理。
+    const known = values.map(normalizer).filter(Boolean);
+    if (known.length === 2 && known[0] !== known[1]) changes.push(label);
+  };
+  const subjectTarget = read(subject, 'targetHash', 'target_hash', 'targetSha256', 'target_sha256');
+  const subjectBaseline = read(subject, 'baselineHash', 'baseline_hash');
+  // V3-V5 的代码与资源候选会正常演进；仅 V2 冻结事实与唯一审批绑定冲突才允许回退。
+  compare('V2 target identity', [subjectTarget, target(v2)]);
+  compare('V2 target approval binding', [target(v2), approvalTarget]);
+  compare('V2 candidate identity', [candidateSha(v2), approvalCandidate]);
+  compare('V2 diff identity', [diff(v2), approvalDiff], firstIdentity);
+  compare('V2 baseline identity', [subjectBaseline, baseline(v2)]);
+  compare('V2 baseline approval binding', [baseline(v2), approvalBaseline]);
+  if (isObject(oldSnapshot) && isObject(snapshot)) for (const key of RETURN_SNAPSHOT_KEYS) {
+    const normalizer = key.includes('DiffFingerprint') || key === 'V2ApprovalId' || key === 'workItemId' || key === 'unitResultId' ? firstIdentity : hashValue;
+    const previous = normalizer(oldSnapshot[key]);
+    const current = normalizer(snapshot[key]);
+    if (previous && current && previous !== current) changes.push(key);
+  }
+  return [...new Set(changes)];
+}
+
+/** 将当前失败收敛到最小受影响阶段和下游，供编排器决定继续、重验或回退。 */
+function finalizeRemediation(result, context = {}) {
+  const identityChanges = collectIdentityChanges(context.subject, context);
+  if (identityChanges.length) result.ok = false;
+  const disposition = identityChanges.length > 0
+    ? VISUAL_REMEDIATION.RETURN
+    : classifyRemediation({ changed: context.changed, missingEvidence: result.missingEvidence, identityChanges, machineFailure: hasMachineEvidenceFailure(context.v2) });
+  const errorDispositions = result.errors.map((item) => item.disposition).filter(Boolean);
+  const hasReturnError = errorDispositions.includes(VISUAL_REMEDIATION.RETURN);
+  const hasRevalidationError = errorDispositions.includes(VISUAL_REMEDIATION.REVALIDATE);
+  const finalDisposition = identityChanges.length > 0 || hasReturnError
+    ? VISUAL_REMEDIATION.RETURN
+    : hasRevalidationError || disposition === VISUAL_REMEDIATION.REVALIDATE
+      ? VISUAL_REMEDIATION.REVALIDATE
+      : result.errors.length > 0 ? VISUAL_REMEDIATION.REPAIR : null;
+  const affectedScope = [...new Set([
+    ...result.errors.flatMap((item) => item.affectedScope ?? []),
+    ...result.invalidatedDependencies,
+    ...(finalDisposition === VISUAL_REMEDIATION.RETURN ? identityChanges : []),
+  ])].filter(nonEmpty);
+  result.disposition = finalDisposition;
+  result.remediation = finalDisposition ? REMEDIATION_LABEL[finalDisposition] : null;
+  result.affectedScope = affectedScope;
+  result.identityChanges = identityChanges;
+  result.invalidatesDownstream = finalDisposition === VISUAL_REMEDIATION.RETURN;
+  if (finalDisposition === VISUAL_REMEDIATION.RETURN) {
+    const stage = context.returnStage && identityChanges.length === 0
+      ? context.returnStage
+      : earliestReturnStage(identityChanges, context.returnStage ?? (result.stage && /^V[0-5]$/.test(result.stage) ? result.stage : 'V2'));
+    result.returnStage = stage;
+    const start = Number(stage.slice(1));
+    result.invalidatedStages = Number.isInteger(start) ? VISUAL_STAGE_IDS.slice(start) : [];
+  } else {
+    result.returnStage = null;
+    result.invalidatedStages = [];
+  }
+  result.nextAction = result.ok ? '当前硬门已满足，可沿工作流继续推进' : REMEDIATION_NEXT_ACTION[finalDisposition ?? VISUAL_REMEDIATION.REPAIR];
+  return result;
 }
 
 /** 递归查找未完成资产和未批准替代，并保留确定性字段路径。 */
@@ -392,17 +580,17 @@ function validateCandidateIdentity(value, label, missingEvidence) {
 /** 校验正式视觉集成的 V2/V3/V4/V5 依赖链并产生结构化结果。 */
 export function validateVisualStagePrerequisites(subject = {}, options = {}) {
   const classification = classifyVisibleVisualProductionIntegration(subject);
-  const result = { ok: true, required: classification.isVisibleVisualProductionIntegration, classification, stage: null, state: null, missingStages: [], missingEvidence: [], invalidatedDependencies: [], errors: [], snapshot: null, nextAction: null };
+  const result = { ok: true, required: classification.isVisibleVisualProductionIntegration, classification, stage: null, state: null, missingStages: [], missingEvidence: [], invalidatedDependencies: [], errors: [], snapshot: null, nextAction: null, disposition: null, remediation: null, affectedScope: [], identityChanges: [], invalidatesDownstream: false, returnStage: null, invalidatedStages: [] };
   const { stage, conflicts } = readVisualStage(subject);
   result.stage = stage;
   const state = firstValue(subject.visualStageState, subject.visual_stage_state, subject.visualState, subject.visual_state);
   result.state = state;
   if (!result.required) {
     if (conflicts.length) { result.ok = false; result.errors.push(error('VISUAL_STAGE_DECLARATION_INVALID', '视觉阶段字段未知或互相矛盾', { missingEvidence: ['visualStage'] })); }
-    return result;
+    return finalizeRemediation(result, { subject, changed: [] });
   }
-  if (classification.isolatedGraybox) return result;
-  if (!stage) { result.ok = false; result.missingStages.push('V5'); result.errors.push(error('VISUAL_STAGE_MISSING', '正式可见视觉集成必须显式声明 visualStage=V5；stageId 不能替代', { missingStages: ['V5'], missingEvidence: ['visualStage'], nextAction: '先完成 V2→V3→V4，再声明 visualStage=V5' })); }
+  if (classification.isolatedGraybox) return finalizeRemediation(result, { subject, changed: [] });
+  if (!stage) { result.ok = false; result.missingStages.push('V5'); result.errors.push(error('VISUAL_STAGE_MISSING', '正式可见视觉集成必须显式声明 visualStage=V5；stageId 不能替代', { missingStages: ['V5'], missingEvidence: ['visualStage'], nextAction: '原地补齐 visualStage=V5 声明并重验当前门；不得因声明缺失回退阶段' })); }
   else if (stage !== 'V5') { result.ok = false; result.missingStages.push('V5'); result.errors.push(error('VISUAL_STAGE_NOT_V5', `正式可见视觉集成当前阶段为 ${stage}，必须为 V5`, { missingStages: ['V5'] })); }
   if (conflicts.length) { result.ok = false; result.errors.push(error('VISUAL_STAGE_DECLARATION_INVALID', '视觉阶段字段未知或互相矛盾，不允许猜测', { missingEvidence: ['visualStage'] })); }
   if (!VISUAL_STAGE_STATES.includes(String(state))) { result.ok = false; result.errors.push(error(state === 'frozen' ? 'VISUAL_BARE_FROZEN' : 'VISUAL_STAGE_STATE_INVALID', '视觉阶段状态缺少语义或使用了裸 frozen', { missingEvidence: ['visualStageState'] })); }
@@ -410,10 +598,14 @@ export function validateVisualStagePrerequisites(subject = {}, options = {}) {
 
   const { evidence, v2, v3, v4, v5, refs } = evidenceObjects(subject, options);
   const missingEvidence = result.missingEvidence;
+  const staleReferenceStages = [];
   for (const stage of ['V2', 'V3', 'V4', 'V5']) {
     const reference = refs[stage];
     if (!isObject(reference) || !nonEmpty(reference.path) || !nonEmpty(reference.sha256)) missingEvidence.push(`${stage} immutable evidence reference (path + sha256)`);
-    else if (!loadImmutableVisualStageReference(reference, `${stage} immutable evidence`, options)) missingEvidence.push(`${stage} immutable evidence hash/identity`);
+    else if (!loadImmutableVisualStageReference(reference, `${stage} immutable evidence`, options)) {
+      missingEvidence.push(`${stage} immutable evidence hash/identity`);
+      if (isStaleVisualReference(reference, options)) staleReferenceStages.push(stage);
+    }
   }
   if (!isObject(v2) || v2.verdict !== 'PASS') missingEvidence.push('V2 Execution Unit Result PASS');
   if (!hasIdentity(v2) || !nonEmpty(v2.resultId) || !nonEmpty(v2.workItemId ?? v2.work_item_id) || (subject.workItemId && (v2.workItemId ?? v2.work_item_id) !== subject.workItemId) || !nonEmpty(v2.packageId) || !nonEmpty(v2.unitId) || !hashValue(v2.baselineHash) || (subject.baselineHash && v2.baselineHash !== subject.baselineHash) || !hashValue(v2.diffFingerprint ?? v2.diff_fingerprint) || !nonEmpty(v2.codeFingerprint) || Number.isNaN(Date.parse(v2.completedAt))) missingEvidence.push('V2 immutable Work Item/Package/Unit/Result identity');
@@ -459,14 +651,18 @@ export function validateVisualStagePrerequisites(subject = {}, options = {}) {
   const oldSnapshot = options.pendingSnapshot ?? subject.pendingVisualPrerequisiteSnapshot ?? subject.pending_visual_prerequisite_snapshot;
   const changed = compareSnapshots(oldSnapshot, snapshot);
   if (changed.length) result.invalidatedDependencies.push(...changed);
-  if (pending.length) result.errors.push(error('VISUAL_PENDING_ASSET', '存在 planned/pending 资源或未批准替代，不能进入 V5/A4', { invalidatedDependencies: result.invalidatedDependencies }));
-  if (changed.length) result.errors.push(error('VISUAL_PENDING_STALE', '视觉前置证据、基线或候选哈希已漂移，当前 pending 已失效', { invalidatedDependencies: changed }));
+  if (pending.length) result.errors.push(error('VISUAL_PENDING_ASSET', '存在 planned/pending 资源或未批准替代，当前门尚未满足', { invalidatedDependencies: result.invalidatedDependencies, disposition: VISUAL_REMEDIATION.REVALIDATE, affectedScope: pending.map((item) => item.path) }));
+  if (staleReferenceStages.length) {
+    const dependencies = staleReferenceStages.map((stage) => `${stage}EvidenceHash`);
+    result.invalidatedDependencies.push(...dependencies);
+    result.errors.push(error('VISUAL_PENDING_STALE', '视觉证据文件内容哈希已漂移，需要重验当前门；不因证据更新自动回退阶段', { invalidatedDependencies: dependencies, disposition: VISUAL_REMEDIATION.REVALIDATE, affectedScope: staleReferenceStages }));
+  }
+  if (changed.length) result.errors.push(error('VISUAL_PENDING_STALE', '当前门使用的视觉证据已更新，需要重新验证；不因证据更新自动回退阶段', { invalidatedDependencies: changed, disposition: VISUAL_REMEDIATION.REVALIDATE, affectedScope: changed }));
   if (missingEvidence.length) result.errors.push(error('VISUAL_PREREQUISITES_MISSING', 'V2/V3/V4/V5 下游证据不完整；根摘要、手写 PASS 或用户批准不具备证明力', { missingEvidence }));
   result.missingEvidence = [...new Set(missingEvidence)];
   result.invalidatedDependencies = [...new Set(result.invalidatedDependencies)];
   result.ok = result.errors.length === 0;
-  result.nextAction = result.ok ? '可准备 V5/A4/F4 pending' : '返回视觉 V2，补齐有效证据并重新生成当前候选';
-  return result;
+  return finalizeRemediation(result, { subject, v2, v3, v4, v5, oldSnapshot, snapshot, changed, returnStage: 'V2' });
 }
 
 /** 供 CLI 使用的异常，保留结构化门禁信息而非拼接不可解析文本。 */
@@ -490,9 +686,24 @@ export function assertVisualStagePrerequisites(subject, options = {}) {
 /** 将门禁失败标准化为 CLI stderr JSON，便于所有入口和自动化消费同一错误码。 */
 export function structuredVisualStageFailure(errorValue, command = 'visual-stage-gate') {
   const result = errorValue?.result ?? errorValue;
-  if (result?.ok === true) return { ok: true, command, required: result.required === true, stage: result.stage ?? null, state: result.state ?? null, snapshot: result.snapshot ?? null };
+  if (result?.ok === true) return { ok: true, command, required: result.required === true, stage: result.stage ?? null, state: result.state ?? null, snapshot: result.snapshot ?? null, disposition: null, remediation: null, affectedScope: [], invalidatedStages: [] };
   const primary = result?.errors?.[0] ?? error('VISUAL_PREREQUISITES_MISSING', errorValue?.message ?? '视觉阶段前置条件不满足');
-  return { ok: false, command, errorCode: primary.errorCode, message: primary.message, missingStages: [...new Set(result?.missingStages ?? primary.missingStages ?? [])], missingEvidence: [...new Set(result?.missingEvidence ?? primary.missingEvidence ?? [])], invalidatedDependencies: [...new Set(result?.invalidatedDependencies ?? primary.invalidatedDependencies ?? [])], nextAction: result?.nextAction ?? primary.nextAction ?? '返回视觉 V2，补齐有效证据后重新运行校验' };
+  return {
+    ok: false,
+    command,
+    errorCode: primary.errorCode,
+    message: primary.message,
+    disposition: result?.disposition ?? primary.disposition ?? VISUAL_REMEDIATION.REPAIR,
+    remediation: result?.remediation ?? primary.remediation ?? REMEDIATION_LABEL[result?.disposition ?? primary.disposition ?? VISUAL_REMEDIATION.REPAIR],
+    missingStages: [...new Set(result?.missingStages ?? primary.missingStages ?? [])],
+    missingEvidence: [...new Set(result?.missingEvidence ?? primary.missingEvidence ?? [])],
+    invalidatedDependencies: [...new Set(result?.invalidatedDependencies ?? primary.invalidatedDependencies ?? [])],
+    affectedScope: [...new Set(result?.affectedScope ?? primary.affectedScope ?? [])],
+    invalidatesDownstream: result?.invalidatesDownstream === true || primary.invalidatesDownstream === true,
+    invalidatedStages: [...new Set(result?.invalidatedStages ?? [])],
+    returnStage: result?.returnStage ?? null,
+    nextAction: result?.nextAction ?? primary.nextAction ?? REMEDIATION_NEXT_ACTION[VISUAL_REMEDIATION.REPAIR],
+  };
 }
 
 /**
@@ -503,7 +714,22 @@ export function enforceVisualStageGate(work, options = {}) {
   const result = validateVisualStagePrerequisites(work, options);
   if (result.required && ['A0', 'A1', 'A2', 'A3'].includes(String(options.actionLevel)) && !result.classification.isolatedGraybox) {
     result.ok = false;
-    result.errors.unshift({ errorCode: 'VISUAL_FORMAL_ENTRY_REQUIRES_A4', message: '正式可见视觉集成必须进入 A4/F4，灰盒隔离才可留在 A2/安全 A3', missingStages: ['V5'], missingEvidence: [], invalidatedDependencies: [], nextAction: '保持灰盒隔离，或完成 V2→V3→V4 后重新准备 A4/F4' });
+    result.errors.unshift(error('VISUAL_FORMAL_ENTRY_REQUIRES_A4', '正式可见视觉集成必须进入 A4/F4，灰盒隔离才可留在 A2/安全 A3', {
+      missingStages: ['V5'],
+      affectedScope: ['当前动作等级', 'A4/F4 pending'],
+      disposition: VISUAL_REMEDIATION.REPAIR,
+      nextAction: '原地修复当前动作等级或 pending 上下文，再重新运行当前门；正式入口仍必须通过 A4/F4',
+    }));
+    // 该错误只说明当前动作与门不匹配，不使已冻结的候选失效，也不触发阶段回退。
+    result.affectedScope = [...new Set([...result.affectedScope, '当前动作等级', 'A4/F4 pending'])];
+    if (result.disposition !== VISUAL_REMEDIATION.RETURN) {
+      result.disposition = VISUAL_REMEDIATION.REPAIR;
+      result.remediation = REMEDIATION_LABEL[VISUAL_REMEDIATION.REPAIR];
+      result.invalidatesDownstream = false;
+      result.returnStage = null;
+      result.invalidatedStages = [];
+      result.nextAction = '原地修复当前动作等级或 pending 上下文，再重新运行当前门；正式入口仍必须通过 A4/F4';
+    }
   }
   if (result.required && !result.ok) {
     process.stderr.write(`${JSON.stringify(structuredVisualStageFailure(result, options.command ?? 'visual-stage-gate'), null, 2)}\n`);

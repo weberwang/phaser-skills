@@ -12,9 +12,15 @@ import { normalizeProjectRelativePath } from "./visual-component-contract.mjs";
 /** 归一化记录允许的完成状态。 */
 export const IMAGE_NORMALIZATION_STATUS = Object.freeze(["passed"]);
 /** 归一化记录允许的操作语义。 */
-export const IMAGE_NORMALIZATION_OPERATIONS = Object.freeze(["resize-to-contract", "not-required"]);
+export const IMAGE_NORMALIZATION_OPERATIONS = Object.freeze(["resize-to-contract", "not-required", "crop-and-resize-to-contract"]);
 /** 归一化记录的稳定版本，供生产证据和模板引用。 */
 export const IMAGE_NORMALIZATION_SCHEMA = "image-normalization/1";
+/** 比例修正记录的稳定版本，确保两次失败证据可被跨阶段复核。 */
+export const IMAGE_ASPECT_RATIO_CORRECTION_SCHEMA = "aspect-ratio-correction/1";
+/** 比例修正只能由两次目标比例失败触发。 */
+export const IMAGE_ASPECT_RATIO_CORRECTION_TRIGGER = "two-generation-attempts-mismatched";
+/** 当前 Sharp 工具唯一允许的比例修正策略。 */
+export const IMAGE_ASPECT_RATIO_CORRECTION_STRATEGY = "controlled-crop";
 /** 归一化最终输出允许的位图格式；透明目标会在下方进一步收紧为 PNG。 */
 export const IMAGE_NORMALIZATION_OUTPUT_FORMATS = Object.freeze(["png", "jpeg"]);
 
@@ -31,6 +37,35 @@ function nonEmptyString(value) {
 /** 判断值是否为正整数，拒绝字符串和浮点数的隐式转换。 */
 function positiveInteger(value) {
   return Number.isInteger(value) && value > 0;
+}
+
+/** 校验与三份 JSON Schema date-time 一致的 RFC3339 时间。 */
+function validDateTime(value) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) && !Number.isNaN(Date.parse(value));
+}
+
+/** 判断焦点坐标是否为合同要求的有限单位区间数字。 */
+function unitInterval(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
+/** 使用整数最大公约数复算目标比例的最小整数单位。 */
+function greatestCommonDivisor(left, right) {
+  let a = left;
+  let b = right;
+  while (b !== 0) {
+    const remainder = a % b;
+    a = b;
+    b = remainder;
+  }
+  return a;
+}
+
+/** 将嵌套记录按键排序后序列化，避免 JSON 属性顺序造成假冲突。 */
+function stableSerialize(value) {
+  if (Array.isArray(value)) return `[${value.map(stableSerialize).join(",")}]`;
+  if (isObject(value)) return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableSerialize(value[key])}`).join(",")}}`;
+  return JSON.stringify(value);
 }
 
 /** 判断值是否为本项目约定的 SHA-256 字符串。 */
@@ -89,7 +124,8 @@ export function getImageNormalizationRecord(asset = {}, generation = {}) {
 
 /** 比较重复记录的交付身份，不把属性书写顺序误判为事实冲突。 */
 function sameNormalizationIdentity(left, right) {
-  return ["schema", "status", "operation", "source_file", "source_sha256", "source_width", "source_height", "target_width", "target_height", "output_file", "output_sha256", "output_width", "output_height", "preserve_alpha", "tool", "tool_version", "completed_at"].every((name) => left[name] === right[name]);
+  return ["schema", "status", "operation", "source_file", "source_sha256", "source_width", "source_height", "target_width", "target_height", "output_file", "output_sha256", "output_width", "output_height", "preserve_alpha", "tool", "tool_version", "completed_at"].every((name) => left[name] === right[name])
+    && stableSerialize(left.aspect_ratio_correction) === stableSerialize(right.aspect_ratio_correction);
 }
 
 /** 以交叉乘法比较两个正整数宽高比，避免浮点数舍入导致误放行。 */
@@ -116,9 +152,151 @@ function fileSha256(projectRoot, projectFile) {
   }
 }
 
+/** 从真实 PNG/JPEG 文件读取像素尺寸，供比例修正 attempt 的文件门复算。 */
+function imageDimensions(projectRoot, projectFile) {
+  const absolute = resolveProjectFile(projectRoot, projectFile);
+  if (!absolute) return null;
+  let bytes;
+  try {
+    bytes = readFileSync(absolute);
+  } catch {
+    return null;
+  }
+  if (bytes.length >= 24 && bytes.readUInt32BE(0) === 0x89504e47 && bytes.readUInt32BE(4) === 0x0d0a1a0a) {
+    return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+  }
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+  let offset = 2;
+  while (offset + 3 < bytes.length) {
+    if (bytes[offset] !== 0xff) {
+      offset += 1;
+      continue;
+    }
+    while (offset < bytes.length && bytes[offset] === 0xff) offset += 1;
+    const marker = bytes[offset++];
+    if (marker === 0xd9 || marker === 0xda || offset + 1 >= bytes.length) break;
+    const segmentLength = bytes.readUInt16BE(offset);
+    if (segmentLength < 2 || offset + segmentLength > bytes.length) return null;
+    const isStartOfFrame = (marker >= 0xc0 && marker <= 0xc3) || (marker >= 0xc5 && marker <= 0xc7)
+      || (marker >= 0xc9 && marker <= 0xcb) || (marker >= 0xcd && marker <= 0xcf);
+    if (isStartOfFrame && segmentLength >= 7) return { width: bytes.readUInt16BE(offset + 5), height: bytes.readUInt16BE(offset + 3) };
+    offset += segmentLength;
+  }
+  return null;
+}
+
 /** 对一个字段给出统一的合同错误，减少生产门中的重复分支。 */
 function requireField(record, fieldName, errors) {
   if (field(record, fieldName) === undefined) errors.push(`normalization_record.${fieldName} 缺失`);
+}
+
+/** 判断生成记录是否走唯一允许的透明背景移除路线。 */
+function usesBackgroundRemovalRoute(generation = {}) {
+  return field(generation, "transparency_strategy", "transparencyStrategy") === "background-removal";
+}
+
+/** 校验受控裁切记录，确保裁切来自两次真实比例失败而非伪造的尺寸转换。 */
+function validateAspectRatioCorrection(record, expectedWidth, expectedHeight, errors, options, generation = {}) {
+  const correction = record.aspect_ratio_correction;
+  if (record.operation !== "crop-and-resize-to-contract") {
+    if (correction !== undefined) errors.push("只有 crop-and-resize-to-contract 才能携带 aspect_ratio_correction");
+    return;
+  }
+  if (!isObject(correction)) {
+    errors.push("crop-and-resize-to-contract 必须携带 aspect_ratio_correction");
+    return;
+  }
+  for (const name of ["schema", "status", "trigger", "strategy", "attempts", "focus", "crop_rect"]) {
+    if (correction[name] === undefined) errors.push(`normalization_record.aspect_ratio_correction.${name} 缺失`);
+  }
+  if (correction.schema !== IMAGE_ASPECT_RATIO_CORRECTION_SCHEMA) errors.push(`aspect_ratio_correction.schema 必须为 ${IMAGE_ASPECT_RATIO_CORRECTION_SCHEMA}`);
+  if (correction.status !== "passed") errors.push("aspect_ratio_correction.status 必须为 passed");
+  if (correction.trigger !== IMAGE_ASPECT_RATIO_CORRECTION_TRIGGER) errors.push("aspect_ratio_correction.trigger 必须为 two-generation-attempts-mismatched");
+  if (correction.strategy !== IMAGE_ASPECT_RATIO_CORRECTION_STRATEGY) errors.push("aspect_ratio_correction.strategy 必须为 controlled-crop");
+
+  const attempts = correction.attempts;
+  if (!Array.isArray(attempts) || attempts.length !== 2) {
+    errors.push("aspect_ratio_correction.attempts 必须恰好包含两次真实 ImageGen attempt");
+  } else {
+    attempts.forEach((attempt, index) => {
+      if (!isObject(attempt)) {
+        errors.push(`aspect_ratio_correction.attempts[${index}] 必须是对象`);
+        return;
+      }
+      const allowedAttemptFields = ["attempt_id", "generation_record_id", "generated_at", "file", "sha256", "width", "height"];
+      const extraAttemptFields = Object.keys(attempt).filter((fieldName) => !allowedAttemptFields.includes(fieldName));
+      if (extraAttemptFields.length) errors.push(`aspect_ratio_correction.attempts[${index}] 包含 Schema 禁止字段：${extraAttemptFields.join("、")}`);
+      for (const name of ["attempt_id", "generation_record_id", "generated_at", "file", "sha256", "width", "height"]) if (attempt[name] === undefined) errors.push(`aspect_ratio_correction.attempts[${index}].${name} 缺失`);
+      if (!nonEmptyString(attempt.attempt_id)) errors.push(`aspect_ratio_correction.attempts[${index}].attempt_id 必须是非空字符串`);
+      if (!nonEmptyString(attempt.generation_record_id)) errors.push(`aspect_ratio_correction.attempts[${index}].generation_record_id 必须是非空字符串`);
+      if (!validDateTime(attempt.generated_at)) errors.push(`aspect_ratio_correction.attempts[${index}].generated_at 必须是 RFC3339 时间`);
+      if (!nonEmptyString(attempt.file)) errors.push(`aspect_ratio_correction.attempts[${index}].file 必须是非空路径`);
+      if (!isSha256(attempt.sha256)) errors.push(`aspect_ratio_correction.attempts[${index}].sha256 必须是 sha256:<64位小写十六进制>`);
+      if (!positiveInteger(attempt.width) || !positiveInteger(attempt.height)) errors.push(`aspect_ratio_correction.attempts[${index}] 的 width/height 必须是正整数`);
+      if (positiveInteger(attempt.width) && positiveInteger(attempt.height) && sameImageAspectRatio(attempt.width, attempt.height, expectedWidth, expectedHeight)) {
+        errors.push(`aspect_ratio_correction.attempts[${index}] 不能与目标宽高比一致`);
+      }
+    });
+    if (nonEmptyString(attempts[0]?.file) && nonEmptyString(attempts[1]?.file)
+      && comparablePath(attempts[0].file) === comparablePath(attempts[1].file)) errors.push("两次 aspect_ratio_correction attempt 必须是不同的实际文件");
+    if (nonEmptyString(attempts[0]?.attempt_id) && nonEmptyString(attempts[1]?.attempt_id)
+      && attempts[0].attempt_id === attempts[1].attempt_id) errors.push("两次 aspect_ratio_correction attempt 的 attempt_id 必须唯一");
+    if (nonEmptyString(attempts[0]?.generation_record_id) && nonEmptyString(attempts[1]?.generation_record_id)
+      && attempts[0].generation_record_id === attempts[1].generation_record_id) errors.push("两次 aspect_ratio_correction attempt 的 generation_record_id 必须唯一");
+    if (isSha256(attempts[0]?.sha256) && isSha256(attempts[1]?.sha256) && attempts[0].sha256 === attempts[1].sha256) errors.push("两次 aspect_ratio_correction attempt 必须具有不同的 SHA-256，复制同一输出不能作为第二次生成");
+    const secondAttemptPath = comparablePath(attempts[1]?.file);
+    const normalizationSourcePath = comparablePath(record.source_file);
+    const generationSourcePath = comparablePath(field(generation, "source_file", "sourceFile"));
+    const generationRawSourcePath = comparablePath(field(generation, "raw_source_file", "rawSourceFile"));
+    if (usesBackgroundRemovalRoute(generation)) {
+      if (!generationRawSourcePath) {
+        errors.push("透明背景移除路线必须提供 generation_record.raw_source_file，供第二次 raw ImageGen attempt 绑定");
+      } else if (secondAttemptPath !== generationRawSourcePath) {
+        errors.push("透明背景移除路线的第二次 raw ImageGen attempt 必须绑定 generation_record.raw_source_file");
+      }
+      // 去背输出是独立的 normalization source；这里仅通过尺寸绑定 raw attempt，不能要求路径或 SHA 相同。
+    } else if (generationSourcePath) {
+      if (secondAttemptPath !== generationSourcePath) errors.push("普通 ImageGen 路线的第二次 raw ImageGen attempt 必须绑定 generation_record.source_file");
+      if (generationSourcePath === normalizationSourcePath && isSha256(attempts[1]?.sha256) && attempts[1].sha256 !== record.source_sha256) {
+        errors.push("第二次 raw ImageGen attempt 与 normalization_record.source_file 相同时，SHA-256 必须一致");
+      }
+    }
+    if (positiveInteger(attempts[1]?.width) && attempts[1].width !== record.source_width) errors.push("第二次 raw ImageGen attempt 的 width 必须与 normalization_record.source_width 一致");
+    if (positiveInteger(attempts[1]?.height) && attempts[1].height !== record.source_height) errors.push("第二次 raw ImageGen attempt 的 height 必须与 normalization_record.source_height 一致");
+    if (options.checkFiles === true && options.projectRoot) {
+      attempts.forEach((attempt, index) => {
+        if (!isObject(attempt) || !nonEmptyString(attempt.file)) return;
+        if (fileSha256(options.projectRoot, attempt.file) !== attempt.sha256) errors.push(`aspect_ratio_correction.attempts[${index}] 的实际 SHA-256 与记录不一致`);
+        const actualDimensions = imageDimensions(options.projectRoot, attempt.file);
+        if (!actualDimensions || actualDimensions.width !== attempt.width || actualDimensions.height !== attempt.height) errors.push(`aspect_ratio_correction.attempts[${index}] 的实际尺寸与记录不一致`);
+      });
+    }
+  }
+
+  const focus = correction.focus;
+  if (!isObject(focus) || !unitInterval(focus.x) || !unitInterval(focus.y)) errors.push("aspect_ratio_correction.focus.x/focus.y 必须是 0 到 1 之间的有限数字");
+  const cropRect = correction.crop_rect;
+  if (!isObject(cropRect)) {
+    errors.push("aspect_ratio_correction.crop_rect 必须是对象");
+    return;
+  }
+  for (const name of ["left", "top", "width", "height"]) if (cropRect[name] === undefined) errors.push(`aspect_ratio_correction.crop_rect.${name} 缺失`);
+  if (!Number.isInteger(cropRect.left) || cropRect.left < 0 || !Number.isInteger(cropRect.top) || cropRect.top < 0
+    || !positiveInteger(cropRect.width) || !positiveInteger(cropRect.height)) errors.push("aspect_ratio_correction.crop_rect 必须使用非负整数位置和正整数尺寸");
+  if (positiveInteger(record.source_width) && positiveInteger(record.source_height) && positiveInteger(cropRect.width) && positiveInteger(cropRect.height)) {
+    const divisor = greatestCommonDivisor(expectedWidth, expectedHeight);
+    const ratioWidth = expectedWidth / divisor;
+    const ratioHeight = expectedHeight / divisor;
+    const scale = Math.floor(Math.min(record.source_width / ratioWidth, record.source_height / ratioHeight));
+    const expectedCrop = { width: ratioWidth * scale, height: ratioHeight * scale };
+    if (!positiveInteger(scale) || cropRect.width !== expectedCrop.width || cropRect.height !== expectedCrop.height) errors.push("crop_rect 必须是源图内目标比例的最大整数矩形");
+    if (cropRect.left + cropRect.width > record.source_width || cropRect.top + cropRect.height > record.source_height) errors.push("crop_rect 不得越过 normalization source 的边界");
+    if (isObject(focus) && unitInterval(focus.x) && unitInterval(focus.y)) {
+      const expectedLeft = Math.floor((record.source_width - expectedCrop.width) * focus.x);
+      const expectedTop = Math.floor((record.source_height - expectedCrop.height) * focus.y);
+      if (cropRect.left !== expectedLeft || cropRect.top !== expectedTop) errors.push("crop_rect 与 focus 不匹配");
+    }
+  }
 }
 
 /** 判断合同是否为 ImageGen；普通 authored-raster/reuse 路线不受尺寸归一化门影响。 */
@@ -149,7 +327,7 @@ export function validateImageNormalizationContract({ asset = {}, contract = {}, 
   for (const name of ["schema", "status", "operation", "source_file", "source_sha256", "source_width", "source_height", "target_width", "target_height", "output_file", "output_sha256", "output_width", "output_height", "preserve_alpha", "tool", "tool_version", "completed_at"]) requireField(record, name, errors);
   if (record.schema !== IMAGE_NORMALIZATION_SCHEMA) errors.push(`normalization_record.schema 必须为 ${IMAGE_NORMALIZATION_SCHEMA}`);
   if (!IMAGE_NORMALIZATION_STATUS.includes(String(record.status ?? "").toLowerCase())) errors.push("normalization_record.status 必须为 passed");
-  if (!IMAGE_NORMALIZATION_OPERATIONS.includes(record.operation)) errors.push("normalization_record.operation 只能为 resize-to-contract 或 not-required");
+  if (!IMAGE_NORMALIZATION_OPERATIONS.includes(record.operation)) errors.push("normalization_record.operation 只能为 resize-to-contract、not-required 或 crop-and-resize-to-contract");
   if (!nonEmptyString(record.source_file) || !nonEmptyString(record.output_file)) errors.push("normalization_record.source_file/output_file 必须是非空路径");
   if (comparablePath(record.source_file) && comparablePath(record.source_file) === comparablePath(record.output_file)) errors.push("normalization_record.source_file 与 output_file 不得指向同一路径");
   for (const name of ["source_width", "source_height", "target_width", "target_height", "output_width", "output_height"]) if (!positiveInteger(record[name])) errors.push(`normalization_record.${name} 必须是正整数`);
@@ -157,9 +335,14 @@ export function validateImageNormalizationContract({ asset = {}, contract = {}, 
   if (positiveInteger(record.target_height) && record.target_height !== expectedHeight) errors.push("normalization_record.target_height 未匹配 expected_assets.height");
   if (positiveInteger(record.output_width) && record.output_width !== expectedWidth) errors.push("normalization_record.output_width 未匹配 expected_assets.width");
   if (positiveInteger(record.output_height) && record.output_height !== expectedHeight) errors.push("normalization_record.output_height 未匹配 expected_assets.height");
-  if (positiveInteger(record.source_width) && positiveInteger(record.source_height) && !sameImageAspectRatio(record.source_width, record.source_height, expectedWidth, expectedHeight)) errors.push("原图与 expected_assets 宽高比不一致，必须按目标比例重新生成；禁止裁剪、补边或拉伸变形");
+  const sourceMatchesTargetRatio = positiveInteger(record.source_width) && positiveInteger(record.source_height)
+    && sameImageAspectRatio(record.source_width, record.source_height, expectedWidth, expectedHeight);
+  if (positiveInteger(record.source_width) && positiveInteger(record.source_height) && !sourceMatchesTargetRatio
+    && record.operation !== "crop-and-resize-to-contract") errors.push("原图与 expected_assets 宽高比不一致；必须提供两次生成失败证据后执行受控比例修正或完成生成式延展，禁止补边、contain 或拉伸变形");
+  if (record.operation === "crop-and-resize-to-contract" && sourceMatchesTargetRatio) errors.push("crop-and-resize-to-contract 只能用于与 expected_assets 宽高比不一致的归一化输入");
   if (record.operation === "not-required" && (record.source_width !== expectedWidth || record.source_height !== expectedHeight)) errors.push("normalization_record.not-required 只能用于原图已满足目标尺寸的情况");
   if (record.operation === "resize-to-contract" && record.source_width === expectedWidth && record.source_height === expectedHeight) errors.push("原图尺寸已满足目标时 operation 必须为 not-required");
+  validateAspectRatioCorrection(record, expectedWidth, expectedHeight, errors, options, generation);
   const outputFileFormat = outputFormat(record.output_file);
   if (!IMAGE_NORMALIZATION_OUTPUT_FORMATS.includes(outputFileFormat)) errors.push("归一化 output_file 必须是最终 PNG、JPG 或 JPEG");
   if (!isSha256(record.source_sha256) || !isSha256(record.output_sha256)) errors.push("normalization_record.source_sha256/output_sha256 必须是 sha256:<64位小写十六进制>");

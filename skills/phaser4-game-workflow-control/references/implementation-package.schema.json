@@ -355,7 +355,7 @@
       "properties": {
         "schema": {"const": "image-normalization/1"},
         "status": {"const": "passed"},
-        "operation": {"enum": ["resize-to-contract", "not-required"]},
+        "operation": {"enum": ["resize-to-contract", "not-required", "crop-and-resize-to-contract"]},
         "source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
         "source_sha256": {"$ref": "#/$defs/sha256"},
         "source_width": {"type": "integer", "minimum": 1},
@@ -369,7 +369,26 @@
         "preserve_alpha": {"type": "boolean"},
         "tool": {"const": "sharp"},
         "tool_version": {"type": "string", "minLength": 1},
+        "aspect_ratio_correction": {"$ref": "#/$defs/aspectRatioCorrection"},
         "completed_at": {"type": "string", "format": "date-time"}
+      },
+      "allOf": [
+        {"if": {"properties": {"operation": {"const": "crop-and-resize-to-contract"}}}, "then": {"required": ["aspect_ratio_correction"]}},
+        {"if": {"not": {"properties": {"operation": {"const": "crop-and-resize-to-contract"}}}}, "then": {"not": {"required": ["aspect_ratio_correction"]}}}
+      ],
+      "additionalProperties": true
+    },
+    "aspectRatioCorrection": {
+      "type": "object",
+      "required": ["schema", "status", "trigger", "strategy", "attempts", "focus", "crop_rect"],
+      "properties": {
+        "schema": {"const": "aspect-ratio-correction/1"},
+        "status": {"const": "passed"},
+        "trigger": {"const": "two-generation-attempts-mismatched"},
+        "strategy": {"const": "controlled-crop"},
+        "attempts": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "object", "required": ["attempt_id", "generation_record_id", "generated_at", "file", "sha256", "width", "height"], "properties": {"attempt_id": {"type": "string", "minLength": 1}, "generation_record_id": {"type": "string", "minLength": 1}, "generated_at": {"type": "string", "format": "date-time"}, "file": {"type": "string", "minLength": 1, "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "sha256": {"$ref": "#/$defs/sha256"}, "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1}}, "additionalProperties": false}},
+        "focus": {"type": "object", "required": ["x", "y"], "properties": {"x": {"type": "number", "minimum": 0, "maximum": 1}, "y": {"type": "number", "minimum": 0, "maximum": 1}}, "additionalProperties": true},
+        "crop_rect": {"type": "object", "required": ["left", "top", "width", "height"], "properties": {"left": {"type": "integer", "minimum": 0}, "top": {"type": "integer", "minimum": 0}, "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1}}, "additionalProperties": true}
       },
       "additionalProperties": true
     },
