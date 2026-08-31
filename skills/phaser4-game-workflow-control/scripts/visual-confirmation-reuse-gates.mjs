@@ -6,21 +6,13 @@
  * 该模块保持 confirmation/reuse 规则与生产合同主流程解耦，避免主合同文件
  * 继续堆叠跨阶段身份检查。复用资源永远需要不可变快照，不能由方法字段自证。
  */
-import { createHash } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { validateVisualDecompositionConfirmations, buildVisualConfirmationAuthorityByRegion } from "./visual-decomposition-confirmation.mjs";
+import { isPlainObject as isObject, isSha256, nonEmptyString, sha256Bytes, VISUAL_PRODUCTION_METHODS as PRODUCTION_METHODS } from "./visual-contract-core.mjs";
 
-const PRODUCTION_METHODS = new Set(["imagegen", "authored-raster", "authored-svg", "phaser-graphics", "runtime-program", "reuse"]);
-const SHA_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const REUSE_SCHEMA = "asset-reuse-snapshot/1.0";
 
-/** 判断普通对象。 */
-function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
-/** 判断非空字符串。 */
-function nonEmptyString(value) { return typeof value === "string" && value.trim().length > 0; }
-/** 判断 SHA-256 格式。 */
-function isSha256(value) { return typeof value === "string" && SHA_PATTERN.test(value); }
 /** 统一生成门禁错误，保证每条失败都能定位编号和区域。 */
 function gateError(context = {}, message, details = {}) {
   const stage = context.stage ?? "V3";
@@ -65,7 +57,7 @@ function readReuseFile(projectRoot, value, expectedSha, field, context, errors) 
   const path = safeReusePath(projectRoot, value);
   if (!path || !existsSync(path) || !statSync(path).isFile()) { errors.push(gateError(context, `复用快照 ${field} 文件不存在或路径越界`, { missing: field })); return null; }
   if (!isSha256(expectedSha)) { errors.push(gateError(context, `复用快照 ${field} 缺少合法 SHA-256`, { missing: `${field}_sha256` })); return null; }
-  const bytes = readFileSync(path); const actual = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+  const bytes = readFileSync(path); const actual = sha256Bytes(bytes);
   if (actual !== expectedSha) errors.push(gateError(context, `复用快照 ${field} SHA-256 不一致`, { missing: `${field}_sha256` }));
   return { path, bytes, sha256: actual };
 }

@@ -14,13 +14,12 @@ import { computeRegionDefinitionSha256, normalizeVisualRegionDefinition } from "
 import { decodePngRgba } from "../../phaser4-game-asset-integration/scripts/effect_image_raster.mjs";
 import { deriveAtomicImageRequirements, normalizeAtomicImageRequirements } from "./visual-atomic-contract.mjs";
 import { isTrustedVisualConfirmationAuthority, visualConfirmationGroupKey } from "./visual-confirmation-authority.mjs";
+import { VISUAL_FIXED_IMAGE_METHODS as FIXED_VISUAL_IMAGE_METHODS, VISUAL_PROGRAM_METHODS as PROGRAM_VISUAL_METHODS } from "./visual-contract-core.mjs";
 
 /** 人工拆解确认记录的唯一版本；改动字段时必须生成新版本。 */
 export const VISUAL_DECOMPOSITION_CONFIRMATION_SCHEMA = "visual-decomposition-confirmation/1.0";
-/** 只有这两种方法可以生产固定视觉位图，程序绘制不得冒充图片资源。 */
-export const FIXED_VISUAL_IMAGE_METHODS = new Set(["imagegen", "authored-raster", "reuse"]);
-/** 运行时绘制方法只允许服务非图片逻辑。 */
-export const PROGRAM_VISUAL_METHODS = new Set(["phaser-graphics", "runtime-program"]);
+/** 对外保留拆解合同的词汇名称，实际集合由共享核心单一维护。 */
+export { FIXED_VISUAL_IMAGE_METHODS, PROGRAM_VISUAL_METHODS };
 const RUNTIME_OWNER_TYPES = new Set(["runtime-data", "runtime-rendered"]);
 const PLAN_LABELS = new Map([["generate-now", "本次生成"], ["reuse-existing", "复用既有资源"], ["runtime-program", "程序实现"]]);
 const SHA_PATTERN = /^sha256:[a-f0-9]{64}$/;

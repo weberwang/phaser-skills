@@ -5,7 +5,6 @@
  * 机器可读语义。它不调用 ImageGen，也不根据文件后缀或效果图来源猜测
  * 生产方式；所有生产方式都必须在合同中显式声明。
  */
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { existsSync, statSync } from "node:fs";
@@ -24,6 +23,7 @@ import { validateSceneAssetUsageContract, validateSceneCombinationPreacceptance,
 import { validateImageGenerationSizeContract } from "./visual-generation-size-contract.mjs";
 import { validateVisualPostApprovalReviewFields } from "./visual-human-review-contract.mjs";
 import { isEffectImageGeneration, validateEffectImagePromptContract } from "./effect-image-prompt-contract.mjs"; import { validateTransparentBackgroundContract, validateTransparentExpectedAssetContract } from "./visual-transparent-background-contract.mjs"; import { validateImageNormalizationContract } from "./visual-image-normalization-contract.mjs";
+import { deriveVisualReturnStage, deriveVisualRootCause, isPlainObject as isObject, isSha256, nonEmptyString, sha256Bytes, VISUAL_DELIVERY_KINDS as DELIVERY_KINDS, VISUAL_PRODUCTION_METHODS as PRODUCTION_METHODS, VISUAL_PRODUCTION_ORIGINS as PRODUCTION_ORIGINS, VISUAL_ROOT_CAUSES, VISUAL_SUBSTITUTION_POLICIES as SUBSTITUTION_POLICIES } from "./visual-contract-core.mjs";
 export { atomicImageRequirementsEqual, canonicalStateId, deriveAtomicImageRequirements, hasRuntimeImplementationField, normalizeAtomicImageRequirements, normalizeProjectRelativePath, validateComponentAuditEvidence, validateVisualComponentContract, normalizeComponentExpectedAsset, visualComponentContractDifferences } from "./visual-component-contract.mjs";
 export { FIXED_VISUAL_IMAGE_METHODS, PROGRAM_VISUAL_METHODS, manualDecompositionRegions, requiresManualVisualDecomposition, validateFixedVisualProductionMethod, validateVisualDecompositionConfirmationBinding, validateVisualDecompositionConfirmationRecord, validateVisualDecompositionConfirmations, validateVisualProductionUnitConfirmation } from "./visual-decomposition-confirmation.mjs";
 export { REUSE_SCHEMA, validateProductionMethodChangeRequest, validateReuseProductionGate, validateVisualConfirmationGate } from "./visual-confirmation-reuse-gates.mjs";
@@ -33,29 +33,17 @@ export { CANONICAL_EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, CANONICAL_EFFECT_IMAGE_NEG
 export { CANONICAL_GLOBAL_VISUAL_CONSISTENCY_PROMPT, GLOBAL_VISUAL_BASELINE_DOCUMENT, GLOBAL_VISUAL_BASELINE_STATUS, GLOBAL_VISUAL_CONSISTENCY_PROMPT, GLOBAL_VISUAL_ORIGINS, GLOBAL_VISUAL_STYLE_DRIFT_POLICY, buildGlobalVisualConsistencyPrompt, collectGlobalAnchorPaths, collectGlobalVisualConsistencyEvidencePaths, globalVisualBaselineIdentity, isGlobalVisualSha256, normalizeGlobalAnchorEvidence, normalizeGlobalStyleReferenceInputs, normalizeGlobalVisualPath, validateGlobalStyleReferenceInputs, validateGlobalVisualBaseline, validateGlobalVisualGenerationRecord, validateVisualEffectImageOrigin } from "./global-visual-consistency-contract.mjs";
 /** 视觉生产合同允许的固定来源。来源不决定生产方法。 */
 export { validateSceneAssetUsageContract, validateSceneCombinationPreacceptance, validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "./scene-reconstruction-contract.mjs";
-export const PRODUCTION_ORIGINS = new Set(["bitmap-decomposition", "independent-production"]);
+export { PRODUCTION_ORIGINS };
 /** 视觉生产合同允许的显式生产方式。新增方式必须先更新合同和验收器。 */
-export const PRODUCTION_METHODS = new Set([
-  "imagegen", "authored-raster", "authored-svg", "phaser-graphics", "runtime-program", "reuse"
-]);
+export { PRODUCTION_METHODS };
 /** 交付类型决定实际消费的文件或运行时输出形式。 */
-export const DELIVERY_KINDS = new Set([
-  "raster-image", "vector-image", "runtime-drawing", "runtime-program", "existing-asset"
-]);
+export { DELIVERY_KINDS };
 /** 资源替换只能使用显式策略，默认禁止静默替换。 */
-export const SUBSTITUTION_POLICIES = new Set(["forbid", "user-change-request-only"]);
+export { SUBSTITUTION_POLICIES };
 /** ImageGen 的生成记录必须具备的提示词和工具身份字段。 */
 export const IMAGEGEN_TEXT_FIELDS = ["global_prompt_prefix", "asset_prompt", "state_prompt", "negative_prompt", "model", "model_version"];
-/** 判断是否为普通对象。 */
-export function isObject(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-export function nonEmptyString(value) {
-  return typeof value === "string" && value.trim().length > 0;
-}
-export function isSha256(value) {
-  return typeof value === "string" && /^sha256:[a-f0-9]{64}$/.test(value);
-}
+/** 对外保留通用谓词名称，实际实现由共享核心单一维护。 */
+export { isObject, nonEmptyString, isSha256 };
 /**
  * 校验视觉 F2 只消费确定性机器事实。
  * V2 人工确认冻结方向后，F2 仍需验证身份和状态，但不能再要求 reviewer
@@ -100,8 +88,9 @@ export function productionContractError(context = {}, message, details = {}) {
   const state = details.state_id ?? details.stateId ?? context.state_id ?? context.stateId;
   const componentLabel = component !== undefined || state !== undefined ? ` component_id=${component ?? "?"} state_id=${state ?? "?"}` : "";
   const suffix = missing ? ` 缺失=${missing}` : "";
-  const returnStage = details.returnStage ?? context.returnStage ?? (stage === "V1" || stage === "V2" ? "V1/PROPOSAL" : stage === "F2" || stage === "F3" || stage === "V5" ? "VALIDATING" : stage);
-  return `[${stage}] annotation_number=${annotation} region_id=${region}${componentLabel} expected_method=${expected} observed_method=${observed} 根因=${details.rootCause ?? context.rootCause ?? (returnStage === "V1/PROPOSAL" ? "方案缺失" : stage === "V4" || stage === "V3" ? "执行问题" : "验收问题")}${suffix} ${message} 应退回阶段=${returnStage}`;
+  const returnStage = details.returnStage ?? context.returnStage ?? deriveVisualReturnStage(stage, { validationStages: ["F2", "F3", "V5"] });
+  const rootCause = details.rootCause ?? context.rootCause ?? deriveVisualRootCause(stage, returnStage, { acceptanceStages: ["F2", "F3", "V5"], defaultRootCause: VISUAL_ROOT_CAUSES.ACCEPTANCE });
+  return `[${stage}] annotation_number=${annotation} region_id=${region}${componentLabel} expected_method=${expected} observed_method=${observed} 根因=${rootCause}${suffix} ${message} 应退回阶段=${returnStage}`;
 }
 /** 创建带区域身份的校验上下文，避免门禁错误失去定位信息。 */
 export function contractContext(region = {}, stage = "V3", extra = {}) {
@@ -405,7 +394,7 @@ export function loadVisualManifestSnapshot(pkg, projectRoot = process.cwd()) {
   if (errors.length) return { manifest: null, errors };
   let bytes;
   try { bytes = readFileSync(path); } catch (caught) { return { manifest: null, errors: [`visualManifestFile 无法读取：${caught.message}`] }; }
-  const actualSha = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+  const actualSha = sha256Bytes(bytes);
   if (actualSha !== expectedSha) return { manifest: null, errors: [`visualManifestSha256 与文件不一致：${file}`] };
   try { return { manifest: JSON.parse(bytes.toString("utf8")), errors: [], path, sha256: actualSha }; }
   catch (caught) { return { manifest: null, errors: [`visualManifestFile 不是合法 JSON：${caught.message}`] }; }
@@ -413,7 +402,7 @@ export function loadVisualManifestSnapshot(pkg, projectRoot = process.cwd()) {
 async function hashFileIfPresent(projectRoot, value) {
   const path = safeProjectPath(projectRoot, value);
   if (!path || !existsSync(path) || !statSync(path).isFile()) return null;
-  return `sha256:${createHash("sha256").update(await readFile(path)).digest("hex")}`;
+  return sha256Bytes(await readFile(path));
 }
 /** 从文件魔数读取位图的 MIME、尺寸和 alpha，拒绝只改扩展名的伪 raster 输出。 */
 function decodeRasterBytes(bytes) {
@@ -466,7 +455,7 @@ export function validateEvidenceIdentity(evidence, context, identity = {}, optio
   if (isSha256(evidence.evidence_sha256) && options.projectRoot) {
     const path = safeProjectPath(options.projectRoot, evidence.evidence);
     if (!path || !existsSync(path) || !statSync(path).isFile()) error(`证据文件不存在：${evidence.evidence}`, "evidence");
-    else if (`sha256:${createHash("sha256").update(readFileSync(path)).digest("hex")}` !== evidence.evidence_sha256) error(`证据 SHA 不匹配：${evidence.evidence}`, "evidence_sha256");
+    else if (sha256Bytes(readFileSync(path)) !== evidence.evidence_sha256) error(`证据 SHA 不匹配：${evidence.evidence}`, "evidence_sha256");
   }
   if (identity.candidate && evidence.candidate_sha256 !== identity.candidate) error("证据 candidate_sha256 未绑定当前候选", "candidate_sha256");
   if (identity.target && evidence.target_sha256 !== identity.target) error("证据 target_sha256 未绑定当前冻结目标", "target_sha256");
@@ -580,7 +569,7 @@ export function auditProductionContract(manifest, options = {}) {
       if (options.checkFiles !== false && options.projectRoot) {
         const path = safeProjectPath(options.projectRoot, actualPath);
         if (!path || !existsSync(path) || !statSync(path).isFile()) { errors.push(productionContractError(context, `V4 实际输出文件不存在：${actualPath}`, { missing: actualPath })); return; }
-        const bytes = readFileSync(path); if (fixedVisual && !isPngOrJpegMagic(bytes)) errors.push(productionContractError(actualContext, `V4 actual_assets[${index}] 固定视觉文件必须是 PNG/JPEG 魔数，不能依赖自报 delivery_kind`, { missing: "raster-magic" })); const digest = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+        const bytes = readFileSync(path); if (fixedVisual && !isPngOrJpegMagic(bytes)) errors.push(productionContractError(actualContext, `V4 actual_assets[${index}] 固定视觉文件必须是 PNG/JPEG 魔数，不能依赖自报 delivery_kind`, { missing: "raster-magic" })); const digest = sha256Bytes(bytes);
         if (actualSha && actualSha !== digest) errors.push(productionContractError(context, `V4 actual_assets[${index}] SHA 不匹配`, { missing: "actual_assets.sha256" }));
         const expectedSha = expectedItem.sha256 || metadata.sha256;
         if (expectedSha && expectedSha !== digest) errors.push(productionContractError(context, `V4 actual_assets[${index}] 未匹配 V3 SHA`, { missing: "expected_assets.sha256" }));
@@ -932,7 +921,7 @@ export function validateVisualImplementationPackageBinding(pkg, options = {}) {
   if (!existsSync(path) || !statSync(path).isFile()) { error(`visualManifestFile 文件不存在：${manifestFile}`, manifestFile); return errors; }
   let bytes;
   try { bytes = readFileSync(path); } catch (caught) { error(`visualManifestFile 无法读取：${caught.message}`, manifestFile); return errors; }
-  const actualSha = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+  const actualSha = sha256Bytes(bytes);
   if (isSha256(manifestSha) && actualSha !== manifestSha) error(`visualManifestSha256 与文件不一致：${manifestFile}`, "visualManifestSha256");
   let manifest;
   try { manifest = JSON.parse(bytes.toString("utf8")); } catch (caught) { error(`visualManifestFile 不是合法 JSON：${caught.message}`, manifestFile); return errors; }

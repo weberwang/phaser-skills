@@ -7,11 +7,12 @@
  * 这样待审批的候选在 prepare、handoff、approve 和 advance 之间不会出现
  * 不同解释。
  */
-import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { validateGlobalVisualBaselineSelectionReferenceShape } from './global-visual-baseline-contract.mjs';
 import { validateVisualHumanApproval } from './visual-human-review-contract.mjs';
+import { deriveVisualDisposition, earliestVisualReturnStage as earliestReturnStage, isPlainObject as isObject, nonEmptyString as nonEmpty, sha256Bytes, VISUAL_REMEDIATION, VISUAL_REMEDIATION_LABEL, VISUAL_REMEDIATION_NEXT_ACTION, VISUAL_RETURN_SNAPSHOT_KEYS as RETURN_SNAPSHOT_KEYS } from './visual-contract-core.mjs';
+export { VISUAL_REMEDIATION } from './visual-contract-core.mjs';
 
 export const VISUAL_STAGE_IDS = Object.freeze(['V0', 'V1', 'V2', 'V3', 'V4', 'V5']);
 export const VISUAL_STAGE_STATES = Object.freeze([
@@ -63,50 +64,8 @@ const VISUAL_CONTEXT_TEXT = /(?:visual|scene|ui|asset|resource|effect|sprite|bac
 const HASH_PATTERN = /^(?:sha256:[a-f0-9]{64}|git:[a-f0-9]{40}(?:[a-f0-9]{24})?)$/i;
 const PENDING_ASSET_STATUS = new Set(['planned', 'pending', 'unapproved', 'proposed', 'producing', 'review']);
 
-/**
- * 视觉门失败的三种处置级别：默认沿当前工作流前进，只有冻结事实失效才允许回退。
- * `disposition` 使用小写稳定值，`remediation` 作为面向机器的兼容别名输出。
- */
-export const VISUAL_REMEDIATION = Object.freeze({
-  REPAIR: 'repair',
-  REVALIDATE: 'revalidate',
-  RETURN: 'return',
-});
-
-const REMEDIATION_LABEL = Object.freeze({
-  repair: 'REPAIR_REQUIRED',
-  revalidate: 'REVALIDATION_REQUIRED',
-  return: 'RETURN_REQUIRED',
-});
-
-const REMEDIATION_NEXT_ACTION = Object.freeze({
-  repair: '原地修复当前记录、字段、路径或可补证据后，重新运行当前门；沿工作流继续推进，不回退阶段',
-  revalidate: '候选与上游冻结身份未变（V2 方向身份保持不变），仅重验当前门并生成新的机器证据；沿工作流继续推进，不回退阶段',
-  return: '上游方案、视觉方向、基线、授权范围或冻结候选身份已失效；记录必要回退理由和受影响范围，再回退到最早受影响阶段',
-});
-
-const RETURN_SNAPSHOT_KEYS = new Set([
-  'workItemId',
-  'unitResultId',
-  'V2FrozenTargetHash',
-  'V2FrozenCandidateHash',
-  'V2FrozenDiffFingerprint',
-  'V2FrozenBaselineHash',
-  'V2ApprovalTargetHash',
-  'V2ApprovalCandidateHash',
-  'V2ApprovalDiffFingerprint',
-  'V2ApprovalBaselineHash',
-  'V2ApprovalId',
-  'V2ApprovalEvidenceHash',
-]);
-
-const REVALIDATION_EVIDENCE_PATTERN = /(?:runtime\s+(?:replay|candidate|consumption)|fidelity|机器(?:验证|检查)|运行态|验证失败|过期|stale)/i;
-const IDENTITY_MISMATCH_PATTERN = /(?:不一致|不匹配|漂移|旧候选|旧基线|冻结目标|冻结基线|diff identity)/i;
-
-/** 判断值是否为可承载证据字段的普通对象。 */
-function isObject(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
-/** 判断身份、路径与审查字段是否为非空字符串。 */
-function nonEmpty(value) { return typeof value === 'string' && value.trim().length > 0; }
+const REMEDIATION_LABEL = VISUAL_REMEDIATION_LABEL;
+const REMEDIATION_NEXT_ACTION = VISUAL_REMEDIATION_NEXT_ACTION;
 /** 识别行为时只读取字段值，避免对象键名（例如 visualIntegration）制造假阳性。 */
 function valuesOnly(value, depth = 0) {
   if (depth > 5 || value === null || value === undefined) return [];
@@ -211,7 +170,7 @@ export function loadImmutableVisualStageReference(reference, label, options = {}
   if (isAbsolute(String(file)) || relative(root, absolute).startsWith('..') || !existsSync(absolute)) return null;
   let bytes;
   try { bytes = readFileSync(absolute); } catch { return null; }
-  const actualSha = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+  const actualSha = sha256Bytes(bytes);
   if (actualSha !== expectedSha) return null;
   try {
     const parsed = JSON.parse(bytes.toString('utf8'));
@@ -256,7 +215,7 @@ function isStaleVisualReference(reference, options = {}) {
   const absolute = resolve(root, String(reference.path));
   if (isAbsolute(String(reference.path)) || relative(root, absolute).startsWith('..') || !existsSync(absolute)) return false;
   try {
-    const actual = `sha256:${createHash('sha256').update(readFileSync(absolute)).digest('hex')}`;
+    const actual = sha256Bytes(readFileSync(absolute));
     return actual !== reference.sha256;
   } catch {
     return false;
@@ -344,24 +303,12 @@ function error(errorCode, message, details = {}) {
 }
 
 /** 从快照差异和证据错误中判定最小必要处置，不把普通缺字段升级为阶段回退。 */
-function classifyRemediation({ changed = [], missingEvidence = [], identityChanges = [], machineFailure = false } = {}) {
-  if (identityChanges.length > 0 || changed.some((key) => RETURN_SNAPSHOT_KEYS.has(key))) return VISUAL_REMEDIATION.RETURN;
-  if (machineFailure) return VISUAL_REMEDIATION.REVALIDATE;
-  if (missingEvidence.some((item) => IDENTITY_MISMATCH_PATTERN.test(String(item)))) return VISUAL_REMEDIATION.REVALIDATE;
-  if (changed.length > 0 || missingEvidence.some((item) => REVALIDATION_EVIDENCE_PATTERN.test(String(item)))) return VISUAL_REMEDIATION.REVALIDATE;
-  return VISUAL_REMEDIATION.REPAIR;
-}
+function classifyRemediation(details = {}) { return deriveVisualDisposition(details); }
 
 /** 判断机器结构化验证是否明确失败；缺少字段仍属于原地修复，不升级为重验或回退。 */
 function hasMachineEvidenceFailure(value) {
   const review = firstObject(value?.v2StructuredReview, value?.v2_structured_review, value?.visualStructuredReview, value?.visual_structured_review);
   return isObject(review) && ['fail', 'failed', 'invalid', 'stale'].includes(textStatus(review.status ?? review.verdict ?? review.result));
-}
-
-/** 从身份变化标签推导最早受影响的视觉阶段，避免默认整条链路重做。 */
-function earliestReturnStage(changes, fallback = 'V2') {
-  for (const stage of ['V2', 'V3', 'V4', 'V5']) if (changes.some((item) => String(item).startsWith(stage))) return stage;
-  return fallback;
 }
 
 /** 返回 V2 冻结身份或唯一审批绑定发生真实变化的最小证据列表。 */
@@ -541,7 +488,7 @@ function validateEvidenceFiles(value, label, options, missingEvidence, requireCo
     }
     const expected = value.fileHashes[file];
     let actual = null;
-    try { actual = `sha256:${createHash('sha256').update(readFileSync(target)).digest('hex')}`; } catch { actual = null; }
+    try { actual = sha256Bytes(readFileSync(target)); } catch { actual = null; }
     if (!/^sha256:[a-f0-9]{64}$/i.test(String(expected)) || actual !== expected) {
       missingEvidence.push(`${label} evidence hash ${file}`);
       valid = false;
@@ -707,7 +654,7 @@ export function structuredVisualStageFailure(errorValue, command = 'visual-stage
 }
 
 /**
- * 所有 CLI 入口共享的视觉阶段门；失败直接输出机器可读错误并终止，
+ * 所有 CLI 入口共享的视觉阶段门；失败抛出结构化异常交给 CLI 输出，
  * 避免某入口把缺失证据降级成普通提示或被批准文本覆盖。
  */
 export function enforceVisualStageGate(work, options = {}) {
@@ -731,14 +678,11 @@ export function enforceVisualStageGate(work, options = {}) {
       result.nextAction = '原地修复当前动作等级或 pending 上下文，再重新运行当前门；正式入口仍必须通过 A4/F4';
     }
   }
-  if (result.required && !result.ok) {
-    process.stderr.write(`${JSON.stringify(structuredVisualStageFailure(result, options.command ?? 'visual-stage-gate'), null, 2)}\n`);
-    process.exit(2);
-  }
+  if (result.required && !result.ok) throw new VisualStagePrerequisiteError(result, options.command ?? 'visual-stage-gate');
   return result;
 }
 
 /** 计算证据对象摘要，供审计和 pending 快照诊断使用。 */
 export function visualEvidenceDigest(value) {
-  return `sha256:${createHash('sha256').update(JSON.stringify(value ?? null)).digest('hex')}`;
+  return sha256Bytes(JSON.stringify(value ?? null));
 }

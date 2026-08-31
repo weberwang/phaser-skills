@@ -11,9 +11,12 @@ import { getVisualRegionDefinitionAliasConflicts, normalizeVisualRegionDefinitio
 import { atomicImageRequirementsEqual, deriveAtomicImageRequirements, normalizeAtomicComponents, normalizeAtomicImageRequirements } from "./visual-atomic-contract.mjs";
 import { collectImageGenerationRasterViolations } from "./visual-imagegen-format.mjs";
 import { validateFixedVisualProductionMethod } from "./visual-decomposition-confirmation.mjs";
+import { canonicalJson, isPlainObject as isObject, isSha256, nonEmptyString, normalizeContractPath as normalizeProjectRelativePath } from "./visual-contract-core.mjs";
 
 export { atomicImageRequirementsEqual, deriveAtomicImageRequirements, normalizeAtomicComponents, normalizeAtomicImageRequirements };
 export { validateFixedVisualProductionMethod } from "./visual-decomposition-confirmation.mjs";
+/** 对外保留项目相对路径名称，实际规范化逻辑由共享核心单一实现。 */
+export { normalizeProjectRelativePath };
 
 /** 需要被显式分析的常见视觉状态；不适用时必须写 reason。 */
 export const STANDARD_VISUAL_STATES = Object.freeze([
@@ -46,46 +49,12 @@ function semanticToken(value) {
 /** 判断 role/asset_kind 是否代表交互热区，而不是视觉资产。 */
 function isHitAreaKind(value) { return HIT_AREA_KINDS.has(semanticToken(value)); }
 
-/** 把资源路径规范化为项目相对路径；任何绝对路径或真正逃逸都直接拒绝。 */
-export function normalizeProjectRelativePath(value) {
-  if (!nonEmptyString(value)) return "";
-  const raw = String(value).replaceAll("\\", "/");
-  // 同时覆盖 POSIX、Windows 盘符和 UNC 路径，避免平台差异造成逃逸旁路。
-  if (raw.startsWith("/") || raw.startsWith("//") || /^[a-z]:\//i.test(raw)) return null;
-  const parts = [];
-  for (const part of raw.split("/")) {
-    if (!part || part === ".") continue;
-    if (part === "..") {
-      if (parts.length === 0) return null;
-      parts.pop();
-      continue;
-    }
-    // Windows 会把段尾的点/空格折叠掉；先拒绝再规范化，避免两个合同指向同一物理文件。
-    if (part.endsWith(".") || part.endsWith(" ")) return null;
-    // 拒绝控制符、Windows 非法字符和 ADS 冒号；斜杠已在上面作为分隔符处理。
-    if (/[\u0000-\u001f\u007f<>:"|?*]/u.test(part)) return null;
-    // DOS 设备名即使带扩展名也不属于普通项目文件路径；超字符编号和系统流名也一并拒绝。
-    if (/^(?:con|prn|aux|nul|conin\$|conout\$|clock\$|com[1-9¹²³]|lpt[1-9¹²³])(?:\..*)?$/i.test(part)) return null;
-    // 8.3 短名常以 ~数字结尾，保守拒绝其文件名/目录名，避免与长名登记成两个物理身份。
-    if (/~\d+(?:\.|$)/.test(part)) return null;
-    parts.push(part);
-  }
-  // 运行时和 Windows 文件系统通常大小写不敏感，合同身份也必须按物理路径比较。
-  return parts.length ? parts.join("/").toLowerCase() : null;
-}
-
 /** 比较项目内路径的物理身份；Windows/常见运行时文件系统不区分大小写。 */
 function sameProjectPath(left, right) {
   const normalizedLeft = normalizeProjectRelativePath(left);
   const normalizedRight = normalizeProjectRelativePath(right);
   return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight);
 }
-
-/** 判断值是否为普通对象。 */
-function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
-
-/** 判断值是否为非空字符串。 */
-function nonEmptyString(value) { return typeof value === "string" && value.trim().length > 0; }
 
 /** 判断资源是否同时携带两个共享身份字段，避免合同比较时静默选取一侧。 */
 function hasShareAliasConflict(value) {
@@ -96,14 +65,6 @@ function hasShareAliasConflict(value) {
 export function hasRuntimeImplementationField(value = {}) {
   const nested = value?.production_contract ?? value?.productionContract;
   return [value, nested].some((item) => isObject(item) && (Object.hasOwn(item, "runtime_implementation") || Object.hasOwn(item, "runtimeImplementation")));
-}
-
-/** 以稳定键序列化执行合同，避免 JSON 属性插入顺序制造虚假漂移。 */
-function canonicalJson(value) {
-  if (Array.isArray(value)) return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
-  if (isObject(value)) return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
-  const encoded = JSON.stringify(value);
-  return encoded === undefined ? "null" : encoded;
 }
 
 /** 将状态别名统一到机器可比对的 canonical state_id。 */
@@ -678,9 +639,6 @@ function resolveAtlasAssetSize(asset) {
   return { width: asset?.width ?? output.width, height: asset?.height ?? output.height };
 }
 
-/** 校验 SHA 字符串格式；实际文件内容由 V4 主审计读取并复核。 */
-function isSha256Token(value) { return typeof value === "string" && /^sha256:[a-f0-9]{64}$/.test(value); }
-
 /** 校验 V4 实际输出是否逐 component×state 覆盖 V3 合同。 */
 export function validateComponentAuditEvidence(region, auditUnit, context = {}, options = {}) {
   const errors = [];
@@ -768,13 +726,13 @@ export function validateComponentAuditEvidence(region, auditUnit, context = {}, 
       const observedPlacementIds = Array.isArray(usage?.placement_ids) ? usage.placement_ids.slice().sort() : (Array.isArray(usage?.placementIds) ? usage.placementIds.slice().sort() : null);
       if (!observedPlacementIds || JSON.stringify(observedPlacementIds) !== JSON.stringify(expectedPlacementIds)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] placement_ids 必须精确覆盖该 component 的全部可见 placement`, { missing: expectedPlacementIds.join(",") || "placement_ids" }));
       if (!nonEmptyString(runtimeFile)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] 缺少 runtime_file`, { missing: "runtime_file" }));
-      if (!isSha256Token(runtimeSha)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] 缺少合法 runtime_sha256`, { missing: "runtime_sha256" }));
+      if (!isSha256(runtimeSha)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] 缺少合法 runtime_sha256`, { missing: "runtime_sha256" }));
       if (expectedAsset?.runtime_file && !sameProjectPath(runtimeFile, expectedAsset.runtime_file)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] runtime_file 与 V3 expected 不一致`, { missing: expectedAsset.runtime_file }));
       const actualItem = actualByPair.get(key);
       const actualItemFile = actualItem?.file ?? actualItem?.path ?? actualItem?.output_file ?? actualItem?.runtime_file ?? actualItem?.runtimeFile ?? "";
       const actualItemSha = actualItem?.sha256 ?? actualItem?.file_sha256 ?? "";
       if (actualItem && !sameProjectPath(runtimeFile, actualItemFile)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] runtime_file 与 actual_assets 不一致`, { missing: actualItemFile || "actual_assets.file" }));
-      if (actualItem && !isSha256Token(actualItemSha)) errors.push(componentError(local, `actual_assets 缺少合法 SHA，无法绑定 runtime_sha256`, { missing: "actual_assets.sha256" }));
+      if (actualItem && !isSha256(actualItemSha)) errors.push(componentError(local, `actual_assets 缺少合法 SHA，无法绑定 runtime_sha256`, { missing: "actual_assets.sha256" }));
       else if (actualItem && runtimeSha !== actualItemSha) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] runtime_sha256 与 actual_assets SHA 不一致`, { missing: actualItemSha }));
       if (expectedAsset?.atlas_slice) {
         const usageSlice = normalizeAtlasSlice(usage?.atlas_slice ?? usage?.atlasSlice);

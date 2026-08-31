@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /** Phaser 4 全局控制 CLI：只校验和记录，不执行被门控的业务动作。 */
-import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import process from 'node:process';
 import { assertCompletedUnits, assertExecutionWorkflowComplete, assertImplementationPackagePlanningPrerequisites, assertUnitReady, executionStateSummary, initializeExecutionState, loadExecutionState, refreshV2ToV3Contract, validateAndCompleteExecutionUnit, validateV2ToV3ContractShape } from './execution-unit-control.mjs';
 import { validateParallelBatch } from './parallel-batch-control.mjs';
@@ -12,7 +12,12 @@ import { repositoryLint } from './repository-lint.mjs';
 import { pathMatches } from './path-matcher.mjs';
 import { isVisualProductionWork, loadVisualManifestSnapshot, validateVisualChangeRequest, validateVisualDelegationBinding, validateVisualEvidence, validateVisualImplementationPackage, validateVisualImplementationPackageBinding } from './visual-production-contract.mjs';
 import { computeVisualConfirmationPrerequisiteFilesSha256, validateVisualConfirmationReferences, visualConfirmationAuthority } from './visual-confirmation-authority.mjs';
-import { enforceVisualStageGate, validateVisualStageDeclaration, VISUAL_REMEDIATION } from './visual-stage-prerequisites.mjs'; import { createReturnRecord, invalidateReturnArtifacts, parseReturnRequest, validateReturnRecord, validateReturnResume } from './return-disposition.mjs';
+import { enforceVisualStageGate, structuredVisualStageFailure, validateVisualStageDeclaration, validateVisualStagePrerequisites, VISUAL_REMEDIATION } from './visual-stage-prerequisites.mjs'; import { createReturnRecord, invalidateReturnArtifacts, parseReturnRequest, validateReturnRecord, validateReturnResume } from './return-disposition.mjs';
+import { computePlanFingerprint, fileHash, hashText } from './runtime/fingerprint.mjs';
+import { parseArgs, list, readJson, writeJson, requireFields, requireStringArray, requireHash, requireBaselineHash } from './runtime/io.mjs';
+import { failureRecord, renderResult, writeResult } from './runtime/output.mjs';
+import { createStableCommands } from './runtime/stable-commands.mjs';
+import { createRecordValidators } from './runtime/validators.mjs';
 const STATES = ['INTAKE', 'BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING', 'VALIDATING', 'PASSED', 'INTEGRATING', 'RELEASE_APPROVAL_REQUIRED', 'RELEASING', 'COMPLETE', 'RETURN', 'BLOCKED'];
 const LEVELS = ['A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6'];
 const GATES = ['F0', 'F1', 'F2', 'F3', 'F4'];
@@ -36,7 +41,22 @@ const TRANSITIONS = {
 };
 const SHORT_APPROVAL = /^(批准|同意|可以|继续|就这个|选\s*[a-zA-Z]|按流程推进|你看着办|做完它|批准然后按(?:照)?工作流推进)[。！!\s]*$/i;
 const AFFIRMATIVE_APPROVAL = /^(批准|同意|确认|接受|通过)(?:$|[\s，,：:。！!].*)/;
-const NEGATIVE_APPROVAL = /(不同意|不批准|拒绝|取消|停止)/; /** 输出中文错误并使用稳定的非零退出码终止。 */ function fail(message, code = 2) { process.stderr.write(`拒绝：${message}\n`); process.exit(code); }
+const NEGATIVE_APPROVAL = /(不同意|不批准|拒绝|取消|停止)/;
+
+/** 控制面异常；统一在 CLI 入口处理，保证旧命令和新入口都稳定退出。 */
+class WorkflowControlError extends Error {
+  constructor(message, code = 2, details = null) {
+    super(String(message));
+    this.name = 'WorkflowControlError';
+    this.code = code;
+    this.details = details;
+  }
+}
+
+/** 抛出中文控制面错误，由最外层按命令选择兼容或紧凑输出。 */
+function fail(message, code = 2, details = null) {
+  throw new WorkflowControlError(message, code, details);
+}
 const visualStageGate = enforceVisualStageGate;
 /** 校验 Phaser 生命周期动作白名单及其唯一等级，未知 phaser-* 也不得旁路。 */ function validatePhaserAction(actionType, level = null, label = 'actionType') {
   if (!PHASER_ACTIONS.has(actionType)) fail(`${label} 不是受控 Phaser 动作白名单成员：${actionType}`);
@@ -48,51 +68,23 @@ const visualStageGate = enforceVisualStageGate;
   if (!actionType || actionType.startsWith('phaser-')) return false;
   return returnOutOfScope(actionType);
 }
-/** 将命令行解析为支持重复选项的键值对象。 */ function parseArgs(argv) {
-  const result = { _: [] };
-  for (let index = 0; index < argv.length; index += 1) {
-    const token = argv[index];
-    if (!token.startsWith('--')) { result._.push(token); continue; }
-    const key = token.slice(2);
-    const value = argv[index + 1] && !argv[index + 1].startsWith('--') ? argv[++index] : true;
-    if (result[key] === undefined) result[key] = value;
-    else result[key] = Array.isArray(result[key]) ? [...result[key], value] : [result[key], value];
-  }
-  return result;
-}
-/** 将单值或重复参数统一为字符串数组。 */ function list(value) { if (value === undefined || value === true) return []; return (Array.isArray(value) ? value : [value]).flatMap((item) => String(item).split(',')).map((item) => item.trim()).filter(Boolean); }
-/** 读取 JSON 并把语法错误转成控制面错误。 */ function readJson(path, label) {
-  if (!path || path === true) fail(`缺少 ${label} 路径`);
-  try { return JSON.parse(readFileSync(resolve(String(path)), 'utf8')); }
-  catch (error) { fail(`无法读取 ${label}：${error.message}`); }
-}
-/** 写入稳定格式 JSON，并确保控制目录存在。 */ function writeJson(path, value) { const target = resolve(String(path)); mkdirSync(dirname(target), { recursive: true }); writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`, 'utf8'); }
-/** 校验必填字段存在。 */ function requireFields(value, fields, label) { if (!value || typeof value !== 'object' || Array.isArray(value)) fail(`${label} 必须为对象`); const missing = fields.filter((field) => value[field] === undefined); if (missing.length) fail(`${label} 缺少字段：${missing.join('、')}`); }
-/** 校验字符串数组。 */ function requireStringArray(value, label) {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) fail(`${label} 必须为字符串数组`);
-}
-/** 校验 SHA-256 标识格式。 */ function requireHash(value, label) {
-  if (!/^sha256:[a-f0-9]{64}$/.test(value ?? '')) fail(`${label} 必须为 sha256:<64 位小写十六进制>`);
-}
-/** 基线使用不可变 Git commit/tree；其他证据仍使用 sha256 文件身份。 */ function requireBaselineHash(value, label) {
-  if (!/^(?:sha256:[a-f0-9]{64}|[a-f0-9]{40}(?:[a-f0-9]{24})?)$/.test(value ?? '')) fail(`${label} 必须为 sha256 文件身份或完整 Git commit/tree 对象 ID`);
-}
-/** 计算文件字节 SHA-256。 */ function fileHash(path) {
-  return `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`;
-}
+const recordValidators = createRecordValidators({
+  approvalFields: APPROVAL_FIELDS, delegationRequired: DELEGATION_REQUIRED, delegationFields: DELEGATION_FIELDS,
+  evidenceRequired: EVIDENCE_REQUIRED, packageRequired: PACKAGE_REQUIRED, changeRequired: CHANGE_REQUIRED,
+  gates: GATES, states: STATES, automaticActions: AUTOMATIC_PHASER_ACTIONS, actionLevels: LEVELS,
+  requireFields, requireStringArray, requireHash, requireBaselineHash, validatePhaserAction,
+  actionLevelFor: (action) => PHASER_ACTION_LEVEL.get(action), validateExecutionPlan,
+  validateVisualImplementationPackage, validateVisualChangeRequest, pathMatches, fail,
+});
+const { validateApproval, validateDelegation, validateEvidence, validateImplementationPackageShape, validateChangeRequestShape, validateChangeRequest } = recordValidators;
 
-/** 计算文本 SHA-256。 */
-function hashText(value) {
-  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
-}
 /** 校验工作项的核心结构、枚举与控制字段。 */
 function validateWorkItem(work) {
   requireFields(work, WORK_REQUIRED, 'Work Item');
   const visualDeclarationErrors = validateVisualStageDeclaration(work);
   if (visualDeclarationErrors.length) {
     const declarationError = visualDeclarationErrors[0]; const disposition = declarationError.disposition ?? VISUAL_REMEDIATION.REPAIR; const failure = { ok: false, command: 'work-item-schema', errorCode: declarationError.errorCode, message: declarationError.message, disposition, remediation: declarationError.remediation ?? (disposition === VISUAL_REMEDIATION.RETURN ? 'RETURN_REQUIRED' : disposition === VISUAL_REMEDIATION.REVALIDATE ? 'REVALIDATION_REQUIRED' : 'REPAIR_REQUIRED'), missingStages: declarationError.missingStages ?? [], missingEvidence: declarationError.missingEvidence ?? [], invalidatedDependencies: declarationError.invalidatedDependencies ?? [], affectedScope: declarationError.affectedScope ?? [], invalidatesDownstream: declarationError.invalidatesDownstream === true, nextAction: declarationError.nextAction ?? '原地修复视觉阶段声明后，重新运行当前门；沿工作流继续推进' };
-    process.stderr.write(`${JSON.stringify(failure, null, 2)}\n`);
-    process.exit(2);
+    fail(failure.message, 2, failure);
   }
   const visualReferenceErrors = validateVisualConfirmationReferences(work);
   if (visualReferenceErrors.length) fail(visualReferenceErrors[0]);
@@ -139,71 +131,6 @@ function validateWorkItem(work) {
   if (!work.workItemId || !work.pendingApprovalId || !work.pendingApprovalObject || !work.pendingApprovalActionType || !work.validationBatchId) fail('Work Item 关键标识不能为空');
   return work;
 }
-/** 校验审批记录全部类型、枚举和哈希。 */
-function validateApproval(approval) {
-  requireFields(approval, APPROVAL_FIELDS, `审批 ${approval?.approvalId ?? '<unknown>'}`);
-  validatePhaserAction(approval.actionType, approval.actionLevel, 'Approval Ledger.actionType');
-  requireBaselineHash(approval.baselineHash, '审批 baselineHash');
-  requireStringArray(approval.moduleIds, '审批.moduleIds');
-  if (!approval.moduleIds.length || new Set(approval.moduleIds).size !== approval.moduleIds.length || JSON.stringify(approval.moduleIds) !== JSON.stringify([...approval.moduleIds].sort())) fail('审批 moduleIds 必须非空、唯一且已排序');
-  if (!['A4', 'A5', 'A6'].includes(approval.actionLevel) || !GATES.includes(approval.gate)) fail('操作审批只能使用 A4-A6 与有效 F 门');
-  if (!STATES.includes(approval.pendingState) || !approval.pendingContext) fail('审批未绑定 pending 全局状态与上下文');
-  for (const field of ['impactSummary', 'fileScope', 'services', 'invalidatedWhen']) requireStringArray(approval[field], `审批.${field}`);
-  if (!approval.impactSummary.length || approval.impactSummary.some((item) => !item.trim())) fail('审批 impactSummary 必须为非空影响列表');
-  if (approval.externalTargets !== undefined) requireStringArray(approval.externalTargets, '审批.externalTargets');
-  for (const field of ['allowServiceStart', 'allowDelete', 'externalWrite', 'destructive', 'physicalDevice', 'release']) if (typeof approval[field] !== 'boolean') fail(`审批.${field} 必须为布尔值`);
-  if (Number.isNaN(Date.parse(approval.approvedAt))) fail('审批 approvedAt 必须为有效时间');
-  return approval;
-}
-/** 校验委派包结构与基础类型。 */
-function validateDelegation(delegation) {
-  requireFields(delegation, DELEGATION_REQUIRED, 'Delegation Package');
-  const extra = Object.keys(delegation).filter((field) => !DELEGATION_FIELDS.includes(field));
-  if (extra.length) fail(`Delegation Package 包含 Schema 禁止字段：${extra.join('、')}`);
-  for (const field of ['ownership', 'allowedActions', 'forbiddenActions', 'allowedPaths', 'forbiddenPaths', 'acceptanceCommands']) requireStringArray(delegation[field], `Delegation Package.${field}`);
-  if (!delegation.ownership.length || !delegation.acceptanceCommands.length) fail('委派 ownership 和验收命令不能为空');
-  for (const action of [...delegation.allowedActions, ...delegation.forbiddenActions]) validatePhaserAction(action, null, 'Delegation Package 动作');
-  if (!['A0', 'A1', 'A2', 'A3'].includes(delegation.actionLevel)) fail('Delegation Package 只能委派 A0-A3 Phaser 动作');
-  if ([...delegation.allowedActions, ...delegation.forbiddenActions].some((action) => !AUTOMATIC_PHASER_ACTIONS.has(action))) fail('Delegation Package 动作只能包含 A0-A3 Phaser 动作');
-  if (delegation.allowedActions.some((action) => PHASER_ACTION_LEVEL.get(action) !== delegation.actionLevel)) fail('Delegation Package.allowedActions 与 actionLevel 不一致');
-  if (delegation.actionLevel === 'A3') {
-    requireStringArray(delegation.executionUnitIds, 'Delegation Package.executionUnitIds');
-    if (!delegation.executionUnitIds.length || new Set(delegation.executionUnitIds).size !== delegation.executionUnitIds.length || !Object.hasOwn(delegation, 'parallelGroup')) fail('A3 委派必须携带非空唯一 executionUnitIds 和 parallelGroup');
-    if (delegation.parallelGroup !== null && (typeof delegation.parallelGroup !== 'string' || !delegation.parallelGroup.trim())) fail('A3 Delegation Package.parallelGroup 必须为非空字符串或 null');
-  } else if (Object.hasOwn(delegation, 'executionUnitIds') || Object.hasOwn(delegation, 'parallelGroup')) fail('A0-A2 委派不得携带 executionUnitIds/parallelGroup');
-  if (delegation.preserveOthersChanges !== true) fail('委派包必须明确不得覆盖他人修改');
-  return delegation;
-}
-/** 校验证据清单的结构化字段。 */
-function validateEvidence(evidence) {
-  requireFields(evidence, EVIDENCE_REQUIRED, 'Evidence Manifest');
-  requireBaselineHash(evidence.baselineHash, 'Evidence baselineHash');
-  requireHash(evidence.diffFingerprint, 'Evidence diffFingerprint');
-  for (const field of ['dataSources', 'files', 'uncoveredItems', 'completedOutputs', 'completedUnitIds', 'satisfiedExitCriteria']) requireStringArray(evidence[field], `Evidence.${field}`);
-  if (Number.isNaN(Date.parse(evidence.recordedAt))) fail('Evidence.recordedAt 必须为有效时间');
-  if (!Array.isArray(evidence.commands) || !evidence.commands.length) fail('Evidence.commands 必须为非空数组');
-  if (!['PASS', 'FAIL', 'PARTIAL'].includes(evidence.verdict)) fail('Evidence.verdict 无效');
-  if (!evidence.fileHashes || typeof evidence.fileHashes !== 'object' || Array.isArray(evidence.fileHashes)) fail('Evidence.fileHashes 必须为对象');
-  requireFields(evidence.gateResults, GATES.slice(0, 4), 'Evidence.gateResults');
-  return evidence;
-}
-/** 校验 Implementation Package 独立结构。 */
-function validateImplementationPackageShape(pkg, options = {}) {
-  requireFields(pkg, PACKAGE_REQUIRED, 'Implementation Package');
-  const extra = Object.keys(pkg).filter((field) => !PACKAGE_REQUIRED.includes(field) && !['visualProductionUnits', 'visualManifestFile', 'visualManifestSha256', 'visualContractVersion', 'candidateVersion', 'visualDecompositionConfirmations', 'current_stage', 'currentStage', 'sceneReconstructionContract', 'scene_reconstruction_contract'].includes(field));
-  if (extra.length) fail(`Implementation Package 包含 Schema 禁止字段：${extra.join('、')}`);
-  requireBaselineHash(pkg.baselineHash, 'Implementation Package baselineHash');
-  for (const field of ['approvedRequirements', 'allowedPaths', 'forbiddenPaths', 'expectedAddedFiles', 'expectedDeletedFiles', 'testScope', 'outOfScope', 'definitionOfDone', 'stopConditions']) requireStringArray(pkg[field], `Implementation Package.${field}`);
-  if (!pkg.approvedRequirements.length || !pkg.allowedPaths.length || !pkg.testScope.length || !pkg.definitionOfDone.length || !pkg.stopConditions.length) fail('Implementation Package 的需求、路径、测试、完成定义和停止条件不能为空');
-  if (!pkg.fileOwnership || typeof pkg.fileOwnership !== 'object' || Array.isArray(pkg.fileOwnership) || !Object.keys(pkg.fileOwnership).length || Object.entries(pkg.fileOwnership).some(([path, owner]) => !path || typeof owner !== 'string' || !owner)) fail('Implementation Package.fileOwnership 必须为非空路径到所有者映射');
-  validateExecutionPlan(pkg, pathMatches, fail);
-  const visualErrors = validateVisualImplementationPackage(pkg, { ...options, allowedPaths: pkg.allowedPaths, pathMatches });
-  if (visualErrors.length) fail(visualErrors[0]);
-  const visualFields = ['visualContractVersion', 'candidateVersion', 'visualManifestFile', 'visualManifestSha256', 'visualProductionUnits'];
-  if (visualFields.some((field) => Object.hasOwn(pkg, field)) && visualFields.some((field) => pkg[field] === undefined)) fail('视觉 Implementation Package 必须同时绑定 visualContractVersion、visualManifestFile、visualManifestSha256、visualProductionUnits');
-  if (!pkg.packageId || !pkg.workItemId || !pkg.baselineVersion || !pkg.taskAuthorizationId || !pkg.compatibilityStrategy || !pkg.approvedArchitecture) fail('Implementation Package 标识、版本、任务授权、兼容策略或架构结论不能为空');
-  return pkg;
-}
 /** 校验 Implementation Package 与 Work Item/审批/基线一致。 */
 function validateImplementationPackage(pkg, work, repo = process.cwd(), delegations = []) {
   const manifestSnapshot = loadVisualManifestSnapshot(pkg, repo);
@@ -222,23 +149,6 @@ function validateImplementationPackage(pkg, work, repo = process.cwd(), delegati
   }
   if (Object.values(pkg.fileOwnership).some((owner) => owner !== work.assignedAgent && !work.delegatedAgents.includes(owner))) fail('Implementation Package 文件所有者不属于当前任务代理');
   return pkg;
-}
-/** 校验 Change Request 独立结构。 */
-function validateChangeRequestShape(change) {
-  requireFields(change, CHANGE_REQUIRED, 'Change Request');
-  for (const field of ['affectedModules', 'invalidatedApprovalIds', 'newAcceptance']) requireStringArray(change[field], `Change Request.${field}`);
-  requireBaselineHash(change.affectedBaselineHash, 'Change Request.affectedBaselineHash');
-  if (!change.changeRequestId || !change.workItemId || !change.change || !change.reason || !change.newRisk || !change.userDecisionRequest || !change.affectedModules.length || !change.newAcceptance.length) fail('Change Request 标识、内容、原因、模块、风险、验收与决策请求不能为空');
-  if (!['PENDING', 'ACCEPTED', 'REJECTED'].includes(change.status)) fail('Change Request 状态只能为 PENDING/ACCEPTED/REJECTED；它记录用户决定而非审批');
-  const productionErrors = validateVisualChangeRequest(change, { workItemId: change.workItemId, candidateVersion: change.candidateVersion });
-  if (productionErrors.length) fail(productionErrors[0]);
-  return change;
-}
-/** 校验 Change Request 与 Work Item 绑定。 */
-function validateChangeRequest(change, work) {
-  validateChangeRequestShape(change);
-  if (change.workItemId !== work.workItemId) fail('Change Request 工作项无效');
-  return change;
 }
 /** 把路径规范化为仓库相对 POSIX 表示，并拒绝越出仓库。 */
 function normalizeRepoPath(repo, path) {
@@ -906,7 +816,7 @@ function transition(args) {
     work.nextGate = String(args['next-gate']);
   }
   writeJson(workPath, work);
-  process.stdout.write(JSON.stringify({ ok: true, command: 'transition', workItemId: work.workItemId, globalState: target, return: returnRequest, returnRecord: work.returnRecord ?? null }, null, 2));
+  if (args.silent !== true) process.stdout.write(JSON.stringify({ ok: true, command: 'transition', workItemId: work.workItemId, globalState: target, return: returnRequest, returnRecord: work.returnRecord ?? null }, null, 2));
 }
 
 /** 自动推进一个状态；审批边界和外部动作始终停止，不自动准备或批准。 */
@@ -967,18 +877,6 @@ function handoff(args) {
   process.stdout.write(JSON.stringify(output, null, 2));
 }
 
-/** 输出工作项关键状态。 */
-function status(args) {
-  const work = validateWorkItem(readJson(args['work-item'], 'Work Item'));
-  const repo = resolve(String(args.repo ?? process.cwd()));
-  // RETURN 中的失效证据正是恢复原因；状态查询必须可读，重新进入前向路径后再恢复硬门校验。
-  const visualGate = work.globalState === 'RETURN' ? { required: false, ok: false } : visualStageGate(work, { command: 'status', actionLevel: work.pendingApprovalActionLevel, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, projectRoot: repo });
-  const packagePath = args['implementation-package'] ?? work.implementationPackageRecord;
-  let executionState = null;
-  if (packagePath) { const pkg = validateImplementationPackage(readJson(packagePath, 'Implementation Package'), work, repo); try { executionState = executionStateSummary(work, loadExecutionState(work, pkg, repo, unitIo(repo)).state); } catch (error) { fail(error.message); } }
-  if (args.ledger) readLedger(args.ledger);
-  process.stdout.write(JSON.stringify({ workItemId: work.workItemId, projectId: work.projectId, moduleIds: work.moduleIds, domain: work.domain, stageId: work.stageId, visualStage: work.visualStage ?? null, visualStageState: work.visualStageState ?? null, visualStageGate: visualGate.required ? { ok: visualGate.ok, errorCode: visualGate.errors?.[0]?.errorCode ?? null, disposition: visualGate.disposition ?? null, remediation: visualGate.remediation ?? null, missingStages: visualGate.missingStages, missingEvidence: visualGate.missingEvidence, invalidatedDependencies: visualGate.invalidatedDependencies, affectedScope: visualGate.affectedScope ?? [], invalidatesDownstream: visualGate.invalidatesDownstream === true, invalidatedStages: visualGate.invalidatedStages ?? [], returnStage: visualGate.returnStage ?? null, nextAction: visualGate.nextAction } : { required: false }, globalState: work.globalState, returnRecord: work.returnRecord ?? null, nextGate: work.nextGate, baselineId: work.baselineId, baselineVersion: work.baselineVersion, baselineHash: work.baselineHash, approvalRecord: work.approvalRecord, pendingApprovalId: work.pendingApprovalId, pendingApprovalState: work.pendingApprovalState, pendingApprovalStatus: work.pendingApprovalStatus ?? null, pendingApprovalContext: work.pendingApprovalContext, pendingApprovalPresentedId: work.pendingApprovalPresentedId, pendingApprovalPresentedAt: work.pendingApprovalPresentedAt, diffAuditRecord: work.diffAuditRecord ?? null, executionState, nextCommand: `node <skill-dir>/scripts/workflow-control.mjs route --work-item ${args['work-item']} --ledger ${args.ledger ?? '<ledger>'}` }, null, 2));
-}
 /** 仅在控制目录不存在时创建空账本、目录和首个 Work Item。 */
 function init(args) {
   const repo = resolve(String(args.repo ?? process.cwd()));
@@ -1021,10 +919,39 @@ function lint(args) {
 
 /** 输出命令帮助。 */
 function help() {
-  process.stdout.write('用法：node <skill-dir>/scripts/workflow-control.mjs <init|route|advance|prepare-approval|handoff|preflight|approve|delegate-check|parallel-check|unit-check|refresh-v2-v3|diff-audit|evidence-check|transition|status|lint> [选项]\n');
+  process.stdout.write('用法：node <skill-dir>/scripts/workflow-control.mjs <run|check|status|init|route|advance|prepare-approval|handoff|preflight|approve|delegate-check|parallel-check|unit-check|refresh-v2-v3|diff-audit|evidence-check|transition|lint> [选项]\n');
 }
+
+const stableCommands = createStableCommands({
+  validateWorkItem, readJson, validateImplementationPackage, loadVisualManifestSnapshot,
+  validateVisualStagePrerequisites, structuredVisualStageFailure, evidenceCheck,
+  readLedger, deriveRoute, effectiveApproval, computePlanFingerprint, executionStateSummary,
+  loadExecutionState, unitIo, assertExecutionWorkflowComplete, transition,
+});
 
 const [command, ...rest] = process.argv.slice(2);
 const args = parseArgs(rest);
-if (!command || args.help === true || command === 'help') help();
-else ({ init, route, advance, 'prepare-approval': prepareApproval, handoff, preflight, approve, 'delegate-check': delegateCheck, 'parallel-check': parallelCheck, 'unit-check': unitCheck, 'refresh-v2-v3': refreshV2V3, 'diff-audit': diffAudit, 'evidence-check': evidenceCheck, transition, status, lint }[command] ?? (() => fail(`未知命令 ${command}`)))(args);
+const commands = { ...stableCommands, init, route, advance, 'prepare-approval': prepareApproval, handoff, preflight, approve, 'delegate-check': delegateCheck, 'parallel-check': parallelCheck, 'unit-check': unitCheck, 'refresh-v2-v3': refreshV2V3, 'diff-audit': diffAudit, 'evidence-check': evidenceCheck, transition, lint };
+try {
+  if (!command || args.help === true || command === 'help') help();
+  else {
+    const result = (commands[command] ?? (() => fail(`未知命令 ${command}`)))(args);
+    // run/check 的阻断必须让自动化立即停止；status 仅查询，即使展示阻断也保持成功退出。
+    if (['run', 'check'].includes(command) && result?.status === 'BLOCKED') process.exitCode = 2;
+  }
+} catch (error) {
+  const code = Number.isInteger(error?.code) ? error.code : 2;
+  if (['run', 'check', 'status'].includes(command)) {
+    const details = error?.result ? structuredVisualStageFailure(error, command) : error?.details;
+    const output = failureRecord(details ? { ...error, details } : error, String(args.stage ?? 'unknown'));
+    if (args.json === true || args.json === 'true') process.stderr.write(`${JSON.stringify(output)}\n`);
+    else process.stderr.write(renderResult(output));
+  } else if (error?.result) {
+    process.stderr.write(`${JSON.stringify(structuredVisualStageFailure(error, command), null, 2)}\n`);
+  } else if (error?.details?.errorCode && error?.details?.message) {
+    process.stderr.write(`${JSON.stringify(error.details, null, 2)}\n`);
+  } else {
+    process.stderr.write(`拒绝：${error?.message ?? error}\n`);
+  }
+  process.exitCode = code;
+}

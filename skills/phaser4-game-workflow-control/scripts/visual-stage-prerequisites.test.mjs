@@ -227,9 +227,15 @@ test('CLI：route/preflight/prepare/handoff/approve 共享硬门，stale pending
   delete invalid.visualStageEvidenceRefs.V3; delete invalid.visualStageEvidenceRefs.V4;
   writeFileSync(fixture.workPath, `${JSON.stringify(invalid, null, 2)}\n`, 'utf8');
   for (const command of ['status', 'route']) {
-    const blockedRead = runCli(fixture, command, ['--work-item', fixture.workPath, '--ledger', fixture.ledgerPath]);
-    assert.notEqual(blockedRead.status, 0);
-    assert.equal(JSON.parse(blockedRead.stderr).errorCode, 'VISUAL_PREREQUISITES_MISSING');
+    const blockedRead = runCli(fixture, command, ['--work-item', fixture.workPath, '--ledger', fixture.ledgerPath, ...(command === 'status' ? ['--json'] : [])]);
+    if (command === 'status') {
+      // status 是只读查询入口，统一输出 BLOCKED 但保留成功退出码；route 仍需硬门非零阻断。
+      assert.equal(blockedRead.status, 0);
+      assert.equal(JSON.parse(blockedRead.stdout).status, 'BLOCKED');
+    } else {
+      assert.notEqual(blockedRead.status, 0);
+      assert.equal(JSON.parse(blockedRead.stderr).errorCode, 'VISUAL_PREREQUISITES_MISSING');
+    }
   }
   const prepareArgs = ['--work-item', fixture.workPath, '--ledger', fixture.ledgerPath, '--pending-id', 'PENDING-V5', '--object', 'replace Main Scene visual entry', '--stage', 'main', '--action-type', 'phaser-integration', '--action-level', 'A4', '--gate', 'F4', '--context', 'phaser-integration', '--path', 'src', '--impact', '替换正式视觉入口'];
   const blockedPrepare = runCli(fixture, 'prepare-approval', prepareArgs);
@@ -291,9 +297,11 @@ test('CLI：RETURN 必须声明必要分类并持久化最小影响范围', () =
   assert.equal(work.returnRecord.classification, 'candidate-identity-changed');
   assert.deepEqual(work.returnRecord.affectedScope, ['stage:V2', 'scene:scene-main']);
 
-  const status = runCli(fixture, 'status', ['--work-item', fixture.workPath]);
+  const status = runCli(fixture, 'status', ['--work-item', fixture.workPath, '--json']);
   assert.equal(status.status, 0, status.stderr);
-  assert.equal(JSON.parse(status.stdout).returnRecord.classification, 'candidate-identity-changed');
+  const statusResult = JSON.parse(status.stdout);
+  assert.equal(statusResult.status, 'BLOCKED');
+  assert.match(statusResult.next, /returnRecord/);
   const automatic = runCli(fixture, 'advance', ['--work-item', fixture.workPath]);
   assert.notEqual(automatic.status, 0);
   assert.match(automatic.stderr, /不能使用 advance/);
