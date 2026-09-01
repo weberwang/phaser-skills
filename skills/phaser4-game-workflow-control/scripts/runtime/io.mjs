@@ -159,6 +159,35 @@ function transactionLockAge(lockPath) {
   catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
 
+/** 读取锁内容与文件身份，陈旧回收必须同时校验 token 和 inode，避免误删轮换后的锁。 */
+function readTransactionLockIdentity(lockPath) {
+  try {
+    const stats = statSync(lockPath);
+    const payload = JSON.parse(readFileSync(lockPath, 'utf8'));
+    if (!payload.journalPath || !payload.token) return null;
+    return { journalPath: payload.journalPath, token: payload.token, dev: stats.dev, ino: stats.ino, size: stats.size, mtimeMs: stats.mtimeMs };
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    return null;
+  }
+}
+
+/** 判断两次锁观测是否仍指向同一个具体锁文件；身份变化时调用方必须放弃删除。 */
+export function sameTransactionLockIdentity(left, right) {
+  return Boolean(left && right)
+    && left.journalPath === right.journalPath
+    && left.token === right.token
+    && left.dev === right.dev
+    && left.ino === right.ino
+    && left.size === right.size
+    && left.mtimeMs === right.mtimeMs;
+}
+
+/** 只依据传入身份判断陈旧性，避免使用较早的 stat 年龄误回收刚轮换的新锁。 */
+export function isTransactionLockStale(identity, now = Date.now(), staleMs = TRANSACTION_LOCK_STALE_MS) {
+  return Number.isFinite(identity?.mtimeMs) && now - identity.mtimeMs > staleMs;
+}
+
 /** 获取事务日志的跨进程排他锁，并只回收超过上限的同一锁文件。 */
 function acquireTransactionLock(journalPath) {
   const normalizedJournal = resolve(String(journalPath));
@@ -189,7 +218,18 @@ function acquireTransactionLock(journalPath) {
       const age = transactionLockAge(lockPath);
       if (age === null) continue;
       if (age <= TRANSACTION_LOCK_STALE_MS) throw new WorkflowInputError(`JSON 事务并发冲突：事务锁已被占用（${normalizedJournal}）`);
-      // 只删除精确的、已超过生命周期的锁；下次循环用 wx 重新建立排他锁。
+      const staleIdentity = readTransactionLockIdentity(lockPath);
+      if (!staleIdentity) throw new WorkflowInputError(`JSON 事务并发冲突：陈旧事务锁身份不可确认（${normalizedJournal}）`);
+      // 初始 age 与身份读取并非同一时刻；最终身份新鲜时必须立即拒绝，不能沿用旧 age 删除新锁。
+      if (!isTransactionLockStale(staleIdentity)) throw new WorkflowInputError(`JSON 事务并发冲突：事务锁已被轮换（${normalizedJournal}）`);
+      // stat 判旧后重新读取 token/inode；锁被其他进程轮换时只重试，绝不删除新锁。
+      const confirmedIdentity = readTransactionLockIdentity(lockPath);
+      if (!sameTransactionLockIdentity(staleIdentity, confirmedIdentity)) continue;
+      if (!isTransactionLockStale(confirmedIdentity)) throw new WorkflowInputError(`JSON 事务并发冲突：事务锁已被轮换（${normalizedJournal}）`);
+      const finalIdentity = readTransactionLockIdentity(lockPath);
+      if (!sameTransactionLockIdentity(staleIdentity, finalIdentity)) continue;
+      if (!isTransactionLockStale(finalIdentity)) throw new WorkflowInputError(`JSON 事务并发冲突：事务锁已被轮换（${normalizedJournal}）`);
+      // 只删除精确的、身份未变化且已超过生命周期的锁；下次循环用 wx 重新建立排他锁。
       try { unlinkSync(lockPath); } catch (cleanupError) { if (cleanupError.code !== 'ENOENT') throw cleanupError; }
     }
   }
@@ -199,14 +239,13 @@ function acquireTransactionLock(journalPath) {
 /** 仅由持有相同 token 的进程释放锁，避免超时回收后误删新事务的锁。 */
 function releaseTransactionLock(lock) {
   if (!lock?.lockPath) return;
-  try {
-    const current = JSON.parse(readFileSync(lock.lockPath, 'utf8'));
-    if (current.journalPath !== lock.journalPath || current.token !== lock.token) return;
-  } catch (error) {
-    if (error.code === 'ENOENT') return;
-    // 锁文件已损坏时不删除它，交给下一次有界陈旧锁检查 fail closed。
-    return;
-  }
+  const firstIdentity = readTransactionLockIdentity(lock.lockPath);
+  if (!firstIdentity || firstIdentity.journalPath !== lock.journalPath || firstIdentity.token !== lock.token) return;
+  const secondIdentity = readTransactionLockIdentity(lock.lockPath);
+  if (!sameTransactionLockIdentity(firstIdentity, secondIdentity) || secondIdentity.journalPath !== lock.journalPath || secondIdentity.token !== lock.token) return;
+  // 删除前再做一次完整身份确认，轮换期间宁可遗留可回收锁，也不能误删新持有者的锁。
+  const finalIdentity = readTransactionLockIdentity(lock.lockPath);
+  if (!sameTransactionLockIdentity(secondIdentity, finalIdentity) || finalIdentity.journalPath !== lock.journalPath || finalIdentity.token !== lock.token) return;
   try { unlinkSync(lock.lockPath); } catch (error) { if (error.code !== 'ENOENT') throw error; }
 }
 

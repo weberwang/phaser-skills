@@ -161,7 +161,7 @@ function nextAction(inspection) {
   if (route?.explicitApprovalRequired) return work.pendingApprovalPresentedId === work.pendingApprovalId ? '等待用户确认当前 pending' : '先展示当前 pending 的 handoff';
   if (work.globalState === 'REVIEW' && work.pendingApprovalActionLevel === 'A3' && !implementationPackage) return '补齐并绑定 Implementation Package 后再次运行 run';
   // A3 的实施单元是进入 Diff Audit 前置的真实执行步骤，未完成时不能把审计提示置于实施之前。
-  const executionComplete = executionState?.workflowState === 'COMPLETE' && executionState?.unitSequenceState === 'COMPLETE';
+  const executionComplete = executionState?.unitSequenceState === 'COMPLETE';
   if (work.globalState === 'IMPLEMENTING' && work.pendingApprovalActionLevel === 'A3' && !executionComplete) return '完成当前 Execution State 的 READY 实施单元';
   if (['REVIEW', 'IMPLEMENTING'].includes(work.globalState) && !work.diffAuditRecord) return '生成当前候选 Diff/Artifact Audit';
   if (work.globalState === 'VALIDATING' && !evidence) return '提供当前批次 Evidence Manifest';

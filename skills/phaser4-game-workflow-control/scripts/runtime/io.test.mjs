@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, normalize } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { captureJsonIdentity, readJson, transactionJournalPathForLedger, WorkflowInputError, writeJson, writeJsonTransaction } from './io.mjs';
+import { captureJsonIdentity, isTransactionLockStale, readJson, sameTransactionLockIdentity, transactionJournalPathForLedger, WorkflowInputError, writeJson, writeJsonTransaction } from './io.mjs';
 
 /** 创建测试专用临时目录，并在用例结束时完整清理。 */
 function temporaryDirectory(t) {
@@ -31,6 +33,31 @@ function writePreparedJournal(root, entries) {
   }));
   writeFileSync(journalPath, `${JSON.stringify({ schema: 'phaser4-json-transaction/1.0', state: 'PREPARED', entries: journalEntries }, null, 2)}\n`, 'utf8');
   return journalPath;
+}
+
+/** 启动独立 Node 进程，使用同一读取时快照竞争双文件事务提交。 */
+function runTransactionWorker(ioModule, workPath, ledgerPath, journalPath, expectedWork, expectedLedger, approvalId) {
+  const script = `
+const { writeJsonTransaction } = await import(${JSON.stringify(pathToFileURL(ioModule).href)});
+const [workPath, ledgerPath, journalPath, expectedWorkText, expectedLedgerText, approvalId] = process.argv.slice(1);
+try {
+  writeJsonTransaction([
+    { path: workPath, value: { approvalRecord: approvalId }, expected: JSON.parse(expectedWorkText) },
+    { path: ledgerPath, value: { approvals: [{ approvalId }] }, expected: JSON.parse(expectedLedgerText) },
+  ], journalPath);
+  process.stdout.write('committed');
+} catch (error) {
+  process.stderr.write(String(error?.message ?? error));
+  process.exitCode = 2;
+}`;
+  return new Promise((resolveResult) => {
+    const child = spawn(process.execPath, ['--input-type=module', '-e', script, workPath, ledgerPath, journalPath, JSON.stringify(expectedWork), JSON.stringify(expectedLedger), approvalId], { encoding: 'utf8' });
+    let stdout = ''; let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += String(chunk); });
+    child.stderr.on('data', (chunk) => { stderr += String(chunk); });
+    child.on('error', (error) => resolveResult({ status: null, stdout, stderr: `${stderr}${error.message}` }));
+    child.on('close', (status, signal) => resolveResult({ status, signal, stdout, stderr }));
+  });
 }
 
 test('writeJson 使用同目录原子替换且不遗留临时文件', (t) => {
@@ -123,4 +150,43 @@ test('事务提交使用读取时身份 CAS，外部变化时拒绝且不留下�
   assert.deepEqual(JSON.parse(readFileSync(workPath, 'utf8')), { approvalRecord: 'EXTERNAL' });
   assert.equal(existsSync(`${journalPath}.lock`), false);
   assert.equal(existsSync(journalPath), false);
+});
+
+test('事务提交：两个独立进程竞争同一 expected 快照时一个成功一个拒绝', async (t) => {
+  const root = temporaryDirectory(t);
+  const workPath = join(root, 'work-item.json');
+  const ledgerPath = join(root, 'ledger.json');
+  const journalPath = join(root, 'transactions', 'approval-WI-RACE.json');
+  writeJson(workPath, { approvalRecord: null });
+  writeJson(ledgerPath, { approvals: [] });
+  const expectedWork = captureJsonIdentity(workPath);
+  const expectedLedger = captureJsonIdentity(ledgerPath);
+  const ioModule = join(import.meta.dirname, 'io.mjs');
+  const [first, second] = await Promise.all([
+    runTransactionWorker(ioModule, workPath, ledgerPath, journalPath, expectedWork, expectedLedger, 'APR-RACE-1'),
+    runTransactionWorker(ioModule, workPath, ledgerPath, journalPath, expectedWork, expectedLedger, 'APR-RACE-2'),
+  ]);
+
+  assert.deepEqual([first.status, second.status].sort((left, right) => left - right), [0, 2]);
+  const work = readJson(workPath, 'Work Item');
+  const ledger = readJson(ledgerPath, 'Approval Ledger');
+  assert.equal(ledger.approvals.length, 1);
+  assert.equal(work.approvalRecord, ledger.approvals[0].approvalId);
+  assert.deepEqual(readdirSync(dirname(journalPath)).filter((name) => name.endsWith('.json') || name.endsWith('.lock')), []);
+});
+
+test('陈旧锁回收保护：token 或文件身份轮换后不得视为同一锁', () => {
+  const original = { journalPath: 'C:/repo/transactions/approval-WI-1.json', token: 'pid-1-token', dev: 1, ino: 2, size: 128, mtimeMs: 100 };
+  assert.equal(sameTransactionLockIdentity(original, { ...original }), true);
+  assert.equal(sameTransactionLockIdentity(original, { ...original, token: 'pid-2-token' }), false);
+  assert.equal(sameTransactionLockIdentity(original, { ...original, ino: 3 }), false);
+  assert.equal(sameTransactionLockIdentity(original, { ...original, journalPath: 'C:/repo/transactions/approval-WI-2.json' }), false);
+});
+
+test('陈旧锁判断使用最终身份：初始旧 age 遇到新鲜轮换身份不可回收', () => {
+  const now = 100_000;
+  const initialIdentity = { mtimeMs: now - 120_000, token: 'pid-1-token' };
+  const rotatedIdentity = { mtimeMs: now - 1_000, token: 'pid-2-token' };
+  assert.equal(isTransactionLockStale(initialIdentity, now), true);
+  assert.equal(isTransactionLockStale(rotatedIdentity, now), false);
 });

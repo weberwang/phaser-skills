@@ -6,8 +6,17 @@
 
 需要 Node.js 22.20 或更高版本：
 
+以下两种方式二选一：
+
+从 GitHub 远程安装：
+
 ```powershell
 npx -y github:weberwang/phaser-skills
+```
+
+在已克隆的仓库中安装到目标项目：
+
+```powershell
 node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 ```
 
@@ -15,12 +24,20 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 
 ## 最短工作流
 
-先准备当前 Work Item，然后只使用三个稳定入口：
+先在目标 Phaser 项目根目录初始化一个 Work Item。下面的 PowerShell 示例会以当前 Git HEAD 作为不可变基线，可直接复制执行：
 
 ```powershell
-node .\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs run --repo . --work-item <work-item> [--input <file> ...]
-node .\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs check --repo . --work-item <work-item> [--implementation-package <package>] [--evidence <manifest>] [--input <file> ...]
-node .\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs status --repo . --work-item <work-item> [--input <file> ...]
+$repo = (Get-Location).Path
+$head = (git rev-parse HEAD).Trim()
+node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs init --repo $repo --work-item-id WI-1 --project-id my-phaser-game --module-id core --domain code --stage-id G0 --baseline-id $head --baseline-version 1 --baseline-hash $head --objective "建立当前功能的 Phaser 工作流记录" --user-text "请建立当前功能的 Phaser 工作流记录并限制在 core 模块" --object "core Phaser 功能" --allowed-path src
+```
+
+初始化会生成 `$repo\.workflow-control\work-items\WI-1.json` 和 `$repo\.workflow-control\approvals\ledger.json`；也可以把同样字段写入 JSON 后通过 `init --record <bootstrap.json>` 传入。然后只使用三个稳定入口：
+
+```powershell
+node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs run --repo . --work-item <work-item> [--input <file> ...]
+node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs check --repo . --work-item <work-item> [--implementation-package <package>] [--evidence <manifest>] [--input <file> ...]
+node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs status --repo . --work-item <work-item> [--input <file> ...]
 ```
 
 `run` 只读取、校验、推导路线，并在无风险时最多推进一个控制面状态；它不运行业务代码、测试、服务、外部动作或发布，也不会自动选择 `RETURN`。`check` 完全只读。三个入口可重复传入 `--input <file>` 绑定显式关键输入，默认输出 `status/stage/changed/blocking/next`，加 `--json` 输出稳定单行 JSON，并在 `metadata.planFingerprint` 返回不含时间戳的确定性计划指纹。

@@ -51,6 +51,20 @@ test('run/check/status 提供稳定紧凑入口', () => {
   assert.deepEqual(Object.keys(JSON.parse(status.stdout)), ['status', 'stage', 'changed', 'blocking', 'next', 'metadata']);
 });
 
+test('CLI 帮助支持顶层、命令级和短选项入口，未知命令仍拒绝', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'phaser-help-'));
+  for (const args of [['--help'], ['-h'], ['help'], ['help', 'run'], ['run', '--help'], ['check', '-h'], ['status', '--help'], ['init', '--help']]) {
+    const result = invoke(repo, args[0], args.slice(1));
+    assert.equal(result.status, 0, `${args.join(' ')}: ${result.stderr}`);
+    assert.match(result.stdout, /用法：/);
+  }
+  assert.match(invoke(repo, 'help', ['run']).stdout, /--work-item/);
+  assert.match(invoke(repo, 'init', ['--help']).stdout, /--baseline-hash/);
+  const unknown = invoke(repo, 'unknown-command', ['--help']);
+  assert.notEqual(unknown.status, 0);
+  assert.match(unknown.stderr, /未知命令/);
+});
+
 /** 验证关键输入文件变化会被 check 指纹感知。 */
 test('check 指纹随关键输入变化而变化', () => {
   const fixture = makeRepo();
@@ -116,4 +130,41 @@ test('run 永不自动选择 RETURN 或执行 A4-A6', () => {
     process.stdout.write = originalWrite;
   }
   assert.deepEqual(transitions, []);
+});
+
+test('A3 nextAction 先完成实施单元，再提示 Diff/Artifact Audit', () => {
+  const work = {
+    stageId: 'G1', globalState: 'IMPLEMENTING', pendingApprovalActionLevel: 'A3',
+    pendingApprovalPresentedId: null, pendingApprovalId: 'PENDING-1', pendingApprovalObject: 'object',
+    pendingApprovalActionType: 'phaser-code-change', pendingApprovalExternalTargets: [], diffAuditRecord: null, implementationPackageRecord: 'package.json',
+  };
+  const deps = {
+    validateWorkItem: (value) => value,
+    readJson: () => work,
+    validateImplementationPackage: () => ({}),
+    loadVisualManifestSnapshot: () => ({ manifest: null, errors: [] }),
+    validateVisualStagePrerequisites: () => ({ required: false, ok: true }),
+    structuredVisualStageFailure: (value) => value,
+    evidenceCheck: () => null,
+    readLedger: () => ({ schemaVersion: '1.0', approvals: [] }),
+    deriveRoute: () => ({ userInputRequired: false, explicitApprovalRequired: false, blockers: [], nextLegalState: null }),
+    effectiveApproval: () => null,
+    computePlanFingerprint: () => `sha256:${'a'.repeat(64)}`,
+    executionStateSummary: () => ({ workflowState: 'IN_PROGRESS' }),
+    loadExecutionState: () => ({ state: {} }),
+    unitIo: () => ({}),
+    assertExecutionWorkflowComplete: () => null,
+    transition: () => undefined,
+  };
+  const commands = createStableCommands(deps);
+  const originalWrite = process.stdout.write;
+  process.stdout.write = () => true;
+  try {
+    assert.equal(commands.status({ 'work-item': 'ignored', repo: '.', json: true }).next, '完成当前 Execution State 的 READY 实施单元');
+    // V2 单元序列完成后可能继续进入 V3 planning，workflowState 仍为 IN_PROGRESS；此时应进入审计提示。
+    deps.executionStateSummary = () => ({ workflowState: 'IN_PROGRESS', unitSequenceState: 'COMPLETE' });
+    assert.equal(commands.status({ 'work-item': 'ignored', repo: '.', json: true }).next, '生成当前候选 Diff/Artifact Audit');
+  } finally {
+    process.stdout.write = originalWrite;
+  }
 });
