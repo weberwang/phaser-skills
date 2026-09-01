@@ -8,6 +8,7 @@
  * 项目文件，也不依赖任何具体合同，保持依赖方向单向且可安全复用。
  */
 import { createHash } from "node:crypto";
+import { schemaEnum } from "./runtime/schema-contract.mjs";
 
 /** 标准 SHA-256 身份格式；只接受小写十六进制，保持文件身份可确定比较。 */
 export const SHA256_PATTERN = /^sha256:[a-f0-9]{64}$/;
@@ -95,14 +96,14 @@ export function normalizeContractPath(value, { secure = true, lowercase = true }
   return normalized && lowercase ? normalized.toLowerCase() : normalized;
 }
 
-/** 生产合同允许的来源词汇表；来源和生产方式分别校验。 */
-export const VISUAL_PRODUCTION_ORIGINS = new Set(["bitmap-decomposition", "independent-production"]);
-/** 视觉生产方式唯一词汇表；合同新增方式必须先修改这里。 */
-export const VISUAL_PRODUCTION_METHODS = new Set(["imagegen", "authored-raster", "authored-svg", "phaser-graphics", "runtime-program", "reuse"]);
-/** 视觉交付类型唯一词汇表；实际消费形态必须与生产方式绑定。 */
-export const VISUAL_DELIVERY_KINDS = new Set(["raster-image", "vector-image", "runtime-drawing", "runtime-program", "existing-asset"]);
-/** 资源替换策略唯一词汇表；默认不允许静默替换。 */
-export const VISUAL_SUBSTITUTION_POLICIES = new Set(["forbid", "user-change-request-only"]);
+/**
+ * 从 Implementation Package Schema 读取生产合同词汇，避免运行时维护第二份 enum。
+ * 视觉清单和实施包共享这些字段时，Schema 是唯一权威，新增词汇只需更新合同。
+ */
+export const VISUAL_PRODUCTION_ORIGINS = new Set(schemaEnum("implementation-package.schema.json", ["$defs", "visualProductionUnit", "properties", "production_origin"]));
+export const VISUAL_PRODUCTION_METHODS = new Set(schemaEnum("implementation-package.schema.json", ["$defs", "visualProductionUnit", "properties", "production_method"]));
+export const VISUAL_DELIVERY_KINDS = new Set(schemaEnum("implementation-package.schema.json", ["$defs", "visualProductionUnit", "properties", "delivery_kind"]));
+export const VISUAL_SUBSTITUTION_POLICIES = new Set(schemaEnum("implementation-package.schema.json", ["$defs", "visualProductionUnit", "properties", "substitution_policy"]));
 /** 固定视觉图片方法由生产方式词汇表派生，避免各门禁重新声明文字。 */
 export const VISUAL_FIXED_IMAGE_METHODS = new Set(["imagegen", "authored-raster", "reuse"]);
 /** 程序视觉方法由生产方式词汇表派生，专供非图片逻辑门禁使用。 */

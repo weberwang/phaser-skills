@@ -1,20 +1,20 @@
-import { closeSync, mkdirSync, openSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, openSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { assertFormalExecutionAfterV4, assertHighFidelityPrerequisite, assertHighFidelityPrerequisites, isFoundationOnlyPackage } from './high-fidelity-prerequisite.mjs';
+import { writeJson } from './runtime/io.mjs';
+import { schemaEnum, schemaFields, schemaNode } from './runtime/schema-contract.mjs';
 
-/** 实施单元结果允许的顶层字段。 */
-const RESULT_FIELDS = ['resultId', 'workItemId', 'packageId', 'unitId', 'baselineHash', 'codeFingerprint', 'diffFingerprint', 'completedAt', 'commands', 'files', 'fileHashes', 'verdict'];
-
-/** 执行状态记录自身的严格字段；状态是放行链的一部分，不是可选的人工作业备注。 */
-const EXECUTION_STATE_FIELDS = ['schemaVersion', 'stateId', 'workItemId', 'packageId', 'baselineVersion', 'baselineHash', 'stageId', 'visualStage', 'visualStageState', 'executionUnitIds', 'executionPlanFingerprint', 'units', 'unitSequenceState', 'workflowState', 'nextTask', 'updatedAt', 'lastTransition'];
-const EXECUTION_UNIT_STATE_FIELDS = ['unitId', 'order', 'parallelMode', 'parallelGroup', 'state', 'resultId', 'resultPath', 'resultFingerprint', 'startedAt', 'completedAt'];
-const NEXT_TASK_FIELDS = ['kind', 'taskId', 'state', 'unitIds', 'parallelGroup', 'gate', 'gateStatus', 'reason'];
-const LAST_TRANSITION_FIELDS = ['type', 'unitId', 'resultId'];
-const EXECUTION_STATE_SCHEMA = 'phaser4-execution-state/1.0';
-const UNIT_STATES = new Set(['PENDING', 'IN_PROGRESS', 'COMPLETE']);
-const WORKFLOW_STATES = new Set(['IN_PROGRESS', 'BLOCKED', 'COMPLETE']);
-const NEXT_TASK_KINDS = new Set(['SERIAL_UNIT', 'PARALLEL_GROUP', 'V3_PRODUCTION_PLANNING', 'WORKFLOW_COMPLETE']);
-const NEXT_TASK_STATES = new Set(['IN_PROGRESS', 'BLOCKED', 'COMPLETE']);
-const NEXT_TASK_GATE_STATUSES = new Set(['PASS', 'BLOCKED', 'NOT_REQUIRED']);
+const RESULT_FIELDS = schemaFields('execution-unit-result.schema.json');
+const EXECUTION_STATE_FIELDS = schemaFields('execution-state.schema.json');
+const EXECUTION_UNIT_STATE_FIELDS = schemaFields('execution-state.schema.json', ['$defs', 'unitState']);
+const NEXT_TASK_FIELDS = schemaFields('execution-state.schema.json', ['$defs', 'nextTask']);
+const LAST_TRANSITION_FIELDS = schemaFields('execution-state.schema.json', ['$defs', 'lastTransition']);
+const EXECUTION_STATE_SCHEMA = schemaNode('execution-state.schema.json', ['properties', 'schemaVersion']).const;
+const UNIT_STATES = new Set(schemaEnum('execution-state.schema.json', ['$defs', 'unitState', 'properties', 'state']));
+const WORKFLOW_STATES = new Set(schemaEnum('execution-state.schema.json', ['properties', 'workflowState']));
+const NEXT_TASK_KINDS = new Set(schemaEnum('execution-state.schema.json', ['$defs', 'nextTask', 'properties', 'kind']));
+const NEXT_TASK_STATES = new Set(schemaEnum('execution-state.schema.json', ['$defs', 'nextTask', 'properties', 'state']));
+const NEXT_TASK_GATE_STATUSES = new Set(schemaEnum('execution-state.schema.json', ['$defs', 'nextTask', 'properties', 'gateStatus']));
+const LAST_TRANSITION_TYPES = new Set(schemaEnum('execution-state.schema.json', ['$defs', 'lastTransition', 'properties', 'type']));
 const EXECUTION_STATE_LOCK_TIMEOUT_MS = 15_000;
 const EXECUTION_STATE_LOCK_STALE_MS = 30_000;
 const HELD_EXECUTION_STATE_LOCKS = new Set();
@@ -181,22 +181,6 @@ function acquireExecutionStateLock(statePath) {
   throw new Error(`Execution State 锁获取超时：${lockPath}`);
 }
 
-/**
- * 原子替换状态文件；临时文件始终位于状态文件同目录，避免跨卷 rename 失去原子性。
- */
-function writeExecutionStateAtomically(statePath, state) {
-  const target = String(statePath);
-  mkdirSync(target.replace(/[\\/][^\\/]*$/, ''), { recursive: true });
-  const temporary = `${target}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  try {
-    writeFileSync(temporary, `${JSON.stringify(state, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
-    renameSync(temporary, target);
-  } catch (error) {
-    try { unlinkSync(temporary); } catch (cleanupError) { if (cleanupError.code !== 'ENOENT') throw cleanupError; }
-    throw new Error(`Execution State 原子写入失败：${error.message}`);
-  }
-}
-
 /** 校验 Work Item 可选的 V2→V3 合同声明；内容证据仍在推进时复算。 */
 export function validateV2ToV3ContractShape(contract) {
   if (contract === undefined) return;
@@ -342,7 +326,7 @@ export function validateExecutionState(state, statePath, work, pkg, repo, io) {
   if (state.workflowState !== expectedWorkflowState || !WORKFLOW_STATES.has(state.workflowState)) throw new Error('Execution State.workflowState 与下一任务不一致');
   const transitionMissing = LAST_TRANSITION_FIELDS.filter((field) => state.lastTransition?.[field] === undefined);
   const transitionExtra = state.lastTransition && typeof state.lastTransition === 'object' ? Object.keys(state.lastTransition).filter((field) => !LAST_TRANSITION_FIELDS.includes(field)) : [];
-  if (transitionMissing.length || transitionExtra.length || !['INITIALIZE', 'UNIT_COMPLETE', 'WORKFLOW_COMPLETE', 'V2_TO_V3_CONTRACT_REFRESH'].includes(state.lastTransition?.type)) throw new Error('Execution State.lastTransition 无效');
+  if (transitionMissing.length || transitionExtra.length || !LAST_TRANSITION_TYPES.has(state.lastTransition?.type)) throw new Error('Execution State.lastTransition 无效');
   return state;
 }
 
@@ -360,7 +344,7 @@ export function initializeExecutionState(work, pkg, repo, io) {
   const statePath = io.resolve(repo, executionStatePath(work));
   if (io.existsSync(statePath)) return loadExecutionState(work, pkg, repo, io);
   const state = createExecutionState(work, pkg, io);
-  writeExecutionStateAtomically(statePath, state);
+  writeJson(statePath, state);
   return { state: validateExecutionState(state, statePath, work, pkg, repo, io), statePath };
 }
 
@@ -383,7 +367,7 @@ export function refreshV2ToV3Contract(work, pkg, repo, io) {
     if (!v2ToV3ContractPassed(work, repo, io)) throw new Error('V2→V3 合同证据缺失、路径越出 evidenceRoot 或 SHA-256 不匹配，仍保持 BLOCKED');
     const state = { ...rawState, nextTask: deriveNextTask(rawState.units, work, repo, io, pkg), workflowState: 'IN_PROGRESS', updatedAt: new Date().toISOString(), lastTransition: { type: 'V2_TO_V3_CONTRACT_REFRESH', unitId: null, resultId: null } };
     validateExecutionState(state, statePath, work, pkg, repo, io);
-    writeExecutionStateAtomically(statePath, state);
+    writeJson(statePath, state);
     return { state, statePath };
   } finally {
     releaseLock();
@@ -427,7 +411,7 @@ export function completeExecutionUnit(work, pkg, unit, result, resultPath, repo,
     state.updatedAt = new Date().toISOString();
     state.lastTransition = { type: state.workflowState === 'COMPLETE' ? 'WORKFLOW_COMPLETE' : 'UNIT_COMPLETE', unitId: unit.unitId, resultId: result.resultId };
     validateExecutionState(state, loaded.statePath, work, pkg, repo, io);
-    writeExecutionStateAtomically(loaded.statePath, state);
+    writeJson(loaded.statePath, state);
     return { state, statePath: loaded.statePath };
   } finally {
     releaseLock();
