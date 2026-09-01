@@ -38,6 +38,7 @@ test('run/check/status 提供稳定紧凑入口', () => {
   const advancedValue = JSON.parse(advanced.stdout);
   assert.deepEqual(advancedValue.changed, ['INTAKE → BASELINE']);
   assert.match(advancedValue.metadata.planFingerprint, /^sha256:[a-f0-9]{64}$/);
+  assert.deepEqual(advancedValue.metadata.workflowView, { phaseId: 'global-baseline', phaseLabel: '全局基线', sceneStepId: null, sceneStepLabel: null });
   assert.equal(JSON.parse(readFileSync(workPath, 'utf8')).globalState, 'BASELINE');
   assert.equal(existsSync(join(outsideCwd, '.workflow-control')), false);
   const before = readFileSync(workPath);
@@ -132,7 +133,7 @@ test('run 永不自动选择 RETURN 或执行 A4-A6', () => {
   assert.deepEqual(transitions, []);
 });
 
-test('A3 nextAction 先完成实施单元，再提示 Diff/Artifact Audit', () => {
+test('A3 nextAction 先完成待执行单元，再提示候选变更审计', () => {
   const work = {
     stageId: 'G1', globalState: 'IMPLEMENTING', pendingApprovalActionLevel: 'A3',
     pendingApprovalPresentedId: null, pendingApprovalId: 'PENDING-1', pendingApprovalObject: 'object',
@@ -160,10 +161,10 @@ test('A3 nextAction 先完成实施单元，再提示 Diff/Artifact Audit', () =
   const originalWrite = process.stdout.write;
   process.stdout.write = () => true;
   try {
-    assert.equal(commands.status({ 'work-item': 'ignored', repo: '.', json: true }).next, '完成当前 Execution State 的 READY 实施单元');
+    assert.equal(commands.status({ 'work-item': 'ignored', repo: '.', json: true }).next, '完成当前待执行单元');
     // V2 单元序列完成后可能继续进入 V3 planning，workflowState 仍为 IN_PROGRESS；此时应进入审计提示。
     deps.executionStateSummary = () => ({ workflowState: 'IN_PROGRESS', unitSequenceState: 'COMPLETE' });
-    assert.equal(commands.status({ 'work-item': 'ignored', repo: '.', json: true }).next, '生成当前候选 Diff/Artifact Audit');
+    assert.equal(commands.status({ 'work-item': 'ignored', repo: '.', json: true }).next, '记录当前候选变更审计');
   } finally {
     process.stdout.write = originalWrite;
   }

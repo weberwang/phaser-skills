@@ -24,6 +24,14 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 
 ## 最短工作流
 
+先按[简化工作流视图](skills/phaser4-game-workflow-control/references/simplified-workflow.md)理解当前任务：
+
+```text
+需求与范围 → 全局基线 → 基础工程 → 逐场景生产 → 全局集成验证 → 发布
+```
+
+单场景视觉任务在“逐场景生产”内按“场景定义 → 方向确认 → 生产就绪 → 正式实现与运行验收”推进。该视图只简化展示；全局状态、G0-G3、V0-V5、A0-A6、F0-F4 和证据硬门继续由控制面维护。
+
 先在目标 Phaser 项目根目录初始化一个 Work Item。下面的 PowerShell 示例会以当前 Git HEAD 作为不可变基线，可直接复制执行：
 
 ```powershell
@@ -40,7 +48,7 @@ node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs
 node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs status --repo . --work-item <work-item> [--input <file> ...]
 ```
 
-`run` 只读取、校验、推导路线，并在无风险时最多推进一个控制面状态；它不运行业务代码、测试、服务、外部动作或发布，也不会自动选择 `RETURN`。`check` 完全只读。三个入口可重复传入 `--input <file>` 绑定显式关键输入，默认输出 `status/stage/changed/blocking/next`，加 `--json` 输出稳定单行 JSON，并在 `metadata.planFingerprint` 返回不含时间戳的确定性计划指纹。
+`run` 只读取、校验、推导路线，并在无风险时最多推进一个控制面状态；它不运行业务代码、测试、服务、外部动作或发布，也不会自动选择 `RETURN`。`check` 完全只读。三个入口可重复传入 `--input <file>` 绑定显式关键输入，默认文本优先显示六阶段/四步视图；JSON 仍输出稳定的 `status/stage/changed/blocking/next/metadata`，并在 `metadata.workflowView` 提供展示映射、`metadata.planFingerprint` 返回不含时间戳的确定性计划指纹。
 
 ## 控制面边界
 

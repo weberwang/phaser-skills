@@ -9,9 +9,11 @@ description: Phaser 4 游戏领域编排角色；在全局控制面已建立 Wor
 
 ## 最短流程
 
+用户先按[`simplified-workflow.md`](../phaser4-game-workflow-control/references/simplified-workflow.md)理解六阶段项目视图：需求与范围 → 全局基线 → 基础工程 → 逐场景生产 → 全局集成验证 → 发布；单场景按场景定义 → 方向确认 → 生产就绪 → 正式实现与运行验收理解。该视图不改变 G0-G3、V0-V5、A0-A6、F0-F4 或证据硬门。
+
 1. 读取 Work Item、任务授权、当前基线和适用状态门；需要字段时按需读取 [`quality-gates.md`](references/quality-gates.md)、[`module-decomposition.md`](references/module-decomposition.md)、[`game-implementation.md`](references/game-implementation.md)、[`delivery-artifacts.md`](references/delivery-artifacts.md) 等 reference。
 2. 先提交最小领域提议和验收边界，完成审查后由控制面运行 `check`；已有入口、调用链、授权范围和风险事实足够时停止探索。
-3. A3 实施前冻结绑定任务授权、基线、文件所有权、执行单元、验收命令和停止条件的 Implementation Package；实施后提交 Diff Audit 与 Evidence Manifest。
+3. A3 实施前冻结绑定任务授权、基线、文件所有权、执行单元、验收命令和停止条件的实施包；实施后记录候选变更审计并提交当前候选验证证据。
 4. 领域交付只在 Work Item 授权路径内进行，发现范围或硬门变化时提交 Change Request；最终回到控制面运行 `run`/`check`，由控制面推进状态。
 
 ## 交付边界

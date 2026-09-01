@@ -1,6 +1,6 @@
 const DEFAULT_DISPOSITION = 'repair';
 
-/** 按固定顺序创建控制面五字段结果，避免不同命令输出漂移。 */
+/** 按固定顺序创建控制面稳定结果字段，避免不同命令输出漂移。 */
 export function resultRecord({ status = 'READY', stage = 'unknown', changed = [], blocking = [], next = '', metadata = {} } = {}) {
   const record = {
     status: String(status),
@@ -42,9 +42,15 @@ export function writeResult(record, options = {}) {
   process.stdout.write(renderResult(record));
 }
 
-/** 将五字段结果压缩为不超过约二十行的中文摘要。 */
+/** 将稳定结果压缩为不超过约二十行的中文摘要。 */
 export function renderResult(record) {
-  const lines = [`状态：${record.status}`, `阶段：${record.stage}`];
+  const workflowView = record.metadata?.workflowView;
+  const phaseText = workflowView?.phaseLabel
+    ? workflowView.sceneStepLabel ? `${workflowView.phaseLabel} · ${workflowView.sceneStepLabel}` : workflowView.phaseLabel
+    : record.stage;
+  const lines = [`状态：${record.status}`, `阶段：${phaseText}`];
+  // unknown 不能伪装成正常阶段；默认文本补充内部标识，方便继续诊断。
+  if (workflowView?.phaseId === 'unknown' && record.stage && record.stage !== 'unknown') lines.push(`内部阶段：${record.stage}`);
   if (record.changed.length) lines.push(`变化：${record.changed.join('；')}`);
   if (record.blocking.length) lines.push(`阻断：${record.blocking[0]}`);
   const disposition = record.metadata?.disposition;

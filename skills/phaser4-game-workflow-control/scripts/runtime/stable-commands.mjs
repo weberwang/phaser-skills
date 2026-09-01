@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { list } from './io.mjs';
 import { resultRecord, writeResult } from './output.mjs';
 import { createValidationContext } from './validation-context.mjs';
+import { projectWorkflowView, workflowViewMetadata } from './workflow-view.mjs';
 
 /** 创建 run/check/status 三个代理入口，所有依赖通过注入复用既有硬门。 */
 export function createStableCommands(deps) {
@@ -74,7 +75,7 @@ function inspectWorkflow(rawArgs, command, deps, contextOverride = null) {
     }
   }
   if (!packagePath && work.pendingApprovalActionLevel === 'A3' && ['REVIEW', 'IMPLEMENTING', 'VALIDATING', 'PASSED', 'INTEGRATING', 'COMPLETE'].includes(work.globalState)) {
-    blockers.push({ message: '缺少当前 Implementation Package；A3 不能绕过实施包进入或完成实施', next: '补齐并绑定 Implementation Package 后再次运行 check', disposition: 'repair', errorCode: 'IMPLEMENTATION_PACKAGE_MISSING' });
+    blockers.push({ message: '缺少当前 Implementation Package；A3 不能绕过实施包进入或完成实施', next: '冻结当前阶段实施包后再次运行 check', disposition: 'repair', errorCode: 'IMPLEMENTATION_PACKAGE_MISSING' });
   }
 
   let executionState = null;
@@ -145,7 +146,12 @@ function emitInspection(inspection, args, changed = []) {
   const state = inspection.work.globalState;
   const status = state === 'COMPLETE' && !first ? 'COMPLETE' : first ? 'BLOCKED' : 'READY';
   const next = first?.next ?? nextAction(inspection);
-  const metadata = { planFingerprint: inspection.planFingerprint };
+  const workflowView = projectWorkflowView({
+    workItem: inspection.work,
+    implementationPackage: inspection.implementationPackage,
+    executionState: inspection.executionState,
+  });
+  const metadata = { planFingerprint: inspection.planFingerprint, workflowView: workflowViewMetadata(workflowView) };
   if (first?.disposition) metadata.disposition = first.disposition;
   if (first?.errorCode) metadata.errorCode = first.errorCode;
   const record = { ...inspection, output: resultRecord({ status, stage: `${inspection.work.stageId}/${state}`, changed, blocking: first ? [first.message] : [], next, metadata }) };
@@ -157,18 +163,18 @@ function emitInspection(inspection, args, changed = []) {
 function nextAction(inspection) {
   const { work, route, implementationPackage, executionState, evidence } = inspection;
   if (work.globalState === 'RETURN') return '按 returnRecord 的最小受影响范围显式迁移到前序状态';
-  if (route?.userInputRequired) return '澄清用户选择，更新 taskAuthorization 或权威工件并清除未决标志';
-  if (route?.explicitApprovalRequired) return work.pendingApprovalPresentedId === work.pendingApprovalId ? '等待用户确认当前 pending' : '先展示当前 pending 的 handoff';
-  if (work.globalState === 'REVIEW' && work.pendingApprovalActionLevel === 'A3' && !implementationPackage) return '补齐并绑定 Implementation Package 后再次运行 run';
-  // A3 的实施单元是进入 Diff Audit 前置的真实执行步骤，未完成时不能把审计提示置于实施之前。
+  if (route?.userInputRequired) return '澄清用户选择并更新任务授权或权威工件';
+  if (route?.explicitApprovalRequired) return work.pendingApprovalPresentedId === work.pendingApprovalId ? '等待确认当前待处理事项' : '先展示当前待处理事项';
+  if (work.globalState === 'REVIEW' && work.pendingApprovalActionLevel === 'A3' && !implementationPackage) return '冻结当前阶段实施包后再运行 run';
+  // A3 的实施单元是进入候选审计前置的真实执行步骤，未完成时不能提前提示审计。
   const executionComplete = executionState?.unitSequenceState === 'COMPLETE';
-  if (work.globalState === 'IMPLEMENTING' && work.pendingApprovalActionLevel === 'A3' && !executionComplete) return '完成当前 Execution State 的 READY 实施单元';
-  if (['REVIEW', 'IMPLEMENTING'].includes(work.globalState) && !work.diffAuditRecord) return '生成当前候选 Diff/Artifact Audit';
-  if (work.globalState === 'VALIDATING' && !evidence) return '提供当前批次 Evidence Manifest';
-  if (work.globalState === 'PASSED' && ['A1', 'A2', 'A3'].includes(work.pendingApprovalActionLevel) && !evidence) return '提供当前 Evidence Manifest 完成闭环';
-  if (work.globalState === 'PASSED') return '准备新的 A4/F4 集成审批点';
-  if (inspection.route?.nextLegalState && inspection.route.nextLegalState !== 'RETURN') return '运行 run 推进一个安全控制面状态';
-  return '保持当前状态，等待满足下一门条件';
+  if (work.globalState === 'IMPLEMENTING' && work.pendingApprovalActionLevel === 'A3' && !executionComplete) return '完成当前待执行单元';
+  if (['REVIEW', 'IMPLEMENTING'].includes(work.globalState) && !work.diffAuditRecord) return '记录当前候选变更审计';
+  if (work.globalState === 'VALIDATING' && !evidence) return '提交当前候选验证证据';
+  if (work.globalState === 'PASSED' && ['A1', 'A2', 'A3'].includes(work.pendingApprovalActionLevel) && !evidence) return '提交当前候选验证证据完成闭环';
+  if (work.globalState === 'PASSED') return '准备正式集成审批';
+  if (inspection.route?.nextLegalState && inspection.route.nextLegalState !== 'RETURN') return '推进一个安全状态步骤';
+  return '等待当前阶段门条件满足';
 }
 
 /** 只允许无审批、无外部动作、非 RETURN 的单步状态迁移。 */

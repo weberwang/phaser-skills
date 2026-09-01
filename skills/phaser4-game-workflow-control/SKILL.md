@@ -9,10 +9,12 @@ description: Phaser 4 游戏仓库的唯一全局工作流控制面；按任务�
 
 ## 最短主闭环
 
+用户日常按 [`simplified-workflow.md`](references/simplified-workflow.md) 的六阶段视图理解进度：需求与范围 → 全局基线 → 基础工程 → 逐场景生产 → 全局集成验证 → 发布。单场景视觉任务在逐场景生产内显示为：场景定义 → 方向确认 → 生产就绪 → 正式实现与运行验收。
+
 1. 读取当前 Work Item，冻结用户原文、目标、范围、基线和验收边界。
-2. 按当前场景读取必要 reference，运行 `run` 或 `check`；缺少事实时只提出一个精确的用户决定。
-3. A3 实施前冻结绑定任务授权的 Implementation Package；实施单元、Execution State、视觉证据和文件所有权必须可复核。
-4. 实施后按授权运行 diff-audit，再运行获授权的定向验证并生成 Evidence Manifest。
+2. 按当前阶段读取必要 reference，运行 `run` 或 `check`；缺少事实时只提出一个精确的用户决定。
+3. A3 实施前冻结绑定任务授权的实施包；实施单元、执行状态、视觉证据和文件所有权必须可复核。
+4. 实施后按授权记录候选变更审计，再运行获授权的定向验证并提交当前候选验证证据。
 5. 失败只按证据选择 `repair`、`revalidate` 或必要的 `return`；不得自动回滚共享工作区、扩大范围或重复已确认事实。
 
 ## 渐进式读取
@@ -39,7 +41,7 @@ node <skill-dir>\scripts\workflow-control.mjs check --repo . --work-item <work-i
 node <skill-dir>\scripts\workflow-control.mjs status --repo . --work-item <work-item> [--input <file> ...]
 ```
 
-三个入口可重复传入 `--input <file>` 绑定显式关键输入；默认输出 `status/stage/changed/blocking/next` 五字段，`--json` 输出稳定单行 JSON，并在 `metadata.planFingerprint` 提供绑定基线、授权、状态、实施包和关键输入文件哈希的确定性计划指纹。重复 `check` 必须只读且结果一致。
+三个入口可重复传入 `--input <file>` 绑定显式关键输入；默认文本优先显示六阶段/四步视图，`--json` 仍输出稳定的 `status/stage/changed/blocking/next/metadata` 顶层协议，并在 `metadata.workflowView` 提供展示映射、`metadata.planFingerprint` 提供绑定基线、授权、状态、实施包和关键输入文件哈希的确定性计划指纹。重复 `check` 必须只读且结果一致。
 
 ## 高级诊断
 
