@@ -52,6 +52,26 @@ V2 必须产出关键状态和动态可玩样片，并完成 V2a、V2b 机器检
 
 三方绑定顺序固定为“整屏构图 → 布局节点与元素/状态同步拆解 → coverage/布局合同/placement 三方绑定 → 按布局合同装配 → V5 布局与视觉双验收”。`target_bounds` 是参考图测量事实，不是运行时硬编码；布局合同负责运行时计算和响应式变换；runtime measurement 只是候选证据，不能回写或替代参考事实。技术 proposal 的 `technical_analysis.regions[].layout_node_ids` 与 `placements[].layout_node_id`、PNG 区域元数据的 `layout_node_ids` 与 `placement_layout_node_ids`，以及 confirmation 的 `region_definition_sha256` 都必须自然覆盖布局节点及 placement 字段，并同时绑定 target SHA、scene/state、layout contract version；任一身份或布局字段漂移都使旧确认失效。`visual-assets.json` 仍是视觉机器权威，布局合同保持布局领域权威，只通过 SHA/ID 关联，不新增第二套清单或状态机。
 
+### 全元素视觉路线分析（仅 effect-image）
+
+效果图还原不是“程序生成优先”，而是“美术事实优先、程序装配与行为负责”。每个 `coverage_regions[]` 在拆分阶段都必须写唯一的 `visual_route_analysis`：`element_type`、`observed_features`、`distinctive_visual`、`visual_complexity`、`asset_first_decision`、`selected_route`、`route_reason`、`dynamic_requirements`、`native_suitability`、`reuse_suitability`、`final_owner`、`implementation_plan_mode`、`production_method`、`delivery_kind` 和 `is_full_screen_capture`。验证器在 V1/V2/V3+ 都检查该分析，并将 owner、实施计划、生产方式、交付类型与 coverage/实施包/视觉清单逐项回对。
+
+路线判断固定为：
+
+- `image-asset` 是按钮皮肤、panel/background frame、特色图标、背景、装饰、插画、角色、道具、环境等独特视觉的默认路线。存在材质纹理、非规则轮廓、定制描边、阴影/高光、装饰纹样、品牌造型、像素美术或绘制细节时，必须使用 `fixed-production-visual` 的 `imagegen`、`authored-raster` 或精确 `reuse`。Sprite/NineSlice 使用纹理时仍是图片资产路线，不称为程序生成。
+- `phaser-native` 仅用于纯色、基础几何、规则线/渐变、遮罩、进度填充、布局/交互结构、动态数据和真正的粒子/Shader/程序特效；必须列出允许原语、资格证据和动态要求。独特视觉若申请原生例外，还必须绑定可审计的等价性证据以及预声明容差或精确批准例外，不能只写一句理由。
+- `composite` 表示同一区域仍含固定外观和运行时行为，或需要继续原子拆分；至少登记 `appearance` 和 `behavior` 两个子部分，前者走 fixed 图片资产、后者走 runtime。若这两部分无法在同一 coverage 中分别审计，应继续拆分，不能让一个 runtime owner 覆盖全部视觉。
+
+`reuse` 只能使用精确资产身份，或已有 `asset-reuse-snapshot/1.0` 的 target/candidate 保真比较及视觉兼容证据；“语义相同”“同类”“看起来相似”均不是复用资格。`is_full_screen_capture` 必须为 `false`，整屏截图只能作为比较证据，不能作为可交互 Scene。文本节点仍由独立 `text_decomposition` 合同决定，路线分析只通过 `text_decomposition_ref` 委托；动态或本地化文字不得偷换成图片文字。上述硬门只对 `effect_image_reconstruction.applicability=effect-image` 生效，普通非效果图 UI 的开发路线不受影响。
+
+### 文本独立拆解与实现路线
+
+效果图拆分时必须同步分析每个可见文本，而不能把文字当作面板或按钮的附属像素。`scene_reconstruction_contract.text_decomposition` 必须声明 `applicability=has-text` 或 `not-applicable`；后者必须写 `reason`，前者必须提供非空 `text_nodes`。每个 `text_node` 使用稳定语义 `text_node_id`，绑定现有 `coverage_regions.region_id` 和 `layout_decomposition.layout_nodes.layout_node_id`，并冻结 `content`/`content_source`、`semantic_role`、动态/本地化标记、目标 bounds、字体身份与置信状态、字号/字重/样式、行高、字距、对齐、baseline、fill/stroke/shadow、wrap/预期行数、planned test ID。`text_node_id` 不得复用运行时显示文案；目标 bounds 必须逐字段等于所绑定 layout node 的 bounds。
+
+文本合同贯穿 V1-V5，但职责分阶段完成：V1/V2 冻结可观察字形事实和参考证据；V3 对每个节点明确选择 `phaser-text`、`bitmap-text`、`image-text` 或 `hybrid`，并登记 `route_reason`、所有权和带 SHA-256 的所需资源；V4 在正式 Scene 中验证实际 renderer、资源消费、字体加载/回退、actual bounds、glyph bounds、baseline、证据和 `actual_test_id`；V5 再逐节点比较 target/candidate，证明差异在预声明容差内或绑定精确批准例外。动态或本地化文本禁止 `image-text`；固定品牌字标可用图片，但必须保留可访问语义。原字体无法识别时写 `unresolved` 与 `observable_facts`，不得猜填字体名，并在 V3 记录明确替代字体或位图方案。
+
+效果图中的物理像素字号不能直接当作 Phaser `fontSize`：合同必须区分 `reference_pixel_bounds`、逻辑坐标 `target_bounds`、`font_size_unit=logical-px`、参考 DPR、glyph bounds 和 baseline。DPR 变化、字体 fallback、字形度量或断行变化都属于文本证据差异，不能仅凭整体区域 bounds 通过。
+
 效果图拆解时必须显式分析每个元素的父容器和父子相对关系：先确定 `parent_layout_node_id`（只能是现有布局节点或 `viewport`/`safe-area`），再冻结 `parent_target_bounds`，测量 child 到父内容框四边的 `relative_position.left/right/top/bottom`。`reference_id` 必须与父 ID 相等，子 bounds 必须完全位于父 bounds 内，父子图不得循环；`safe-area` 首次测量作为同一场景唯一根 bounds。水平取较近的 left/right，垂直取较近的 top/bottom，相等时确定性选择 left/top；`nearest_edge_docking`、`offset`、`self_anchor`、`reference_anchor` 必须由这些测量推导，禁止凭感觉补坐标。相对距离允许的浮点误差最多 `1e-6`，父子几何字段同时参与布局合同身份 SHA。
 
 全局静态 `visual_baseline` 冻结是 foundation-only 基础实施的前置；基础实施完成后，才在进入场景 V1/V2 前冻结全部授权 gameplay/supporting 场景的 scene master，以及所有必需瞬态显示层状态的宿主场景上下文效果图。集合按 scene/state 分项冻结，不是一张合并图。场景冻结门保留 V0-V2 方向与唯一真人视觉审批，并登记完整 coverage/layout/fidelity obligations；effect-image 仍完整执行 V1→V5，V3-V5 在对应场景阶段生产、组合和运行验收。通过后，`executionUnits` 的权威顺序为 `SHARED` 最小骨架 → `MODULE` → 按场景组织的 `SCENE`+紧邻 `DISPLAY_LAYER` → `INTEGRATION`/联合验收；不新增视觉冻结 `unitType`。布局与视觉资源拆解、显示层装配只能作为对应宿主场景内部职责，不能在所有场景之后另设显示层阶段。`DISPLAY_LAYER` 必须绑定 `displayLayerId` 与 `hostSceneId`，不能填写 `sceneId`。V4 组合预验收必须同时使用正式资源、正式布局和宿主场景同屏组合；V5 必须满足 coverage=1、零孤立节点、逐节点 target/candidate 几何差异与证据、整屏 fidelity，以及显示层打开→交互→关闭→底层状态/焦点恢复轨迹，任一项缺失都不能通过。

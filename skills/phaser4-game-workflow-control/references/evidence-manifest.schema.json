@@ -44,6 +44,8 @@
     {"if": {"required": ["currentStage"], "properties": {"currentStage": {"enum": ["V4", "V5"]}}}, "then": {"properties": {"scene_reconstruction_contract": {"required": ["combination_preacceptance"]}}}},
     {"if": {"required": ["current_stage"], "properties": {"current_stage": {"enum": ["V4", "V5"]}}}, "then": {"required": ["production_contract_audit"]}},
     {"if": {"required": ["currentStage"], "properties": {"currentStage": {"enum": ["V4", "V5"]}}}, "then": {"required": ["production_contract_audit"]}},
+    {"if": {"required": ["current_stage"], "properties": {"current_stage": {"enum": ["V4", "V5"]}}}, "then": {"properties": {"scene_reconstruction_contract": {"properties": {"text_decomposition": {"properties": {"text_nodes": {"items": {"required": ["runtime_verification"]}}}}}}}}},
+    {"if": {"required": ["currentStage"], "properties": {"currentStage": {"enum": ["V4", "V5"]}}}, "then": {"properties": {"scene_reconstruction_contract": {"properties": {"text_decomposition": {"properties": {"text_nodes": {"items": {"required": ["runtime_verification"]}}}}}}}}},
     {"if":{"required":["scene_reconstruction_contract"]},"then":{"properties":{"gateResults":{"properties":{"F2":{"required":["validationMode","status","baselineHash","diffFingerprint"],"properties":{"validationMode":{"const":"MACHINE"}},"not":{"anyOf":[{"required":["reviewer"]},{"required":["reviewer_type"]},{"required":["reviewer_id"]},{"required":["review_id"]},{"required":["reviewed_at"]},{"required":["human_review"]},{"required":["f2_review"]},{"required":["f2_reviews"]},{"required":["visual_fidelity_review"]},{"required":["production_contract_review"]},{"required":["component_reviews"]}]}}}}}}}
   ],
   "$defs": {
@@ -125,11 +127,131 @@
       },
       "not": {"anyOf": [{"required": ["reviewer"]}, {"required": ["reviewer_type"]}, {"required": ["reviewerType"]}, {"required": ["reviewer_id"]}, {"required": ["reviewerId"]}, {"required": ["review_id"]}, {"required": ["reviewId"]}, {"required": ["reviewed_at"]}, {"required": ["reviewedAt"]}, {"required": ["human_review"]}, {"required": ["humanReview"]}, {"required": ["f2_review"]}, {"required": ["f2_reviews"]}, {"required": ["f2Review"]}, {"required": ["f2Reviews"]}, {"required": ["visual_fidelity_review"]}, {"required": ["visualFidelityReview"]}, {"required": ["production_contract_review"]}, {"required": ["productionContractReview"]}, {"required": ["component_reviews"]}, {"required": ["componentReviews"]}]}
     },
+    "sceneTextDecomposition": {
+      "type": "object",
+      "description": "效果图中的独立文本拆解；has-text 必须逐节点冻结字体/字形事实，not-applicable 必须解释没有可见文本。",
+      "required": ["applicability"],
+      "properties": {
+        "applicability": {"enum": ["has-text", "not-applicable"]},
+        "reason": {"type": "string", "minLength": 1},
+        "text_nodes": {"type": "array", "items": {"$ref": "#/$defs/sceneTextNode"}, "uniqueItems": true}
+      },
+      "allOf": [
+        {"if": {"properties": {"applicability": {"const": "has-text"}}}, "then": {"required": ["text_nodes"], "properties": {"text_nodes": {"minItems": 1}}}},
+        {"if": {"properties": {"applicability": {"const": "not-applicable"}}}, "then": {"required": ["reason"], "properties": {"text_nodes": {"maxItems": 0}}}}
+      ],
+      "additionalProperties": true
+    },
+    "sceneTextNode": {
+      "type": "object",
+      "description": "稳定文本节点；text_node_id 是语义身份，不得直接复用运行时显示文案。",
+      "required": ["text_node_id", "region_id", "layout_node_id", "semantic_role", "dynamic", "localizable", "target_bounds", "typography_target", "planned_test_id", "implementation_route", "route_reason", "ownership", "required_resources"],
+      "properties": {
+        "text_node_id": {"type": "string", "minLength": 1},
+        "region_id": {"type": "string", "minLength": 1},
+        "layout_node_id": {"type": "string", "minLength": 1},
+        "parent_layout_node_id": {"type": "string", "minLength": 1},
+        "semantic_role": {"type": "string", "minLength": 1},
+        "dynamic": {"type": "boolean"},
+        "localizable": {"type": "boolean"},
+        "content": {"type": "string", "minLength": 1},
+        "content_source": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "target_bounds": {"$ref": "#/$defs/textBounds"},
+        "typography_target": {"$ref": "#/$defs/textTypographyTarget"},
+        "implementation_route": {"enum": ["phaser-text", "bitmap-text", "image-text", "hybrid"]},
+        "route_reason": {"type": "string", "minLength": 1},
+        "ownership": {"$ref": "#/$defs/textOwnership"},
+        "required_resources": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/textResource"}},
+        "font_resolution": {"type": "object", "minProperties": 1},
+        "accessible_semantic": {"$ref": "#/$defs/evidenceValue"},
+        "tolerance_reference": {"type": "string", "minLength": 1},
+        "approved_exception_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "runtime_verification": {"$ref": "#/$defs/textRuntimeVerification"}
+      },
+      "anyOf": [{"required": ["content"]}, {"required": ["content_source"]}],
+      "allOf": [
+        {"if": {"required": ["implementation_route"], "properties": {"implementation_route": {"const": "image-text"}}}, "then": {"required": ["accessible_semantic"]}},
+        {"if": {"required": ["dynamic", "implementation_route"], "properties": {"dynamic": {"const": true}, "implementation_route": {"const": "image-text"}}}, "then": {"properties": {"implementation_route": {"enum": ["phaser-text", "bitmap-text", "hybrid"]}}}},
+        {"if": {"required": ["localizable", "implementation_route"], "properties": {"localizable": {"const": true}, "implementation_route": {"const": "image-text"}}}, "then": {"properties": {"implementation_route": {"enum": ["phaser-text", "bitmap-text", "hybrid"]}}}},
+        {"if": {"required": ["implementation_route"]}, "then": {"required": ["route_reason", "ownership", "required_resources"]}},
+        {"if": {"required": ["implementation_route"], "properties": {"implementation_route": {"const": "phaser-text"}}}, "then": {"properties": {"required_resources": {"contains": {"type": "object", "required": ["kind", "path", "sha256"], "properties": {"kind": {"enum": ["font", "font-file"]}}}}}}},
+        {"if": {"required": ["implementation_route"], "properties": {"implementation_route": {"const": "bitmap-text"}}}, "then": {"properties": {"required_resources": {"allOf": [{"contains": {"properties": {"kind": {"enum": ["bitmap-font-descriptor", "bitmap_descriptor"]}}}}, {"contains": {"properties": {"kind": {"enum": ["bitmap-font-texture", "bitmap_texture"]}}}}]}}}},
+        {"if": {"required": ["implementation_route"], "properties": {"implementation_route": {"const": "image-text"}}}, "then": {"properties": {"required_resources": {"contains": {"properties": {"kind": {"enum": ["image", "image-text", "raster-image"]}}}}}}}
+      ],
+      "additionalProperties": true
+    },
+    "textBounds": {"type": "object", "required": ["x", "y", "width", "height"], "properties": {"x": {"type": "number"}, "y": {"type": "number"}, "width": {"type": "number", "exclusiveMinimum": 0}, "height": {"type": "number", "exclusiveMinimum": 0}}, "additionalProperties": true},
+    "textTypographyTarget": {
+      "type": "object",
+      "required": ["font_identity", "font_size", "font_size_unit", "font_weight", "font_style", "line_height", "letter_spacing", "alignment", "baseline", "fill", "stroke", "shadow", "wrap", "expected_line_count", "reference_pixel_bounds", "target_glyph_bounds", "reference_dpr", "logical_coordinate_space"],
+      "properties": {
+        "font_identity": {"$ref": "#/$defs/textFontIdentity"},
+        "font_size": {"oneOf": [{"type": "number", "exclusiveMinimum": 0}, {"type": "object", "required": ["value"], "properties": {"value": {"type": "number", "exclusiveMinimum": 0}, "unit": {"type": "string", "minLength": 1}}, "additionalProperties": true}]},
+        "font_size_unit": {"enum": ["logical-px", "logical", "game-px"]},
+        "font_weight": {"type": ["number", "string"], "minLength": 1},
+        "font_style": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "line_height": {"oneOf": [{"type": "number", "exclusiveMinimum": 0}, {"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "letter_spacing": {"oneOf": [{"type": "number"}, {"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "alignment": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "baseline": {"oneOf": [{"type": "number"}, {"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "fill": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "stroke": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "shadow": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "wrap": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "expected_line_count": {"type": "integer", "minimum": 1},
+        "reference_pixel_bounds": {"$ref": "#/$defs/textBounds"},
+        "target_glyph_bounds": {"$ref": "#/$defs/textBounds"},
+        "reference_dpr": {"$ref": "#/$defs/workflowDpr"},
+        "logical_coordinate_space": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    },
+    "textFontIdentity": {
+      "type": "object",
+      "required": ["status", "confidence"],
+      "properties": {"status": {"enum": ["resolved", "unresolved"]}, "confidence": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "number"}]}, "family": {"type": "string", "minLength": 1}, "observable_facts": {"type": "object", "minProperties": 1}},
+      "allOf": [
+        {"if": {"properties": {"status": {"const": "resolved"}}}, "then": {"required": ["family"]}},
+        {"if": {"properties": {"status": {"const": "unresolved"}}}, "then": {"required": ["observable_facts"], "not": {"anyOf": [{"required": ["family"]}, {"required": ["font_family"]}, {"required": ["font_name"]}]}}}
+      ],
+      "additionalProperties": true
+    },
+    "textOwnership": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+    "textResource": {"type": "object", "required": ["kind", "path", "sha256"], "properties": {"kind": {"type": "string", "minLength": 1}, "path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}}, "additionalProperties": true},
+    "textRuntimeVerification": {
+      "type": "object",
+      "required": ["renderer", "actual_bounds", "glyph_bounds", "baseline", "actual_test_id", "evidence", "passed"],
+      "properties": {
+        "renderer": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "array", "minItems": 1}, {"type": "object", "minProperties": 1}]},
+        "font_loaded": {"type": "boolean"},
+        "fallback_detected": {"type": "boolean"},
+        "actual_bounds": {"$ref": "#/$defs/textBounds"},
+        "glyph_bounds": {"$ref": "#/$defs/textBounds"},
+        "baseline": {"oneOf": [{"type": "number"}, {"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]},
+        "actual_test_id": {"type": "string", "minLength": 1},
+        "evidence": {"$ref": "#/$defs/evidenceValue"},
+        "passed": {"const": true},
+        "asset_consumed": {"type": "boolean"},
+        "semantic_evidence": {"$ref": "#/$defs/evidenceValue"},
+        "target_bounds": {"$ref": "#/$defs/textBounds"},
+        "candidate_bounds": {"$ref": "#/$defs/textBounds"},
+        "delta": {"type": ["number", "object", "array"]},
+        "tolerance_reference": {"type": "string", "minLength": 1},
+        "exception_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "target_glyph_bounds": {"$ref": "#/$defs/textBounds"},
+        "candidate_glyph_bounds": {"$ref": "#/$defs/textBounds"},
+        "target_baseline": {"type": ["number", "string", "object"]},
+        "candidate_baseline": {"type": ["number", "string", "object"]},
+        "measurement": {"type": "object", "minProperties": 1},
+        "comparison": {"type": "object", "minProperties": 1}
+      },
+      "additionalProperties": true
+    },
     "sceneCoverageRegion": {
       "type": "object",
-      "required": ["annotation_number", "region_id", "target_bounds", "coordinate_space", "anchor_reference", "relative_alignment", "z_order", "target_visibility", "size_strategy", "spacing", "typography_facts", "color_facts", "material_texture_facts", "lighting_shadow_facts", "decorative_density_facts", "clipping_cropping_facts", "responsive_behavior", "implementation_owner", "implementation_plan", "applicable_states", "evidence", "tolerance_reference", "approved_exception_ids"],
+      "required": ["annotation_number", "region_id", "target_bounds", "coordinate_space", "anchor_reference", "relative_alignment", "z_order", "target_visibility", "size_strategy", "spacing", "typography_facts", "color_facts", "material_texture_facts", "lighting_shadow_facts", "decorative_density_facts", "clipping_cropping_facts", "responsive_behavior", "implementation_owner", "implementation_plan", "visual_route_analysis", "applicable_states", "evidence", "tolerance_reference", "approved_exception_ids"],
       "properties": {
-        "annotation_number": {"type": "integer", "minimum": 1}, "region_id": {"type": "string", "minLength": 1}, "target_bounds": {"type": "object", "required": ["x", "y", "width", "height"]}, "coordinate_space": {"type": "string", "minLength": 1}, "anchor_reference": {"type": "string", "minLength": 1}, "relative_alignment": {"type": "object", "minProperties": 1}, "z_order": {"type": ["string", "number"]}, "target_visibility": {"type": ["string", "boolean"]}, "size_strategy": {"type": "object", "minProperties": 1}, "spacing": {"type": "object", "minProperties": 1}, "typography_facts": {"type": "object", "minProperties": 1}, "color_facts": {"type": "object", "minProperties": 1}, "material_texture_facts": {"type": "object", "minProperties": 1}, "lighting_shadow_facts": {"type": "object", "minProperties": 1}, "decorative_density_facts": {"type": "object", "minProperties": 1}, "clipping_cropping_facts": {"type": "object", "minProperties": 1}, "responsive_behavior": {"type": "object", "minProperties": 1}, "implementation_owner": {"type": "string", "minLength": 1}, "implementation_plan": {"type": "object", "minProperties": 1}, "applicable_states": {"type": "array", "minItems": 1}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "tolerance_reference": {"type": "string", "minLength": 1}, "approved_exception_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}, "production_method": {"type": "string"}, "image_generation_required": {"type": "boolean"}, "scene_asset_usage": {"$ref": "#/$defs/sceneAssetUsage"}, "expected_assets": {"type": "array", "items": {"$ref": "#/$defs/visualExpectedAsset"}}
+        "annotation_number": {"type": "integer", "minimum": 1}, "region_id": {"type": "string", "minLength": 1}, "target_bounds": {"type": "object", "required": ["x", "y", "width", "height"]}, "coordinate_space": {"type": "string", "minLength": 1}, "anchor_reference": {"type": "string", "minLength": 1}, "relative_alignment": {"type": "object", "minProperties": 1}, "z_order": {"type": ["string", "number"]}, "target_visibility": {"type": ["string", "boolean"]}, "size_strategy": {"type": "object", "minProperties": 1}, "spacing": {"type": "object", "minProperties": 1}, "typography_facts": {"type": "object", "minProperties": 1}, "color_facts": {"type": "object", "minProperties": 1}, "material_texture_facts": {"type": "object", "minProperties": 1}, "lighting_shadow_facts": {"type": "object", "minProperties": 1}, "decorative_density_facts": {"type": "object", "minProperties": 1}, "clipping_cropping_facts": {"type": "object", "minProperties": 1}, "responsive_behavior": {"type": "object", "minProperties": 1}, "implementation_owner": {"type": "string", "minLength": 1}, "implementation_plan": {"type": "object", "minProperties": 1}, "visual_route_analysis": {"$ref": "#/$defs/sceneVisualRouteAnalysis"}, "applicable_states": {"type": "array", "minItems": 1}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "tolerance_reference": {"type": "string", "minLength": 1}, "approved_exception_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}, "production_method": {"type": "string"}, "image_generation_required": {"type": "boolean"}, "scene_asset_usage": {"$ref": "#/$defs/sceneAssetUsage"}, "expected_assets": {"type": "array", "items": {"$ref": "#/$defs/visualExpectedAsset"}}
       },
       "allOf": [{
         "if": {"anyOf": [{"required": ["image_generation_required"], "properties": {"image_generation_required": {"const": true}}}, {"required": ["production_method"], "properties": {"production_method": {"const": "imagegen"}}}]},
@@ -141,6 +263,38 @@
           }
         }
       }],
+      "additionalProperties": true
+    },
+    "sceneVisualRouteAnalysis": {
+      "type": "object",
+      "description": "effect-image 每个 coverage region 的视觉来源路线；必须先冻结美术事实，再决定 Phaser 装配方式。",
+      "required": ["element_type", "visual_complexity", "distinctive_visual", "observed_features", "asset_first_decision", "selected_route", "route_reason", "dynamic_requirements", "native_suitability", "reuse_suitability", "final_owner", "implementation_plan_mode", "production_method", "delivery_kind", "is_full_screen_capture"],
+      "properties": {
+        "element_type": {"enum": ["button", "button-skin", "panel", "panel-frame", "background-frame", "icon", "decorative-frame", "decoration", "illustration", "character", "prop", "object", "environment", "background", "portrait", "avatar", "logo", "artwork", "game-piece", "item", "sprite", "nine-slice", "simple-geometry", "dynamic-data", "progress-fill", "mask", "layout", "interaction", "program-effect", "particle", "shader", "text", "text-node", "label", "caption", "other"]},
+        "visual_complexity": {"enum": ["simple", "distinctive", "mixed"]},
+        "distinctive_visual": {"type": "boolean"},
+        "observed_features": {"type": "array", "minItems": 1, "items": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "object", "minProperties": 1}]}},
+        "asset_first_decision": {"enum": ["asset-first", "native-allowed", "composite-required"]},
+        "selected_route": {"enum": ["image-asset", "phaser-native", "composite"]},
+        "route_reason": {"type": "string", "minLength": 1},
+        "dynamic_requirements": {"type": "object", "required": ["is_dynamic", "description"], "properties": {"is_dynamic": {"type": "boolean"}, "description": {"type": "string", "minLength": 1}, "state_variants": {"type": "array", "items": {"type": "string", "minLength": 1}}}, "additionalProperties": true},
+        "native_suitability": {"type": "object", "required": ["eligible", "primitive_basis", "evidence"], "properties": {"eligible": {"type": "boolean"}, "primitive_basis": {"type": "array", "minItems": 1, "items": {"enum": ["pure-color", "basic-geometry", "regular-line", "regular-gradient", "mask", "progress-fill", "layout-structure", "dynamic-data", "program-effect", "text", "not-applicable"]}}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "equivalence_evidence": {"$ref": "#/$defs/evidenceValue"}, "tolerance_reference": {"type": "string", "minLength": 1}, "approved_exception_id": {"type": "string", "minLength": 1}}, "additionalProperties": true},
+        "reuse_suitability": {"type": "object", "required": ["eligible", "exact_asset_identity", "evidence"], "properties": {"eligible": {"type": "boolean"}, "exact_asset_identity": {"oneOf": [{"const": "not-applicable"}, {"type": "object", "minProperties": 1, "properties": {"asset_id": {"type": "string", "minLength": 1}, "source_asset_id": {"type": "string", "minLength": 1}, "source_sha256": {"type": "string", "minLength": 1}, "source_manifest_sha256": {"type": "string", "minLength": 1}, "target_sha256": {"type": "string", "minLength": 1}, "candidate_sha256": {"type": "string", "minLength": 1}, "comparison_id": {"type": "string", "minLength": 1}}, "anyOf": [{"required": ["asset_id"]}, {"required": ["source_asset_id"]}, {"required": ["source_sha256"]}, {"required": ["source_manifest_sha256"]}, {"required": ["target_sha256"]}, {"required": ["candidate_sha256"]}, {"required": ["comparison_id"]}], "additionalProperties": true}]}, "evidence": {"$ref": "#/$defs/evidenceValue"}}, "additionalProperties": true},
+        "final_owner": {"enum": ["fixed-production-visual", "runtime-data", "runtime-rendered", "runtime-program"]},
+        "implementation_plan_mode": {"enum": ["generate-now", "reuse-existing", "runtime-program", "asset-and-scene"]},
+        "production_method": {"enum": ["imagegen", "authored-raster", "reuse", "phaser-graphics", "runtime-program"]},
+        "delivery_kind": {"enum": ["raster-image", "existing-asset", "runtime-drawing", "runtime-program"]},
+        "is_full_screen_capture": {"const": false},
+        "text_decomposition_ref": {"type": "string", "minLength": 1},
+        "composite_parts": {"type": "array", "minItems": 2, "items": {"type": "object", "required": ["part_id", "part_role", "selected_route", "final_owner", "production_method", "delivery_kind", "evidence"], "properties": {"part_id": {"type": "string", "minLength": 1}, "part_role": {"enum": ["appearance", "behavior", "text", "effect"]}, "selected_route": {"enum": ["image-asset", "phaser-native", "composite"]}, "final_owner": {"enum": ["fixed-production-visual", "runtime-data", "runtime-rendered", "runtime-program"]}, "production_method": {"enum": ["imagegen", "authored-raster", "reuse", "phaser-graphics", "runtime-program"]}, "delivery_kind": {"enum": ["raster-image", "existing-asset", "runtime-drawing", "runtime-program"]}, "evidence": {"$ref": "#/$defs/evidenceValue"}}, "additionalProperties": true}}
+      },
+      "allOf": [
+        {"if": {"properties": {"selected_route": {"const": "image-asset"}}}, "then": {"properties": {"asset_first_decision": {"const": "asset-first"}, "final_owner": {"const": "fixed-production-visual"}, "production_method": {"enum": ["imagegen", "authored-raster", "reuse"]}, "delivery_kind": {"enum": ["raster-image", "existing-asset"]}}}},
+        {"if": {"properties": {"selected_route": {"const": "phaser-native"}}}, "then": {"properties": {"asset_first_decision": {"const": "native-allowed"}, "final_owner": {"enum": ["runtime-data", "runtime-rendered", "runtime-program"]}, "production_method": {"enum": ["phaser-graphics", "runtime-program"]}, "delivery_kind": {"enum": ["runtime-drawing", "runtime-program"]}, "native_suitability": {"properties": {"eligible": {"const": true}}}}}},
+        {"if": {"properties": {"selected_route": {"const": "composite"}}}, "then": {"required": ["composite_parts"], "properties": {"asset_first_decision": {"const": "composite-required"}, "implementation_plan_mode": {"const": "asset-and-scene"}}}},
+        {"if": {"properties": {"production_method": {"const": "reuse"}}}, "then": {"properties": {"implementation_plan_mode": {"const": "reuse-existing"}, "reuse_suitability": {"properties": {"eligible": {"const": true}}}}}},
+        {"if": {"properties": {"element_type": {"enum": ["text", "text-node", "label", "caption"]}}}, "then": {"required": ["text_decomposition_ref"]}}
+      ],
       "additionalProperties": true
     },
     "combinationPreacceptance": {"type": "object", "required": ["status", "formal_scene_structure", "layout_calculation_identity", "evidence", "target_sha256", "candidate_sha256", "diff_fingerprint"], "properties": {"status": {"enum": ["passed", "PASS"]}, "formal_scene_structure": {"type": "string", "minLength": 1}, "layout_calculation_identity": {"type": "string", "minLength": 1}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "target_sha256": {"$ref": "#/$defs/sha256"}, "candidate_sha256": {"$ref": "#/$defs/sha256"}, "diff_fingerprint": {"type": "string", "minLength": 1}}}, "not": {"anyOf": [{"required": ["reviewer"]}, {"required": ["reviewer_type"]}, {"required": ["reviewer_id"]}, {"required": ["review_id"]}, {"required": ["reviewed_at"]}, {"required": ["human_review"]}]},
@@ -192,7 +346,7 @@
     },
     "productionContractAudit": {"type": "object", "required": ["status", "audited_at", "units"], "properties": {"status": {"enum": ["passed", "PASS", "failed", "FAIL"]}, "candidate_version": {"type": "string", "minLength": 1}, "candidate_sha256": {"$ref": "#/$defs/sha256"}, "target_sha256": {"$ref": "#/$defs/sha256"}, "audited_at": {"type": "string", "format": "date-time"}, "units": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/productionAuditUnit"}}}, "not": {"anyOf": [{"required": ["reviewed_at"]}, {"required": ["reviewer"]}, {"required": ["reviewer_type"]}, {"required": ["reviewer_id"]}, {"required": ["human_review"]}]}, "additionalProperties": true},
     "f2GateResult": {"type": "object", "required": ["status", "baselineHash", "diffFingerprint"], "properties": {"status": {"enum": ["passed", "PASS", "failed", "FAIL"]}, "baselineHash": {"$ref": "#/$defs/sha256"}, "diffFingerprint": {"type": "string", "minLength": 1}, "validationMode": {"enum": ["MACHINE"]}, "validationEvidence": {"$ref": "#/$defs/evidenceValue"}, "reviewer": {"type": "string", "minLength": 1}, "reviewMode": {"enum": ["SELF", "INDEPENDENT"]}}, "anyOf": [{"required": ["validationMode"], "not": {"anyOf": [{"required": ["reviewer"]}, {"required": ["reviewMode"]}, {"required": ["reviewer_type"]}, {"required": ["reviewerType"]}, {"required": ["reviewer_id"]}, {"required": ["reviewerId"]}, {"required": ["review_id"]}, {"required": ["reviewId"]}, {"required": ["reviewed_at"]}, {"required": ["reviewedAt"]}, {"required": ["human_review"]}, {"required": ["humanReview"]}, {"required": ["f2_review"]}, {"required": ["f2_reviews"]}, {"required": ["f2Review"]}, {"required": ["f2Reviews"]}, {"required": ["visual_fidelity_review"]}, {"required": ["visualFidelityReview"]}, {"required": ["production_contract_review"]}, {"required": ["productionContractReview"]}, {"required": ["component_reviews"]}, {"required": ["componentReviews"]}]}}, {"required": ["reviewer", "reviewMode"], "not": {"required": ["validationMode"]}}]},
-    "sceneReconstructionContract": {"type": "object", "required": ["contract_version", "reference_technical_conflicts", "v2_scene_candidate", "v2_dynamic_sample", "v2_structured_review", "visual_human_approval", "target_conditions", "coverage_regions", "composition", "responsive_contract", "predeclared_tolerances", "implementation_plan", "display_layer_planning"], "properties": {"contract_version": {"type": "string", "minLength": 1}, "reference_technical_conflicts": {"$ref": "#/$defs/referenceTechnicalConflicts"}, "reference_target": {"$ref": "#/$defs/referenceTarget"}, "v2_scene_candidate": {"$ref": "#/$defs/v2Artifact"}, "v2_dynamic_sample": {"$ref": "#/$defs/v2Artifact"}, "v2_structured_review": {"$ref": "#/$defs/v2StructuredReview"}, "visual_human_approval": {"$ref": "#/$defs/visualHumanApproval"}, "target_conditions": {"type": "object"}, "coverage_regions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/sceneCoverageRegion"}}, "composition": {"type": "object", "minProperties": 1}, "responsive_contract": {"type": "object", "minProperties": 1}, "predeclared_tolerances": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "rules"]}}, "implementation_plan": {"type": "object", "minProperties": 1}, "display_layer_planning": {"$ref": "#/$defs/displayLayerPlanning"}, "combination_preacceptance": {"$ref": "#/$defs/combinationPreacceptance"}}, "additionalProperties": true},
+    "sceneReconstructionContract": {"type": "object", "required": ["contract_version", "reference_technical_conflicts", "v2_scene_candidate", "v2_dynamic_sample", "v2_structured_review", "visual_human_approval", "target_conditions", "text_decomposition", "coverage_regions", "composition", "responsive_contract", "predeclared_tolerances", "implementation_plan", "display_layer_planning"], "properties": {"contract_version": {"type": "string", "minLength": 1}, "reference_technical_conflicts": {"$ref": "#/$defs/referenceTechnicalConflicts"}, "reference_target": {"$ref": "#/$defs/referenceTarget"}, "v2_scene_candidate": {"$ref": "#/$defs/v2Artifact"}, "v2_dynamic_sample": {"$ref": "#/$defs/v2Artifact"}, "v2_structured_review": {"$ref": "#/$defs/v2StructuredReview"}, "visual_human_approval": {"$ref": "#/$defs/visualHumanApproval"}, "target_conditions": {"type": "object"}, "text_decomposition": {"$ref": "#/$defs/sceneTextDecomposition"}, "coverage_regions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/sceneCoverageRegion"}}, "composition": {"type": "object", "minProperties": 1}, "responsive_contract": {"type": "object", "minProperties": 1}, "predeclared_tolerances": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["id", "rules"]}}, "implementation_plan": {"type": "object", "minProperties": 1}, "display_layer_planning": {"$ref": "#/$defs/displayLayerPlanning"}, "combination_preacceptance": {"$ref": "#/$defs/combinationPreacceptance"}}, "additionalProperties": true},
     "visualDecompositionConfirmationIdentity": {"type": "object", "required": ["scene_id", "state_id", "confirmation_id", "confirmation_sha256", "proposal_id", "proposal_sha256", "annotation_file", "annotation_sha256", "decision_record_file", "decision_record_sha256", "user_decision_receipt_file", "user_decision_receipt_sha256", "production_label", "region_ids"], "properties": {"scene_id": {"type": "string", "minLength": 1}, "state_id": {"type": "string", "minLength": 1}, "confirmation_id": {"type": "string", "minLength": 1}, "confirmation_sha256": {"$ref": "#/$defs/sha256"}, "proposal_id": {"type": "string", "minLength": 1}, "proposal_sha256": {"$ref": "#/$defs/sha256"}, "annotation_file": {"type": "string", "minLength": 1}, "annotation_sha256": {"$ref": "#/$defs/sha256"}, "decision_record_file": {"type": "string", "minLength": 1}, "decision_record_sha256": {"$ref": "#/$defs/sha256"}, "user_decision_receipt_file": {"type": "string", "minLength": 1}, "user_decision_receipt_sha256": {"$ref": "#/$defs/sha256"}, "production_label": {"type": "string", "minLength": 1}, "region_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true}}, "additionalProperties": true},
     "visualConfirmationAuthorityRef": {"type": "object", "required": ["scene_id", "state_id", "ledger_file", "receipt_id", "receipt_sha256"], "properties": {"scene_id": {"type": "string", "minLength": 1}, "state_id": {"type": "string", "minLength": 1}, "ledger_file": {"type": "string", "pattern": "^\\.phaser-workflow/user-resolutions/"}, "receipt_id": {"type": "string", "minLength": 1}, "receipt_sha256": {"$ref": "#/$defs/sha256"}}, "additionalProperties": false}
   }

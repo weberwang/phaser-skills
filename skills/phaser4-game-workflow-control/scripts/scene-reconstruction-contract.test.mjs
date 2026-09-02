@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import test from "node:test";
 import { tmpdir } from "node:os";
@@ -13,7 +14,44 @@ const LAYOUT_DECOMPOSITION_VERSION = "layout-decomposition-1";
 
 /** 构造覆盖运行时和固定视觉事实的最小完整场景合同。 */
 function contract() {
-  const regionFacts = (id, owner) => ({
+  const regionFacts = (id, owner) => {
+    // 夹具同时覆盖固定美术和动态数据，确保 effect-image 路线门不会把两者混成同一种实现。
+    const visualRouteAnalysis = owner === "fixed-production-visual"
+      ? {
+        element_type: "background-frame",
+        visual_complexity: "distinctive",
+        distinctive_visual: true,
+        observed_features: ["材质纹理", "定制描边"],
+        asset_first_decision: "asset-first",
+        selected_route: "image-asset",
+        route_reason: "具有定制材质和轮廓，外观由固定图片资产承载",
+        dynamic_requirements: { is_dynamic: false, description: "固定视觉区域" },
+        native_suitability: { eligible: false, primitive_basis: ["not-applicable"], evidence: ["evidence/route/native-not-applicable.json"] },
+        reuse_suitability: { eligible: false, exact_asset_identity: "not-applicable", evidence: ["evidence/route/reuse-not-applicable.json"] },
+        final_owner: "fixed-production-visual",
+        implementation_plan_mode: "asset-and-scene",
+        production_method: "authored-raster",
+        delivery_kind: "raster-image",
+        is_full_screen_capture: false,
+      }
+      : {
+        element_type: "dynamic-data",
+        visual_complexity: "simple",
+        distinctive_visual: false,
+        observed_features: ["动态数据绑定"],
+        asset_first_decision: "native-allowed",
+        selected_route: "phaser-native",
+        route_reason: "动态数据显示由运行时对象负责，不含独特位图外观",
+        dynamic_requirements: { is_dynamic: true, description: "运行时数值可变化" },
+        native_suitability: { eligible: true, primitive_basis: ["dynamic-data"], evidence: ["evidence/route/native-hud.json"] },
+        reuse_suitability: { eligible: false, exact_asset_identity: "not-applicable", evidence: ["evidence/route/reuse-not-applicable.json"] },
+        final_owner: owner,
+        implementation_plan_mode: "runtime-program",
+        production_method: "runtime-program",
+        delivery_kind: "runtime-program",
+        is_full_screen_capture: false,
+      };
+    return {
     annotation_number: id === "hud" ? 1 : 2,
     region_id: id,
     scene_id: "main",
@@ -35,13 +73,15 @@ function contract() {
     responsive_behavior: { target: "exact", other: "preserve-relative-anchors" },
     implementation_owner: owner,
     implementation_plan: { mode: owner.startsWith("runtime") ? "runtime-program" : "asset-and-scene" },
+    visual_route_analysis: visualRouteAnalysis,
     applicable_states: ["default"],
     evidence: ["evidence/scene/" + id + ".json"],
     tolerance_reference: "layout-tolerance",
     approved_exception_ids: [],
     ...(owner.startsWith("runtime") ? { fidelity_obligations: { geometry: "target-bound", typography: "target-bound", color: "target-bound" } } : {}),
     ...(owner === "fixed-production-visual" ? { scene_asset_usage: { target_display_size: { width: 350, height: 620 }, intended_scale_range: { min: 1, max: 1 }, origin: { x: 0.5, y: 0.5 }, anchor: "target-bound", nine_slice: { policy: "forbid-unless-declared" }, material: { family: "visual-baseline-bound" }, composition_region: id, required_neighbors: [], typography_ownership: "scene-contract", runtime_foreground_ownership: "formal-scene" } } : {}),
-  });
+    };
+  };
   return {
     contract_version: "1.0",
     display_layer_planning: {
@@ -143,6 +183,7 @@ function fidelityCase(overrides = {}) {
 function effectImageContract() {
   const value = structuredClone(contract());
   value.effect_image_reconstruction = { applicability: "effect-image" };
+  value.text_decomposition = { applicability: "not-applicable", reason: "当前冻结画面没有可见文本节点" };
   value.target_conditions.layout_contract_sha256 = LAYOUT_SHA;
   value.target_conditions.layout_decomposition_version = LAYOUT_DECOMPOSITION_VERSION;
   value.coverage_regions[0].layout_node_ids = ["hud-main"];
@@ -225,6 +266,70 @@ function effectImageManifest(sceneContract) {
     effect_image_reconstruction: { applicability: "effect-image" },
     scene_reconstruction_contract: sceneContract,
   };
+}
+
+/** 构造完整文本节点；测试只把一个 HUD 布局节点作为文本容器，避免改变既有布局夹具。 */
+function textNode(overrides = {}) {
+  return {
+    text_node_id: "hud.title.label",
+    region_id: "hud",
+    layout_node_id: "hud-main",
+    content: "开始游戏",
+    semantic_role: "primary-action-label",
+    dynamic: false,
+    localizable: false,
+    target_bounds: { x: 0, y: 0, width: 390, height: 96 },
+    typography_target: {
+      font_identity: { status: "resolved", confidence: "high", family: "Game Sans" },
+      font_size: 32,
+      font_size_unit: "logical-px",
+      font_weight: 600,
+      font_style: "normal",
+      line_height: 38,
+      letter_spacing: -1,
+      alignment: "center",
+      baseline: 40,
+      fill: "#ffffff",
+      stroke: { enabled: true, color: "#15233c", width: 3 },
+      shadow: { enabled: false },
+      wrap: { mode: "none", width: 390 },
+      expected_line_count: 1,
+      reference_pixel_bounds: { x: 0, y: 0, width: 585, height: 144 },
+      target_glyph_bounds: { x: 120, y: 28, width: 150, height: 38 },
+      reference_dpr: 1.5,
+      logical_coordinate_space: "viewport-logical",
+    },
+    implementation_route: "phaser-text",
+    route_reason: "文案固定但仍由 Phaser Text 渲染，便于后续本地化和字号调整",
+    ownership: "scene-runtime",
+    required_resources: [{ kind: "font", path: "assets/fonts/game-sans.woff2", sha256: SHA }],
+    tolerance_reference: "layout-tolerance",
+    approved_exception_ids: [],
+    runtime_verification: {
+      renderer: "phaser-text",
+      font_loaded: true,
+      fallback_detected: false,
+      actual_bounds: { x: 0, y: 0, width: 390, height: 96 },
+      glyph_bounds: { x: 120, y: 28, width: 150, height: 38 },
+      baseline: 40,
+      actual_test_id: "tests/text/hud-title",
+      evidence: ["evidence/text/hud-title.json"],
+      passed: true,
+      target_bounds: { x: 0, y: 0, width: 390, height: 96 },
+      candidate_bounds: { x: 0, y: 0, width: 390, height: 96 },
+      delta: { x: 0, y: 0, width: 0, height: 0 },
+      tolerance_reference: "layout-tolerance",
+    },
+    planned_test_id: "tests/text/hud-title",
+    ...overrides,
+  };
+}
+
+/** 构造带文本拆解的效果图合同，用于验证文本独立门而不改变普通合同语义。 */
+function textEffectImageContract(nodeOverrides = {}) {
+  const value = effectImageContract();
+  value.text_decomposition = { applicability: "has-text", text_nodes: [textNode(nodeOverrides)] };
+  return value;
 }
 
 /** 给 fidelity case 增加与布局节点一一对应的差异证据。 */
@@ -598,4 +703,303 @@ test("完整 reconstruction/layout/V3/V4/F2/F3/V5 happy path 通过场景级门"
   assert.deepEqual(validateStructuredFidelityCases([fidelity], targetManifest, { stage: "V5" }), []);
   const gateManifest = { ...targetManifest, scene_reconstruction_contract: value, fidelity_cases: [fidelity], candidate_identity: { sha256: SHA }, production_contract_audit: { status: "passed" }, v5_production_gate: { status: "passed", v3_status: "passed", implementation_package_status: "passed", v4_status: "passed", f2_status: "passed", f2_machine_validation: { status: "passed", validationMode: "MACHINE", baselineHash: SHA, diffFingerprint: "diff-1" }, f3_status: "passed", runtime_replay: { status: "passed", evidence: "replay.json" }, fidelity_cases: [{ candidate_sha256: SHA, created_at: "2026-08-18T00:00:00Z", freshness_bound: true }], candidate_sha256: SHA, target_sha256: SHA, runtime_consumption: { status: "passed" } } };
   assert.deepEqual(validateV5ProductionGate(gateManifest, { requireSceneReconstruction: true }), []);
+});
+
+test("effect-image 文本拆解的 phaser-text 正常路径通过", () => {
+  const value = textEffectImageContract();
+  const targetManifest = effectImageManifest(value);
+  assert.deepEqual(validateSceneReconstructionContract(value, targetManifest, { stage: "V3" }), []);
+  assert.deepEqual(validateSceneReconstructionContract(value, targetManifest, { stage: "V4" }), []);
+});
+
+test("动态或本地化文本误用 image-text 时阻断", () => {
+  const value = textEffectImageContract({
+    dynamic: true,
+    localizable: true,
+    implementation_route: "image-text",
+    route_reason: "固定图中文字",
+    ownership: "visual-asset",
+    required_resources: [{ kind: "image", path: "assets/text/start.png", sha256: SHA }],
+    accessible_semantic: { text: "开始游戏", role: "button" },
+  });
+  const errors = validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V3" });
+  assert(errors.some((item) => item.includes("动态或本地化文本禁止使用 image-text")), errors.join("\n"));
+});
+
+test("文本节点未知 region、layout node 或 bounds 漂移时阻断", () => {
+  const unknownRegion = textEffectImageContract({ region_id: "missing-region" });
+  const regionErrors = validateSceneReconstructionContract(unknownRegion, effectImageManifest(unknownRegion), { stage: "V3" });
+  assert(regionErrors.some((item) => item.includes("现有 coverage region")), regionErrors.join("\n"));
+
+  const unknownLayout = textEffectImageContract({ layout_node_id: "missing-layout" });
+  const layoutErrors = validateSceneReconstructionContract(unknownLayout, effectImageManifest(unknownLayout), { stage: "V3" });
+  assert(layoutErrors.some((item) => item.includes("现有 layout node")), layoutErrors.join("\n"));
+
+  const drifted = textEffectImageContract({ target_bounds: { x: 1, y: 0, width: 390, height: 96 } });
+  const driftErrors = validateSceneReconstructionContract(drifted, effectImageManifest(drifted), { stage: "V3" });
+  assert(driftErrors.some((item) => item.includes("target_bounds 必须与绑定 layout node 一致")), driftErrors.join("\n"));
+});
+
+test("phaser-text 缺少字体资源或 SHA 时阻断", () => {
+  const value = textEffectImageContract({ required_resources: [{ kind: "font", path: "assets/fonts/game-sans.woff2", sha256: "sha256:invalid" }] });
+  const errors = validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V3" });
+  assert(errors.some((item) => item.includes("路径和合法 SHA-256") || item.includes("字体资产及 SHA-256")), errors.join("\n"));
+});
+
+test("V4 发现字体 fallback 或加载失败时阻断", () => {
+  const value = textEffectImageContract();
+  value.text_decomposition.text_nodes[0].runtime_verification.fallback_detected = true;
+  const errors = validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V4" });
+  assert(errors.some((item) => item.includes("fallback_detected=false")), errors.join("\n"));
+});
+
+test("显式 V5 文本验证执行 target/candidate/tolerance 比较并通过", () => {
+  const value = textEffectImageContract();
+  assert.deepEqual(validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V5" }), []);
+});
+
+test("显式 V5 文本验证发现超容差差异时阻断", () => {
+  const value = textEffectImageContract();
+  const runtime = value.text_decomposition.text_nodes[0].runtime_verification;
+  runtime.actual_bounds.width = 394;
+  runtime.candidate_bounds.width = 394;
+  runtime.delta.width = 4;
+  const errors = validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V5" });
+  assert(errors.some((item) => item.includes("超出预声明 tolerance")), errors.join("\n"));
+});
+
+test("文本实际测试 ID 必须等于规划测试 ID", () => {
+  const value = textEffectImageContract();
+  value.text_decomposition.text_nodes[0].runtime_verification.actual_test_id = "tests/text/other";
+  const errors = validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V4" });
+  assert(errors.some((item) => item.includes("actual_test_id 必须等于 planned_test_id")), errors.join("\n"));
+});
+
+test("effect-image 无文本时必须使用 not-applicable 并提供 reason", () => {
+  const value = effectImageContract();
+  assert.deepEqual(validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V3" }), []);
+  delete value.text_decomposition.reason;
+  const errors = validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V3" });
+  assert(errors.some((item) => item.includes("not-applicable 必须提供 reason")), errors.join("\n"));
+});
+
+test("bitmap-text 和 image-text 成功路径分别绑定所需资源与语义证据", () => {
+  const bitmap = textEffectImageContract({
+    implementation_route: "bitmap-text",
+    route_reason: "有限字符集使用稳定的位图字形",
+    required_resources: [
+      { kind: "bitmap-font-descriptor", path: "assets/fonts/game.fnt", sha256: SHA },
+      { kind: "bitmap-font-texture", path: "assets/fonts/game.png", sha256: SHA },
+    ],
+    runtime_verification: { ...textNode().runtime_verification, renderer: "bitmap-text" },
+  });
+  assert.deepEqual(validateSceneReconstructionContract(bitmap, effectImageManifest(bitmap), { stage: "V4" }), []);
+
+  const image = textEffectImageContract({
+    implementation_route: "image-text",
+    route_reason: "品牌字标是固定图片资产",
+    ownership: "visual-asset",
+    required_resources: [{ kind: "image", path: "assets/text/start.png", sha256: SHA }],
+    accessible_semantic: { text: "开始游戏", role: "button" },
+    runtime_verification: {
+      renderer: "image-text",
+      actual_bounds: { x: 0, y: 0, width: 390, height: 96 },
+      glyph_bounds: { x: 120, y: 28, width: 150, height: 38 },
+      baseline: 40,
+      actual_test_id: "tests/text/hud-title",
+      evidence: ["evidence/text/hud-title-image.json"],
+      passed: true,
+      asset_consumed: true,
+      semantic_evidence: ["evidence/text/hud-title-semantic.json"],
+    },
+  });
+  assert.deepEqual(validateSceneReconstructionContract(image, effectImageManifest(image), { stage: "V4" }), []);
+});
+
+test("effect-image 每个 coverage region 缺少 visual_route_analysis 时在 V1-V5 均阻断", () => {
+  for (const stage of ["V1", "V2", "V3", "V4", "V5"]) {
+    const value = effectImageContract();
+    delete value.coverage_regions[0].visual_route_analysis;
+    const errors = validateSceneReconstructionContract(value, effectImageManifest(value), { stage });
+    assert(errors.some((item) => item.includes("visual_route_analysis") && item.includes("region_id=hud")), `${stage}: ${errors.join("\n")}`);
+  }
+});
+
+test("特色按钮皮肤或背景框错误选择 Phaser 原生路线时阻断", () => {
+  const button = effectImageContract();
+  const buttonRegion = button.coverage_regions[0];
+  buttonRegion.visual_route_analysis = {
+    ...buttonRegion.visual_route_analysis,
+    element_type: "button-skin",
+    selected_route: "phaser-native",
+    asset_first_decision: "native-allowed",
+    final_owner: "runtime-program",
+    implementation_plan_mode: "runtime-program",
+    production_method: "phaser-graphics",
+    delivery_kind: "runtime-drawing",
+    distinctive_visual: true,
+    native_suitability: { eligible: true, primitive_basis: ["basic-geometry"], evidence: ["evidence/route/button-native.json"] },
+  };
+  buttonRegion.implementation_owner = "runtime-program";
+  buttonRegion.fidelity_obligations = { geometry: "target-bound" };
+  const buttonErrors = validateSceneReconstructionContract(button, effectImageManifest(button), { stage: "V3" });
+  assert(buttonErrors.some((item) => item.includes("独特视觉") && item.includes("等价性")), buttonErrors.join("\n"));
+
+  const frame = effectImageContract();
+  const frameRegion = frame.coverage_regions[1];
+  frameRegion.visual_route_analysis = {
+    ...frameRegion.visual_route_analysis,
+    element_type: "background-frame",
+    selected_route: "phaser-native",
+    asset_first_decision: "native-allowed",
+    final_owner: "runtime-program",
+    implementation_plan_mode: "runtime-program",
+    production_method: "phaser-graphics",
+    delivery_kind: "runtime-drawing",
+    distinctive_visual: true,
+    native_suitability: { eligible: true, primitive_basis: ["basic-geometry"], evidence: ["evidence/route/frame-native.json"] },
+  };
+  frameRegion.implementation_owner = "runtime-program";
+  frameRegion.fidelity_obligations = { geometry: "target-bound" };
+  const frameErrors = validateSceneReconstructionContract(frame, effectImageManifest(frame), { stage: "V3" });
+  assert(frameErrors.some((item) => item.includes("独特视觉") && item.includes("等价性")), frameErrors.join("\n"));
+});
+
+test("特色视觉提供精确等价性例外时可以通过原生路线", () => {
+  const value = effectImageContract();
+  const region = value.coverage_regions[0];
+  region.implementation_owner = "runtime-program";
+  region.implementation_plan = { mode: "runtime-program" };
+  region.fidelity_obligations = { geometry: "target-bound" };
+  region.visual_route_analysis = {
+    ...region.visual_route_analysis,
+    element_type: "button-skin",
+    selected_route: "phaser-native",
+    asset_first_decision: "native-allowed",
+    final_owner: "runtime-program",
+    implementation_plan_mode: "runtime-program",
+    production_method: "phaser-graphics",
+    delivery_kind: "runtime-drawing",
+    distinctive_visual: true,
+    native_suitability: {
+      eligible: true,
+      primitive_basis: ["pure-color", "basic-geometry"],
+      evidence: ["evidence/route/button-native.json"],
+      equivalence_evidence: ["evidence/route/button-equivalence.json"],
+      tolerance_reference: "layout-tolerance",
+    },
+  };
+  assert.deepEqual(validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V3" }), []);
+});
+
+test("纯色几何、动态进度填充和纹理 Sprite/NineSlice 分别走正确路线", () => {
+  const geometry = effectImageContract();
+  const geometryRegion = geometry.coverage_regions[1];
+  geometryRegion.implementation_owner = "runtime-program";
+  geometryRegion.implementation_plan = { mode: "runtime-program" };
+  geometryRegion.fidelity_obligations = { geometry: "target-bound" };
+  geometryRegion.visual_route_analysis = {
+    ...geometryRegion.visual_route_analysis,
+    element_type: "simple-geometry",
+    visual_complexity: "simple",
+    distinctive_visual: false,
+    observed_features: ["纯色基础几何"],
+    asset_first_decision: "native-allowed",
+    selected_route: "phaser-native",
+    final_owner: "runtime-program",
+    implementation_plan_mode: "runtime-program",
+    production_method: "phaser-graphics",
+    delivery_kind: "runtime-drawing",
+    native_suitability: { eligible: true, primitive_basis: ["pure-color", "basic-geometry"], evidence: ["evidence/route/geometry-native.json"] },
+  };
+  assert.deepEqual(validateSceneReconstructionContract(geometry, effectImageManifest(geometry), { stage: "V3" }), []);
+
+  const progress = structuredClone(geometry);
+  progress.coverage_regions[1].visual_route_analysis = {
+    ...progress.coverage_regions[1].visual_route_analysis,
+    element_type: "progress-fill",
+    observed_features: ["动态进度填充"],
+    dynamic_requirements: { is_dynamic: true, description: "进度值随运行时数据变化" },
+    native_suitability: { eligible: true, primitive_basis: ["progress-fill"], evidence: ["evidence/route/progress-native.json"] },
+  };
+  assert.deepEqual(validateSceneReconstructionContract(progress, effectImageManifest(progress), { stage: "V3" }), []);
+
+  const texturedAsset = effectImageContract();
+  texturedAsset.coverage_regions[1].visual_route_analysis.element_type = "sprite";
+  texturedAsset.coverage_regions[1].scene_asset_usage.nine_slice = { policy: "texture-nine-slice", source: "board-surface" };
+  assert.deepEqual(validateSceneReconstructionContract(texturedAsset, effectImageManifest(texturedAsset), { stage: "V3" }), []);
+  const nineSliceAsset = structuredClone(texturedAsset);
+  nineSliceAsset.coverage_regions[1].visual_route_analysis.element_type = "nine-slice";
+  assert.deepEqual(validateSceneReconstructionContract(nineSliceAsset, effectImageManifest(nineSliceAsset), { stage: "V3" }), []);
+});
+
+test("语义相似图标没有精确身份时不得 reuse，复合区域必须继续拆分", () => {
+  const similar = effectImageContract();
+  const region = similar.coverage_regions[1];
+  region.visual_route_analysis = {
+    ...region.visual_route_analysis,
+    element_type: "icon",
+    selected_route: "image-asset",
+    asset_first_decision: "asset-first",
+    implementation_plan_mode: "reuse-existing",
+    production_method: "reuse",
+    delivery_kind: "existing-asset",
+    reuse_suitability: { eligible: true, exact_asset_identity: { reason: "semantic-similar icon" }, evidence: ["evidence/route/icon-similar.json"] },
+  };
+  const similarErrors = validateSceneReconstructionContract(similar, effectImageManifest(similar), { stage: "V3" });
+  assert(similarErrors.some((item) => item.includes("精确资产身份") && item.includes("语义相似")), similarErrors.join("\n"));
+
+  const composite = effectImageContract();
+  composite.coverage_regions[1].visual_route_analysis = {
+    ...composite.coverage_regions[1].visual_route_analysis,
+    selected_route: "composite",
+    asset_first_decision: "composite-required",
+    implementation_plan_mode: "asset-and-scene",
+    final_owner: "runtime-program",
+    production_method: "runtime-program",
+    delivery_kind: "runtime-program",
+  };
+  composite.coverage_regions[1].implementation_owner = "runtime-program";
+  composite.coverage_regions[1].fidelity_obligations = { geometry: "target-bound" };
+  const compositeErrors = validateSceneReconstructionContract(composite, effectImageManifest(composite), { stage: "V3" });
+  assert(compositeErrors.some((item) => item.includes("混合视觉区域未拆分")), compositeErrors.join("\n"));
+});
+
+test("文本视觉路线委托 text_decomposition，普通非 effect-image 合同仍不受新路线门影响", () => {
+  const value = textEffectImageContract();
+  value.coverage_regions[0].visual_route_analysis = {
+    ...value.coverage_regions[0].visual_route_analysis,
+    element_type: "text",
+    text_decomposition_ref: "hud.title.label",
+  };
+  assert.deepEqual(validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V3" }), []);
+  assert.deepEqual(validateSceneReconstructionContract(contract(), manifest(), { stage: "V3" }), []);
+});
+
+test("visual_route_analysis 必须与 coverage/实施计划/实施包字段一致", () => {
+  const value = effectImageContract();
+  value.coverage_regions[1].implementation_plan.mode = "runtime-program";
+  const planErrors = validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V3" });
+  assert(planErrors.some((item) => item.includes("implementation_plan.mode") && item.includes("visual_route_analysis")), planErrors.join("\n"));
+
+  const boundManifest = effectImageManifest(effectImageContract());
+  boundManifest.coverage_audit.regions[1].production_method = "phaser-graphics";
+  const methodErrors = validateSceneReconstructionContract(boundManifest.scene_reconstruction_contract, boundManifest, { stage: "V3" });
+  assert(methodErrors.some((item) => item.includes("coverage_audit region") && item.includes("production_method")), methodErrors.join("\n"));
+});
+
+test("三份场景 Schema 同步声明 visual_route_analysis 及其 canonical 字段", () => {
+  const paths = [
+    "skills/phaser4-game-workflow-control/references/evidence-manifest.schema.json",
+    "skills/phaser4-game-workflow-control/references/implementation-package.schema.json",
+    "skills/phaser4-game-workflow-control/references/work-item.schema.json",
+  ];
+  const schemas = paths.map((path) => JSON.parse(readFileSync(path, "utf8")));
+  const required = schemas.map((schema) => schema.$defs.sceneCoverageRegion.required);
+  assert(required.every((fields) => fields.includes("visual_route_analysis")));
+  assert.deepEqual(required[0], required[1]);
+  assert.deepEqual(required[1], required[2]);
+  assert.deepEqual(schemas[0].$defs.sceneVisualRouteAnalysis, schemas[1].$defs.sceneVisualRouteAnalysis);
+  assert.deepEqual(schemas[1].$defs.sceneVisualRouteAnalysis, schemas[2].$defs.sceneVisualRouteAnalysis);
+  assert(schemas.every((schema) => schema.$defs.sceneCoverageRegion.properties.visual_route_analysis.$ref === "#/$defs/sceneVisualRouteAnalysis"));
 });

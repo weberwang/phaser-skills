@@ -18,8 +18,20 @@ V3 为每个资源选择一条主路线，并在机器清单记录场景或 shar
 
 ## 路线选择规则
 
+### effect-image 全元素视觉路线
+
+`effect-image` 的忠实还原以美术资产为视觉事实来源，以 Phaser 负责装配、布局、交互和状态行为；这不是把普通游戏 UI 全部图片化，也不改变非效果图工作流的默认开发路线。每个 `scene_reconstruction_contract.coverage_regions[]` 必须填写唯一的 `visual_route_analysis`，在 V1/V2/V3+ 逐阶段回对以下字段：元素类别、观察到的材质/轮廓/光影/装饰特征、是否独特美术、动态要求、原生适用性证据、复用适用性证据、最终 owner、`implementation_plan.mode`、生产方式和交付类型。
+
+| 来源路线 | 适用范围 | 必须满足的硬门 |
+| --- | --- | --- |
+| `image-asset` | 按钮皮肤、panel/background frame、特色图标、插画、角色、道具、背景、装饰和其他有独特视觉的原子部件 | `fixed-production-visual`；`imagegen`/`authored-raster`/`reuse`；`raster-image`/`existing-asset`。Sprite、NineSlice、atlas slice 仍属于图片资产路线，因为视觉来源是纹理 |
+| `phaser-native` | 纯色块、基础几何、规则线/渐变、遮罩、进度填充、布局/交互结构、动态数据、粒子/Shader/程序特效 | `runtime-data`/`runtime-rendered`/`runtime-program`；`phaser-graphics`/`runtime-program`；必须列出原语和可审计资格证据。独特视觉只有在等价性证据绑定预声明容差或精确例外时才可作原生例外 |
+| `composite` | 同一区域同时含图片外观与运行时行为，或必须继续原子拆分的混合部件 | `composite_parts` 至少拆出 `appearance` 与 `behavior`；外观走 fixed 图片资产，行为走 runtime；不能用一个 runtime owner 吞掉美术外观 |
+
+复用不是“看起来相似”或“语义相同”：`reuse` 必须登记精确资产身份或通过既有 `asset-reuse-snapshot/1.0` 的 target/candidate 保真比较，并提供视觉和兼容性证据；缺失时直接回退方案阶段。整屏截图不得作为交互场景来源，必须交付原子部件并由正式 Scene 装配。
+
 - 装饰满幅背景只覆盖无交互的屏幕空间装饰；世界空间关卡、Tilemap、碰撞或玩法环境使用场景/Tilemap或世界/玩法环境路线。
-- UI 不默认从整屏效果图裁切；优先使用矢量、字体工程、九宫格和布局配置。
+- 非 `effect-image` 的普通 UI 仍可按项目约定使用矢量、字体工程、九宫格和布局配置；`effect-image` 则先依据上述路线分析，不因 UI 语义把特色材质默认降为原生绘制。
 - 动画与 VFX 必须按动态时间采样验收，不能只检查某一静态帧。
 - AI 合成栅格路线才读取 `effect-image-splitting.md`；它是可选子路线，不是其他资产类型的前置步骤。
 - accepted 资源没有 `source_file/source_files` 时，任意路线的 `generation_record` 都必须提供公共可执行身份：`record_id`、生成器及版本、可解析时间、命令/配方、非空输入来源和非空参数对象；任意对象不能冒充来源。状态为 `producing`、`review` 或 `accepted` 的 `ai-composite-raster` 还强制其专用字段：非空全局前缀、资产段、状态段、负向段、模型、模型版本、种子、参考输入路径列表和后处理列表。

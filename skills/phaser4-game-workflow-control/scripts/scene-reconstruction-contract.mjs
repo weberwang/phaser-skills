@@ -19,8 +19,11 @@ import {
   validateLayoutRegionBindings,
 } from "./scene-layout-decomposition-contract.mjs";
 import { validateDisplayLayerPlanning } from "./display-layer-planning-contract.mjs";
+import { validateSceneTextDecomposition } from "./scene-text-decomposition-contract.mjs";
+import { validateSceneVisualRouteContract } from "./scene-visual-route-contract.mjs";
 
 export { validateDisplayLayerPlanning } from "./display-layer-planning-contract.mjs";
+export { validateSceneVisualRouteAnalysis, validateSceneVisualRouteContract } from "./scene-visual-route-contract.mjs";
 
 /** 判断是否为普通对象。 */
 export function isObject(value) {
@@ -496,6 +499,10 @@ export function validateSceneReconstructionContract(contract, manifest = null, o
   }
   const layoutInfo = validateLayoutDecomposition(contract, targetInfo, stage, errors, effectImage);
   validateLayoutRegionBindings(regions, layoutInfo, contract, stage, errors, effectImage);
+  // effect-image 的文本必须先完成独立拆解；普通合同由模块内部直接跳过，不引入额外硬门。
+  errors.push(...validateSceneTextDecomposition(contract, { stage, manifest, effectImage, regions, layoutInfo, toleranceDefinitions: toleranceBlock }));
+  // effect-image 的每个视觉区域都必须先完成来源路线分析；普通游戏 UI 不受该忠实还原硬门影响。
+  if (effectImage) errors.push(...validateSceneVisualRouteContract(contract, manifest, { ...options, stage, toleranceDefinitions: toleranceBlock }));
   validateCompositionAndResponsive(contract, targetInfo, stage, errors, effectImage);
   const responsive = field(contract, "responsive_contract", "responsiveContract", "responsive");
   const responsiveBinding = field(responsive, "layout_contract_binding", "layoutContractBinding", "layout_contract", "layoutContract");
