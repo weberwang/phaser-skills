@@ -376,7 +376,7 @@ export function validateVisualDecompositionConfirmations(manifest = {}, options 
   const errors = [];
   const regions = manualDecompositionRegions(manifest);
   const authorityByRegion = options.authorityByRegion;
-  if (regions.length && !authorityByRegion) errors.push(confirmationError({ stage: options.stage ?? "V3", annotation_number: "*", region_id: "*", observedMethod: "untrusted-authority" }, "decision gap：V3/V4/V5 必须由 workflow preflight 提供逐区域 authority map", { missing: "authorityByRegion/authority.sceneId" }));
+  if (regions.length && !authorityByRegion) errors.push(confirmationError({ stage: options.stage ?? "V3", annotation_number: "*", region_id: "*", observedMethod: "untrusted-authority" }, "decision gap：V3/V3/V4 必须由 workflow preflight 提供逐区域 authority map", { missing: "authorityByRegion/authority.sceneId" }));
   const identity = {
     projectRoot: options.projectRoot,
     checkFiles: options.checkFiles,

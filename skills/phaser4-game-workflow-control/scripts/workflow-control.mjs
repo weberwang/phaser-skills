@@ -693,7 +693,7 @@ function evidenceCheck(args, silent = false, validationContextOverride = null) {
     executionPackage = implementationPackage;
     if (isVisualProductionWork(work)) visualPackage = implementationPackage;
   } else if (isVisualProductionWork(work)) {
-    if (!packagePath) fail('V4/V5 视觉 Evidence 必须绑定 Implementation Package');
+    if (!packagePath) fail('V3/V4 视觉 Evidence 必须绑定 Implementation Package');
     visualPackage = validationContext.validateImplementationPackage(validationContext.readJson(resolve(repo, packagePath), 'Implementation Package'), work);
   }
   if (audit.diffFingerprint !== evidence.diffFingerprint) fail('旧证据不能验证当前 diff');
@@ -709,7 +709,7 @@ function evidenceCheck(args, silent = false, validationContextOverride = null) {
   const reviewer = evidence.gateResults.F2.reviewer;
   const reviewMode = evidence.gateResults.F2.reviewMode;
   const f0Authorization = evidence.gateResults.F0.authorizationId;
-  // V2 唯一人工确认通过后，V3-V5 的视觉 F2 只消费机器验证事实；通用非视觉 F2 仍保留 reviewer/reviewMode 硬门。
+  // V2 拆解确认通过后，V3-V4 的视觉 F2 只消费机器验证事实；通用非视觉 F2 仍保留 reviewer/reviewMode 硬门。
   if (f0Authorization !== audit.authorizationId || evidence.gateResults.F3.evidenceId !== evidence.evidenceId || (!visualMachineValidation && !reviewer)) fail('F0 授权、F2 审查或 F3 证据绑定不完整');
   let visualManifest = null;
   if (visualPackage) { const snapshot = validationContext.loadVisualManifestSnapshot(visualPackage); if (snapshot?.errors?.length) fail(snapshot.errors[0]); visualManifest = snapshot?.manifest ?? null; }

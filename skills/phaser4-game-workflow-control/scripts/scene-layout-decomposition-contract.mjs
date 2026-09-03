@@ -2,7 +2,7 @@
  * effect-image 场景布局拆解与几何证据合同。
  *
  * 布局拆解必须独立于素材生产事实，保证 coverage region、layout node 和
- * 运行时 placement 能够在 V4/V5 形成确定性的双向绑定与逐节点证据。
+ * 运行时 placement 能够在 V3/V4 形成确定性的双向绑定与逐节点证据。
  */
 
 import { validateEffectImageParentChildLayoutNodes } from "./layout-node-parent-geometry.mjs";
@@ -88,7 +88,7 @@ function contractError(stage, contract, region, message, details = {}) {
   const expected = details.expected ?? "完整冻结场景合同与对应证据";
   const actual = details.actual ?? "missing";
   const returnStage = details.returnStage ?? (stage === "V1" || stage === "V2" ? "V1/PROPOSAL" : stage);
-  const rootCause = details.rootCause ?? (returnStage === "V1/PROPOSAL" ? "方案缺失" : stage === "V4" ? "执行问题" : stage === "V5" || stage === "VALIDATING" ? "验收问题" : "方案缺失");
+  const rootCause = details.rootCause ?? (returnStage === "V1/PROPOSAL" ? "方案缺失" : stage === "V3" ? "执行问题" : stage === "V4" || stage === "VALIDATING" ? "验收问题" : "方案缺失");
   return `[${stage}] scene/state=${scene}/${state} annotation_number=${annotation} region_id=${regionId} 根因=${rootCause} ${message}${missing} 预期证据=${expected} 实际证据=${actual} 应退回阶段=${returnStage}`;
 }
 
@@ -435,7 +435,7 @@ export function validateLayoutGeometryFacts(contract, preacceptance, stage, erro
   if (["passed", "pass"].includes(geometryResult) && failedMeasurements.length > 0) errors.push(contractError(stage, contract, geometry, "V4 layout_geometry=passed 与节点几何结果失败冲突", { actual: `${failedMeasurements.length} 个节点未通过`, returnStage: "V3/V4", rootCause: "验收问题" }));
 }
 
-/** 校验 effect-image V5 每个布局节点的目标/候选边界、差异和证据。 */
+/** 校验 effect-image V4 每个布局节点的目标/候选边界、差异和证据。 */
 export function validateEffectImageLayoutNodeFidelity(item, sceneContract, stage, errors, toleranceDefinitions, sceneRegions) {
   const label = "layout_node_results";
   const decomposition = field(sceneContract, "layout_decomposition", "layoutDecomposition", "layout_decomposition_contract", "layoutDecompositionContract");

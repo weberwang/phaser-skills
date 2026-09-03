@@ -340,7 +340,7 @@ export function validateEffectImagePromptContract(asset, contract, generation, c
   const actualTargetSha = generation.target_sha256 ?? generation.targetSha256 ?? generation.reference_target_sha256 ?? generation.referenceTargetSha256;
   if (targetSha && actualTargetSha !== targetSha) add("effect-image generation_record.target_sha256 未绑定当前冻结目标");
   const actualCandidateSha = generation.candidate_sha256 ?? generation.candidateSha256 ?? generation.candidate_identity?.sha256 ?? generation.candidateIdentity?.sha256;
-  const contractCandidateIdentity = contract?.candidate_identity ?? contract?.candidateIdentity ?? contract?.v2_scene_candidate?.identity ?? contract?.v2SceneCandidate?.identity ?? {};
+  const contractCandidateIdentity = contract?.candidate_identity ?? contract?.candidateIdentity ?? contract?.visual_decomposition_confirmation?.candidate_identity ?? contract?.visualDecompositionConfirmation?.candidateIdentity ?? {};
   const expectedCandidate = expectedIdentity.candidate ?? expectedIdentity.candidateSha256 ?? expectedIdentity.candidate_sha256 ?? contractCandidateIdentity.sha256 ?? contractCandidateIdentity.candidate_sha256 ?? contractCandidateIdentity.candidateSha256;
   if (expectedCandidate && actualCandidateSha !== expectedCandidate) add("effect-image generation_record.candidate_sha256 未绑定当前候选");
   const expectedDiff = expectedIdentity.diff ?? expectedIdentity.diffFingerprint ?? expectedIdentity.diff_fingerprint ?? contractCandidateIdentity.diff_fingerprint ?? contractCandidateIdentity.diffFingerprint;

@@ -55,16 +55,16 @@ test("视觉生产词汇表由共享核心集中维护", () => {
 
 test("视觉阶段、根因和处置映射保持稳定", () => {
   assert.equal(deriveVisualReturnStage("V2"), "V1/PROPOSAL");
-  assert.equal(deriveVisualReturnStage("V5", { validationStages: ["V5"] }), "VALIDATING");
+  assert.equal(deriveVisualReturnStage("V4", { validationStages: ["V4"] }), "VALIDATING");
   assert.equal(deriveVisualReturnStage("V4"), "V4");
   assert.equal(deriveVisualRootCause("V1", "V1/PROPOSAL"), VISUAL_ROOT_CAUSES.PLAN_MISSING);
-  assert.equal(deriveVisualRootCause("V4", "V4"), VISUAL_ROOT_CAUSES.EXECUTION);
-  assert.equal(deriveVisualRootCause("V5", "VALIDATING", { acceptanceStages: ["V5", "VALIDATING"] }), VISUAL_ROOT_CAUSES.ACCEPTANCE);
+  assert.equal(deriveVisualRootCause("V4", "V4"), VISUAL_ROOT_CAUSES.ACCEPTANCE);
+  assert.equal(deriveVisualRootCause("V4", "VALIDATING", { acceptanceStages: ["V4", "VALIDATING"] }), VISUAL_ROOT_CAUSES.ACCEPTANCE);
   assert.equal(deriveVisualDisposition({}), VISUAL_REMEDIATION.REPAIR);
   assert.equal(deriveVisualDisposition({ missingEvidence: ["机器验证结果缺失"] }), VISUAL_REMEDIATION.REVALIDATE);
   assert.equal(deriveVisualDisposition({ identityChanges: ["V2 target identity"] }), VISUAL_REMEDIATION.RETURN);
-  assert.equal(deriveVisualDisposition({ changed: ["V2FrozenCandidateHash"] }), VISUAL_REMEDIATION.RETURN);
-  assert.equal(earliestVisualReturnStage(["V5 evidence", "V3 layout"]), "V3");
+  assert.equal(deriveVisualDisposition({ changed: ["V2PlanCandidateHash"] }), VISUAL_REMEDIATION.RETURN);
+  assert.equal(earliestVisualReturnStage(["V4 evidence", "V3 layout"]), "V3");
   assert.equal(earliestVisualReturnStage([], "V4"), "V4");
   assert.equal(VISUAL_REMEDIATION_LABEL.repair, "REPAIR_REQUIRED");
   assert.equal(VISUAL_REMEDIATION_NEXT_ACTION.return.includes("最早受影响阶段"), true);

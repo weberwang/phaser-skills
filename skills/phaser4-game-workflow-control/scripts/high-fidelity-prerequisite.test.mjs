@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { assertGlobalVisualBaselineSelection } from './global-visual-baseline-contract.mjs';
-import { assertFormalExecutionAfterV4, assertFormalImplementationAfterV2, assertHighFidelityPrerequisite } from './high-fidelity-prerequisite.mjs';
+import { assertFormalExecutionAfterV3, assertFormalImplementationAfterV2, assertHighFidelityPrerequisite } from './high-fidelity-prerequisite.mjs';
 
 const TARGET_SHA = `sha256:${'a'.repeat(64)}`;
 const CANDIDATE_SHA = `sha256:${'b'.repeat(64)}`;
@@ -105,10 +105,10 @@ function makeFixture(unitType = 'SCENE', selectedLayer = 'pause') {
   mkdirSync(join(repo, 'docs'), { recursive: true });
   const files = {
     sceneMaster: join(repo, 'docs', 'scene-master.png'),
-    candidate: join(repo, 'docs', 'scene-candidate.png'),
-    dynamic: join(repo, 'docs', 'scene-dynamic.mp4'),
-    machine: join(repo, 'docs', 'v2-machine.json'),
-    human: join(repo, 'docs', 'v2-human.json'),
+    reconstructionContract: join(repo, 'docs', 'scene-reconstruction-contract.json'),
+    decompositionAnnotation: join(repo, 'docs', 'decomposition-annotation.png'),
+    technicalDecomposition: join(repo, 'docs', 'technical-decomposition.json'),
+    confirmation: join(repo, 'docs', 'v2-decomposition-confirmation.json'),
     pauseContext: join(repo, 'docs', 'pause-context.png'),
     settingsContext: join(repo, 'docs', 'settings-context.png'),
   };
@@ -116,27 +116,28 @@ function makeFixture(unitType = 'SCENE', selectedLayer = 'pause') {
   const expected = unitType === 'SCENE' ? { sceneId: 'play', displayLayerId: null, hostSceneId: null } : { sceneId: 'play', displayLayerId: selectedLayer, hostSceneId: 'play' };
   const artifact = (path) => ({ file: path.slice(repo.length + 1).replaceAll('\\', '/'), sha256: hashFile(path), sceneId: 'play' });
   const contextArtifact = (path, displayLayerId) => ({ ...artifact(path), displayLayerId, hostSceneId: 'play' });
-  const machineValidation = { validationMode: 'MACHINE', status: 'PASS', targetSha256: TARGET_SHA, candidateSha256: CANDIDATE_SHA, diffFingerprint: DIFF, evidenceFile: 'docs/v2-machine.json', evidenceSha256: hashFile(files.machine) };
-  const visualHumanApproval = { approvalId: 'V2-HUMAN-1', reviewMode: 'SINGLE_HUMAN', status: 'PASS', targetSha256: TARGET_SHA, candidateSha256: CANDIDATE_SHA, diffFingerprint: DIFF, evidenceFile: 'docs/v2-human.json', evidenceSha256: hashFile(files.human) };
+  const visualDecompositionConfirmation = { confirmationId: 'V2-CONFIRM-1', confirmationMode: 'manual', status: 'PASS', targetSha256: TARGET_SHA, candidateSha256: CANDIDATE_SHA, diffFingerprint: DIFF, evidenceFile: 'docs/v2-decomposition-confirmation.json', evidenceSha256: hashFile(files.confirmation) };
   const evidence = {
-    schemaVersion: 'phaser4-scene-v2-result/1.0', workItemId: 'WI-1', status: 'COMPLETE', stage: 'V2', frozen: true, sceneId: 'play',
+    schemaVersion: 'phaser4-scene-v2-reconstruction-plan/1.0', workItemId: 'WI-1', status: 'COMPLETE', stage: 'V2', frozen: true, sceneId: 'play',
     targetSha256: TARGET_SHA, candidateSha256: CANDIDATE_SHA, diffFingerprint: DIFF, sceneMaster: artifact(files.sceneMaster),
-    completeSceneCandidate: artifact(files.candidate), dynamicVisualSample: artifact(files.dynamic), machineValidation, visualHumanApproval,
+    sceneReconstructionContract: artifact(files.reconstructionContract), decompositionAnnotation: artifact(files.decompositionAnnotation), technicalDecomposition: artifact(files.technicalDecomposition), visualDecompositionConfirmation,
+    visualProductionContract: { contractId: 'VPC-1' },
+    visualProductionUnits: [{ unitId: 'scene-root', owner: 'fixed-production-visual' }],
     displayLayerContexts: [
       { displayLayerId: 'pause', hostSceneId: 'play', hostContextImage: contextArtifact(files.pauseContext, 'pause') },
       { displayLayerId: 'settings', hostSceneId: 'play', hostContextImage: contextArtifact(files.settingsContext, 'settings') },
     ],
   };
-  const evidencePath = join(repo, 'docs', 'scene-v2-result.json');
-  const unit = { unitId: unitType === 'SCENE' ? 'SCENE-1' : `DISPLAY-${selectedLayer}`, unitType, sceneId: unitType === 'SCENE' ? 'play' : null, displayLayerId: unitType === 'SCENE' ? null : selectedLayer, hostSceneId: unitType === 'SCENE' ? null : 'play', highFidelityPrerequisite: { workItemId: 'WI-1', status: 'COMPLETE', stage: 'V2', frozen: true, ...expected, targetSha256: TARGET_SHA, candidateSha256: CANDIDATE_SHA, diffFingerprint: DIFF, evidenceFile: 'docs/scene-v2-result.json', evidenceSha256: '' } };
-  const work = { workItemId: 'WI-1', visualStage: 'V2', visualStageState: 'v2-direction-frozen', visualStageEvidenceRefs: { V2: { path: 'docs/scene-v2-result.json', sha256: '', workItemId: 'WI-1' } } };
+  const evidencePath = join(repo, 'docs', 'scene-v2-plan.json');
+  const unit = { unitId: unitType === 'SCENE' ? 'SCENE-1' : `DISPLAY-${selectedLayer}`, unitType, sceneId: unitType === 'SCENE' ? 'play' : null, displayLayerId: unitType === 'SCENE' ? null : selectedLayer, hostSceneId: unitType === 'SCENE' ? null : 'play', highFidelityPrerequisite: { workItemId: 'WI-1', status: 'COMPLETE', stage: 'V2', frozen: true, ...expected, targetSha256: TARGET_SHA, candidateSha256: CANDIDATE_SHA, diffFingerprint: DIFF, evidenceFile: 'docs/scene-v2-plan.json', evidenceSha256: '' } };
+  const work = { workItemId: 'WI-1', visualStage: 'V2', visualStageState: 'v2-production-planning-complete', visualStageEvidenceRefs: { V2: { path: 'docs/scene-v2-plan.json', sha256: '', workItemId: 'WI-1' } } };
   const pkg = { workItemId: 'WI-1' };
   const fixture = { repo, evidencePath, evidence, unit, work, pkg, io: { resolve, existsSync, readFileSync, fileHash: hashFile } };
   writeEvidenceFile(fixture);
   return fixture;
 }
 
-test('一个 SCENE 与两个 DISPLAY_LAYER 共用同一场景 V2 根结果', () => {
+test('一个 SCENE 与两个 DISPLAY_LAYER 共用同一场景 V2 拆解还原方案', () => {
   const fixtures = [makeFixture('SCENE'), makeFixture('DISPLAY_LAYER', 'pause'), makeFixture('DISPLAY_LAYER', 'settings')];
   const evidenceFiles = fixtures.map((fixture) => fixture.unit.highFidelityPrerequisite.evidenceFile);
   assert.deepEqual(new Set(evidenceFiles).size, 1);
@@ -154,13 +155,13 @@ test('独立 taskId/sourceWorkItemId 不能伪造场景 V2 前置', () => {
   rmSync(fixture.repo, { recursive: true, force: true });
 });
 
-test('三张候选经唯一人工确认后 foundation-only 包可在 V2/V4 前规划和执行', () => {
+test('三张候选经唯一人工确认后 foundation-only 包可在 V2/V3 前规划和执行', () => {
   const fixture = makeFixture();
   const packageValue = { executionUnits: [{ unitType: 'SHARED' }, { unitType: 'MODULE' }] };
   fixture.work.visualStage = 'V1'; fixture.work.visualStageState = 'global-static-baseline-frozen'; fixture.work.globalStaticBaselineState = 'global-static-baseline-frozen';
   writeGlobalBaselineSelectionEvidence(fixture);
   assert.doesNotThrow(() => assertFormalImplementationAfterV2(fixture.work, packageValue, fixture.repo, fixture.io));
-  assert.doesNotThrow(() => assertFormalExecutionAfterV4(fixture.work, packageValue, fixture.repo, fixture.io));
+  assert.doesNotThrow(() => assertFormalExecutionAfterV3(fixture.work, packageValue, fixture.repo, fixture.io));
   rmSync(fixture.repo, { recursive: true, force: true });
 });
 
@@ -233,19 +234,19 @@ test('foundation-only 包仅伪造冻结状态或缺少三候选人工证据时�
   const packageValue = { executionUnits: [{ unitType: 'SHARED' }, { unitType: 'MODULE' }] };
   fixture.work.visualStage = 'V1'; fixture.work.visualStageState = 'global-static-baseline-frozen';
   assert.throws(() => assertFormalImplementationAfterV2(fixture.work, packageValue, fixture.repo, fixture.io), /globalStaticBaselineState|基础实施包|3 张候选图/);
-  assert.throws(() => assertFormalExecutionAfterV4(fixture.work, packageValue, fixture.repo, fixture.io), /globalStaticBaselineState|基础实施包|3 张候选图/);
+  assert.throws(() => assertFormalExecutionAfterV3(fixture.work, packageValue, fixture.repo, fixture.io), /globalStaticBaselineState|基础实施包|3 张候选图/);
   fixture.work.globalStaticBaselineState = 'global-static-baseline-frozen';
   assert.throws(() => assertFormalImplementationAfterV2(fixture.work, packageValue, fixture.repo, fixture.io), /3 张候选图|人工确认/);
-  assert.throws(() => assertFormalExecutionAfterV4(fixture.work, packageValue, fixture.repo, fixture.io), /3 张候选图|人工确认/);
+  assert.throws(() => assertFormalExecutionAfterV3(fixture.work, packageValue, fixture.repo, fixture.io), /3 张候选图|人工确认/);
   rmSync(fixture.repo, { recursive: true, force: true });
 });
 
-test('混入 SCENE 的实施包仍受 V2/V4 正式门约束', () => {
+test('混入 SCENE 的实施包仍受 V2/V3 正式门约束', () => {
   const fixture = makeFixture();
   const packageValue = { executionUnits: [{ unitType: 'SHARED' }, { unitType: 'SCENE' }] };
   fixture.work.visualStage = 'V1'; fixture.work.visualStageState = 'global-static-baseline-frozen'; fixture.work.globalStaticBaselineState = 'global-static-baseline-frozen';
-  assert.throws(() => assertFormalImplementationAfterV2(fixture.work, packageValue, fixture.repo, fixture.io), /V2 前置视觉验收/);
-  assert.throws(() => assertFormalExecutionAfterV4(fixture.work, packageValue, fixture.repo, fixture.io), /V4 正式资源/);
+  assert.throws(() => assertFormalImplementationAfterV2(fixture.work, packageValue, fixture.repo, fixture.io), /V2 拆解方案|V2 前置门/);
+  assert.throws(() => assertFormalExecutionAfterV3(fixture.work, packageValue, fixture.repo, fixture.io), /V3 正式资源/);
   rmSync(fixture.repo, { recursive: true, force: true });
 });
 
@@ -331,18 +332,18 @@ test('全局基线候选扩展名伪装为 PNG 时拒绝', () => {
   rmSync(fixture.repo, { recursive: true, force: true });
 });
 
-test('V3 只允许规划，V4 完成后才允许正式执行且 V5 仅作为后续复验', () => {
+test('V2 只允许规划，V3 完成后才允许正式执行且 V4 仅作为后续复验', () => {
   const fixture = makeFixture();
   fixture.pkg.executionUnits = [{ unitType: 'SCENE' }];
-  const v4Path = join(fixture.repo, 'docs', 'v4-formal-acceptance.json');
-  const v4Diff = `sha256:${'c'.repeat(64)}`;
-  writeFileSync(v4Path, `${JSON.stringify({ evidenceType: 'v4-formal-acceptance', status: 'PASS', workItemId: 'WI-1', contentHash: CANDIDATE_SHA, diffFingerprint: v4Diff, candidateIdentity: { sha256: CANDIDATE_SHA, diffFingerprint: v4Diff } }, null, 2)}\n`, 'utf8');
-  fixture.work.visualStage = 'V3'; fixture.work.visualStageState = 'v3-implementation-package-ready';
-  assert.throws(() => assertFormalExecutionAfterV4(fixture.work, fixture.pkg, fixture.repo, fixture.io), /V4 正式资源/);
-  fixture.work.visualStage = 'V4'; fixture.work.visualStageState = 'v4-formal-acceptance-complete'; fixture.work.visualStageEvidenceRefs.V4 = { path: 'docs/v4-formal-acceptance.json', sha256: hashFile(v4Path), workItemId: 'WI-1' };
-  assert.doesNotThrow(() => assertFormalExecutionAfterV4(fixture.work, fixture.pkg, fixture.repo, fixture.io));
-  fixture.work.visualStage = 'V5'; fixture.work.visualStageState = 'v5-runtime-reverification-complete';
-  assert.doesNotThrow(() => assertFormalExecutionAfterV4(fixture.work, fixture.pkg, fixture.repo, fixture.io));
+  const v3Path = join(fixture.repo, 'docs', 'v3-formal-acceptance.json');
+  const v3Diff = `sha256:${'c'.repeat(64)}`;
+  writeFileSync(v3Path, `${JSON.stringify({ evidenceType: 'v3-formal-acceptance', status: 'PASS', workItemId: 'WI-1', contentHash: CANDIDATE_SHA, diffFingerprint: v3Diff, candidateIdentity: { sha256: CANDIDATE_SHA, diffFingerprint: v3Diff } }, null, 2)}\n`, 'utf8');
+  fixture.work.visualStage = 'V2'; fixture.work.visualStageState = 'v2-production-planning-complete';
+  assert.throws(() => assertFormalExecutionAfterV3(fixture.work, fixture.pkg, fixture.repo, fixture.io), /V3 正式资源/);
+  fixture.work.visualStage = 'V3'; fixture.work.visualStageState = 'v3-formal-acceptance-complete'; fixture.work.visualStageEvidenceRefs.V3 = { path: 'docs/v3-formal-acceptance.json', sha256: hashFile(v3Path), workItemId: 'WI-1' };
+  assert.doesNotThrow(() => assertFormalExecutionAfterV3(fixture.work, fixture.pkg, fixture.repo, fixture.io));
+  fixture.work.visualStage = 'V4'; fixture.work.visualStageState = 'v4-runtime-integration-candidate';
+  assert.doesNotThrow(() => assertFormalExecutionAfterV3(fixture.work, fixture.pkg, fixture.repo, fixture.io));
   rmSync(fixture.repo, { recursive: true, force: true });
 });
 
@@ -368,26 +369,16 @@ test('当前 Work Item、候选与 diff 身份漂移均 fail closed', () => {
   rmSync(diff.repo, { recursive: true, force: true });
 });
 
-test('机器 F2 与唯一真人审批必须是绑定身份的 PASS 事实', () => {
-  const machine = makeFixture();
-  writeEvidenceFile(machine, { machineValidation: { ...machine.evidence.machineValidation, status: 'FAIL' } });
-  assert.throws(() => assertHighFidelityPrerequisite(machine.unit, machine.work, machine.pkg, machine.repo, machine.io), /machineValidation/);
-  rmSync(machine.repo, { recursive: true, force: true });
+test('唯一拆解确认必须是绑定身份的 manual PASS 事实', () => {
+  const pending = makeFixture();
+  writeEvidenceFile(pending, { visualDecompositionConfirmation: { ...pending.evidence.visualDecompositionConfirmation, status: 'PENDING' } });
+  assert.throws(() => assertHighFidelityPrerequisite(pending.unit, pending.work, pending.pkg, pending.repo, pending.io), /visualDecompositionConfirmation/);
+  rmSync(pending.repo, { recursive: true, force: true });
 
-  const machineIdentity = makeFixture();
-  writeEvidenceFile(machineIdentity, { machineValidation: { ...machineIdentity.evidence.machineValidation, candidateSha256: `sha256:${'d'.repeat(64)}` } });
-  assert.throws(() => assertHighFidelityPrerequisite(machineIdentity.unit, machineIdentity.work, machineIdentity.pkg, machineIdentity.repo, machineIdentity.io), /machineValidation.*target\/candidate\/diff/);
-  rmSync(machineIdentity.repo, { recursive: true, force: true });
-
-  const human = makeFixture();
-  writeEvidenceFile(human, { visualHumanApproval: { ...human.evidence.visualHumanApproval, status: 'PENDING' } });
-  assert.throws(() => assertHighFidelityPrerequisite(human.unit, human.work, human.pkg, human.repo, human.io), /visualHumanApproval/);
-  rmSync(human.repo, { recursive: true, force: true });
-
-  const humanIdentity = makeFixture();
-  writeEvidenceFile(humanIdentity, { visualHumanApproval: { ...humanIdentity.evidence.visualHumanApproval, diffFingerprint: 'sha256:other-scene-v2-diff' } });
-  assert.throws(() => assertHighFidelityPrerequisite(humanIdentity.unit, humanIdentity.work, humanIdentity.pkg, humanIdentity.repo, humanIdentity.io), /visualHumanApproval.*target\/candidate\/diff/);
-  rmSync(humanIdentity.repo, { recursive: true, force: true });
+  const identity = makeFixture();
+  writeEvidenceFile(identity, { visualDecompositionConfirmation: { ...identity.evidence.visualDecompositionConfirmation, diffFingerprint: 'sha256:other-scene-v2-diff' } });
+  assert.throws(() => assertHighFidelityPrerequisite(identity.unit, identity.work, identity.pkg, identity.repo, identity.io), /visualDecompositionConfirmation.*target\/candidate\/diff/);
+  rmSync(identity.repo, { recursive: true, force: true });
 });
 
 test('缺字段、非 COMPLETE、宿主身份漂移和 SHA 漂移均 fail closed', () => {
@@ -398,7 +389,7 @@ test('缺字段、非 COMPLETE、宿主身份漂移和 SHA 漂移均 fail closed
 
   const pending = makeFixture();
   writeEvidenceFile(pending, { status: 'PENDING' });
-  assert.throws(() => assertHighFidelityPrerequisite(pending.unit, pending.work, pending.pkg, pending.repo, pending.io), /V2 根结果未绑定当前 Work Item、scene 或 target\/candidate\/diff/);
+  assert.throws(() => assertHighFidelityPrerequisite(pending.unit, pending.work, pending.pkg, pending.repo, pending.io), /V2 拆解方案未绑定当前 Work Item、scene 或 target\/candidate\/diff/);
   rmSync(pending.repo, { recursive: true, force: true });
 
   const identity = makeFixture('DISPLAY_LAYER');

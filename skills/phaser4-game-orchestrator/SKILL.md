@@ -9,7 +9,7 @@ description: Phaser 4 游戏领域编排角色；在全局控制面已建立 Wor
 
 ## 最短流程
 
-用户先按[`simplified-workflow.md`](../phaser4-game-workflow-control/references/simplified-workflow.md)理解六阶段项目视图：需求与范围 → 全局基线 → 基础工程 → 逐场景生产 → 全局集成验证 → 发布；单场景按场景定义 → 方向确认 → 生产就绪 → 正式实现与运行验收理解。该视图不改变 G0-G3、V0-V5、A0-A6、F0-F4 或证据硬门。
+用户先按[`simplified-workflow.md`](../phaser4-game-workflow-control/references/simplified-workflow.md)理解六阶段项目视图：需求与范围 → 全局基线 → 基础工程 → 逐场景生产 → 全局集成验证 → 发布；单场景按场景定义 → 拆解确认 → 资源与组合验收 → 正式实现与运行验收理解。该视图不改变 G0-G3、V0-V4、A0-A6、F0-F4 或证据硬门。
 
 1. 读取 Work Item、任务授权、当前基线和适用状态门；需要字段时按需读取 [`quality-gates.md`](references/quality-gates.md)、[`module-decomposition.md`](references/module-decomposition.md)、[`game-implementation.md`](references/game-implementation.md)、[`delivery-artifacts.md`](references/delivery-artifacts.md) 等 reference。
 2. 先提交最小领域提议和验收边界，完成审查后由控制面运行 `check`；已有入口、调用链、授权范围和风险事实足够时停止探索。
@@ -20,7 +20,7 @@ description: Phaser 4 游戏领域编排角色；在全局控制面已建立 Wor
 
 - 制作、架构、玩法、视觉、资源、音频、数值、QA、性能和发布工作均只能提议、审查或在任务授权内修改。
 - A0-A3 依据任务授权；A4-A6 的具体集成、外部写入、真机、破坏性操作和发布由控制面建立精确 pending 并等待显式批准，本 Skill 不执行这些动作。
-- V0→V1→V2→V3→V4→V5、全局静态基线、场景方向确认和高保真前置继续使用控制面的不可绕过证据门；领域文档只补充本领域事实。
+- V0→V1→V2→V3→V4、全局静态基线、场景拆解确认和高保真前置继续使用控制面的不可绕过证据门；领域文档只补充本领域事实。
 - 不覆盖并行代理的修改，不自动回滚共享工作区；启动本地验证服务前先按 [`local-service-validation.md`](references/local-service-validation.md) 查找可复用健康实例。
 
 ## 视觉与场景

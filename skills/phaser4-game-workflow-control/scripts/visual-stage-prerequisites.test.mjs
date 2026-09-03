@@ -1,4 +1,4 @@
-/** V0→V5 视觉阶段硬门回归；证据必须从带 SHA 的独立文件加载。 */
+/** V0→V4 视觉阶段硬门回归；证据必须从带 SHA 的独立文件加载。 */
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -28,13 +28,12 @@ function evidenceSet(root, overrides = {}) {
   const outputHash = sha(outputPath);
   const common = { workItemId: 'WI-VISUAL', baselineHash: SHA, contentHash: HASH2, diffFingerprint: HASH2, files: [outputFile], fileHashes: { [outputFile]: outputHash }, candidateIdentity: { sha256: HASH2, diff_fingerprint: HASH2 } };
   const values = {
-    V2: { resultId: 'RESULT-V2', packageId: 'PKG-V2', unitId: 'UNIT-V2', codeFingerprint: `git:${'c'.repeat(40)}`, completedAt: '2026-08-20T00:02:00.000Z', commands: [{ command: 'node --test visual-proof', exitCode: 0, outputFile, outputHash }], verdict: 'PASS', representativeFrames: ['frame.png'], dynamicSample: 'dynamic.mp4', v2StructuredReview: { validationMode: 'MACHINE', status: 'PASS', evidence: 'machine-v2-review.json', reviewed_target_identity: { sha256: SHA }, reviewed_candidate_identity: { sha256: HASH2, diff_fingerprint: HASH2 } }, targetHash: SHA, visualHumanApproval: { review_id: 'V2-APPROVAL', reviewed_at: '2026-08-20T00:00:00Z', evidence: 'human.json', evidence_sha256: HASH2, status: 'PASS', target_sha256: SHA, candidate_sha256: HASH2, diff_fingerprint: HASH2, baseline_sha256: SHA }, ...common },
-    V3: { evidenceType: 'v3-production-plan', planId: 'PLAN-V3', status: 'PASS', productionPlan: { units: ['unit'] }, visualProductionContract: { contractId: 'CONTRACT-V3' }, ...common },
-    V4: { evidenceType: 'v4-formal-acceptance', acceptanceId: 'ACCEPT-V4', status: 'PASS', formalAssets: [{ id: 'asset-1', status: 'accepted' }], components: [{ id: 'component-1', status: 'accepted' }], combinationPreacceptance: { status: 'PASS' }, ...common },
-    V5: { evidenceType: 'v5-runtime-integration-candidate', candidateId: 'CANDIDATE-V5', status: 'PASS', ...common },
+    V2: { evidenceType: 'v2-production-plan', planId: 'PLAN-V2', status: 'PASS', targetSha256: SHA, visualDecompositionConfirmation: { confirmation_id: 'CONFIRM-V2', confirmation_mode: 'manual', status: 'accepted', annotation_file: 'frame.png', annotation_sha256: HASH2, target_sha256: SHA, candidate_sha256: HASH2, diff_fingerprint: HASH2, evidence_sha256: HASH2 }, visualProductionContract: { contractId: 'CONTRACT-V2' }, productionPlan: { units: ['unit'] }, visualProductionUnits: [{ id: 'unit', owner: 'fixed-production-visual' }], coverageAudit: { regions: ['region-1'] }, technicalAnalysis: { source: 'proposal-technical-json' }, ...common },
+    V3: { evidenceType: 'v3-formal-acceptance', acceptanceId: 'ACCEPT-V3', status: 'PASS', formalAssets: [{ id: 'asset-1', status: 'accepted' }], components: [{ id: 'component-1', status: 'accepted' }], combinationPreacceptance: { status: 'PASS' }, ...common },
+    V4: { evidenceType: 'v4-runtime-integration-candidate', candidateId: 'CANDIDATE-V4', status: 'PASS', ...common },
   };
   const refs = {};
-  for (const stage of ['V2', 'V3', 'V4', 'V5']) refs[stage] = writeJson(root, `evidence/${stage}.json`, { ...values[stage], ...(overrides[stage] ?? {}) });
+  for (const stage of ['V2', 'V3', 'V4']) refs[stage] = writeJson(root, `evidence/${stage}.json`, { ...values[stage], ...(overrides[stage] ?? {}) });
   return refs;
 }
 function subject(root, options = {}) {
@@ -43,10 +42,11 @@ function subject(root, options = {}) {
     workItemId: 'WI-VISUAL',
     domain: 'visual',
     stageId: options.stageId ?? 'production-entry',
-    visualStage: options.visualStage ?? 'V5',
-    visualStageState: options.visualStageState ?? 'v5-runtime-integration-candidate',
+    visualStage: options.visualStage ?? 'V4',
+    visualStageState: options.visualStageState ?? 'v4-runtime-integration-candidate',
     visualIntegration: options.visualIntegration ?? { registersFormalScene: true },
     baselineHash: SHA,
+    targetHash: SHA,
     visualStageEvidenceRefs: refs,
     ...options,
   };
@@ -77,7 +77,7 @@ function makeCliFixture() {
     inScope: ['scene'], outOfScope: ['release'], approvedRequirements: ['REQ-VISUAL'], allowedActions: ['phaser-inspect', 'phaser-spec-candidate', 'phaser-prototype', 'phaser-code-change', 'phaser-integration'], allowedActionLevels: ['A0', 'A1', 'A2', 'A3'], explicitApprovalActionLevels: ['A4', 'A5', 'A6'], prohibitedActions: [], allowedPaths: ['src'], forbiddenPaths: ['.git'], allowedExternalTargets: [], protectedExternalTargets: [], requiredGates: ['F0', 'F1', 'F2', 'F3'], approvalRecord: null,
     assignedAgent: 'implementer', delegatedAgents: [], expectedOutputs: ['src/main.js'], validationPlan: ['node --test'], exitCriteria: ['视觉证据复核'], nextGate: 'F4', rollbackPolicy: '不自动回滚共享工作区', evidenceRoot: '.workflow-control/evidence/WI-VISUAL',
     pendingApprovalId: 'PENDING-OLD', pendingApprovalObject: '旧候选', pendingApprovalStage: 'main', pendingApprovalActionLevel: 'A4', pendingApprovalGate: 'F4', pendingApprovalState: 'PASSED', pendingApprovalContext: 'phaser-integration', pendingApprovalActionType: 'phaser-integration', pendingApprovalImpactSummary: ['验证候选'], pendingApprovalFileScope: ['src'], pendingApprovalServices: [], pendingApprovalAllowServiceStart: false, pendingApprovalAllowDelete: false, pendingApprovalExternalWrite: false, pendingApprovalDestructive: false, pendingApprovalPhysicalDevice: false, pendingApprovalRelease: false, pendingApprovalExternalTargets: [], pendingApprovalPreparedAt: '2026-08-20T00:00:00.000Z', pendingApprovalPresentedId: null, pendingApprovalPresentedAt: null,
-    validationBatchId: 'BATCH-VISUAL', changeRequestFiles: [], visualStage: 'V5', visualStageState: 'v5-runtime-integration-candidate', visualStageEvidenceRefs: refs, visualIntegration: { registersFormalScene: true },
+    validationBatchId: 'BATCH-VISUAL', changeRequestFiles: [], visualStage: 'V4', visualStageState: 'v4-runtime-integration-candidate', visualStageEvidenceRefs: refs, visualIntegration: { registersFormalScene: true },
   };
   writeFileSync(workPath, `${JSON.stringify(work, null, 2)}\n`, 'utf8');
   writeFileSync(ledgerPath, `${JSON.stringify({ schemaVersion: '1.0', approvals: [] }, null, 2)}\n`, 'utf8');
@@ -93,7 +93,7 @@ test('静态基线 global-static-baseline-frozen 不能冒充 V2', () => {
   const f = tempFixture({ visualStage: 'V2', visualStageState: 'pending', globalStaticBaselineState: 'global-static-baseline-frozen' });
   const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root });
   assert.equal(result.ok, false);
-  assert(errorCodes(result).includes('VISUAL_STAGE_NOT_V5'));
+  assert(errorCodes(result).includes('VISUAL_STAGE_NOT_V4'));
 });
 
 test('V0/V1 全局冻结状态缺少三候选人工选择引用时拒绝', () => {
@@ -105,38 +105,37 @@ test('V2 PASS 但 V3/V4 缺失时 A4 硬门拒绝', () => {
   const f = tempFixture();
   delete f.work.visualStageEvidenceRefs.V3; delete f.work.visualStageEvidenceRefs.V4;
   const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root });
-  assert.equal(result.ok, false); assert.equal(result.disposition, 'repair'); assert(result.missingEvidence.some((item) => item.startsWith('V3 immutable'))); assert(result.missingEvidence.some((item) => item.startsWith('V4 immutable')));
+  assert.equal(result.ok, false); assert.equal(result.disposition, 'revalidate'); assert(result.missingEvidence.some((item) => item.startsWith('V3 immutable'))); assert(result.missingEvidence.some((item) => item.startsWith('V4 immutable')));
 });
 
-test('候选未变的机器验证失败只要求重验当前门', () => {
-  const f = tempFixture({ evidence: { V2: { v2StructuredReview: { validationMode: 'MACHINE', status: 'FAIL', evidence: 'machine-v2-review.json', reviewed_target_identity: { sha256: SHA }, reviewed_candidate_identity: { sha256: HASH2, diff_fingerprint: HASH2 } } } } });
+test('候选未变的拆解机器校验失败只要求重验当前门', () => {
+  const f = tempFixture({ evidence: { V2: { decompositionValidation: { validationMode: 'MACHINE', status: 'FAIL', evidence: 'machine-v2-review.json', reviewed_target_identity: { sha256: SHA }, reviewed_candidate_identity: { sha256: HASH2, diff_fingerprint: HASH2 } } } } });
   const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root });
   assert.equal(result.ok, false);
   assert.equal(result.disposition, 'revalidate');
   assert.equal(result.returnStage, null);
 });
 
-test('V3-V5 候选正常演进不触发阶段回退', () => {
+test('V3-V4 候选正常演进不触发阶段回退', () => {
   const f = tempFixture({ evidence: {
     V3: { contentHash: HASH3, diffFingerprint: HASH3, candidateIdentity: { sha256: HASH3, diff_fingerprint: HASH3 } },
-    V4: { contentHash: SHA, diffFingerprint: SHA, candidateIdentity: { sha256: SHA, diff_fingerprint: SHA } },
-    V5: { contentHash: HASH2, diffFingerprint: HASH2, candidateIdentity: { sha256: HASH2, diff_fingerprint: HASH2 } },
+    V4: { contentHash: HASH2, diffFingerprint: HASH2, candidateIdentity: { sha256: HASH2, diff_fingerprint: HASH2 } },
   } });
   const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root });
   assert.notEqual(result.disposition, 'return');
   assert.equal(result.returnStage, null);
 });
 
-test('V2 审批绑定身份真实变化时才要求回退 V2', () => {
-  const f = tempFixture({ evidence: { V2: { visualHumanApproval: { review_id: 'V2-APPROVAL', reviewed_at: '2026-08-20T00:00:00Z', evidence: 'human.json', evidence_sha256: HASH2, status: 'PASS', target_sha256: SHA, candidate_sha256: HASH3, diff_fingerprint: HASH2, baseline_sha256: SHA } } } });
+test('V2 拆解确认绑定身份真实变化时才要求回退 V2', () => {
+  const f = tempFixture({ evidence: { V2: { targetSha256: HASH3, visualDecompositionConfirmation: { confirmation_id: 'CONFIRM-V2', confirmation_mode: 'manual', status: 'accepted', annotation_file: 'frame.png', annotation_sha256: HASH2, target_sha256: HASH3, candidate_sha256: HASH2, diff_fingerprint: HASH2, evidence_sha256: HASH2 } } } });
   const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root });
   assert.equal(result.ok, false);
   assert.equal(result.disposition, 'return');
   assert.equal(result.returnStage, 'V2');
-  assert(result.identityChanges.includes('V2 candidate identity'));
+  assert(result.identityChanges.includes('V2 plan target identity'));
 });
 
-test('V2/V3/V4/V5 合法不可变证据允许准备 A4', () => {
+test('V2/V3/V4 合法不可变证据允许准备 A4', () => {
   const f = tempFixture();
   const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root });
   assert.equal(result.ok, true); assert.equal(result.required, true);
@@ -155,9 +154,9 @@ test('裸 frozen 在 Schema 阶段声明校验中失败', () => {
 });
 
 test('自定义 stageId 不能替代显式视觉阶段', () => {
-  const f = tempFixture({ stageId: 'main', visualStage: 'V2', visualStageState: 'v2-direction-frozen' });
+  const f = tempFixture({ stageId: 'main', visualStage: 'V2', visualStageState: 'v2-production-planning-complete' });
   const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root });
-  assert.equal(result.ok, false); assert(errorCodes(result).includes('VISUAL_STAGE_NOT_V5'));
+  assert.equal(result.ok, false); assert(errorCodes(result).includes('VISUAL_STAGE_NOT_V4'));
 });
 
 test('根 PASS 或顶层布尔值不能满足依赖', () => {
@@ -176,19 +175,19 @@ test('上游证据文件、基线或候选哈希变化使 pending stale', () => 
   assert.equal(result.ok, false); assert.equal(result.disposition, 'revalidate'); assert.equal(result.returnStage, null); assert(errorCodes(result).includes('VISUAL_PENDING_STALE')); assert(result.invalidatedDependencies.includes('V3ReferenceHash'));
 });
 
-test('缺唯一 V2 真人审批时拒绝', () => {
-  const f = tempFixture({ evidence: { V2: { visualHumanApproval: null } } });
+test('缺唯一 V2 拆解确认时拒绝', () => {
+  const f = tempFixture({ evidence: { V2: { visualDecompositionConfirmation: null } } });
   const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root });
-  assert.equal(result.ok, false); assert(result.missingEvidence.includes('V2 unique visual_human_approval'));
+  assert.equal(result.ok, false); assert(result.missingEvidence.includes('V2 visual decomposition confirmation'));
 });
 
 test('planned/pending 正式资产或未批准替代时拒绝', () => {
-  const f = tempFixture({ evidence: { V4: { formalAssets: [{ id: 'pending', status: 'planned' }] } } });
+  const f = tempFixture({ evidence: { V3: { formalAssets: [{ id: 'pending', status: 'planned' }] } } });
   const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root });
   assert.equal(result.ok, false); assert(errorCodes(result).includes('VISUAL_PENDING_ASSET'));
 });
 
-test('完整合法 V5 候选可供所有入口复用同一结果', () => {
+test('完整合法 V4 候选可供所有入口复用同一结果', () => {
   const f = tempFixture();
   const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root });
   const output = structuredVisualStageFailure(result, 'route');
@@ -202,7 +201,7 @@ test('非视觉 A4 与普通安全 A3 不被误伤', () => {
 
 test('当前没有控制目录或真实视觉证据时不能生成 Main Scene A4 pending', () => {
   const root = mkdtempSync(join(tmpdir(), 'phaser-no-control-'));
-  const work = subject(root, { visualStage: 'V2', visualStageState: 'v2-direction-frozen', visualStageEvidenceRefs: undefined, stageId: 'main' });
+  const work = subject(root, { visualStage: 'V2', visualStageState: 'v2-production-planning-complete', visualStageEvidenceRefs: undefined, stageId: 'main' });
   const result = validateVisualStagePrerequisites(work, { projectRoot: root });
   assert.equal(result.ok, false); assert(result.missingEvidence.length > 0); assert.equal(readFileSync(join(root, 'evidence/V2.json'), 'utf8').length > 0, true);
 });
@@ -237,7 +236,7 @@ test('CLI：route/preflight/prepare/handoff/approve 共享硬门，stale pending
       assert.equal(JSON.parse(blockedRead.stderr).errorCode, 'VISUAL_PREREQUISITES_MISSING');
     }
   }
-  const prepareArgs = ['--work-item', fixture.workPath, '--ledger', fixture.ledgerPath, '--pending-id', 'PENDING-V5', '--object', 'replace Main Scene visual entry', '--stage', 'main', '--action-type', 'phaser-integration', '--action-level', 'A4', '--gate', 'F4', '--context', 'phaser-integration', '--path', 'src', '--impact', '替换正式视觉入口'];
+  const prepareArgs = ['--work-item', fixture.workPath, '--ledger', fixture.ledgerPath, '--pending-id', 'PENDING-V4', '--object', 'replace Main Scene visual entry', '--stage', 'main', '--action-type', 'phaser-integration', '--action-level', 'A4', '--gate', 'F4', '--context', 'phaser-integration', '--path', 'src', '--impact', '替换正式视觉入口'];
   const blockedPrepare = runCli(fixture, 'prepare-approval', prepareArgs);
   assert.notEqual(blockedPrepare.status, 0);
   const blockedError = JSON.parse(blockedPrepare.stderr);
@@ -253,7 +252,7 @@ test('CLI：route/preflight/prepare/handoff/approve 共享硬门，stale pending
   assert.ok(pending.pendingVisualPrerequisiteSnapshot);
   const handedOff = runCli(fixture, 'handoff', ['--work-item', fixture.workPath, '--ledger', fixture.ledgerPath]);
   assert.equal(handedOff.status, 0, handedOff.stderr);
-  assert.equal(JSON.parse(readFileSync(fixture.workPath, 'utf8')).pendingApprovalPresentedId, 'PENDING-V5');
+  assert.equal(JSON.parse(readFileSync(fixture.workPath, 'utf8')).pendingApprovalPresentedId, 'PENDING-V4');
 
   const v3Path = join(fixture.repo, 'evidence', 'V3.json');
   const originalV3 = readFileSync(v3Path);
@@ -271,11 +270,11 @@ test('CLI：route/preflight/prepare/handoff/approve 共享硬门，stale pending
   assert.equal(JSON.parse(readFileSync(fixture.workPath, 'utf8')).approvalRecord, null);
 
   writeFileSync(v3Path, originalV3);
-  const approved = runCli(fixture, 'approve', ['--work-item', fixture.workPath, '--ledger', fixture.ledgerPath, '--approval-id', 'AP-V5', '--user-text', '批准']);
+  const approved = runCli(fixture, 'approve', ['--work-item', fixture.workPath, '--ledger', fixture.ledgerPath, '--approval-id', 'AP-V4', '--user-text', '批准']);
   assert.equal(approved.status, 0, approved.stderr);
   const ledger = JSON.parse(readFileSync(fixture.ledgerPath, 'utf8'));
   assert.equal(ledger.approvals.length, 1);
-  assert.equal(ledger.approvals[0].approvalId, 'AP-V5');
+  assert.equal(ledger.approvals[0].approvalId, 'AP-V4');
 });
 
 test('CLI：RETURN 必须声明必要分类并持久化最小影响范围', () => {

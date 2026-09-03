@@ -36,7 +36,7 @@ export const RETURN_INVALIDATED_ARTIFACTS = Object.freeze([
   'implementationPackageRecord',
   'executionState',
   'visualStageEvidenceRefs',
-  'visualHumanApproval',
+  'visualDecompositionConfirmation',
 ]);
 
 /** 影响范围只接受这三种可审计前缀；前缀和值都不能使用通配表达式。 */
@@ -55,13 +55,13 @@ const STAGE_SCOPE_STATE = Object.freeze({
   INTAKE: 'BASELINE', BASELINE: 'BASELINE', AUTHORIZATION: 'BASELINE', SCOPE: 'BASELINE', GLOBAL: 'BASELINE', V0: 'BASELINE',
   V1: 'PROPOSAL', PROPOSAL: 'PROPOSAL',
   V2: 'REVIEW', REVIEW: 'REVIEW',
-  V3: 'IMPLEMENTING', V4: 'IMPLEMENTING', V5: 'IMPLEMENTING', IMPLEMENTING: 'IMPLEMENTING', VALIDATING: 'IMPLEMENTING', PASSED: 'IMPLEMENTING', INTEGRATING: 'IMPLEMENTING', RELEASE_APPROVAL_REQUIRED: 'IMPLEMENTING', RELEASING: 'IMPLEMENTING', COMPLETE: 'IMPLEMENTING',
+  V3: 'IMPLEMENTING', V4: 'IMPLEMENTING', IMPLEMENTING: 'IMPLEMENTING', VALIDATING: 'IMPLEMENTING', PASSED: 'IMPLEMENTING', INTEGRATING: 'IMPLEMENTING', RELEASE_APPROVAL_REQUIRED: 'IMPLEMENTING', RELEASING: 'IMPLEMENTING', COMPLETE: 'IMPLEMENTING',
 });
 
 /** 已知工件名称到最早恢复状态的映射；未知工件仍需依赖分类或显式 stage 范围。 */
 const ARTIFACT_SCOPE_STATE = Object.freeze({
   authorization: 'BASELINE', scope: 'BASELINE', baseline: 'BASELINE', taskauthorization: 'BASELINE', 'visual-baseline': 'BASELINE',
-  v1: 'PROPOSAL', proposal: 'PROPOSAL', candidate: 'REVIEW', 'visual-candidate': 'REVIEW', v2: 'REVIEW', approvalrecord: 'REVIEW', visualhumanapproval: 'REVIEW',
+  v1: 'PROPOSAL', proposal: 'PROPOSAL', candidate: 'REVIEW', 'visual-candidate': 'REVIEW', v2: 'REVIEW', approvalrecord: 'REVIEW', visualdecompositionconfirmation: 'REVIEW',
   implementationpackagerecord: 'IMPLEMENTING', implementationpackage: 'IMPLEMENTING', executionstate: 'IMPLEMENTING', diffauditrecord: 'IMPLEMENTING', diffaudit: 'IMPLEMENTING', evidence: 'IMPLEMENTING', validationbatchid: 'IMPLEMENTING',
 });
 
@@ -122,9 +122,9 @@ export function deriveInvalidatedArtifacts(returnState, work = {}) {
     artifacts.add('implementationPackageRecord');
     artifacts.add('executionState');
   }
-  if (RETURN_STATE_RANK[returnState] <= RETURN_STATE_RANK.REVIEW && (work.visualStage || work.visualStageState || work.visualStageEvidenceRefs || work.visualHumanApproval)) {
+  if (RETURN_STATE_RANK[returnState] <= RETURN_STATE_RANK.REVIEW && (work.visualStage || work.visualStageState || work.visualStageEvidenceRefs || work.visualDecompositionConfirmation)) {
     artifacts.add('visualStageEvidenceRefs');
-    artifacts.add('visualHumanApproval');
+    artifacts.add('visualDecompositionConfirmation');
   }
   return [...artifacts];
 }
@@ -213,7 +213,9 @@ export function invalidateReturnArtifacts(work, returnRecord, options = {}) {
     delete work.visualStageEvidenceRefs;
     delete work.visual_stage_evidence_refs;
   }
-  if (invalidated.has('visualHumanApproval')) {
+  if (invalidated.has('visualDecompositionConfirmation')) {
+    delete work.visualDecompositionConfirmation;
+    delete work.visual_decomposition_confirmation;
     delete work.visualHumanApproval;
     delete work.visual_human_approval;
   }

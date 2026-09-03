@@ -7,7 +7,7 @@ import { renderResult, resultRecord } from './output.mjs';
 test('项目视图固定为六个阶段', () => {
   assert.deepEqual(PROJECT_PHASES.map((phase) => phase.label), ['需求与范围', '全局基线', '基础工程', '逐场景生产', '全局集成验证', '发布']);
   assert.equal(new Set(PROJECT_PHASES.map((phase) => phase.id)).size, 6);
-  assert.deepEqual(SCENE_STEPS.map((step) => step.label), ['场景定义', '方向确认', '生产就绪', '正式实现与运行验收']);
+  assert.deepEqual(SCENE_STEPS.map((step) => step.label), ['场景定义', '拆解确认', '资源与组合验收', '正式实现与运行验收']);
 });
 
 /** 验证六阶段的状态/包信号均能落到对应用户阶段，且不触碰内部状态值。 */
@@ -20,13 +20,13 @@ test('六阶段映射覆盖需求、基线、基础、场景、集成和发布',
   assert.equal(projectWorkflowView({ workItem: { stageId: 'G3', globalState: 'RELEASE_APPROVAL_REQUIRED' } }).phaseId, 'release');
 });
 
-/** 验证 V0-V5 到四步场景视图的完整确定性映射。 */
-test('V0-V5 固定映射到四步单场景视图', () => {
+/** 验证 V0-V4 到四步场景视图的完整确定性映射。 */
+test('V0-V4 固定映射到四步单场景视图', () => {
   const expected = {
     V0: ['scene-definition', '场景定义'], V1: ['scene-definition', '场景定义'],
-    V2: ['direction-confirmation', '方向确认'],
-    V3: ['production-ready', '生产就绪'], V4: ['production-ready', '生产就绪'],
-    V5: ['formal-implementation-runtime-validation', '正式实现与运行验收'],
+    V2: ['direction-confirmation', '拆解确认'],
+    V3: ['production-ready', '资源与组合验收'],
+    V4: ['formal-implementation-runtime-validation', '正式实现与运行验收'],
   };
   for (const [stage, [stepId, stepLabel]] of Object.entries(expected)) {
     const view = projectWorkflowView({ workItem: { stageId: stage, globalState: 'IMPLEMENTING' } });
@@ -50,7 +50,7 @@ test('foundation-only 与场景实施包映射不同阶段', () => {
     implementationPackage: { executionUnits: [{ unitType: 'SCENE' }, { unitType: 'DISPLAY_LAYER' }] },
   });
   assert.equal(scene.phaseId, 'scene-production');
-  assert.equal(scene.sceneStepId, 'production-ready');
+  assert.equal(scene.sceneStepId, 'formal-implementation-runtime-validation');
 });
 
 /** 验证合法完整实施顺序允许场景单元与集成单元同包，纯集成包也能单独投影。 */
@@ -63,7 +63,7 @@ test('完整场景包与纯集成包按合法单元顺序投影', () => {
   assert.equal(complete.sceneStepId, 'production-ready');
 
   const integrated = projectWorkflowView({
-    workItem: { stageId: 'G2', globalState: 'INTEGRATING', visualStage: 'V5' },
+    workItem: { stageId: 'G2', globalState: 'INTEGRATING', visualStage: 'V4' },
     implementationPackage: { executionUnits: [{ unitType: 'SCENE' }, { unitType: 'DISPLAY_LAYER' }, { unitType: 'INTEGRATION' }] },
   });
   assert.equal(integrated.phaseId, 'global-integration-validation');
@@ -89,11 +89,11 @@ test('未知组合返回 unknown 并保留内部阶段', () => {
   assert.equal(view.internalStage, 'G1/IMPLEMENTING');
 });
 
-/** 验证 V4 正式资源验收通过后，进入正式实施状态才切换到最后一个场景步骤。 */
-test('V4 完成并进入实施状态后显示正式实现与运行验收', () => {
+/** 验证 V3 正式资源验收通过后，进入正式实施状态才切换到最后一个场景步骤。 */
+test('V3 完成并进入实施状态后显示正式实现与运行验收', () => {
   for (const globalState of ['IMPLEMENTING', 'VALIDATING', 'PASSED', 'COMPLETE']) {
     const accepted = projectWorkflowView({
-      workItem: { stageId: 'V4', globalState, visualStage: 'V4', visualStageState: 'v4-formal-acceptance-complete' },
+      workItem: { stageId: 'V3', globalState, visualStage: 'V3', visualStageState: 'v3-formal-acceptance-complete' },
       implementationPackage: { executionUnits: [{ unitType: 'SCENE' }] },
     });
     assert.equal(accepted.sceneStepId, 'formal-implementation-runtime-validation');
@@ -101,13 +101,13 @@ test('V4 完成并进入实施状态后显示正式实现与运行验收', () =>
   }
 
   const pending = projectWorkflowView({
-    workItem: { stageId: 'V4', globalState: 'IMPLEMENTING', visualStage: 'V4', visualStageState: 'pending' },
+    workItem: { stageId: 'V3', globalState: 'IMPLEMENTING', visualStage: 'V3', visualStageState: 'pending' },
     implementationPackage: { executionUnits: [{ unitType: 'SCENE' }] },
   });
   assert.equal(pending.sceneStepId, 'production-ready');
 
   const review = projectWorkflowView({
-    workItem: { stageId: 'V4', globalState: 'REVIEW', visualStage: 'V4', visualStageState: 'v4-formal-acceptance-complete' },
+    workItem: { stageId: 'V3', globalState: 'REVIEW', visualStage: 'V3', visualStageState: 'v3-formal-acceptance-complete' },
     implementationPackage: { executionUnits: [{ unitType: 'SCENE' }] },
   });
   assert.equal(review.sceneStepId, 'production-ready');
@@ -126,7 +126,7 @@ test('JSON 顶层字段不变且默认文本显示简化阶段', () => {
   const record = resultRecord({ status: 'READY', stage: 'V2/REVIEW', next: '完成当前待执行单元', metadata: { workflowView: view } });
   assert.deepEqual(Object.keys(record), ['status', 'stage', 'changed', 'blocking', 'next', 'metadata']);
   const text = renderResult(record);
-  assert.match(text, /阶段：逐场景生产 · 方向确认/);
+  assert.match(text, /阶段：逐场景生产 · 拆解确认/);
   assert.doesNotMatch(text, /阶段：V2\/REVIEW/);
   assert.match(text, /下一步：完成当前待执行单元/);
 });

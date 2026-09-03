@@ -85,10 +85,10 @@
       "minLength": 1
     },
     "visualStage": {
-      "enum": ["V0", "V1", "V2", "V3", "V4", "V5"]
+      "enum": ["V0", "V1", "V2", "V3", "V4"]
     },
     "visualStageState": {
-      "enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "global-static-baseline-frozen", "v2-direction-frozen", "v3-production-planning-complete", "v4-formal-acceptance-complete", "v5-runtime-integration-candidate"]
+      "enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "global-static-baseline-frozen", "v2-production-planning-complete", "v3-formal-acceptance-complete", "v4-runtime-integration-candidate"]
     },
     "globalStaticBaselineState": {"const": "global-static-baseline-frozen", "description": "全局静态 visual_baseline 的冻结声明；只有三张候选效果图经过唯一人工选择确认后才能写入。该字段不等同于逐场景 V2。"},
     "globalVisualBaselineSelectionRef": {"$ref": "#/$defs/globalVisualBaselineSelectionReference", "description": "不可变全局基线选择证据引用；通过 path+sha256 跨 Work Item 复用，根证据内部绑定生产者及其三张 generated 候选图、唯一 SINGLE_HUMAN/CONFIRMED 选择、冻结正文和真实 SHA。"},
@@ -97,13 +97,10 @@
       "properties": {
         "V2": {"$ref": "#/$defs/visualStageEvidenceReference"},
         "V3": {"$ref": "#/$defs/visualStageEvidenceReference"},
-        "V4": {"$ref": "#/$defs/visualStageEvidenceReference"},
-        "V5": {"$ref": "#/$defs/visualStageEvidenceReference"}
+        "V4": {"$ref": "#/$defs/visualStageEvidenceReference"}
       },
       "additionalProperties": false
     },
-    "visualHumanApproval": {"$ref": "#/$defs/visualHumanApproval"},
-    "visual_human_approval": {"$ref": "#/$defs/visualHumanApproval"},
     "visualIntegration": {
       "type": "object",
       "properties": {
@@ -125,15 +122,15 @@
     "returnRecord": {"$ref": "#/$defs/returnRecord", "description": "必要回退的持久化审计记录；不允许用 RETURN 掩盖 repair/revalidate。"},
     "sceneReconstructionContract": {
       "type": "object",
-      "description": "effect-image V1-V5 场景还原合同；缺失时不得把独立资源工件视为完整还原。",
+      "description": "effect-image V1-V4 场景还原合同；缺失时不得把独立资源工件视为完整还原。",
       "required": ["contract_version", "reference_technical_conflicts", "target_conditions", "text_decomposition", "coverage_regions", "composition", "responsive_contract", "predeclared_tolerances", "implementation_plan", "display_layer_planning"],
       "properties": {
         "contract_version": {"type": "string", "minLength": 1},
         "reference_technical_conflicts": {"$ref": "#/$defs/referenceTechnicalConflicts"},
         "reference_target": {"$ref": "#/$defs/referenceTarget"},
-        "v2_scene_candidate": {"$ref": "#/$defs/v2Artifact"},
-        "v2_dynamic_sample": {"$ref": "#/$defs/v2Artifact"},
-        "v2_structured_review": {"$ref": "#/$defs/v2StructuredReview"},
+        "v2_decomposition_annotation": {"$ref": "#/$defs/v2Artifact"},
+        "v2_technical_decomposition": {"$ref": "#/$defs/v2Artifact"},
+        "v2_decomposition_confirmation": {"$ref": "#/$defs/v2DecompositionConfirmation"},
         "target_conditions": {"type": "object"},
         "text_decomposition": {"$ref": "#/$defs/sceneTextDecomposition"},
         "coverage_regions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/sceneCoverageRegion"}},
@@ -148,15 +145,15 @@
     },
     "scene_reconstruction_contract": {
       "type": "object",
-      "description": "effect-image V1-V5 场景还原合同；snake_case 入口同样必须显式提供完整合同。",
+      "description": "effect-image V1-V4 场景还原合同；snake_case 入口同样必须显式提供完整合同。",
       "required": ["contract_version", "reference_technical_conflicts", "target_conditions", "text_decomposition", "coverage_regions", "composition", "responsive_contract", "predeclared_tolerances", "implementation_plan", "display_layer_planning"],
       "properties": {
         "contract_version": {"type": "string", "minLength": 1},
         "reference_technical_conflicts": {"$ref": "#/$defs/referenceTechnicalConflicts"},
         "reference_target": {"$ref": "#/$defs/referenceTarget"},
-        "v2_scene_candidate": {"$ref": "#/$defs/v2Artifact"},
-        "v2_dynamic_sample": {"$ref": "#/$defs/v2Artifact"},
-        "v2_structured_review": {"$ref": "#/$defs/v2StructuredReview"},
+        "v2_decomposition_annotation": {"$ref": "#/$defs/v2Artifact"},
+        "v2_technical_decomposition": {"$ref": "#/$defs/v2Artifact"},
+        "v2_decomposition_confirmation": {"$ref": "#/$defs/v2DecompositionConfirmation"},
         "target_conditions": {"type": "object"},
         "text_decomposition": {"$ref": "#/$defs/sceneTextDecomposition"},
         "coverage_regions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/sceneCoverageRegion"}},
@@ -565,41 +562,37 @@
     },
     {
       "if": {"required": ["visualStage"], "properties": {"visualStage": {"const": "V2"}}},
-      "then": {"required": ["visualStageState"], "properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "v2-direction-frozen"]}}}
+      "then": {"required": ["visualStageState"], "properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "v2-production-planning-complete"]}}}
     },
     {
       "if": {"required": ["visualStage"], "properties": {"visualStage": {"const": "V3"}}},
-      "then": {"required": ["visualStageState"], "properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "v3-production-planning-complete"]}}}
+      "then": {"required": ["visualStageState"], "properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "v3-formal-acceptance-complete"]}}}
     },
     {
       "if": {"required": ["visualStage"], "properties": {"visualStage": {"const": "V4"}}},
-      "then": {"required": ["visualStageState"], "properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "v4-formal-acceptance-complete"]}}}
-    },
-    {
-      "if": {"required": ["visualStage"], "properties": {"visualStage": {"const": "V5"}}},
-      "then": {"required": ["visualStageState"], "properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "v5-runtime-integration-candidate"]}}}
+      "then": {"required": ["visualStageState"], "properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "v4-runtime-integration-candidate"]}}}
     },
     {
       "if": {"required": ["stageId"], "properties": {"stageId": {"pattern": "^V[0-9]+$"}}},
       "then": {
         "required": ["visualStage", "visualStageState"],
         "properties": {
-          "visualStage": {"enum": ["V0", "V1", "V2", "V3", "V4", "V5"]},
+          "visualStage": {"enum": ["V0", "V1", "V2", "V3", "V4"]},
           "visualStageState": {"not": {"const": "frozen"}}
         }
       }
     },
     {
-      "if": {"required": ["stageId"], "properties": {"stageId": {"enum": ["V2", "V3", "V4", "V5"]}}},
+      "if": {"required": ["stageId"], "properties": {"stageId": {"enum": ["V2", "V3", "V4"]}}},
       "then": {
         "anyOf": [
-          {"required": ["sceneReconstructionContract"], "properties": {"sceneReconstructionContract": {"required": ["v2_scene_candidate", "v2_dynamic_sample", "v2_structured_review"]}}},
-          {"required": ["scene_reconstruction_contract"], "properties": {"scene_reconstruction_contract": {"required": ["v2_scene_candidate", "v2_dynamic_sample", "v2_structured_review"]}}}
+          {"required": ["sceneReconstructionContract"], "properties": {"sceneReconstructionContract": {"required": ["v2_decomposition_annotation", "v2_technical_decomposition", "v2_decomposition_confirmation"]}}},
+          {"required": ["scene_reconstruction_contract"], "properties": {"scene_reconstruction_contract": {"required": ["v2_decomposition_annotation", "v2_technical_decomposition", "v2_decomposition_confirmation"]}}}
         ]
       }
     },
     {
-      "if": {"required": ["stageId"], "properties": {"stageId": {"enum": ["V4", "V5"]}}},
+      "if": {"required": ["stageId"], "properties": {"stageId": {"enum": ["V3", "V4"]}}},
       "then": {
         "anyOf": [
           {"required": ["sceneReconstructionContract"], "properties": {"sceneReconstructionContract": {"required": ["combination_preacceptance"]}}},
@@ -608,7 +601,7 @@
       }
     },
     {
-      "if": {"required": ["stageId"], "properties": {"stageId": {"enum": ["V3", "V4", "V5"]}}},
+      "if": {"required": ["stageId"], "properties": {"stageId": {"enum": ["V2", "V3", "V4"]}}},
       "then": {
         "anyOf": [
           {
@@ -651,7 +644,7 @@
       }
     },
     {
-      "if": {"required": ["stageId"], "properties": {"stageId": {"enum": ["V4", "V5"]}}},
+      "if": {"required": ["stageId"], "properties": {"stageId": {"enum": ["V3", "V4"]}}},
       "then": {
         "anyOf": [
           {
@@ -981,22 +974,30 @@
     "transparentBackgroundProductionRecord": {"type": "object", "required": ["source_background_mode", "final_background_mode", "transparency_strategy", "raw_source_file", "raw_source_has_alpha", "source_file", "source_has_alpha", "background_removal_attempts"], "properties": {"source_background_mode": {"const": "opaque"}, "final_background_mode": {"const": "transparent"}, "transparency_strategy": {"const": "background-removal"}, "raw_source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "raw_source_has_alpha": {"const": false}, "source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "source_has_alpha": {"const": true}, "background_removal_attempts": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"$ref": "#/$defs/transparentBackgroundRemovalAttempt"}}}, "not": {"anyOf": [{"required": ["background_mode"]}, {"required": ["direct_generation_attempt"]}, {"required": ["directGenerationAttempt"]}]}, "additionalProperties": true},
     "globalStyleReferenceInput": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}}},
     "globalConsistencyEvidence": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}}},
-    "visualHumanApproval": {"type": "object", "required": ["review_id", "reviewed_at", "evidence", "evidence_sha256", "status", "target_sha256", "candidate_sha256", "diff_fingerprint", "baseline_sha256"], "properties": {"review_id": {"type": "string", "minLength": 1}, "reviewed_at": {"type": "string", "format": "date-time"}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "evidence_sha256": {"$ref": "#/$defs/sha256"}, "status": {"enum": ["passed", "PASS"]}, "target_sha256": {"$ref": "#/$defs/sha256"}, "candidate_sha256": {"$ref": "#/$defs/sha256"}, "diff_fingerprint": {"type": "string", "minLength": 1}, "baseline_sha256": {"$ref": "#/$defs/sha256"}}, "not": {"anyOf": [{"required": ["reviewer_type"]}, {"required": ["reviewerType"]}, {"required": ["reviewer_id"]}, {"required": ["reviewerId"]}, {"required": ["reviewer"]}, {"required": ["f2_review"]}, {"required": ["f2_reviews"]}, {"required": ["visual_fidelity_review"]}, {"required": ["visualFidelityReview"]}, {"required": ["production_contract_review"]}, {"required": ["productionContractReview"]}, {"required": ["component_reviews"]}, {"required": ["componentReviews"]}, {"required": ["human_review"]}]}, "additionalProperties": true},
     "v2Artifact": {
       "type": "object",
       "required": ["identity", "evidence"],
-      "properties": {"identity": {"$ref": "#/$defs/artifactIdentity"}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "origin": {"enum": ["provided", "generated"]}, "generation_record": {"$ref": "#/$defs/globalVisualGenerationRecord"}, "visual_human_approval_id": {"type": "string", "minLength": 1}, "visual_human_approval_sha256": {"$ref": "#/$defs/sha256"}},
+      "properties": {"identity": {"$ref": "#/$defs/artifactIdentity"}, "evidence": {"$ref": "#/$defs/evidenceValue"}, "origin": {"enum": ["provided", "generated"]}, "generation_record": {"$ref": "#/$defs/globalVisualGenerationRecord"}, "decomposition_confirmation_id": {"type": "string", "minLength": 1}, "decomposition_confirmation_sha256": {"$ref": "#/$defs/sha256"}},
       "allOf": [{"if": {"required": ["origin"], "properties": {"origin": {"const": "generated"}}}, "then": {"required": ["generation_record"]}}, {"if": {"required": ["origin"], "properties": {"origin": {"const": "provided"}}}, "then": {"not": {"required": ["generation_record"]}}}],
       "not": {"anyOf": [{"required": ["reviewer"]}, {"required": ["reviewer_type"]}, {"required": ["reviewerType"]}, {"required": ["reviewer_id"]}, {"required": ["reviewerId"]}, {"required": ["review_id"]}, {"required": ["reviewId"]}, {"required": ["reviewed_at"]}, {"required": ["reviewedAt"]}, {"required": ["human_review"]}, {"required": ["humanReview"]}, {"required": ["f2_review"]}, {"required": ["f2_reviews"]}, {"required": ["f2Review"]}, {"required": ["f2Reviews"]}, {"required": ["visual_fidelity_review"]}, {"required": ["visualFidelityReview"]}, {"required": ["production_contract_review"]}, {"required": ["productionContractReview"]}, {"required": ["component_reviews"]}, {"required": ["componentReviews"]}]},
       "additionalProperties": true
     },
-    "v2StructuredReview": {
+    "v2DecompositionConfirmation": {
       "type": "object",
-      "required": ["validationMode", "evidence", "status", "reviewed_target_identity", "reviewed_candidate_identity", "full_viewport_comparison", "per_region_review", "composition_review", "geometry_review", "color_material_review", "typography_review", "decoration_density_review", "responsive_review"],
+      "required": ["confirmation_schema", "confirmation_mode", "status", "annotation_file", "annotation_sha256", "proposal_file", "proposal_sha256", "decision_record_file", "decision_record_sha256", "target_sha256", "candidate_sha256", "diff_fingerprint"],
       "properties": {
-        "validationMode": {"const": "MACHINE"},
-        "evidence": {"$ref": "#/$defs/evidenceValue"}, "status": {"enum": ["passed", "PASS", "failed", "FAIL"]},
-        "reviewed_target_identity": {"type": "object", "minProperties": 1}, "reviewed_candidate_identity": {"type": "object", "minProperties": 1}, "full_viewport_comparison": {"$ref": "#/$defs/evidenceValue"}, "per_region_review": {"type": "array", "minItems": 1}, "composition_review": {"type": "object", "minProperties": 1}, "geometry_review": {"type": "object", "minProperties": 1}, "color_material_review": {"type": "object", "minProperties": 1}, "typography_review": {"type": "object", "minProperties": 1}, "decoration_density_review": {"type": "object", "minProperties": 1}, "responsive_review": {"type": "object", "minProperties": 1}
+        "confirmation_schema": {"const": "visual-decomposition-confirmation/1.0"},
+        "confirmation_mode": {"const": "manual"},
+        "status": {"const": "accepted"},
+        "annotation_file": {"type": "string", "minLength": 1},
+        "annotation_sha256": {"$ref": "#/$defs/sha256"},
+        "proposal_file": {"type": "string", "minLength": 1},
+        "proposal_sha256": {"$ref": "#/$defs/sha256"},
+        "decision_record_file": {"type": "string", "minLength": 1},
+        "decision_record_sha256": {"$ref": "#/$defs/sha256"},
+        "target_sha256": {"$ref": "#/$defs/sha256"},
+        "candidate_sha256": {"$ref": "#/$defs/sha256"},
+        "diff_fingerprint": {"type": "string", "minLength": 1}
       },
       "not": {"anyOf": [{"required": ["reviewer"]}, {"required": ["reviewer_type"]}, {"required": ["reviewerType"]}, {"required": ["reviewer_id"]}, {"required": ["reviewerId"]}, {"required": ["reviewed_at"]}, {"required": ["reviewedAt"]}, {"required": ["review_id"]}, {"required": ["reviewId"]}, {"required": ["human_review"]}, {"required": ["humanReview"]}, {"required": ["f2_review"]}, {"required": ["f2_reviews"]}, {"required": ["f2Review"]}, {"required": ["f2Reviews"]}, {"required": ["visual_fidelity_review"]}, {"required": ["visualFidelityReview"]}, {"required": ["production_contract_review"]}, {"required": ["productionContractReview"]}, {"required": ["component_reviews"]}, {"required": ["componentReviews"]}]}
     },
@@ -1266,7 +1267,7 @@
         "fromState": {"type": "string", "minLength": 1},
         "toState": {"const": "RETURN"},
         "returnState": {"enum": ["BASELINE", "PROPOSAL", "REVIEW", "IMPLEMENTING"]},
-        "invalidatedArtifacts": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["approvalRecord", "pendingApprovalStatus", "pendingVisualPrerequisiteSnapshot", "pendingApprovalPresentation", "diffAuditRecord", "validationBatchId", "implementationPackageRecord", "executionState", "visualStageEvidenceRefs", "visualHumanApproval"]}},
+        "invalidatedArtifacts": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["approvalRecord", "pendingApprovalStatus", "pendingVisualPrerequisiteSnapshot", "pendingApprovalPresentation", "diffAuditRecord", "validationBatchId", "implementationPackageRecord", "executionState", "visualStageEvidenceRefs"]}},
         "previousValidationBatchId": {"type": ["string", "null"]},
         "invalidatesDownstream": {"const": true},
         "recordedAt": {"type": "string", "format": "date-time"},

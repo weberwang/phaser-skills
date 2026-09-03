@@ -11,20 +11,20 @@ const PREREQUISITE_FIELDS = [
 ];
 const EVIDENCE_FIELDS = [
   'schemaVersion', 'workItemId', 'status', 'stage', 'frozen', 'sceneId', 'targetSha256',
-  'candidateSha256', 'diffFingerprint', 'sceneMaster', 'completeSceneCandidate',
-  'dynamicVisualSample', 'machineValidation', 'visualHumanApproval', 'displayLayerContexts',
+  'candidateSha256', 'diffFingerprint', 'sceneMaster', 'sceneReconstructionContract',
+  'decompositionAnnotation', 'technicalDecomposition', 'visualDecompositionConfirmation',
+  'visualProductionContract', 'visualProductionUnits', 'displayLayerContexts',
 ];
 const IMAGE_FIELDS = ['file', 'sha256', 'sceneId'];
 const ARTIFACT_FIELDS = ['file', 'sha256', 'sceneId'];
 const DISPLAY_LAYER_CONTEXT_FIELDS = ['displayLayerId', 'hostSceneId', 'hostContextImage', 'targetSha256', 'candidateSha256', 'diffFingerprint'];
 const DISPLAY_LAYER_CONTEXT_REQUIRED_FIELDS = ['displayLayerId', 'hostSceneId', 'hostContextImage'];
 const CONTEXT_IMAGE_FIELDS = ['file', 'sha256', 'sceneId', 'displayLayerId', 'hostSceneId'];
-const MACHINE_FIELDS = ['validationMode', 'status', 'targetSha256', 'candidateSha256', 'diffFingerprint', 'evidenceFile', 'evidenceSha256'];
-const HUMAN_FIELDS = ['approvalId', 'reviewMode', 'status', 'targetSha256', 'candidateSha256', 'diffFingerprint', 'evidenceFile', 'evidenceSha256'];
-const EVIDENCE_SCHEMA = 'phaser4-scene-v2-result/1.0';
+const CONFIRMATION_FIELDS = ['confirmationId', 'confirmationMode', 'status', 'targetSha256', 'candidateSha256', 'diffFingerprint', 'evidenceFile', 'evidenceSha256'];
+const EVIDENCE_SCHEMA = 'phaser4-scene-v2-reconstruction-plan/1.0';
 const SHA256 = /^sha256:[a-f0-9]{64}$/;
-const VISUAL_STAGES = ['V0', 'V1', 'V2', 'V3', 'V4', 'V5'];
-const V4_ACCEPTANCE_EVIDENCE_TYPE = 'v4-formal-acceptance';
+const VISUAL_STAGES = ['V0', 'V1', 'V2', 'V3', 'V4'];
+const V3_ACCEPTANCE_EVIDENCE_TYPE = 'v3-formal-acceptance';
 
 /** 判断值是否为不带数组的普通对象。 */
 function isRecord(value) {
@@ -52,28 +52,28 @@ export function validateHighFidelityPrerequisiteShape(unit) {
     return errors;
   }
   if (!isRecord(value)) {
-    errors.push(`execution unit ${unit.unitId}.highFidelityPrerequisite 必须引用当前场景 Work Item 的完整 V2 结果`);
+    errors.push(`execution unit ${unit.unitId}.highFidelityPrerequisite 必须引用当前场景 Work Item 的 V2 拆解还原方案`);
     return errors;
   }
   const missing = PREREQUISITE_FIELDS.filter((field) => value[field] === undefined);
   const extra = Object.keys(value).filter((field) => !PREREQUISITE_FIELDS.includes(field));
   if (missing.length || extra.length) errors.push(`execution unit ${unit.unitId}.highFidelityPrerequisite 字段不严格：缺少 ${missing.join('、') || '无'}；多余 ${extra.join('、') || '无'}`);
   if (!isNonEmptyString(value.workItemId) || value.status !== 'COMPLETE' || value.stage !== 'V2' || value.frozen !== true || !SHA256.test(value.targetSha256 ?? '') || !SHA256.test(value.candidateSha256 ?? '') || !isNonEmptyString(value.diffFingerprint) || !isNonEmptyString(value.evidenceFile) || !SHA256.test(value.evidenceSha256 ?? '')) {
-    errors.push(`execution unit ${unit.unitId}.highFidelityPrerequisite 必须绑定当前 Work Item 的 COMPLETE/frozen V2 结果及 target/candidate/diff SHA`);
+    errors.push(`execution unit ${unit.unitId}.highFidelityPrerequisite 必须绑定当前 Work Item 的 COMPLETE/frozen V2 拆解还原方案及 target/candidate/diff SHA`);
   }
   const expected = unitContext(unit);
   if (value.sceneId !== expected.sceneId || value.displayLayerId !== expected.displayLayerId || value.hostSceneId !== expected.hostSceneId) errors.push(`execution unit ${unit.unitId}.highFidelityPrerequisite 的 scene/layer/host 身份必须与宿主单元一致`);
   return errors;
 }
 
-/** 生成所有视觉前置失败的统一错误，明确回到同一 Work Item 的 V2。 */
+/** 生成所有视觉前置失败的统一错误，明确回到同一 Work Item 的 V2 拆解方案。 */
 function prerequisiteError(unit, detail) {
-  return new Error(`场景视觉 V2 前置门拒绝 ${unit?.unitId ?? '<package>'}：${detail}；应回到当前场景 Work Item 的 V2 前置视觉验收`);
+  return new Error(`场景视觉 V2 前置门拒绝 ${unit?.unitId ?? '<package>'}：${detail}；应回到当前场景 Work Item 的 V2 拆解方案确认`);
 }
 
-/** 生成正式执行 V4 门失败信息，避免把资源验收问题误导回 V2。 */
+/** 生成正式执行 V3 门失败信息，避免把资源验收问题误导回 V2。 */
 function executionGateError(detail) {
-  return new Error(`正式功能执行 V4 前置门拒绝：${detail}；应回到当前场景 Work Item 的 V4 正式资源与宿主场景同屏组合预验收`);
+  return new Error(`正式功能执行 V3 前置门拒绝：${detail}；应回到当前场景 Work Item 的 V3 正式资源与宿主场景同屏组合预验收`);
 }
 
 /**
@@ -106,35 +106,35 @@ export function assertFormalImplementationAfterV2(work, pkg, repo, io) {
   if (!formalUnits.length) return true;
   const stage = String(work?.visualStage ?? '').trim().toUpperCase();
   const stageIndex = VISUAL_STAGES.indexOf(stage);
-  const v2Approved = stageIndex >= VISUAL_STAGES.indexOf('V2') && (stage !== 'V2' || work?.visualStageState === 'v2-direction-frozen');
-  if (!v2Approved) throw prerequisiteError(null, '正式功能实施包只能在 V2 前置视觉验收完成后创建或执行；V2 前仅允许隔离灰盒/无业务逻辑视觉样片');
+  const v2Approved = stageIndex >= VISUAL_STAGES.indexOf('V2') && (stage !== 'V2' || work?.visualStageState === 'v2-production-planning-complete');
+  if (!v2Approved) throw prerequisiteError(null, '正式功能实施包只能在 V2 拆解方案确认完成后创建或执行；V2 前仅允许隔离灰盒/无业务逻辑视觉样片');
   return true;
 }
 
 /**
- * 判断正式执行是否已经越过 V4 资源与组合预验收边界。
- * V3 允许创建和校验实施包；只有执行状态、委派和 READY 才能调用本门。
+ * 判断正式执行是否已经越过 V3 资源与组合预验收边界。
+ * V2 允许创建和校验实施包；只有执行状态、委派和 READY 才能调用本门。
  */
-export function assertFormalExecutionAfterV4(work, pkg, repo, io) {
+export function assertFormalExecutionAfterV3(work, pkg, repo, io) {
   if (isFoundationOnlyPackage(pkg)) return assertFoundationBaselineFrozen(work, repo, io);
   const formalUnits = (pkg?.executionUnits ?? []).filter((unit) => FORMAL_UNIT_TYPES.has(unit?.unitType));
   if (!formalUnits.length) return true;
   const stage = String(work?.visualStage ?? '').trim().toUpperCase();
   const stageIndex = VISUAL_STAGES.indexOf(stage);
-  const v4Approved = stageIndex > VISUAL_STAGES.indexOf('V4') || (stage === 'V4' && work?.visualStageState === 'v4-formal-acceptance-complete');
-  if (!v4Approved) throw executionGateError('正式功能单元只能在 V4 正式视觉资源与宿主场景同屏组合预验收完成后执行；V3 仅允许规划 Implementation Package');
-  if (!repo || !io) throw executionGateError('缺少 V4 不可变证据读取能力');
+  const v3Approved = stageIndex > VISUAL_STAGES.indexOf('V3') || (stage === 'V3' && work?.visualStageState === 'v3-formal-acceptance-complete');
+  if (!v3Approved) throw executionGateError('正式功能单元只能在 V3 正式视觉资源与宿主场景同屏组合预验收完成后执行；V2 仅允许规划 Implementation Package');
+  if (!repo || !io) throw executionGateError('缺少 V3 不可变证据读取能力');
   const refs = work?.visualStageEvidenceRefs ?? work?.visual_stage_evidence_refs ?? {};
-  const reference = refs.V4 ?? refs.v4 ?? refs.V4Evidence ?? refs.v4Evidence ?? refs.v4_evidence;
-  const loaded = loadImmutableVisualStageReference(reference, 'V4 formal acceptance', { projectRoot: repo });
-  if (!loaded || typeof loaded.value !== 'object' || Array.isArray(loaded.value)) throw executionGateError('V4 必须绑定有效的不可变视觉验收引用');
+  const reference = refs.V3 ?? refs.v3 ?? refs.V3Evidence ?? refs.v3Evidence ?? refs.v3_evidence;
+  const loaded = loadImmutableVisualStageReference(reference, 'V3 formal acceptance', { projectRoot: repo });
+  if (!loaded || typeof loaded.value !== 'object' || Array.isArray(loaded.value)) throw executionGateError('V3 必须绑定有效的不可变视觉验收引用');
   const evidence = loaded.value;
   const status = String(evidence.status ?? evidence.verdict ?? evidence.result ?? '').trim().toUpperCase();
-  if (evidence.evidenceType !== V4_ACCEPTANCE_EVIDENCE_TYPE || status !== 'PASS' || evidence.workItemId !== work?.workItemId) throw executionGateError('V4 不可变证据必须是当前 Work Item 的 v4-formal-acceptance PASS');
+  if (evidence.evidenceType !== V3_ACCEPTANCE_EVIDENCE_TYPE || status !== 'PASS' || evidence.workItemId !== work?.workItemId) throw executionGateError('V3 不可变证据必须是当前 Work Item 的 v3-formal-acceptance PASS');
   const candidate = evidence.candidateIdentity ?? evidence.candidate_identity;
   const candidateHash = evidence.contentHash ?? evidence.content_hash ?? evidence.candidateHash ?? evidence.candidate_sha256;
   const diffFingerprint = evidence.diffFingerprint ?? evidence.diff_fingerprint ?? candidate?.diffFingerprint ?? candidate?.diff_fingerprint;
-  if (!isRecord(candidate) || !SHA256.test(candidate.sha256 ?? '') || !SHA256.test(candidate.diffFingerprint ?? candidate.diff_fingerprint ?? '') || candidateHash !== candidate.sha256 || diffFingerprint !== (candidate.diffFingerprint ?? candidate.diff_fingerprint)) throw executionGateError('V4 不可变证据缺少一致的 candidate/diff 身份');
+  if (!isRecord(candidate) || !SHA256.test(candidate.sha256 ?? '') || !SHA256.test(candidate.diffFingerprint ?? candidate.diff_fingerprint ?? '') || candidateHash !== candidate.sha256 || diffFingerprint !== (candidate.diffFingerprint ?? candidate.diff_fingerprint)) throw executionGateError('V3 不可变证据缺少一致的 candidate/diff 身份');
   return true;
 }
 
@@ -161,7 +161,7 @@ function assertArtifact(artifact, fields, expected, repo, io, unit, label) {
   if (io.fileHash(target) !== artifact.sha256) throw prerequisiteError(unit, `${label}.file SHA-256 已漂移：${artifact.file}`);
 }
 
-/** 校验机器检查或真人审批的证据文件及其目标身份。 */
+/** 校验拆解图确认的证据文件及其目标身份。 */
 function assertReviewEvidence(review, fields, expected, repo, io, unit, label) {
   if (!isRecord(review)) throw prerequisiteError(unit, `${label} 必须为对象`);
   const missing = fields.filter((field) => review[field] === undefined);
@@ -173,7 +173,7 @@ function assertReviewEvidence(review, fields, expected, repo, io, unit, label) {
   if (io.fileHash(target) !== review.evidenceSha256) throw prerequisiteError(unit, `${label}.evidenceFile SHA-256 已漂移：${review.evidenceFile}`);
 }
 
-/** 读取并复核同一场景 Work Item 的不可变 V2 完成结果。 */
+/** 读取并复核同一场景 Work Item 的不可变 V2 拆解还原方案。 */
 export function assertHighFidelityPrerequisite(unit, work, pkg, repo, io) {
   const shapeErrors = validateHighFidelityPrerequisiteShape(unit);
   if (shapeErrors.length) throw prerequisiteError(unit, shapeErrors[0]);
@@ -182,26 +182,27 @@ export function assertHighFidelityPrerequisite(unit, work, pkg, repo, io) {
   const reference = unit.highFidelityPrerequisite;
   if (reference.workItemId !== work?.workItemId || pkg?.workItemId !== work?.workItemId) throw prerequisiteError(unit, 'Implementation Package、前置引用与当前 Work Item 不一致；只能引用当前场景结果');
   const currentV2 = work?.visualStageEvidenceRefs?.V2;
-  if (!isRecord(currentV2) || currentV2.path !== reference.evidenceFile || currentV2.sha256 !== reference.evidenceSha256 || (currentV2.workItemId && currentV2.workItemId !== work.workItemId)) throw prerequisiteError(unit, 'Implementation Package 必须只引用当前 Work Item 的 V2 结果');
+  if (!isRecord(currentV2) || currentV2.path !== reference.evidenceFile || currentV2.sha256 !== reference.evidenceSha256 || (currentV2.workItemId && currentV2.workItemId !== work.workItemId)) throw prerequisiteError(unit, 'Implementation Package 必须只引用当前 Work Item 的 V2 拆解方案');
   const evidencePath = resolveRepoFile(repo, reference.evidenceFile, io, unit, 'evidenceFile');
   if (io.fileHash(evidencePath) !== reference.evidenceSha256) throw prerequisiteError(unit, `evidenceFile SHA-256 已漂移：${reference.evidenceFile}`);
   let evidence;
   try { evidence = JSON.parse(io.readFileSync(evidencePath, 'utf8')); } catch (error) { throw prerequisiteError(unit, `evidenceFile 不是有效 JSON：${error.message}`); }
-  if (!isRecord(evidence)) throw prerequisiteError(unit, 'V2 完成结果必须为对象');
+  if (!isRecord(evidence)) throw prerequisiteError(unit, 'V2 拆解方案必须为对象');
   const missing = EVIDENCE_FIELDS.filter((field) => evidence[field] === undefined);
   const extra = Object.keys(evidence).filter((field) => !EVIDENCE_FIELDS.includes(field));
-  if (missing.length || extra.length) throw prerequisiteError(unit, `V2 完成结果字段不严格：缺少 ${missing.join('、') || '无'}；多余 ${extra.join('、') || '无'}`);
+  if (missing.length || extra.length) throw prerequisiteError(unit, `V2 拆解方案字段不严格：缺少 ${missing.join('、') || '无'}；多余 ${extra.join('、') || '无'}`);
   const expected = unitContext(unit);
   const identity = { targetSha256: reference.targetSha256, candidateSha256: reference.candidateSha256, diffFingerprint: reference.diffFingerprint };
-  if (evidence.schemaVersion !== EVIDENCE_SCHEMA || evidence.workItemId !== work.workItemId || evidence.status !== 'COMPLETE' || evidence.stage !== 'V2' || evidence.frozen !== true || evidence.sceneId !== expected.sceneId || evidence.targetSha256 !== identity.targetSha256 || evidence.candidateSha256 !== identity.candidateSha256 || evidence.diffFingerprint !== identity.diffFingerprint) throw prerequisiteError(unit, 'V2 根结果未绑定当前 Work Item、scene 或 target/candidate/diff');
+  if (evidence.schemaVersion !== EVIDENCE_SCHEMA || evidence.workItemId !== work.workItemId || evidence.status !== 'COMPLETE' || evidence.stage !== 'V2' || evidence.frozen !== true || evidence.sceneId !== expected.sceneId || evidence.targetSha256 !== identity.targetSha256 || evidence.candidateSha256 !== identity.candidateSha256 || evidence.diffFingerprint !== identity.diffFingerprint) throw prerequisiteError(unit, 'V2 拆解方案未绑定当前 Work Item、scene 或 target/candidate/diff');
   assertArtifact(evidence.sceneMaster, IMAGE_FIELDS, expected, repo, io, unit, 'sceneMaster');
-  assertArtifact(evidence.completeSceneCandidate, ARTIFACT_FIELDS, expected, repo, io, unit, 'completeSceneCandidate');
-  assertArtifact(evidence.dynamicVisualSample, ARTIFACT_FIELDS, expected, repo, io, unit, 'dynamicVisualSample');
-  assertReviewEvidence(evidence.machineValidation, MACHINE_FIELDS, identity, repo, io, unit, 'machineValidation');
-  if (evidence.machineValidation.validationMode !== 'MACHINE' || !['PASS', 'passed'].includes(evidence.machineValidation.status)) throw prerequisiteError(unit, 'machineValidation 必须是通过的 MACHINE F2 结果');
-  assertReviewEvidence(evidence.visualHumanApproval, HUMAN_FIELDS, identity, repo, io, unit, 'visualHumanApproval');
-  if (evidence.visualHumanApproval.reviewMode !== 'SINGLE_HUMAN' || !['PASS', 'passed', 'APPROVED', 'accepted'].includes(evidence.visualHumanApproval.status)) throw prerequisiteError(unit, 'visualHumanApproval 必须是唯一的 SINGLE_HUMAN 通过审批');
-  if (!Array.isArray(evidence.displayLayerContexts)) throw prerequisiteError(unit, 'V2 根结果必须包含 displayLayerContexts 数组');
+  assertArtifact(evidence.sceneReconstructionContract, ARTIFACT_FIELDS, expected, repo, io, unit, 'sceneReconstructionContract');
+  assertArtifact(evidence.decompositionAnnotation, ARTIFACT_FIELDS, expected, repo, io, unit, 'decompositionAnnotation');
+  assertArtifact(evidence.technicalDecomposition, ARTIFACT_FIELDS, expected, repo, io, unit, 'technicalDecomposition');
+  assertReviewEvidence(evidence.visualDecompositionConfirmation, CONFIRMATION_FIELDS, identity, repo, io, unit, 'visualDecompositionConfirmation');
+  if (evidence.visualDecompositionConfirmation.confirmationMode !== 'manual' || !['PASS', 'passed', 'APPROVED', 'accepted', 'COMPLETE'].includes(evidence.visualDecompositionConfirmation.status)) throw prerequisiteError(unit, 'visualDecompositionConfirmation 必须是 manual accepted/PASS 的拆解图确认');
+  if (!Array.isArray(evidence.visualProductionUnits) || evidence.visualProductionUnits.length === 0) throw prerequisiteError(unit, 'V2 拆解方案必须包含 visualProductionUnits');
+  if (!isRecord(evidence.visualProductionContract)) throw prerequisiteError(unit, 'V2 拆解方案必须包含 visualProductionContract');
+  if (!Array.isArray(evidence.displayLayerContexts)) throw prerequisiteError(unit, 'V2 拆解方案必须包含 displayLayerContexts 数组');
   const contexts = evidence.displayLayerContexts;
   const seenContexts = new Set();
   for (const context of contexts) {
@@ -213,7 +214,7 @@ export function assertHighFidelityPrerequisite(unit, work, pkg, repo, io) {
     const contextKey = `${context.displayLayerId}:${context.hostSceneId}`;
     if (seenContexts.has(contextKey)) throw prerequisiteError(unit, `displayLayerContexts 存在重复宿主上下文：${contextKey}`);
     seenContexts.add(contextKey);
-    for (const field of ['targetSha256', 'candidateSha256', 'diffFingerprint']) if (context[field] !== undefined && context[field] !== identity[field]) throw prerequisiteError(unit, `displayLayerContexts.${field} 未绑定根 V2 身份：${context.displayLayerId}`);
+    for (const field of ['targetSha256', 'candidateSha256', 'diffFingerprint']) if (context[field] !== undefined && context[field] !== identity[field]) throw prerequisiteError(unit, `displayLayerContexts.${field} 未绑定根 V2 方案身份：${context.displayLayerId}`);
     assertArtifact(context.hostContextImage, CONTEXT_IMAGE_FIELDS, { sceneId: expected.sceneId, displayLayerId: context.displayLayerId, hostSceneId: context.hostSceneId }, repo, io, unit, `displayLayerContexts[${contextKey}].hostContextImage`);
   }
   if (unit.unitType === 'DISPLAY_LAYER') {
@@ -223,7 +224,7 @@ export function assertHighFidelityPrerequisite(unit, work, pkg, repo, io) {
   return evidence;
 }
 
-/** 复核实施包的 V2 规划前置；V4 执行门由 Execution State/READY 入口另行校验。 */
+/** 复核实施包的 V2 规划前置；V3 执行门由 Execution State/READY 入口另行校验。 */
 export function assertHighFidelityPrerequisites(pkg, work, repo, io) {
   assertFormalImplementationAfterV2(work, pkg, repo, io);
   for (const unit of pkg.executionUnits) assertHighFidelityPrerequisite(unit, work, pkg, repo, io);

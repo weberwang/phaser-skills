@@ -42,8 +42,8 @@ function annotationManifest(targetSha) {
     workItemId: "work-item-1",
     candidateVersion: "candidate-1",
     visualStage: "V3",
-    visualStageState: "v3-production-planning-complete",
-    effect_image_reconstruction: { applicability: "effect-image", lifecycle: "v3-ready" },
+    visualStageState: "v2-production-planning-complete",
+    effect_image_reconstruction: { applicability: "effect-image", lifecycle: "v2-ready" },
     reference_target: { candidate_id: "candidate-1", original_file: "reference.png", target_sha256: targetSha, frozen_at: "2026-08-15T00:00:00Z", status: "reference-target-frozen", scene_ids: ["main"], state_ids: ["default"] },
     coverage_audit: {
       canvases: [{ scene_id: "main", state_id: "default", width: 32, height: 24 }],

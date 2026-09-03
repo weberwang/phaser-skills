@@ -28,7 +28,7 @@ function returnWork(overrides = {}) {
     implementationPackageRecord: "evidence/package.json",
     evidenceRoot: "evidence/WI-RETURN-1",
     visualStage: "V3",
-    visualStageState: "v3-production-planning-complete",
+    visualStageState: "v2-production-planning-complete",
     ...overrides,
   };
 }

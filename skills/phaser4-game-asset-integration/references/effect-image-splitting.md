@@ -4,7 +4,7 @@
 
 ## 输入
 
-- 当前仍适用的 V1/V2 `AUTO` 或 `USER_DECISION` 记录，以及已通过的关键画面、动态样片、全局基线和适用范围。
+- 当前仍适用的 V1/V2 `AUTO` 或 `USER_DECISION` 记录，以及已通过的关键画面、拆解图确认、全局基线和适用范围。
 - V3 schema 1.5 资源清单、ownership-first 覆盖区域、稳定 `annotation_number`、`implementation_plan`（`generate-now`、`reuse-existing`、`runtime-program`）、`production_origin`、来源版本、目标尺寸、透明要求、锚点、九宫格、纹理键和预算。
 - 可重现生成记录，或后续可编辑的分层重绘源文件。
 

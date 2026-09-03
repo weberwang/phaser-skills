@@ -14,7 +14,7 @@
     "baselineVersion": {"type": "string", "minLength": 1},
     "baselineHash": {"type": "string", "pattern": "^(?:sha256:[a-f0-9]{64}|[a-f0-9]{40}(?:[a-f0-9]{24})?)$"},
     "stageId": {"type": "string", "minLength": 1},
-    "visualStage": {"type": ["string", "null"], "enum": ["V0", "V1", "V2", "V3", "V4", "V5", null]},
+    "visualStage": {"type": ["string", "null"], "enum": ["V0", "V1", "V2", "V3", "V4", null]},
     "visualStageState": {"type": ["string", "null"], "minLength": 1},
     "executionUnitIds": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
     "executionPlanFingerprint": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
@@ -48,7 +48,7 @@
       "additionalProperties": false,
       "required": ["kind", "taskId", "state", "unitIds", "parallelGroup", "gate", "gateStatus", "reason"],
       "properties": {
-        "kind": {"enum": ["SERIAL_UNIT", "PARALLEL_GROUP", "V3_PRODUCTION_PLANNING", "WORKFLOW_COMPLETE"]},
+        "kind": {"enum": ["SERIAL_UNIT", "PARALLEL_GROUP", "V3_FORMAL_ACCEPTANCE", "WORKFLOW_COMPLETE"]},
         "taskId": {"type": ["string", "null"]},
         "state": {"enum": ["IN_PROGRESS", "BLOCKED", "COMPLETE"]},
         "unitIds": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},

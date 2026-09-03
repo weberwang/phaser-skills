@@ -197,10 +197,10 @@ export function validateEffectImageLayoutBindings(data, errors) {
   return { nodeById };
 }
 
-/** V5 逐布局节点复核目标 bounds、候选 bounds、几何差异和证据。 */
-export function validateV5LayoutMeasurements(data, layoutBindings, errors) {
+/** V4 逐布局节点复核目标 bounds、候选 bounds、几何差异和证据。 */
+export function validateV4LayoutMeasurements(data, layoutBindings, errors) {
   const nodes = layoutBindings?.nodeById;
-  if (!(nodes instanceof Map) || nodes.size === 0) { errors.push("V5 缺少可用于逐节点几何验收的 layout_nodes"); return; }
+  if (!(nodes instanceof Map) || nodes.size === 0) { errors.push("V4 缺少可用于逐节点几何验收的 layout_nodes"); return; }
   const cases = Array.isArray(data?.fidelity_cases) ? data.fidelity_cases : [];
   for (const [caseIndex, item] of cases.entries()) {
     const label = `fidelity_cases[${caseIndex}]`;

@@ -1,5 +1,5 @@
 import { closeSync, openSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { assertFormalExecutionAfterV4, assertHighFidelityPrerequisite, assertHighFidelityPrerequisites, isFoundationOnlyPackage } from './high-fidelity-prerequisite.mjs';
+import { assertFormalExecutionAfterV3, assertHighFidelityPrerequisite, assertHighFidelityPrerequisites, isFoundationOnlyPackage } from './high-fidelity-prerequisite.mjs';
 import { writeJson } from './runtime/io.mjs';
 import { schemaEnum, schemaFields, schemaNode } from './runtime/schema-contract.mjs';
 
@@ -222,8 +222,8 @@ function deriveNextTask(units, work, repo, io, pkg = null) {
   if (units.every((unit) => unit.state === 'COMPLETE')) {
     // 基础实施包在全局基线后即可闭环，不能因当前工作项恰好处于 V2 再误触发场景 V2→V3 合同。
     if (!isFoundationOnlyPackage(pkg) && String(work.visualStage ?? '').toUpperCase() === 'V2') {
-      const passed = String(work.visualStageState ?? '') === 'v2-direction-frozen' && v2ToV3ContractPassed(work, repo, io);
-      return { kind: 'V3_PRODUCTION_PLANNING', taskId: 'V3-PRODUCTION-PLANNING', state: passed ? 'IN_PROGRESS' : 'BLOCKED', unitIds: [], parallelGroup: null, gate: 'V2_TO_V3_CONTRACT', gateStatus: passed ? 'PASS' : 'BLOCKED', reason: passed ? 'V2 已完成且 V2→V3 合同回对门通过，下一任务为 V3 生产规划' : 'V2 已完成但未通过 V2→V3 合同回对门，禁止推进 V3 生产规划' };
+      const passed = String(work.visualStageState ?? '') === 'v2-production-planning-complete' && v2ToV3ContractPassed(work, repo, io);
+      return { kind: 'V3_FORMAL_ACCEPTANCE', taskId: 'V3-FORMAL-ACCEPTANCE', state: passed ? 'IN_PROGRESS' : 'BLOCKED', unitIds: [], parallelGroup: null, gate: 'V2_TO_V3_CONTRACT', gateStatus: passed ? 'PASS' : 'BLOCKED', reason: passed ? 'V2 拆解方案已确认且合同回对门通过，下一任务为 V3 资源与组合预验收' : 'V2 拆解方案未通过合同回对门，禁止推进 V3 资源与组合预验收' };
     }
     return { kind: 'WORKFLOW_COMPLETE', taskId: null, state: 'COMPLETE', unitIds: [], parallelGroup: null, gate: null, gateStatus: 'NOT_REQUIRED', reason: '全部 executionUnits 已完成，且没有下一任务' };
   }
@@ -234,8 +234,8 @@ function deriveNextTask(units, work, repo, io, pkg = null) {
 
 /** 生成初始状态：首个串行单元或首个并行组立即标记 IN_PROGRESS。 */
 export function createExecutionState(work, pkg, io, now = new Date().toISOString()) {
-  // V4 是正式功能执行的硬边界；先校验 V4，再复核整个包的 V2 结果，避免规划包提前激活。
-  assertFormalExecutionAfterV4(work, pkg, io.repo ?? null, io);
+  // V3 是正式功能执行的硬边界；先校验 V3，再复核整个包的 V2 结果，避免规划包提前激活。
+  assertFormalExecutionAfterV3(work, pkg, io.repo ?? null, io);
   assertHighFidelityPrerequisites(pkg, work, io.repo ?? null, io);
   const firstUnit = pkg.executionUnits[0];
   const units = pkg.executionUnits.map((unit, order) => ({ unitId: unit.unitId, order, parallelMode: unit.parallelMode, parallelGroup: unit.parallelGroup, state: 'PENDING', resultId: null, resultPath: null, resultFingerprint: null, startedAt: null, completedAt: null }));
@@ -272,8 +272,8 @@ export function assertImplementationPackagePlanningPrerequisites(pkg, work, repo
 
 /** 校验执行状态与当前 Work Item、Implementation Package、基线和数组顺序精确绑定。 */
 export function validateExecutionState(state, statePath, work, pkg, repo, io) {
-  // 状态文件每次读取都重新检查 V4，防止阶段回退或 V4 证据漂移后继续执行正式单元。
-  assertFormalExecutionAfterV4(work, pkg, repo, io);
+  // 状态文件每次读取都重新检查 V3，防止阶段回退或 V3 证据漂移后继续执行正式单元。
+  assertFormalExecutionAfterV3(work, pkg, repo, io);
   if (!state || typeof state !== 'object' || Array.isArray(state)) throw new Error('Execution State 必须为对象');
   const missing = EXECUTION_STATE_FIELDS.filter((field) => state[field] === undefined);
   const extra = Object.keys(state).filter((field) => !EXECUTION_STATE_FIELDS.includes(field));
@@ -319,7 +319,7 @@ export function validateExecutionState(state, statePath, work, pkg, repo, io) {
   const taskExtra = state.nextTask && typeof state.nextTask === 'object' ? Object.keys(state.nextTask).filter((field) => !NEXT_TASK_FIELDS.includes(field)) : [];
   if (taskMissing.length || taskExtra.length || !NEXT_TASK_KINDS.has(state.nextTask?.kind) || !NEXT_TASK_STATES.has(state.nextTask?.state) || !NEXT_TASK_GATE_STATUSES.has(state.nextTask?.gateStatus) || !Array.isArray(state.nextTask?.unitIds)) throw new Error('Execution State.nextTask 字段或枚举无效');
   if (state.nextTask.unitIds.some((unitId) => !expectedIds.includes(unitId)) || new Set(state.nextTask.unitIds).size !== state.nextTask.unitIds.length) throw new Error('Execution State.nextTask.unitIds 未绑定当前 executionUnits');
-  if (state.nextTask.kind === 'V3_PRODUCTION_PLANNING' && (state.nextTask.taskId !== 'V3-PRODUCTION-PLANNING' || state.nextTask.gate !== 'V2_TO_V3_CONTRACT')) throw new Error('V2→V3 下一任务合同字段无效');
+  if (state.nextTask.kind === 'V3_FORMAL_ACCEPTANCE' && (state.nextTask.taskId !== 'V3-FORMAL-ACCEPTANCE' || state.nextTask.gate !== 'V2_TO_V3_CONTRACT')) throw new Error('V2→V3 下一任务合同字段无效');
   if (state.nextTask.kind === 'WORKFLOW_COMPLETE' && (state.nextTask.taskId !== null || state.nextTask.unitIds.length || state.nextTask.state !== 'COMPLETE')) throw new Error('工作流完成状态不得携带下一单元');
   if (JSON.stringify(state.nextTask) !== JSON.stringify(expectedTask)) throw new Error('Execution State.nextTask 与当前单元状态或 V2→V3 门不一致');
   const expectedWorkflowState = expectedTask.kind === 'WORKFLOW_COMPLETE' ? 'COMPLETE' : expectedTask.state === 'BLOCKED' ? 'BLOCKED' : 'IN_PROGRESS';
@@ -363,7 +363,7 @@ export function refreshV2ToV3Contract(work, pkg, repo, io) {
     // 先按“合同仍未通过”的旧门复核完整状态，防止刷新命令把手改的 COMPLETE 状态直接解锁。
     const blockedWork = { ...work, v2ToV3Contract: undefined };
     const blockedState = validateExecutionState(rawState, statePath, blockedWork, pkg, repo, io);
-    if (blockedState.nextTask.kind !== 'V3_PRODUCTION_PLANNING' || blockedState.nextTask.state !== 'BLOCKED' || blockedState.nextTask.gateStatus !== 'BLOCKED' || blockedState.workflowState !== 'BLOCKED') throw new Error('Execution State 当前不是待刷新 V2→V3 BLOCKED 门');
+    if (blockedState.nextTask.kind !== 'V3_FORMAL_ACCEPTANCE' || blockedState.nextTask.state !== 'BLOCKED' || blockedState.nextTask.gateStatus !== 'BLOCKED' || blockedState.workflowState !== 'BLOCKED') throw new Error('Execution State 当前不是待刷新 V2→V3 BLOCKED 门');
     if (!v2ToV3ContractPassed(work, repo, io)) throw new Error('V2→V3 合同证据缺失、路径越出 evidenceRoot 或 SHA-256 不匹配，仍保持 BLOCKED');
     const state = { ...rawState, nextTask: deriveNextTask(rawState.units, work, repo, io, pkg), workflowState: 'IN_PROGRESS', updatedAt: new Date().toISOString(), lastTransition: { type: 'V2_TO_V3_CONTRACT_REFRESH', unitId: null, resultId: null } };
     validateExecutionState(state, statePath, work, pkg, repo, io);
@@ -437,7 +437,7 @@ function executionSequenceCanCloseCurrentWorkItem(state) {
   if (state.unitSequenceState !== 'COMPLETE') return false;
   if (state.workflowState === 'COMPLETE' && state.nextTask.kind === 'WORKFLOW_COMPLETE') return true;
   return state.workflowState === 'IN_PROGRESS'
-    && state.nextTask.kind === 'V3_PRODUCTION_PLANNING'
+    && state.nextTask.kind === 'V3_FORMAL_ACCEPTANCE'
     && state.nextTask.state === 'IN_PROGRESS'
     && state.nextTask.gate === 'V2_TO_V3_CONTRACT'
     && state.nextTask.gateStatus === 'PASS';
@@ -453,7 +453,7 @@ export function assertExecutionWorkflowComplete(work, pkg, repo, io) {
 /** 只按预设数组位置和当前有效 PASS Result 判定 READY，不推导依赖图。 */
 export function assertUnitReady(unit, work, pkg, repo, io) {
   if (work.globalState !== 'IMPLEMENTING') throw new Error(`A3 unit-check 仅允许 IMPLEMENTING 状态，当前为 ${work.globalState}`);
-  assertFormalExecutionAfterV4(work, pkg, repo, io);
+  assertFormalExecutionAfterV3(work, pkg, repo, io);
   const { state } = loadExecutionState(work, pkg, repo, io);
   const current = state.units.find((item) => item.unitId === unit.unitId);
   if (!current || current.state !== 'IN_PROGRESS') throw new Error(`实施单元尚未 READY，当前状态不是 IN_PROGRESS：${unit.unitId}`);
@@ -475,3 +475,4 @@ export function assertCompletedUnits(evidence, work, pkg, repo, io) {
     if (!stateUnit || stateUnit.state !== 'COMPLETE' || !findValidUnitResult(work, pkg, unit, repo, io)) throw new Error(`Evidence.completedUnitIds 缺少当前有效 Unit Result：${unit.unitId}`);
   }
 }
+

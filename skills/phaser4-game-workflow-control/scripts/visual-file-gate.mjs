@@ -11,15 +11,15 @@ export function hasImageGenerationRequired(manifest = {}) {
   return candidates.some((item) => isObject(item) && (item.image_generation_required === true || item.production_method === "imagegen" || item.production_contract?.image_generation_required === true));
 }
 
-/** 判断 V4/V5 是否必须显式开启文件证据门。 */
-export function requiresVisualFileGate(manifest = {}, stage = "V4") {
+/** 判断 V3/V4 是否必须显式开启文件证据门。 */
+export function requiresVisualFileGate(manifest = {}, stage = "V3") {
   const normalizedStage = String(stage).toUpperCase();
-  if (!new Set(["V4", "V5"]).has(normalizedStage)) return false;
+  if (!new Set(["V3", "V4"]).has(normalizedStage)) return false;
   return manifest?.effect_image_reconstruction?.applicability === "effect-image" || hasImageGenerationRequired(manifest);
 }
 
 /** 返回缺少 checkFiles/projectRoot 时的统一门禁错误；合法文件门返回空值。 */
-export function productionFileGateError(manifest, options = {}, stage = "V4") {
+export function productionFileGateError(manifest, options = {}, stage = "V3") {
   if (!requiresVisualFileGate(manifest, stage)) return "";
   if (options.checkFiles === true && typeof options.projectRoot === "string" && options.projectRoot.trim().length > 0) return "";
   return `[${String(stage).toUpperCase()}] effect-image 或 ImageGen 生产校验必须显式使用 checkFiles=true 和 projectRoot；未读取本地源/运行时文件不得放行`;

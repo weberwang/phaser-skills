@@ -1,7 +1,7 @@
 /**
  * 场景内显示层规划合同校验。
  *
- * 显示层沿用场景的 V0-V5 生命周期，但把弹窗、抽屉、HUD 和 Toast
+ * 显示层沿用场景的 V0-V4 生命周期，但把弹窗、抽屉、HUD 和 Toast
  * 作为可独立实施、可独立验收的对象。这里不创建第二套状态机，只校验
  * 场景主图、上下文效果图和运行时轨迹之间的确定性绑定。
  */
@@ -87,7 +87,7 @@ function validateContextualEffectImage(image, layer, state, sceneMaster, targetI
   }));
 }
 
-/** 校验 V4/V5 的真实打开→交互→关闭→恢复轨迹。 */
+/** 校验 V4 的真实打开→交互→关闭→恢复轨迹。 */
 function validateRuntimeReplay(replay, layer, sceneMaster, stage, errors) {
   if (!isObject(replay)) {
     errors.push(planningError(stage, layer, "transient 显示层缺少宿主场景运行轨迹", "缺失=runtime_replay"));
@@ -158,7 +158,7 @@ function validateLayer(layer, sceneMaster, targetInfo, stage, errors, layerIds, 
     const relationIds = layer.relations?.[relationType];
     if (!Array.isArray(relationIds) || relationIds.some((id) => !nonEmptyString(id)) || new Set(relationIds).size !== relationIds.length) errors.push(planningError(stage, layer, `relations.${relationType} 必须是无重复非空 layer_id 数组`));
   }
-  if ((stage === "V4" || stage === "V5") && layer.persistence === "transient") validateRuntimeReplay(layer.runtime_replay, layer, sceneMaster, stage, errors);
+  if (stage === "V4" && layer.persistence === "transient") validateRuntimeReplay(layer.runtime_replay, layer, sceneMaster, stage, errors);
 }
 
 /**

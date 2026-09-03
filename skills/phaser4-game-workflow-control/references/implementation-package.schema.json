@@ -38,8 +38,8 @@
     "visualManifestFile": {"type": "string", "minLength": 1},
     "visualManifestSha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
     "visualDecompositionConfirmations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/visualDecompositionConfirmationGroup"}},
-    "current_stage": {"enum": ["V3", "V4", "V5"]},
-    "currentStage": {"enum": ["V3", "V4", "V5"]},
+    "current_stage": {"enum": ["V2", "V3", "V4"]},
+    "currentStage": {"enum": ["V2", "V3", "V4"]},
     "scene_reconstruction_contract": {"$ref": "#/$defs/sceneReconstructionContract"},
     "sceneReconstructionContract": {"$ref": "#/$defs/sceneReconstructionContract"},
     "visualProductionUnits": {
@@ -58,7 +58,7 @@
       "then": {"required": ["visualDecompositionConfirmations"]}
     },
     {
-      "if": {"anyOf": [{"required": ["current_stage"], "properties": {"current_stage": {"enum": ["V4", "V5"]}}}, {"required": ["currentStage"], "properties": {"currentStage": {"enum": ["V4", "V5"]}}}]},
+      "if": {"anyOf": [{"required": ["current_stage"], "properties": {"current_stage": {"enum": ["V3", "V4"]}}}, {"required": ["currentStage"], "properties": {"currentStage": {"enum": ["V3", "V4"]}}}]},
       "then": {
         "allOf": [
           {"anyOf": [{"required": ["scene_reconstruction_contract"], "properties": {"scene_reconstruction_contract": {"required": ["combination_preacceptance"]}}}, {"required": ["sceneReconstructionContract"], "properties": {"sceneReconstructionContract": {"required": ["combination_preacceptance"]}}}]},
@@ -130,7 +130,7 @@
     "highFidelityPrerequisite": {
       "type": "object",
       "additionalProperties": false,
-      "description": "同一场景 Work Item 的 V2 前置视觉验收结果引用；evidenceFile 指向单一场景根结果，多个 DISPLAY_LAYER 从其中的 displayLayerContexts 查找各自唯一宿主上下文。",
+      "description": "同一场景 Work Item 的 V2 拆解还原方案引用；evidenceFile 指向单一场景根方案，多个 DISPLAY_LAYER 从其中的 displayLayerContexts 查找各自唯一宿主上下文。",
       "required": ["workItemId", "status", "stage", "frozen", "sceneId", "displayLayerId", "hostSceneId", "targetSha256", "candidateSha256", "diffFingerprint", "evidenceFile", "evidenceSha256"],
       "properties": {
         "workItemId": {"type": "string", "minLength": 1},
@@ -328,15 +328,18 @@
     },
     "sceneReconstructionContract": {
       "type": "object",
-      "description": "effect-image V1-V5 场景还原合同；V1 必须显式记录冲突，V2 产物和结构化审查缺失时不得进入 V3。",
-      "required": ["contract_version", "reference_technical_conflicts", "v2_scene_candidate", "v2_dynamic_sample", "v2_structured_review", "target_conditions", "text_decomposition", "coverage_regions", "composition", "responsive_contract", "predeclared_tolerances", "implementation_plan", "display_layer_planning"],
+      "description": "effect-image V1-V4 场景还原合同；V1 必须显式记录冲突，V2 通过拆解图、技术 JSON 与生产方案确认后才能进入 V3。",
+      "required": ["contract_version", "reference_technical_conflicts", "decomposition_annotation", "technical_decomposition", "visual_decomposition_confirmation", "visual_production_contract", "visual_production_units", "coverage_audit", "target_conditions", "text_decomposition", "coverage_regions", "composition", "responsive_contract", "predeclared_tolerances", "implementation_plan", "display_layer_planning"],
       "properties": {
         "contract_version": {"type": "string", "minLength": 1},
         "reference_technical_conflicts": {"$ref": "#/$defs/referenceTechnicalConflicts"},
         "reference_target": {"$ref": "#/$defs/referenceTarget"},
-        "v2_scene_candidate": {"$ref": "#/$defs/v2Artifact"},
-        "v2_dynamic_sample": {"$ref": "#/$defs/v2Artifact"},
-        "v2_structured_review": {"$ref": "#/$defs/v2StructuredReview"},
+        "decomposition_annotation": {"$ref": "#/$defs/evidenceValue"},
+        "technical_decomposition": {"$ref": "#/$defs/evidenceValue"},
+        "visual_decomposition_confirmation": {"type": "object", "minProperties": 1},
+        "visual_production_contract": {"type": "object", "minProperties": 1},
+        "visual_production_units": {"type": "array", "minItems": 1},
+        "coverage_audit": {"type": "object", "minProperties": 1},
         "target_conditions": {"type": "object"},
         "text_decomposition": {"$ref": "#/$defs/sceneTextDecomposition"},
         "coverage_regions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/sceneCoverageRegion"}},
@@ -347,6 +350,7 @@
         "display_layer_planning": {"$ref": "#/$defs/displayLayerPlanning"},
         "combination_preacceptance": {"$ref": "#/$defs/combinationPreacceptance"}
       },
+      "not": {"anyOf": [{"required": ["v2_scene_candidate"]}, {"required": ["v2_dynamic_sample"]}, {"required": ["v2_structured_review"]}, {"required": ["visual_human_approval"]}]},
       "additionalProperties": true
     },
     "sceneTextDecomposition": {

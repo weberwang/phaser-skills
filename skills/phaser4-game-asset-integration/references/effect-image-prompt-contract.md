@@ -85,4 +85,4 @@ effect-image 生成必须在生成前绑定已完成三候选人工选择且由 
 
 ## V4 同屏组合
 
-V4 不得只凭文件存在、MIME、尺寸、Alpha、component×state 齐全、运行时登记或 `missing=0` 判定视觉通过。`combination_preacceptance` 必须声明当前正式资产与正式布局结构，并以机器可复核事实确认轮廓、比例、姿态、图标语义和整屏构图未偏离冻结目标；还必须记录无未经批准的重新设计。提示词合同/实际 generation record 的绑定必须同时覆盖当前 target SHA、region ID 和候选身份。提示词合同失败属于执行问题，先在 V3/V4 原地修复或重验当前门并阻止进入 V5；只有冻结 target/方向/候选身份真实变化时才进入必要回退。
+V4 不得只凭文件存在、MIME、尺寸、Alpha、component×state 齐全、运行时登记或 `missing=0` 判定视觉通过。`combination_preacceptance` 必须声明当前正式资产与正式布局结构，并以机器可复核事实确认轮廓、比例、姿态、图标语义和整屏构图未偏离冻结目标；还必须记录无未经批准的重新设计。提示词合同/实际 generation record 的绑定必须同时覆盖当前 target SHA、region ID 和候选身份。提示词合同失败属于执行问题，先在 V3/V4 原地修复或重验当前门并阻止进入 V4；只有冻结 target/方向/候选身份真实变化时才进入必要回退。

@@ -3,7 +3,7 @@
  * ImageGen 单图最小尺寸合同。
  *
  * 该模块只计算机器可确定的输出尺寸，不承载人工审阅字段；视觉方向
- * 只由 V2 唯一真人审批冻结，V4/V5 继续执行机器证据门。尺寸按逻辑像素、最大运行缩放和
+ * 只由 V2 唯一拆解确认冻结，V3/V4 继续执行机器证据门。尺寸按逻辑像素、最大运行缩放和
  * 最大生产 DPR 计算，并强制画布不额外添加 padding；运行时实际 DPR
  * 由设备动态解析，不能反向改变生产尺寸合同。
  */
@@ -53,7 +53,7 @@ function sizeError(context, message, details = {}) {
   const expected = details.expected === undefined ? "?" : JSON.stringify(details.expected);
   const actual = details.actual === undefined ? "?" : JSON.stringify(details.actual);
   const missing = details.missing ? ` 缺失=${details.missing}` : "";
-  const returnStage = details.returnStage ?? (stage === "V1" || stage === "V2" ? "V1/PROPOSAL" : stage === "V4" || stage === "V5" ? "VALIDATING" : stage);
+  const returnStage = details.returnStage ?? (stage === "V1" || stage === "V2" ? "V1/PROPOSAL" : stage === "V4" ? "VALIDATING" : stage);
   return `[${stage}] annotation_number=${annotation} region_id=${region} component_id=${component} state_id=${state} asset_id=${asset} expected_method=imagegen observed_method=${context.observedMethod ?? "imagegen"} 根因=${details.rootCause ?? "ImageGen 单图尺寸合同问题"} expected=${expected} actual=${actual}${missing} ${message} 应退回阶段=${returnStage}`;
 }
 

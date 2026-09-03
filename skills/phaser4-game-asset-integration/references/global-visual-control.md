@@ -1,6 +1,6 @@
 # 全局视觉控制约束
 
-为每个项目维护单一、版本化的全局视觉基线。基线必须先经过 brief → 恰好三张同条件候选效果图 → 同屏人工选择确认一张的流程，候选文件只允许真实 PNG/JPEG（文件门检查图片魔数），完成不可变 `globalVisualBaselineSelectionRef` 后才进入 `global-static-baseline-frozen` 状态。`docs/global-visual-baseline-selection.json` 是唯一选择根证据模板；`docs/visual-baseline.md` 只保存不可变冻结规则正文，`docs/visual-design.md` 保存可追加的方向探索、版本索引及 V2b/V4/V5 证据，`docs/visual-assets.json` 只保存机器绑定与选择证据索引；选择根证据单独保存，不在其中内嵌第二份根对象。
+为每个项目维护单一、版本化的全局视觉基线。基线必须先经过 brief → 恰好三张同条件候选效果图 → 同屏人工选择确认一张的流程，候选文件只允许真实 PNG/JPEG（文件门检查图片魔数），完成不可变 `globalVisualBaselineSelectionRef` 后才进入 `global-static-baseline-frozen` 状态。`docs/global-visual-baseline-selection.json` 是唯一选择根证据模板；`docs/visual-baseline.md` 只保存不可变冻结规则正文，`docs/visual-design.md` 保存可追加的方向探索、版本索引及 V2b/V3/V4 证据，`docs/visual-assets.json` 只保存机器绑定与选择证据索引；选择根证据单独保存，不在其中内嵌第二份根对象。
 
 ## 生产者与消费者绑定
 
@@ -16,13 +16,13 @@
 - 分系统锚点：角色、场景、UI、图标、动画、VFX、字体等系统各自的代表画面；
 - 基线文档、锚点证据、适用范围、允许变量和已知边界。
 
-基线 ID 表达视觉系统身份，版本表达已批准规则集合，风格指纹只计算 `docs/visual-baseline.md` 完整文件字节。不得把摘要或 V2b/V4/V5 留痕写回被哈希正文；阶段证据追加到 `visual-design.md`。规则变化生成新版本和新哈希，使全部受影响决定与证据失效并重验。`--check-files` 重新计算冻结正文 SHA-256。
+基线 ID 表达视觉系统身份，版本表达已批准规则集合，风格指纹只计算 `docs/visual-baseline.md` 完整文件字节。不得把摘要或 V2b/V3/V4 留痕写回被哈希正文；阶段证据追加到 `visual-design.md`。规则变化生成新版本和新哈希，使全部受影响决定与证据失效并重验。`--check-files` 重新计算冻结正文 SHA-256。
 
 ## 三候选生成与人工冻结门
 
 全局视觉基线必须从一个明确的视觉 brief 开始。使用相同 brief、目标视口、参考输入和条件指纹生成恰好三张候选效果图，并将三张图同屏交给人工比较；候选必须分别绑定图片文件 SHA-256 和 generated generation record 文件 SHA-256。`global-visual-baseline-selection/1.0` 证据还必须绑定生产者 Work Item、brief、generation batch、唯一候选 ID、唯一 `SINGLE_HUMAN`/`CONFIRMED` 选择、selectedCandidateId、决定记录文件/SHA、确认时间和用户原文。
 
-人工确认完成前，`visual_baseline.status` 和 Work Item `globalStaticBaselineState` 只能保持 draft/pending，不能写入 `global-static-baseline-frozen`。确认后冻结身份必须同时绑定 baseline ID/version、`docs/visual-baseline.md`、正文真实 SHA（style fingerprint）、primary anchor 和 selected candidate；任一候选、决定、brief、正文或锚点文件 SHA 漂移均使引用失效并回到三候选流程。该全局人工选择是独立硬门，不能替代每个场景 V2 的唯一真人方向审批。
+人工确认完成前，`visual_baseline.status` 和 Work Item `globalStaticBaselineState` 只能保持 draft/pending，不能写入 `global-static-baseline-frozen`。确认后冻结身份必须同时绑定 baseline ID/version、`docs/visual-baseline.md`、正文真实 SHA（style fingerprint）、primary anchor 和 selected candidate；任一候选、决定、brief、正文或锚点文件 SHA 漂移均使引用失效并回到三候选流程。该全局人工选择是独立硬门，不能替代每个场景 V2 的拆解图确认。
 
 | 阶段 | 必须产物 | 允许状态 | 禁止旁路 |
 | --- | --- | --- | --- |
@@ -80,7 +80,7 @@ V4 为每个生产包提交多资源联系表，并至少生成一张同屏组�
 | 资源 ID | 基线 ID/版本/指纹 | 主锚点 | 分系统锚点 | 同屏对象 | 形状/比例 | 材质/光源/描边 | 色彩/密度 | 允许变量 | 偏差与结论 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 
-同屏截图必须覆盖会同时出现或由玩家连续看到的角色、图标、面板、按钮、场景对象与 VFX，并标注具体区域和可观察事实。V5 再在目标视口、关键状态和动态时间点检查运行态一致性；孤立透明图、单图文件检查或作者声明不得单独通过。
+同屏截图必须覆盖会同时出现或由玩家连续看到的角色、图标、面板、按钮、场景对象与 VFX，并标注具体区域和可观察事实。V4 再在目标视口、关键状态和动态时间点检查运行态一致性；孤立透明图、单图文件检查或作者声明不得单独通过。
 
 ## 漂移判定与处置
 
@@ -97,7 +97,7 @@ V4 为每个生产包提交多资源联系表，并至少生成一张同屏组�
 
 ## 基线变更提案
 
-禁止直接修改冻结基线。变更提案必须建立 Change Request，列出新旧基线、原因、影响、需要失效的 A4-A6 操作批准/证据、迁移计划、成本与重新执行 V2 唯一真人方向审批的要求；V1/V2 使用 `AUTO` 或 `USER_DECISION` 记录，不写操作审批 pending，F4 只用于精确集成/发布操作批准。
+禁止直接修改冻结基线。变更提案必须建立 Change Request，列出新旧基线、原因、影响、需要失效的 A4-A6 操作批准/证据、迁移计划、成本与重新执行 V2 拆解图确认的要求；V1/V2 使用 `AUTO` 或 `USER_DECISION` 记录，不写操作审批 pending，F4 只用于精确集成/发布操作批准。
 
 新基线形成后，将旧决策和证据标为失效或限定范围，并从最早受影响阶段重验。明确规则下的忠实更新记录新 `AUTO` 决策；新方向或可见结构/交互取舍请求一次精确确认。
 

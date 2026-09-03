@@ -10,18 +10,18 @@ export const PROJECT_PHASES = Object.freeze([
   Object.freeze({ id: 'release', label: '发布' }),
 ]);
 
-/** 单场景视觉生命周期的四步展示定义；内部 V0-V5 硬门仍由控制面执行。 */
+/** 单场景视觉生命周期的四步展示定义；内部 V0-V4 硬门仍由控制面执行。 */
 export const SCENE_STEPS = Object.freeze([
   Object.freeze({ id: 'scene-definition', label: '场景定义', stages: Object.freeze(['V0', 'V1']) }),
-  Object.freeze({ id: 'direction-confirmation', label: '方向确认', stages: Object.freeze(['V2']) }),
-  Object.freeze({ id: 'production-ready', label: '生产就绪', stages: Object.freeze(['V3', 'V4']) }),
-  Object.freeze({ id: 'formal-implementation-runtime-validation', label: '正式实现与运行验收', stages: Object.freeze(['V5']) }),
+  Object.freeze({ id: 'direction-confirmation', label: '拆解确认', stages: Object.freeze(['V2']) }),
+  Object.freeze({ id: 'production-ready', label: '资源与组合验收', stages: Object.freeze(['V3']) }),
+  Object.freeze({ id: 'formal-implementation-runtime-validation', label: '正式实现与运行验收', stages: Object.freeze(['V4']) }),
 ]);
 
 /** 只读内部索引和受控类型集合，确保投影不会依赖输入对象中的任意文本。 */
 const PHASE_BY_ID = new Map(PROJECT_PHASES.map((phase) => [phase.id, phase]));
 const SCENE_STEP_BY_STAGE = new Map(SCENE_STEPS.flatMap((step) => step.stages.map((stage) => [stage, step])));
-const VISUAL_STAGES = new Set(['V0', 'V1', 'V2', 'V3', 'V4', 'V5']);
+const VISUAL_STAGES = new Set(['V0', 'V1', 'V2', 'V3', 'V4']);
 const GLOBAL_BASELINE_STATES = new Set(['BASELINE', 'PROPOSAL', 'REVIEW']);
 const RELEASE_STATES = new Set(['RELEASE_APPROVAL_REQUIRED', 'RELEASING']);
 const FOUNDATION_UNIT_TYPES = new Set(['SHARED', 'MODULE']);
@@ -124,7 +124,7 @@ export function projectWorkflowView(input = {}) {
   const kind = packageKind(normalized.implementationPackage);
   const visual = visualStageInfo(workItem, normalized.executionState, stageId);
 
-  // stageId 以 V 开头却不在 V0-V5 中时属于未知内部阶段，不能降级显示为基线或场景进度。
+  // stageId 以 V 开头却不在 V0-V4 中时属于未知内部阶段，不能降级显示为基线或场景进度。
   if (stageId?.startsWith('V') && !VISUAL_STAGES.has(stageId)) return unknownView(internalStage, '视觉阶段标识无法识别');
 
   // G3、发布状态和独立发布 Work Item 必须优先归入发布，避免被旧的视觉字段遮蔽。
@@ -137,7 +137,7 @@ export function projectWorkflowView(input = {}) {
 
   // foundation-only 允许在场景视觉门之前执行；V2 及之后与基础包组合属于矛盾输入。
   if (kind === 'foundation') {
-    if (visual.stage && !['V0', 'V1'].includes(visual.stage)) return unknownView(internalStage, 'foundation-only 包与 V2-V5 阶段冲突');
+    if (visual.stage && !['V0', 'V1'].includes(visual.stage)) return unknownView(internalStage, 'foundation-only 包与 V2-V4 阶段冲突');
     return knownView('foundation-engineering', null, internalStage);
   }
 
@@ -146,8 +146,8 @@ export function projectWorkflowView(input = {}) {
   if (kind === 'scene' || hasExplicitSceneStage) {
     // INTAKE 与场景实施包无法同时表示可信进度，保持 fail-closed。
     if (globalState === 'INTAKE') return unknownView(internalStage, 'INTAKE 与场景生产声明冲突');
-    // V4 门通过后才进入正式代码实现；此处只投影视图，不改变 V4/V5 控制门。
-    if (kind === 'scene' && visual.stage === 'V4' && visual.stageState === 'v4-formal-acceptance-complete'
+    // V3 门通过后才进入正式代码实现；此处只投影视图，不改变 V3/V4 控制门。
+    if (kind === 'scene' && visual.stage === 'V3' && visual.stageState === 'v3-formal-acceptance-complete'
       && ['IMPLEMENTING', 'VALIDATING', 'PASSED', 'COMPLETE'].includes(globalState)) {
       sceneStep = SCENE_STEPS.at(-1);
     }

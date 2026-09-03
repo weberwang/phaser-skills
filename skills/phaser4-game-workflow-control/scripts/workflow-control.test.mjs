@@ -38,18 +38,19 @@ function makeRepo() {
   writeFileSync(join(repo, 'src', 'old.js'), 'export const old = true;\n');
   writeFileSync(join(repo, 'docs', 'spec.md'), '# spec\n');
   const sceneMasterPath = join(repo, 'docs', 'high-fidelity-scene.png');
-  const candidatePath = join(repo, 'docs', 'high-fidelity-candidate.png');
-  const dynamicPath = join(repo, 'docs', 'high-fidelity-dynamic.mp4');
-  const machinePath = join(repo, 'docs', 'v2-machine.json');
-  const humanPath = join(repo, 'docs', 'v2-human.json');
+  const reconstructionContractPath = join(repo, 'docs', 'scene-reconstruction-contract.json');
+  const decompositionAnnotationPath = join(repo, 'docs', 'decomposition-annotation.png');
+  const technicalDecompositionPath = join(repo, 'docs', 'technical-decomposition.json');
+  const confirmationPath = join(repo, 'docs', 'v2-decomposition-confirmation.json');
   const pauseContextPath = join(repo, 'docs', 'pause-context.png');
   const settingsContextPath = join(repo, 'docs', 'settings-context.png');
-  const v4Path = join(repo, 'docs', 'v4-acceptance.json');
-  writeFileSync(sceneMasterPath, 'scene-master\n'); writeFileSync(candidatePath, 'scene-candidate\n'); writeFileSync(dynamicPath, 'dynamic-sample\n');
+  const v3Path = join(repo, 'docs', 'v3-acceptance.json');
+  const v4Path = join(repo, 'docs', 'v4-runtime-candidate.json');
+  writeFileSync(sceneMasterPath, 'scene-master\n'); writeFileSync(reconstructionContractPath, 'scene-reconstruction-contract\n'); writeFileSync(decompositionAnnotationPath, 'decomposition-annotation\n'); writeFileSync(technicalDecompositionPath, 'technical-decomposition\n'); writeFileSync(confirmationPath, 'decomposition-confirmation\n');
   writeFileSync(pauseContextPath, 'pause-context\n'); writeFileSync(settingsContextPath, 'settings-context\n');
-  writeFileSync(machinePath, 'machine-review\n'); writeFileSync(humanPath, 'human-approval\n');
-  writeJson(join(repo, 'docs', 'high-fidelity-scene.json'), { schemaVersion: 'phaser4-scene-v2-result/1.0', workItemId: 'WI-1', status: 'COMPLETE', stage: 'V2', frozen: true, sceneId: 'play', targetSha256: HASH, candidateSha256: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF, sceneMaster: { file: 'docs/high-fidelity-scene.png', sha256: hashFile(sceneMasterPath), sceneId: 'play' }, completeSceneCandidate: { file: 'docs/high-fidelity-candidate.png', sha256: hashFile(candidatePath), sceneId: 'play' }, dynamicVisualSample: { file: 'docs/high-fidelity-dynamic.mp4', sha256: hashFile(dynamicPath), sceneId: 'play' }, machineValidation: { validationMode: 'MACHINE', status: 'PASS', targetSha256: HASH, candidateSha256: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF, evidenceFile: 'docs/v2-machine.json', evidenceSha256: hashFile(machinePath) }, visualHumanApproval: { approvalId: 'V2-HUMAN-1', reviewMode: 'SINGLE_HUMAN', status: 'PASS', targetSha256: HASH, candidateSha256: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF, evidenceFile: 'docs/v2-human.json', evidenceSha256: hashFile(humanPath) }, displayLayerContexts: [{ displayLayerId: 'pause', hostSceneId: 'play', hostContextImage: { file: 'docs/pause-context.png', sha256: hashFile(pauseContextPath), sceneId: 'play', displayLayerId: 'pause', hostSceneId: 'play' } }, { displayLayerId: 'settings', hostSceneId: 'play', hostContextImage: { file: 'docs/settings-context.png', sha256: hashFile(settingsContextPath), sceneId: 'play', displayLayerId: 'settings', hostSceneId: 'play' } }] });
-  writeJson(v4Path, { evidenceType: 'v4-formal-acceptance', status: 'PASS', acceptanceId: 'V4-ACCEPT-1', workItemId: 'WI-1', baselineHash: HASH, contentHash: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF, candidateIdentity: { sha256: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF }, formalAssets: ['docs/high-fidelity-scene.png'], components: ['scene-master'], combinationPreacceptance: { status: 'PASS' } });
+  writeJson(join(repo, 'docs', 'high-fidelity-scene.json'), { schemaVersion: 'phaser4-scene-v2-reconstruction-plan/1.0', workItemId: 'WI-1', status: 'COMPLETE', stage: 'V2', frozen: true, sceneId: 'play', targetSha256: HASH, candidateSha256: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF, sceneMaster: { file: 'docs/high-fidelity-scene.png', sha256: hashFile(sceneMasterPath), sceneId: 'play' }, sceneReconstructionContract: { file: 'docs/scene-reconstruction-contract.json', sha256: hashFile(reconstructionContractPath), sceneId: 'play' }, decompositionAnnotation: { file: 'docs/decomposition-annotation.png', sha256: hashFile(decompositionAnnotationPath), sceneId: 'play' }, technicalDecomposition: { file: 'docs/technical-decomposition.json', sha256: hashFile(technicalDecompositionPath), sceneId: 'play' }, visualDecompositionConfirmation: { confirmationId: 'V2-CONFIRM-1', confirmationMode: 'manual', status: 'PASS', targetSha256: HASH, candidateSha256: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF, evidenceFile: 'docs/v2-decomposition-confirmation.json', evidenceSha256: hashFile(confirmationPath) }, visualProductionContract: { contractId: 'VPC-1' }, visualProductionUnits: [{ unitId: 'scene-root', owner: 'fixed-production-visual' }], displayLayerContexts: [{ displayLayerId: 'pause', hostSceneId: 'play', hostContextImage: { file: 'docs/pause-context.png', sha256: hashFile(pauseContextPath), sceneId: 'play', displayLayerId: 'pause', hostSceneId: 'play' } }, { displayLayerId: 'settings', hostSceneId: 'play', hostContextImage: { file: 'docs/settings-context.png', sha256: hashFile(settingsContextPath), sceneId: 'play', displayLayerId: 'settings', hostSceneId: 'play' } }] });
+  writeJson(v3Path, { evidenceType: 'v3-formal-acceptance', status: 'PASS', acceptanceId: 'V3-ACCEPT-1', workItemId: 'WI-1', baselineHash: HASH, contentHash: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF, candidateIdentity: { sha256: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF }, files: ['docs/high-fidelity-scene.png'], fileHashes: { 'docs/high-fidelity-scene.png': hashFile(sceneMasterPath) }, formalAssets: ['docs/high-fidelity-scene.png'], components: ['scene-master'], combinationPreacceptance: { status: 'PASS' } });
+  writeJson(v4Path, { evidenceType: 'v4-runtime-integration-candidate', status: 'PASS', candidateId: 'V4-CANDIDATE-1', workItemId: 'WI-1', baselineHash: HASH, contentHash: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF, candidateIdentity: { sha256: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF }, files: ['docs/high-fidelity-scene.png'], fileHashes: { 'docs/high-fidelity-scene.png': hashFile(sceneMasterPath) } });
   execFileSync('git', ['add', '.'], { cwd: repo });
   execFileSync('git', ['commit', '-qm', 'baseline'], { cwd: repo });
   return { repo, head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim() };
@@ -64,7 +65,7 @@ function makeWork(head, overrides = {}) {
     assignedAgent: 'implementer', delegatedAgents: [], expectedOutputs: ['src/main.js'], validationPlan: ['node --test'], exitCriteria: ['tests pass'], nextGate: 'F0', rollbackPolicy: '不自动回滚共享工作区', evidenceRoot: '.workflow-control/evidence/WI-1',
     pendingApprovalId: 'PENDING-1', pendingApprovalObject: 'core implementation', pendingApprovalStage: 'G1', pendingApprovalActionLevel: 'A3', pendingApprovalGate: 'F0', pendingApprovalState: 'IMPLEMENTING', pendingApprovalContext: 'implementation', pendingApprovalActionType: 'phaser-code-change', pendingApprovalImpactSummary: [], pendingApprovalFileScope: ['src'], pendingApprovalServices: [], pendingApprovalAllowServiceStart: false, pendingApprovalAllowDelete: false, pendingApprovalExternalWrite: false, pendingApprovalDestructive: false, pendingApprovalPhysicalDevice: false, pendingApprovalRelease: false, pendingApprovalExternalTargets: [], pendingApprovalPreparedAt: '2026-08-11T00:00:00.000Z', pendingApprovalPresentedId: null, pendingApprovalPresentedAt: null,
     validationBatchId: 'BATCH-1', changeRequestFiles: [], moduleGateRequired: false, substantiveTradeoffRequired: false, visualDecisionRequired: false, releaseWorkItem: false,
-    visualStage: 'V4', visualStageState: 'v4-formal-acceptance-complete', visualStageEvidenceRefs: { V2: { path: 'docs/high-fidelity-scene.json', sha256: '', workItemId: 'WI-1' }, V4: { path: 'docs/v4-acceptance.json', sha256: '', workItemId: 'WI-1' } },
+    visualStage: 'V4', visualStageState: 'v4-runtime-integration-candidate', visualStageEvidenceRefs: { V2: { path: 'docs/high-fidelity-scene.json', sha256: '', workItemId: 'WI-1' }, V3: { path: 'docs/v3-acceptance.json', sha256: '', workItemId: 'WI-1' }, V4: { path: 'docs/v4-runtime-candidate.json', sha256: '', workItemId: 'WI-1' } },
     ...overrides
   };
 }
@@ -150,8 +151,8 @@ function setup(workOverrides = {}, approvals = []) {
   mkdirSync(join(root, 'evidence', 'WI-1'), { recursive: true });
   const workValue = makeWork(head, workOverrides);
   const packageValue = makePackage();
-  const visualEvidenceSha = hashFile(join(repo, 'docs', 'high-fidelity-scene.json')); const v4EvidenceSha = hashFile(join(repo, 'docs', 'v4-acceptance.json'));
-  workValue.visualStageEvidenceRefs.V2.sha256 = visualEvidenceSha; workValue.visualStageEvidenceRefs.V4.sha256 = v4EvidenceSha;
+  const visualEvidenceSha = hashFile(join(repo, 'docs', 'high-fidelity-scene.json')); const v3EvidenceSha = hashFile(join(repo, 'docs', 'v3-acceptance.json')); const v4EvidenceSha = hashFile(join(repo, 'docs', 'v4-runtime-candidate.json'));
+  workValue.visualStageEvidenceRefs.V2.sha256 = visualEvidenceSha; workValue.visualStageEvidenceRefs.V3.sha256 = v3EvidenceSha; workValue.visualStageEvidenceRefs.V4.sha256 = v4EvidenceSha;
   packageValue.executionUnits.find((unit) => unit.unitId === 'SCENE-1').highFidelityPrerequisite.evidenceSha256 = visualEvidenceSha;
   writeJson(workPath, { ...workValue, ...workOverrides });
   writeJson(ledgerPath, { schemaVersion: '1.0', approvals });
@@ -296,14 +297,11 @@ test('混合场景实施包：包含 SCENE 时仍必须通过 V2 规划门', () 
   rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /V2 前置门|V2/);
 });
 
-test('正式场景执行：V4 未完成时仍拒绝 unit-check', () => {
-  const f = setup();
-  writeUnitResults(f, {}, { completeState: false });
-  const work = JSON.parse(readFileSync(f.workPath, 'utf8'));
-  work.visualStageState = 'pending';
-  writeJson(f.workPath, work);
-  const resultPath = join(f.root, 'evidence', 'WI-1', 'units', 'SHARED-1.json');
-  rejects(run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', resultPath], f.repo), /V4 前置门|V4/);
+test('正式场景执行：V3 未完成时拒绝创建执行状态', () => {
+  assert.throws(
+    () => setup({ visualStage: 'V2', visualStageState: 'v2-production-planning-complete' }),
+    /V3 前置门|V3/,
+  );
 });
 
 test('A0-A2：只读、文档和隔离原型依任务授权直接通过', () => {
@@ -983,29 +981,18 @@ test('正向：initializer 使用 A1 任务授权且不强制读取 Ledger', () 
   assert.equal(readFileSync(join(f.repo, 'docs', 'GDD.md'), 'utf8').startsWith('# 游戏设计文档'), true);
 });
 
-test('V3 视觉 Work Item 缺失 visualProductionUnits 时规划迁移拒绝绕过 coverage', () => {
-  const f = setup({ domain: 'visual-assets', stageId: 'V3', globalState: 'REVIEW', pendingApprovalState: 'REVIEW', visualStage: 'V3', visualStageState: 'v3-production-planning-complete' });
-  rejects(run('transition', ['--work-item', f.workPath, '--to', 'IMPLEMENTING', '--implementation-package', f.packagePath], f.repo), /visualManifestFile|visualProductionUnits/);
+test('V2 视觉 Work Item 缺失 visualProductionUnits 时规划迁移拒绝绕过 coverage', () => {
+  const f = setup({ domain: 'visual-assets', stageId: 'V2', globalState: 'REVIEW', pendingApprovalState: 'REVIEW', visualStage: 'V2', visualStageState: 'v2-production-planning-complete' }); rejects(run('transition', ['--work-item', f.workPath, '--to', 'IMPLEMENTING', '--implementation-package', f.packagePath], f.repo), /visualManifestFile|visualProductionUnits/);
 });
 
 test('V4 视觉门不允许 domain=code 通过自由文本绕过', () => {
-  const f = setup({ domain: 'code', stageId: 'V4', visualStage: 'V4', visualStageState: 'v4-formal-acceptance-complete' });
-  rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /visualManifestFile|visualProductionUnits/);
+  const f = setup({ domain: 'code', stageId: 'V4', visualStage: 'V4', visualStageState: 'v4-runtime-integration-candidate' }); rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /visualManifestFile|visualProductionUnits/);
 });
 
 test('V3 视觉 Implementation Package 的 ImageGen 编号未映射 coverage 时 CLI 拒绝', () => {
-  const f = setup({ domain: 'visual-assets', stageId: 'V3', globalState: 'REVIEW', pendingApprovalState: 'REVIEW', visualStage: 'V3', visualStageState: 'v3-production-planning-complete' });
+  const f = setup({ domain: 'visual-assets', stageId: 'V2', globalState: 'REVIEW', pendingApprovalState: 'REVIEW', visualStage: 'V2', visualStageState: 'v2-production-planning-complete' });
   const manifestPath = join(f.repo, 'docs', 'visual-assets.json');
-  writeJson(manifestPath, {
-    schema_version: '1.5',
-    effect_image_reconstruction: { applicability: 'effect-image', lifecycle: 'v3-ready' },
-    coverage_audit: { regions: [{ id: 'hero', annotation_number: 1, owner_type: 'fixed-production-visual', production_origin: 'independent-production', production_method: 'authored-raster', delivery_kind: 'raster-image', image_generation_required: false, generation_record_required: false, substitution_policy: 'forbid', expected_assets: ['hero'], asset_id: 'hero' }] },
-    assets: [{ id: 'hero', production_origin: 'independent-production', production_method: 'authored-raster', delivery_kind: 'raster-image', image_generation_required: false, generation_record_required: false, substitution_policy: 'forbid', expected_assets: ['hero'] }],
-  });
-  const pkg = makePackage({
-    visualManifestFile: 'docs/visual-assets.json', visualManifestSha256: hashFile(manifestPath),
-    visualProductionUnits: [{ unitId: 'VIS-2', annotation_number: 2, region_id: 'other', production_origin: 'independent-production', production_method: 'authored-raster', delivery_kind: 'raster-image', image_generation_required: false, generation_record_required: false, substitution_policy: 'forbid', expected_assets: ['other'], owner: 'implementer', ownedPaths: ['src'], outputPaths: ['docs/other.png'] }],
-  });
-  writeBoundPackage(f, pkg);
-  rejects(run('transition', ['--work-item', f.workPath, '--to', 'IMPLEMENTING', '--implementation-package', f.packagePath], f.repo), /未映射|visualProductionUnits|annotation_number/);
+  writeJson(manifestPath, { schema_version: '1.5', effect_image_reconstruction: { applicability: 'effect-image', lifecycle: 'v2-ready' }, coverage_audit: { regions: [{ id: 'hero', annotation_number: 1, owner_type: 'fixed-production-visual', production_origin: 'independent-production', production_method: 'authored-raster', delivery_kind: 'raster-image', image_generation_required: false, generation_record_required: false, substitution_policy: 'forbid', expected_assets: ['hero'], asset_id: 'hero' }] }, assets: [{ id: 'hero', production_origin: 'independent-production', production_method: 'authored-raster', delivery_kind: 'raster-image', image_generation_required: false, generation_record_required: false, substitution_policy: 'forbid', expected_assets: ['hero'] }] });
+  const pkg = makePackage({ visualManifestFile: 'docs/visual-assets.json', visualManifestSha256: hashFile(manifestPath), visualProductionUnits: [{ unitId: 'VIS-2', annotation_number: 2, region_id: 'other', production_origin: 'independent-production', production_method: 'authored-raster', delivery_kind: 'raster-image', image_generation_required: false, generation_record_required: false, substitution_policy: 'forbid', expected_assets: ['other'], owner: 'implementer', ownedPaths: ['src'], outputPaths: ['docs/other.png'] }] });
+  writeBoundPackage(f, pkg); rejects(run('transition', ['--work-item', f.workPath, '--to', 'IMPLEMENTING', '--implementation-package', f.packagePath], f.repo), /未映射|visualProductionUnits|annotation_number/);
 });

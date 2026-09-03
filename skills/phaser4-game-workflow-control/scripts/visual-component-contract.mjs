@@ -5,7 +5,7 @@
  *
  * annotation_number 只标识效果图上的审阅区域，不能直接当作资产数量。
  * 该模块把“区域 → 部件 → 状态 → 资产/图集切片”收敛成可验证的映射，
- * 供 V3、Implementation Package、V4、F2 和 V5 共用。
+ * 供 V2、V3、Implementation Package、V4 和 F2 共用。
  */
 import { getVisualRegionDefinitionAliasConflicts, normalizeVisualRegionDefinition } from "../../phaser4-game-asset-integration/scripts/effect_image_annotation_core.mjs";
 import { atomicImageRequirementsEqual, deriveAtomicImageRequirements, normalizeAtomicComponents, normalizeAtomicImageRequirements } from "./visual-atomic-contract.mjs";
@@ -666,7 +666,7 @@ export function validateComponentAuditEvidence(region, auditUnit, context = {}, 
     const asset = normalizeComponentExpectedAsset(item);
     const actualFile = item?.file ?? item?.path ?? item?.output_file ?? item?.runtime_file ?? item?.runtimeFile ?? "";
     const local = { ...context, component_id: asset.component_id || "?", state_id: asset.canonical_state_id || "?", asset_id: asset.asset_id || item?.id || "?" };
-    // V4 只复核实际文件、组件状态和运行时哈希；真人审批已在 V2 唯一收敛，
+    // V4 只复核实际文件、组件状态和运行时哈希；拆解确认已在 V2 唯一收敛，
     // 不再要求每个 actual asset 复制 human_review。
     if (canonical.production_method === "imagegen" || canonical.image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(item, { requiredMime: true, fileFields: ["file", "path", "runtime_file", "output_file"] })) errors.push(componentError(local, `actual_assets[${index}].${violation.field} ${violation.message}`));
     if (!nonEmptyString(asset.component_id) || !nonEmptyString(asset.state_id)) errors.push(componentError(local, `actual_assets[${index}] 必须绑定 component_id/state_id，不能只登记区域组图`, { missing: `actual_assets[${index}].component_id/state_id` }));
