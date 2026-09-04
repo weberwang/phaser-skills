@@ -4,14 +4,24 @@
 
 ## 合同身份与范围
 
-schema 1.1.0 根对象包含 `fidelity`、`frozen_visual_target`、`layout_nodes`、`critical_alignments` 和 `parity_cases`。普通布局使用 `not-applicable/not-applicable`，`layout_nodes`、`critical_alignments` 和 `parity_cases` 都是空数组；冻结目标使用 `specified` 或 `verified`，并通过场景绑定携带拆解节点。冻结目标还记录 `visual_baseline_version`。verified parity 的 scene/state 必须属于 scope，合同版本和视觉基线版本必须分别等于根合同与冻结目标；`actual_test_id` 必须等于 `planned_test_id`。
+schema 1.1.0 根对象包含 `fidelity`、`frozen_visual_target`、`layout_nodes`、`critical_alignments` 和 `parity_cases`。普通布局使用 `not-applicable/not-applicable`，`layout_nodes`、`critical_alignments` 和 `parity_cases` 都是空数组；冻结目标使用 `specified` 或 `verified`，场景先绑定拆解确认中的 `decomposition_elements`，再登记后置生成的布局节点。冻结目标还记录 `visual_baseline_version`。verified parity 的 scene/state 必须属于 scope，合同版本和视觉基线版本必须分别等于根合同与冻结目标；`actual_test_id` 必须等于 `planned_test_id`。
 
-`regions` 是声明式布局区域；`layout_nodes` 是效果图拆解出的可装配几何节点。普通布局 `fidelity.applicability=not-applicable` 必须使用空数组；`frozen-target` 合同必须声明至少一个布局节点。布局节点把效果图的目标几何与 Phaser 运行时的唯一布局入口绑定，不能用整屏截图、隐藏覆盖层或散落的绝对坐标替代。
+`regions` 是声明式布局区域；`decomposition_elements` 是效果图拆解阶段确认的元素事实，`layout_nodes` 则是确认后由元素 bounds/role 推导出的可装配几何节点。普通布局 `fidelity.applicability=not-applicable` 必须使用空数组；`frozen-target` 合同在布局完成门才声明至少一个布局节点。布局节点把效果图的目标几何与 Phaser 运行时的唯一布局入口绑定，不能用整屏截图、隐藏覆盖层或散落的绝对坐标替代。
+
+## V2 串行拆解与布局标注
+
+冻结目标进入 V2 后，机器门固定执行两个串行阶段：阶段 A 先从冻结原图、区域与组件事实生成拆解标注图及技术 JSON，并产出 `decomposition_elements`；人工可以修改这两项，修改后必须重新生成最终产物，并以 `visual-decomposition-confirmation/1.0` 确认。阶段 B 只有在阶段 A 的最终确认通过后才能启动，布局入口必须消费该确认绑定的 `proposal.decomposition_elements`，再推导后置布局节点，不得从预存 `layout_nodes`、未确认清单草案或原图自行识别元素。
+
+阶段 B 生成独立 `layout-annotation/png/1` PNG：原图作为左侧底图，所有已确认父容器、子组件和空容器均需框出；相同层级使用相同确定性颜色，不同层级使用不同确定性颜色。PNG 元数据绑定 `layout_node_id`/`element_id`、`parent_layout_node_id`、`depth`、`color`、`bounds`、`empty_container`、`relative_position` 四边距离、显式 `axis_alignment`、锚点、布局决策文件身份及上游拆解确认身份。右侧说明栏按父容器列出直接子组件的视觉对齐、偏移和四边距离，空容器明确显示“空容器”。
+
+布局图也允许人工修改；修改后必须重新生成最终布局图，并以独立 `layout-annotation-confirmation/1.0` 确认。该确认同时绑定布局图文件/SHA、尺寸、schema/layout、metadata identity、`visual-decomposition-confirmation` 的 ID/SHA、proposal SHA、scene/state/target、用户原文和 receipt。任一图、元数据、布局关系或上游拆解身份变化都使旧确认失效；V2 最终完成门必须同时看到两次人工确认。
+
+阶段 B 先由智能视觉判断读取原图与确认后的 `proposal.decomposition_elements`，产出 `automatic-layout-decision/1.0` JSON：每个元素必须显式给出 `horizontal_alignment=left|center|right` 和 `vertical_alignment=top|center|bottom`。随后使用 `scripts/generate_layout_annotation.mjs` 生成布局 PNG；命令必须显式传入 manifest、project root、scene/state、输出路径、拆解确认 ID/SHA、proposal SHA、`--layout-decision-file` 和 `--layout-decision-sha256`。生成器拒绝缺失决策、非法枚举、元素漏绑、新增伪造、越界或跨场景输入，不会按测量结果兜底猜测对齐。
 
 每个 `layout_nodes` 节点必须包含：
 
 - `layout_node_id`、`region_id`、`coordinate_space`、`reference_id`。
-- `parent_layout_node_id`、`parent_target_bounds`、`relative_position`、`nearest_edge_docking`。
+- `parent_layout_node_id`、`parent_target_bounds`、`relative_position`、`axis_alignment`。
 - `self_anchor`、`reference_anchor`、`offset`、`target_bounds`、`size_policy`。
 - `z_order`、`clip_policy`、`responsive_rule`、`planned_test_id`。
 
@@ -19,7 +29,7 @@ schema 1.1.0 根对象包含 `fidelity`、`frozen_visual_target`、`layout_nodes
 
 效果图还原节点必须先建立父子几何图：`parent_layout_node_id` 只能引用另一个已声明的 `layout_node_id`，或稳定根 `viewport`/`safe-area`；`reference_id` 必须逐字等于该父 ID，父子图不得自引用或成环。`parent_target_bounds` 必须逐字段等于父节点 `target_bounds`；`viewport` 根固定为 `{x:0,y:0,width:target_viewport.width,height:target_viewport.height}`，`safe-area` 根以首次有效测量冻结唯一 bounds，所有引用必须一致且位于 viewport 内。子 `target_bounds` 必须完整落在父内容框内。`relative_position` 必须按 `left=child.x-parent.x`、`right=parent.x+parent.width-child.x-child.width`、`top=child.y-parent.y`、`bottom=parent.y+parent.height-child.y-child.height` 逐项测量，不接受手填近似或负距离；允许的浮点误差不超过 `1e-6`。
 
-`nearest_edge_docking.horizontal` 取 `left<=right ? left : right`，`vertical` 取 `top<=bottom ? top : bottom`，相等时确定性选择 `left/top`。运行时 `offset.x` 必须是左停靠的 `left` 或右停靠的 `-right`，`offset.y` 必须是上停靠的 `top` 或下停靠的 `-bottom`；`self_anchor` 与 `reference_anchor` 都必须是 `${vertical}-${horizontal}`（例如 `top-left`）。这些父子、相对距离、停靠、偏移和锚点字段均属于布局合同身份投影，任一变化都必须让旧 `layout_contract_sha256` 失效。
+`axis_alignment.horizontal` 由智能视觉判断显式选择 `left/center/right`，`vertical` 显式选择 `top/center/bottom`。判断主要依据原图构图、视觉重心和元素语义，不按最近边或测量阈值自动推断。四边距离只记录几何事实；运行时 `offset` 按选定对齐轴计算，其中 `center` 使用子中心相对父中心的有符号偏移。`self_anchor` 与 `reference_anchor` 必须是 `${vertical}-${horizontal}`（例如 `top-center` 或 `center-center`）。视觉决策文件、父子关系、相对距离、对齐、偏移和锚点都属于布局身份，任一变化都必须让旧确认失效。
 
 模板的 `layout_node_example` 是可直接复制到 `layout_nodes` 的完整 effect-image 节点示例；它不是普通 `not-applicable` 合同的活动节点。切换到冻结目标时，应复制该示例、改成项目稳定 ID 和目标几何，并补齐场景绑定与关键对齐证据。
 
@@ -72,7 +82,7 @@ schema 1.1.0 根对象包含 `fidelity`、`frozen_visual_target`、`layout_nodes
 specified 可只做结构检查；verified 必须追加 `--check-files --project-root .`，验证冻结原图存在且 SHA 匹配，并拒绝缺失或逃逸项目根目录的目标、运行及 parity 证据路径。
 # 效果图还原布局绑定
 
-当布局服务于 `effect-image` 时，根节点可声明 `scene_reconstruction_binding`，其中必须包含 `target_sha256`、`scene_id`、`state_id`、`target_viewport`、`visual_baseline_version`、`reconstruction_contract_version`、`layout_contract_sha256` 和 `layout_decomposition_version`。`layout_contract_sha256` 是布局合同身份哈希，不是整个文件的递归自哈希：生产方应对合同身份投影（合同 ID/版本、目标 SHA、scene/state、目标 viewport、布局拆解版本及按 `layout_node_id` 排序的节点 ID、区域、坐标空间、父节点 ID、父目标 bounds、四边相对距离、最近边停靠、参照、锚点、偏移、目标几何、尺寸/裁切/响应式策略、层级和计划测试 ID）做确定性规范化后计算，并排除该哈希字段本身以及运行时证据；合同身份变化必须重新计算。这样不会因为把哈希写回合同而形成循环。验证器通过导出的 `computeLayoutContractIdentityHash` 复算该投影并拒绝旧哈希，除检查 SHA-256 格式和绑定字段外不依赖运行态证据。
+当布局服务于 `effect-image` 时，根节点可声明 `scene_reconstruction_binding`，其中必须包含 `target_sha256`、`scene_id`、`state_id`、`target_viewport`、`visual_baseline_version`、`reconstruction_contract_version`、`layout_contract_sha256` 和 `layout_decomposition_version`。`layout_contract_sha256` 是布局合同身份哈希，不是整个文件的递归自哈希：生产方应对合同身份投影（合同 ID/版本、目标 SHA、scene/state、目标 viewport、布局拆解版本、布局决策文件身份，以及按 `layout_node_id` 排序的节点 ID、区域、坐标空间、父节点 ID、父目标 bounds、四边相对距离、显式轴向对齐、参照、锚点、偏移、目标几何、尺寸/裁切/响应式策略、层级和计划测试 ID）做确定性规范化后计算，并排除该哈希字段本身以及运行时证据；合同身份变化必须重新计算。
 
 V2→V3 合同回对必须校验该绑定；`legacy_layout_reused`、`uses_generic_layout` 或 target SHA 不一致均退回 `V1/PROPOSAL`，不能沿用旧响应式骨架。
 

@@ -168,6 +168,7 @@
     }
   ],
   "layout_nodes": [],
+  "layout_annotation": null,
   "layout_node_example": {
     "layout_node_id": "hud.title",
     "region_id": "title",
@@ -176,10 +177,10 @@
     "parent_layout_node_id": "safe-area",
     "parent_target_bounds": {"x": 0, "y": 0, "width": 390, "height": 844},
     "relative_position": {"left": 115, "right": 115, "top": 32, "bottom": 764},
-    "nearest_edge_docking": {"horizontal": "left", "vertical": "top"},
-    "self_anchor": "top-left",
-    "reference_anchor": "top-left",
-    "offset": {"x": 115, "y": 32},
+    "axis_alignment": {"horizontal": "center", "vertical": "top"},
+    "self_anchor": "top-center",
+    "reference_anchor": "top-center",
+    "offset": {"x": 0, "y": 32},
     "target_bounds": {"x": 115, "y": 32, "width": 160, "height": 48},
     "size_policy": "fixed-at-target",
     "z_order": 10,

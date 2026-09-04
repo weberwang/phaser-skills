@@ -70,7 +70,9 @@ Work Item 的 `taskAuthorization` 保存用户原始请求、目标、范围、�
   → foundation-only：SHARED 最小项目骨架 + MODULE 场景无关基础模块
   → 各场景 Work Item：任务授权/范围与功能规格
   → V1 生成或接收并冻结 scene master/reference target、宿主上下文效果图、视觉合同和初步还原草案
-  → V2 拆解图确认/技术 JSON/coverage/生产方案
+  → V2 先自动生成拆解图与技术 JSON，人工修改并确认最终拆解
+  → 智能视觉判断生成双轴对齐决策，仅消费已确认元素与该决策生成布局图，人工修改并独立确认
+  → V2 完成布局确认与合同回对/coverage/生产方案
   → V3 正式资源与宿主场景同屏组合预验收
   → 正式 SCENE/DISPLAY_LAYER 功能实现
   → V4 运行态视觉接入与功能/视觉联合复验
@@ -85,7 +87,7 @@ Work Item 的 `taskAuthorization` 保存用户原始请求、目标、范围、�
 
 全局实施顺序在状态控制面固定为：建立全局基线 brief → 生成三张同条件候选效果图 → 同屏交给人工 → 人工选择确认一张 → 通过 `globalVisualBaselineSelectionRef` 正式冻结全局静态 `visual_baseline`，再以独立 foundation-only 包完成 `SHARED` 最小项目骨架和 `MODULE` 场景无关基础模块；基础阶段完成后进入各场景 Work Item，先在 V1 生成或接收并冻结 scene master/reference target、宿主上下文效果图、视觉合同和初步还原草案，再完成 V2 拆解图确认与生产方案、V3 正式资源与组合预验收，才实施正式 `SCENE`/`DISPLAY_LAYER`，再进入 V4 和跨场景 `INTEGRATION`。基础阶段允许最小 Boot/Preload 生命周期、公开契约、游戏数据配置加载与 schema 校验、状态/存档仓库、输入/平台适配、资源目录/加载基础设施和测试支撑；禁止具体场景玩法规则、场景 UI/布局、正式可见资产消费、Boot→正式可见 Scene 接入和删除旧视觉实现。基础包的全局基线门必须同时复核 `globalVisualBaselineSelectionRef` 与 `globalStaticBaselineState=global-static-baseline-frozen`，不把它当作逐场景 V2；任何混入场景或集成单元的包仍按 V2/V3 正式门处理。参考模式的 `effect-image` 仍在同一场景 Work Item 内完成 V1→V4。正式代码数组顺序固定为 `SHARED`→`MODULE`→按场景连续的 `SCENE`+紧邻从属 `DISPLAY_LAYER`→`INTEGRATION`/联合验收；模块才可按互斥所有权并行，显示层不得在所有场景之后另设尾部阶段，实际场景顺序由计划制定者冻结。代码面在每个 SCENE/DISPLAY_LAYER 单元准备、委派、READY 和激活前读取当前 Work Item 的 V2/V3 结果；全局视觉冻结、手写 PASS 或数组前序均不构成该逐单元证据。
 
-effect-image 的布局拆解在控制面也必须冻结父子几何事实：节点先声明 `parent_layout_node_id` 和 `parent_target_bounds`，再测量父内容框内的 `relative_position`，由最近边（相等取 left/top）推导 `nearest_edge_docking`、`offset` 和两个 `${vertical}-${horizontal}` 锚点。`reference_id` 必须等于父 ID，父级只能是节点、`viewport` 或 `safe-area`，不得循环或越界；父子几何字段变化会使布局身份 SHA 失效，V2/V3/V4 入口必须消费同一校验模块。
+effect-image 的布局拆解在控制面按串行顺序处理：先在确认 proposal 中冻结 `decomposition_elements`，再由布局阶段推导节点的 `parent_layout_node_id` 和 `parent_target_bounds`。智能布局必须结合原图构图、视觉重心和元素语义，显式生成 `axis_alignment.horizontal=left|center|right` 与 `vertical=top|center|bottom`；不得依据四边距离自动决定对齐。父内容框内的 `relative_position` 只承担测量和漂移复核，`offset` 与两个 `${vertical}-${horizontal}` 锚点按显式视觉决策计算。`reference_id` 必须等于父 ID，父级只能是节点、`viewport` 或 `safe-area`，不得循环或越界；视觉决策文件及父子几何变化都会使布局身份 SHA 失效。
 
 进入 A3 `IMPLEMENTING` 时创建 `evidence/<workItemId>/execution-state.json`；foundation-only 包可在三候选人工选择证据和全局静态基线冻结后、场景 V2/V3 前初始化，场景/集成包仍只能在相应 V2/V3 门满足后初始化。该状态记录绑定当前 Work Item、Implementation Package、baseline、执行计划指纹和 `executionUnits` 数组位置；只有通过 `unit-check` 的当前 PASS Result 可以把当前单元更新为 `COMPLETE`，并按预设数组激活下一串行单元或下一并行组的 `IN_PROGRESS`。并行组未全部完成时，后续顺序阶段不得提前激活；基础包全部完成后直接输出 `WORKFLOW_COMPLETE`，不得误生成场景 V2→V3 合同任务。`delegate-check`、`parallel-check`、`unit-check`、`evidence-check` 和进入 `VALIDATING` 的迁移均必须读取并复核该状态，缺失、过期、篡改或身份/顺序不一致一律阻断；其中 SCENE/DISPLAY_LAYER 的 READY、委派和激活还必须复核当前 Work Item 的 V2/V3 结果。门禁问题先输出 `repair`/`revalidate` 及其真实受影响单元；只有 V2 冻结身份或上游事实实质失效时才输出 `return` 到该 Work Item 的最早受影响阶段。
 

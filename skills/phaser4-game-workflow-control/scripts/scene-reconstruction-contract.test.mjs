@@ -6,7 +6,7 @@ import test from "node:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { validateSceneReconstructionContract, validateStructuredFidelityCases } from "./scene-reconstruction-contract.mjs";
-import { validateSceneAssetUsageContract, validateSceneCombinationPreacceptance, validateV4ProductionGate, validateVisualImplementationPackageBinding } from "./visual-production-contract.mjs";
+import { validateSceneAssetUsageContract, validateSceneCombinationPreacceptance, validateV4ProductionGate, validateVisualImplementationPackageBinding } from "./visual-production-contract.mjs"; import { computeLayoutAnnotationConfirmationSha256, computeLayoutUserMessageSha256 } from "./layout_annotation_confirmation.mjs";
 
 const SHA = "sha256:" + "a".repeat(64);
 const LAYOUT_SHA = "sha256:" + "b".repeat(64);
@@ -111,7 +111,7 @@ function contract() {
     reference_technical_conflicts: [],
     decomposition_annotation: { file: "evidence/v2/decomposition-annotation.png", sha256: SHA },
     technical_decomposition: { file: "evidence/v2/technical-decomposition.json", sha256: SHA },
-    visual_decomposition_confirmation: { confirmation_id: "v2-confirmation", confirmation_mode: "manual", status: "passed", annotation_file: "evidence/v2/decomposition-annotation.png", annotation_sha256: SHA, target_sha256: SHA, candidate_identity: { sha256: SHA, diff_fingerprint: "diff-1" } },
+    visual_decomposition_confirmation: { confirmation_id: "v2-confirmation", confirmation_sha256: SHA, confirmation_mode: "manual", status: "passed", proposal_id: "v2-proposal", proposal_sha256: SHA, annotation_file: "evidence/v2/decomposition-annotation.png", annotation_sha256: SHA, target_sha256: SHA, candidate_identity: { sha256: SHA, diff_fingerprint: "diff-1" } },
     visual_production_contract: { contract_id: "visual-production-contract-1" },
     visual_production_units: [{ unit_id: "board", region_id: "board", owner: "fixed-production-visual" }],
     coverage_audit: { regions: [{ id: "hud" }, { id: "board" }] },
@@ -212,7 +212,7 @@ function effectImageContract() {
         parent_layout_node_id: "viewport",
         parent_target_bounds: { x: 0, y: 0, width: 390, height: 844 },
         relative_position: { left: 0, right: 0, top: 0, bottom: 748 },
-        nearest_edge_docking: { horizontal: "left", vertical: "top" },
+        axis_alignment: { horizontal: "left", vertical: "top" },
         self_anchor: "top-left",
         reference_anchor: "top-left",
         offset: { x: 0, y: 0 },
@@ -230,7 +230,7 @@ function effectImageContract() {
         parent_layout_node_id: "viewport",
         parent_target_bounds: { x: 0, y: 0, width: 390, height: 844 },
         relative_position: { left: 20, right: 20, top: 160, bottom: 64 },
-        nearest_edge_docking: { horizontal: "left", vertical: "bottom" },
+        axis_alignment: { horizontal: "left", vertical: "bottom" },
         self_anchor: "bottom-left",
         reference_anchor: "bottom-left",
         offset: { x: 20, y: -64 },
@@ -241,6 +241,7 @@ function effectImageContract() {
         responsiveRule: { target: "exact", other: "preserve-relative-anchors" },
       },
     ],
+    layout_annotation: { layout_annotation_file: "evidence/v2/layout-annotation.png", layout_annotation_sha256: SHA, layout_annotation_width: 390, layout_annotation_height: 844, layout_annotation_schema: "layout-annotation/png/1", layout_annotation_layout: "image-plus-right-panel", layout_annotation_metadata_sha256: SHA, layout_annotation_identity_sha256: SHA, decomposition_confirmation_id: "v2-confirmation", decomposition_confirmation_sha256: SHA, proposal_sha256: SHA, layout_decision_file: "evidence/v2/automatic-layout-decision.json", layout_decision_sha256: SHA, layout_decision_id: "layout-decision-1", target_sha256: SHA, scene_id: "main", state_id: "default", layout_node_ids: ["hud-main", "board-surface"] }, layout_annotation_confirmation: (() => { const record = { confirmation_schema: "layout-annotation-confirmation/1.0", confirmation_id: "v2-layout-confirmation", status: "accepted", confirmation_mode: "manual", layout_annotation_file: "evidence/v2/layout-annotation.png", layout_annotation_sha256: SHA, layout_annotation_width: 390, layout_annotation_height: 844, layout_annotation_schema: "layout-annotation/png/1", layout_annotation_layout: "image-plus-right-panel", layout_annotation_metadata_sha256: SHA, layout_annotation_identity_sha256: SHA, decomposition_confirmation_id: "v2-confirmation", decomposition_confirmation_sha256: SHA, proposal_sha256: SHA, layout_decision_file: "evidence/v2/automatic-layout-decision.json", layout_decision_sha256: SHA, layout_decision_id: "layout-decision-1", target_sha256: SHA, scene_id: "main", state_id: "default", user_original_text: "确认布局标注", user_message_sha256: computeLayoutUserMessageSha256("确认布局标注"), decision_record_file: "evidence/v2/layout-decision.json", decision_record_sha256: SHA, user_decision_receipt_file: "evidence/v2/layout-receipt.json", user_decision_receipt_sha256: SHA, accepted_at: "2026-01-01T00:00:00Z" }; return { ...record, confirmation_sha256: computeLayoutAnnotationConfirmationSha256(record) }; })(),
   };
   value.combination_preacceptance.formal_assets = ["hud-main", "board-surface"];
   value.combination_preacceptance.visual_fidelity = { contour: "passed", proportion: "passed", pose: "passed", icon_semantics: "passed", full_scene_composition: "passed" };
@@ -412,7 +413,7 @@ test("effect-image 缺少布局节点、反向绑定或越界 bounds 时阻断�
 test("effect-image 父子布局允许多层关系，并拒绝缺父、循环和越界", () => {
   const nested = effectImageContract();
   nested.coverage_regions[1].layoutNodeIds.push("board-inner");
-  nested.layout_decomposition.layout_nodes.push({ ...structuredClone(nested.layout_decomposition.layout_nodes[1]), layout_node_id: "board-inner", region_id: "board", reference_id: "board-surface", parent_layout_node_id: "board-surface", parent_target_bounds: { x: 20, y: 160, width: 350, height: 620 }, relative_position: { left: 20, right: 230, top: 20, bottom: 500 }, nearest_edge_docking: { horizontal: "left", vertical: "top" }, self_anchor: "top-left", reference_anchor: "top-left", offset: { x: 20, y: 20 }, target_bounds: { x: 40, y: 180, width: 100, height: 100 } });
+  nested.layout_decomposition.layout_nodes.push({ ...structuredClone(nested.layout_decomposition.layout_nodes[1]), layout_node_id: "board-inner", region_id: "board", reference_id: "board-surface", parent_layout_node_id: "board-surface", parent_target_bounds: { x: 20, y: 160, width: 350, height: 620 }, relative_position: { left: 20, right: 230, top: 20, bottom: 500 }, axis_alignment: { horizontal: "left", vertical: "top" }, self_anchor: "top-left", reference_anchor: "top-left", offset: { x: 20, y: 20 }, target_bounds: { x: 40, y: 180, width: 100, height: 100 } });
   nested.combination_preacceptance.layout_geometry.node_measurements.push({ layout_node_id: "board-inner", target_bounds: { x: 40, y: 180, width: 100, height: 100 }, actual_bounds: { x: 40, y: 180, width: 100, height: 100 }, delta: { x: 0, y: 0, width: 0, height: 0 }, tolerance_reference: "layout-tolerance", result: "passed", evidence: ["board-inner-layout.json"] });
   assert.deepEqual(validateSceneReconstructionContract(nested, effectImageManifest(nested), { stage: "V3" }), []);
 
@@ -436,17 +437,17 @@ test("effect-image 父子布局允许多层关系，并拒绝缺父、循环和�
   assert(validateSceneReconstructionContract(childOutside, effectImageManifest(childOutside), { stage: "V3" }).some((item) => item.includes("child target_bounds")));
 });
 
-test("effect-image 相对距离、最近边、offset 和锚点均不得伪造", () => {
+test("effect-image 相对距离、视觉对齐、offset 和锚点均不得伪造", () => {
   for (const mutate of [
     (node) => { node.relative_position.left += 1; },
-    (node) => { node.nearest_edge_docking.horizontal = "right"; },
+    (node) => { node.axis_alignment.horizontal = "right"; },
     (node) => { node.offset.x = 999; },
     (node) => { node.self_anchor = "center-center"; },
     (node) => { node.reference_anchor = "center-center"; },
   ]) {
     const value = effectImageContract();
     mutate(value.layout_decomposition.layout_nodes[0]);
-    assert(validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V3" }).some((item) => item.includes("relative_position") || item.includes("nearest_edge_docking") || item.includes("offset.x") || item.includes("self_anchor") || item.includes("reference_anchor")));
+    assert(validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V3" }).some((item) => item.includes("relative_position") || item.includes("axis_alignment") || item.includes("offset.x") || item.includes("self_anchor") || item.includes("reference_anchor")));
   }
 });
 

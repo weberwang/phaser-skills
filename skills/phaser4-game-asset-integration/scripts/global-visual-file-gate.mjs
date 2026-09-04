@@ -48,6 +48,14 @@ export function collectManifestFileEvidenceEntries(data) {
   if (data?.effect_image_reconstruction?.applicability === "effect-image" && Array.isArray(data?.assets)) data.assets.forEach((asset, index) => {
     if (isObject(asset?.generation_record)) appendGenerationRecordEntries(entries, asset.generation_record, `assets[${index}].generation_record`);
   });
+  const layoutDecomposition = data?.scene_reconstruction_contract?.layout_decomposition;
+  const layoutAnnotation = layoutDecomposition?.layout_annotation;
+  const layoutConfirmation = layoutDecomposition?.layout_annotation_confirmation;
+  if (isObject(layoutAnnotation) && nonEmptyString(layoutAnnotation.layout_annotation_file)) entries.push(["scene_reconstruction_contract.layout_decomposition.layout_annotation.layout_annotation_file", layoutAnnotation.layout_annotation_file, layoutAnnotation.layout_annotation_sha256]);
+  if (isObject(layoutAnnotation) && nonEmptyString(layoutAnnotation.layout_decision_file)) entries.push(["scene_reconstruction_contract.layout_decomposition.layout_annotation.layout_decision_file", layoutAnnotation.layout_decision_file, layoutAnnotation.layout_decision_sha256]);
+  if (isObject(layoutConfirmation)) {
+    for (const [field, shaField] of [["layout_annotation_file", "layout_annotation_sha256"], ["layout_decision_file", "layout_decision_sha256"], ["decision_record_file", "decision_record_sha256"], ["user_decision_receipt_file", "user_decision_receipt_sha256"]]) if (nonEmptyString(layoutConfirmation[field])) entries.push([`scene_reconstruction_contract.layout_decomposition.layout_annotation_confirmation.${field}`, layoutConfirmation[field], layoutConfirmation[shaField]]);
+  }
   // 同一路径且期望 SHA 相同的字段只需复算一次，避免重复 I/O；不同身份仍分别报错。
   // 按收集顺序保留首次字段，使 visual_baseline.anchor_evidence 这类主真值优先于派生引用。
   const uniqueEntries = new Map();

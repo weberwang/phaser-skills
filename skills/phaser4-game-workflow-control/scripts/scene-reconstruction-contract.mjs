@@ -21,6 +21,7 @@ import {
 import { validateDisplayLayerPlanning } from "./display-layer-planning-contract.mjs";
 import { validateSceneTextDecomposition } from "./scene-text-decomposition-contract.mjs";
 import { validateSceneVisualRouteContract } from "./scene-visual-route-contract.mjs";
+import { validateLayoutAnnotationConfirmation } from "./layout_annotation_confirmation.mjs";
 
 export { validateDisplayLayerPlanning } from "./display-layer-planning-contract.mjs";
 export { validateSceneVisualRouteAnalysis, validateSceneVisualRouteContract } from "./scene-visual-route-contract.mjs";
@@ -149,6 +150,27 @@ function validateV2StageArtifacts(contract, stage, errors) {
   errors.push(...validateVisualPostApprovalReviewFields(contract, { stage: "V2" }));
 }
 
+/** V2 阶段 B 的最终门：布局图必须以后置生成，并绑定已通过的拆解确认。 */
+function validateV2LayoutStage(contract, targetInfo, stage, errors, requireFinalLayout = true) {
+  if (!requireFinalLayout) return;
+  const decomposition = field(contract, "layout_decomposition", "layoutDecomposition");
+  const annotation = decomposition?.layout_annotation ?? decomposition?.layoutAnnotation;
+  const decompositionConfirmation = field(contract, "visual_decomposition_confirmation", "visualDecompositionConfirmation", "decomposition_confirmation", "decompositionConfirmation");
+  if (!isObject(annotation)) {
+    errors.push(contractError(stage, contract, decomposition, "V2 缺少后置布局标注图产物；拆解确认后才可生成布局图", { missing: "layout_decomposition.layout_annotation", returnStage: "V2/PROPOSAL", rootCause: "方案缺失" }));
+  } else {
+    for (const key of ["layout_annotation_file", "layout_annotation_sha256", "layout_annotation_width", "layout_annotation_height", "layout_annotation_schema", "layout_annotation_layout", "layout_annotation_metadata_sha256", "layout_annotation_identity_sha256", "decomposition_confirmation_id", "decomposition_confirmation_sha256", "proposal_sha256", "layout_decision_file", "layout_decision_sha256", "layout_decision_id"]) if (!hasContractField(annotation, [key])) errors.push(contractError(stage, contract, annotation, `V2 布局标注图缺少 ${key}`, { missing: `layout_annotation.${key}`, returnStage: "V2/PROPOSAL", rootCause: "方案缺失" }));
+    if (annotation.decomposition_confirmation_id !== decompositionConfirmation?.confirmation_id || annotation.decomposition_confirmation_sha256 !== decompositionConfirmation?.confirmation_sha256 || annotation.proposal_sha256 !== decompositionConfirmation?.proposal_sha256) errors.push(contractError(stage, contract, annotation, "布局标注图未绑定当前已确认拆解身份", { missing: "decomposition_confirmation_id/decomposition_confirmation_sha256/proposal_sha256", returnStage: "V2/PROPOSAL", rootCause: "方案缺失" }));
+  }
+  if (!isObject(decompositionConfirmation) || !["accepted", "passed", "PASS"].includes(String(field(decompositionConfirmation, "status", "verdict", "result"))) || field(decompositionConfirmation, "confirmation_mode", "confirmationMode", "mode") !== "manual") errors.push(contractError(stage, contract, decompositionConfirmation, "布局阶段前置拆解确认必须是 manual accepted", { missing: "visual_decomposition_confirmation", returnStage: "V1/PROPOSAL", rootCause: "方案缺失" }));
+  const layoutConfirmation = decomposition?.layout_annotation_confirmation ?? decomposition?.layoutAnnotationConfirmation;
+  validateLayoutAnnotationConfirmation(layoutConfirmation, { targetSha256: targetInfo?.targetSha, sceneId: targetInfo?.sceneId, stateId: targetInfo?.stateId, decompositionConfirmationId: decompositionConfirmation?.confirmation_id, decompositionConfirmationSha256: decompositionConfirmation?.confirmation_sha256, proposalSha256: decompositionConfirmation?.proposal_sha256, layoutNodes: decomposition?.layout_nodes, checkFiles: false }, errors, "layout_decomposition.layout_annotation_confirmation");
+  if (isObject(annotation) && isObject(layoutConfirmation)) {
+    // 独立布局确认必须逐字段锁定同一最终 PNG，不能只复用上游拆解确认。
+    for (const key of ["layout_annotation_file", "layout_annotation_sha256", "layout_annotation_width", "layout_annotation_height", "layout_annotation_schema", "layout_annotation_layout", "layout_annotation_metadata_sha256", "layout_annotation_identity_sha256", "decomposition_confirmation_id", "decomposition_confirmation_sha256", "proposal_sha256", "layout_decision_file", "layout_decision_sha256", "layout_decision_id"]) if (annotation[key] !== layoutConfirmation[key]) errors.push(contractError(stage, contract, layoutConfirmation, `布局确认未绑定布局图字段 ${key}`, { missing: `layout_annotation_confirmation.${key}`, returnStage: "V2/PROPOSAL", rootCause: "方案缺失" }));
+  }
+}
+
 /** 校验冻结目标条件，确保比较绑定显式 viewport 和动态封顶范围内的 DPR。 */
 function validateTargetConditions(contract, manifest, stage, errors, effectImage = false) {
   const target = field(contract, "target_conditions", "targetConditions", "target", "frozen_target", "frozenTarget");
@@ -189,13 +211,13 @@ function validateTargetConditions(contract, manifest, stage, errors, effectImage
 }
 
 /** 验证区域事实；runtime owner 也必须承担完整 fidelity obligation。 */
-function validateCoverageRegion(region, contract, stage, toleranceIds, errors, effectImage = false) {
+function validateCoverageRegion(region, contract, stage, toleranceIds, errors, effectImage = false, requireLayout = true) {
   const label = `scene_reconstruction_contract.coverage_regions[${region?.annotation_number ?? "?"}]`;
   if (!isObject(region)) {
     errors.push(contractError(stage, contract, null, `${label} 必须是对象`, { missing: "coverage region", returnStage: "V1/PROPOSAL" }));
     return;
   }
-  if (effectImage) {
+  if (effectImage && requireLayout) {
     const layoutNodeIds = field(region, "layout_node_ids", "layoutNodeIds");
     // effect-image 的区域是布局合同的最小覆盖单元；空数组不能表示“稍后再绑定”。
     if (!Array.isArray(layoutNodeIds) || layoutNodeIds.length === 0 || layoutNodeIds.some((id) => !nonEmptyString(id))) {
@@ -442,6 +464,8 @@ export function validateSceneReconstructionContract(contract, manifest = null, o
     if (String(stage).toUpperCase() !== "V2") errors.push(...validateVisualPostApprovalReviewFields(manifest ?? contract, { stage }));
   }
   const targetInfo = validateTargetConditions(contract, manifest, stage, errors, effectImage);
+  const requireFinalLayout = options.requireFinalLayout ?? (["V3", "V4"].includes(String(stage).toUpperCase()) || (String(stage).toUpperCase() === "V2" && (manifest?.visualStageState === "v2-production-planning-complete" || manifest?.visual_stage_state === "v2-production-planning-complete" || manifest?.effect_image_reconstruction?.lifecycle === "v4-complete")));
+  if (effectImage && ["V2", "V3", "V4"].includes(String(stage).toUpperCase())) validateV2LayoutStage(contract, targetInfo, stage, errors, requireFinalLayout);
   // G0/V1 必须显式盘点显示层；inventory=[] 表示确认没有显示层，不表示漏规划。
   errors.push(...validateDisplayLayerPlanning(field(contract, "display_layer_planning"), targetInfo, { stage, visual_baseline: manifest?.visual_baseline, reference_target: manifest?.reference_target }));
   const toleranceBlock = field(contract, "predeclared_tolerances", "predeclaredTolerances", "tolerance_set", "toleranceSet", "tolerances");
@@ -451,7 +475,7 @@ export function validateSceneReconstructionContract(contract, manifest = null, o
   else {
     const ids = new Set();
     for (const region of regions) {
-      validateCoverageRegion(region, contract, stage, toleranceIds, errors, effectImage);
+      validateCoverageRegion(region, contract, stage, toleranceIds, errors, effectImage, requireFinalLayout);
       const regionId = field(region, "region_id", "regionId", "id");
       if (nonEmptyString(regionId) && ids.has(regionId)) errors.push(contractError(stage, contract, region, "coverage region_id 重复", { actual: regionId, returnStage: "V1/PROPOSAL" }));
       if (nonEmptyString(regionId)) ids.add(regionId);
@@ -462,7 +486,7 @@ export function validateSceneReconstructionContract(contract, manifest = null, o
       if (nonEmptyString(id) && !ids.has(id)) errors.push(contractError(stage, contract, manifestRegion, "coverage region 缺少对应 scene reconstruction visual facts", { missing: id, returnStage: "V1/PROPOSAL" }));
     }
   }
-  const layoutInfo = validateLayoutDecomposition(contract, targetInfo, stage, errors, effectImage);
+  const layoutInfo = validateLayoutDecomposition(contract, targetInfo, stage, errors, effectImage, { requireLayout: requireFinalLayout });
   validateLayoutRegionBindings(regions, layoutInfo, contract, stage, errors, effectImage);
   // effect-image 的文本必须先完成独立拆解；普通合同由模块内部直接跳过，不引入额外硬门。
   errors.push(...validateSceneTextDecomposition(contract, { stage, manifest, effectImage, regions, layoutInfo, toleranceDefinitions: toleranceBlock }));
@@ -712,7 +736,7 @@ export function validateStructuredFidelityCases(cases, manifest = null, options 
 /** 对 V4 必须具备的场景合同执行完整门，供 manifest 和实施包共同调用。 */
 export function validateSceneReconstructionGate(manifest, options = {}) {
   const stage = options.stage ?? "V2";
-  const errors = validateSceneReconstructionContract(manifest?.scene_reconstruction_contract, manifest, { stage });
+  const errors = validateSceneReconstructionContract(manifest?.scene_reconstruction_contract, manifest, { ...options, stage });
   if (stage === "V4") errors.push(...validateStructuredFidelityCases(manifest?.fidelity_cases, manifest, { stage: "V4" }));
   return errors;
 }

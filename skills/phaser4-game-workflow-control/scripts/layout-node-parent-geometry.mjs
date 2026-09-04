@@ -1,7 +1,7 @@
 /**
  * effect-image 布局节点的父子几何合同。
  *
- * 该模块只保留一份父容器、相对距离、最近边停靠和运行时偏移的推导规则，
+ * 该模块只保留一份父容器、相对距离、轴向对齐和运行时偏移的推导规则，
  * 场景拆解、UI 布局合同和视觉资源映射入口都必须消费这里的诊断结果。
  */
 
@@ -30,6 +30,24 @@ export function isValidLayoutNodeBounds(value) {
     && Number.isFinite(value.height)
     && value.width > 0
     && value.height > 0;
+}
+
+/** 视觉布局决策允许的显式轴向取值；对齐不再由距离自动猜测。 */
+export const AXIS_ALIGNMENT_VALUES = Object.freeze({ horizontal: new Set(["left", "center", "right"]), vertical: new Set(["top", "center", "bottom"]) });
+
+/** 校验智能布局决策是否为完整且合法的双轴语义。 */
+export function isValidAxisAlignment(value) {
+  return isObject(value) && AXIS_ALIGNMENT_VALUES.horizontal.has(value.horizontal) && AXIS_ALIGNMENT_VALUES.vertical.has(value.vertical);
+}
+
+/** 按显式轴向决策计算偏移；center 使用子中心相对父中心的有符号距离。 */
+export function axisAlignmentOffset(parentBounds, childBounds, alignment) {
+  if (!isValidLayoutNodeBounds(parentBounds) || !isValidLayoutNodeBounds(childBounds) || !isValidAxisAlignment(alignment)) return null;
+  const parentCenterX = parentBounds.x + parentBounds.width / 2; const parentCenterY = parentBounds.y + parentBounds.height / 2;
+  const childCenterX = childBounds.x + childBounds.width / 2; const childCenterY = childBounds.y + childBounds.height / 2;
+  const x = alignment.horizontal === "left" ? childBounds.x - parentBounds.x : alignment.horizontal === "right" ? -(parentBounds.x + parentBounds.width - childBounds.x - childBounds.width) : childCenterX - parentCenterX;
+  const y = alignment.vertical === "top" ? childBounds.y - parentBounds.y : alignment.vertical === "bottom" ? -(parentBounds.y + parentBounds.height - childBounds.y - childBounds.height) : childCenterY - parentCenterY;
+  return { x, y };
 }
 
 /** 判断视口尺寸是否为有限正数。 */
@@ -74,7 +92,7 @@ export function layoutNodeIdentityProjection(node) {
     parent_layout_node_id: readLayoutNodeField(node, "parent_layout_node_id", "parentLayoutNodeId"),
     parent_target_bounds: readLayoutNodeField(node, "parent_target_bounds", "parentTargetBounds"),
     relative_position: readLayoutNodeField(node, "relative_position", "relativePosition"),
-    nearest_edge_docking: readLayoutNodeField(node, "nearest_edge_docking", "nearestEdgeDocking"),
+    axis_alignment: readLayoutNodeField(node, "axis_alignment", "axisAlignment"),
     self_anchor: readLayoutNodeField(node, "self_anchor", "selfAnchor"),
     reference_anchor: readLayoutNodeField(node, "reference_anchor", "referenceAnchor"),
     offset: readLayoutNodeField(node, "offset"),
@@ -96,7 +114,7 @@ function diagnostic(index, node, message) {
   };
 }
 
-/** 验证 effect-image 所有布局节点的父子几何和最近边停靠事实。 */
+/** 验证 effect-image 所有布局节点的父子几何和显式轴向对齐事实。 */
 export function validateEffectImageParentChildLayoutNodes(nodes, targetViewport, { label = "layout_nodes" } = {}) {
   const diagnostics = [];
   const report = (index, node, message) => diagnostics.push(diagnostic(index, node, `${label}[${index}] ${message}`));
@@ -130,7 +148,7 @@ export function validateEffectImageParentChildLayoutNodes(nodes, targetViewport,
     const referenceId = readLayoutNodeField(node, "reference_id", "referenceId");
     const parentBounds = readLayoutNodeField(node, "parent_target_bounds", "parentTargetBounds");
     const relative = readLayoutNodeField(node, "relative_position", "relativePosition");
-    const docking = readLayoutNodeField(node, "nearest_edge_docking", "nearestEdgeDocking");
+    const alignment = readLayoutNodeField(node, "axis_alignment", "axisAlignment");
     const selfAnchor = readLayoutNodeField(node, "self_anchor", "selfAnchor");
     const referenceAnchor = readLayoutNodeField(node, "reference_anchor", "referenceAnchor");
     const offset = readLayoutNodeField(node, "offset");
@@ -147,8 +165,8 @@ export function validateEffectImageParentChildLayoutNodes(nodes, targetViewport,
     } else if (["left", "right", "top", "bottom"].some((side) => relative[side] < 0)) {
       report(index, node, "relative_position 不允许出现负距离");
     }
-    if (!isObject(docking) || !["left", "right"].includes(docking.horizontal) || !["top", "bottom"].includes(docking.vertical)) report(index, node, "nearest_edge_docking 必须声明合法 horizontal/vertical 停靠边");
-    if (!isObject(offset) || !Number.isFinite(offset.x) || !Number.isFinite(offset.y)) report(index, node, "effect-image offset 必须是由停靠距离推导的有限 x/y 数值");
+    if (!isValidAxisAlignment(alignment)) report(index, node, "axis_alignment 必须声明合法 horizontal/vertical 轴向对齐");
+    if (!isObject(offset) || !Number.isFinite(offset.x) || !Number.isFinite(offset.y)) report(index, node, "effect-image offset 必须是由显式轴向对齐决策推导的有限 x/y 数值");
     if (!isString(selfAnchor)) report(index, node, "effect-image self_anchor 必须是 vertical-horizontal 字符串");
     if (!isString(referenceAnchor)) report(index, node, "effect-image reference_anchor 必须是 vertical-horizontal 字符串");
 
@@ -198,9 +216,9 @@ export function validateEffectImageParentChildLayoutNodes(nodes, targetViewport,
     if (!containsBounds(parentBounds, targetBounds)) report(index, node, "child target_bounds 必须完全位于 parent_target_bounds 内容框内");
 
     const relative = readLayoutNodeField(node, "relative_position", "relativePosition");
-    const docking = readLayoutNodeField(node, "nearest_edge_docking", "nearestEdgeDocking");
+    const alignment = readLayoutNodeField(node, "axis_alignment", "axisAlignment");
     const offset = readLayoutNodeField(node, "offset");
-    if (!isObject(relative) || !isObject(docking) || !isObject(offset)) continue;
+    if (!isObject(relative) || !isValidAxisAlignment(alignment) || !isObject(offset)) continue;
     const expectedRelative = {
       left: targetBounds.x - parentBounds.x,
       right: parentBounds.x + parentBounds.width - targetBounds.x - targetBounds.width,
@@ -208,18 +226,11 @@ export function validateEffectImageParentChildLayoutNodes(nodes, targetViewport,
       bottom: parentBounds.y + parentBounds.height - targetBounds.y - targetBounds.height,
     };
     for (const side of ["left", "right", "top", "bottom"]) if (!nearlyEqual(relative[side], expectedRelative[side])) report(index, node, `relative_position.${side} 必须由 child/parent bounds 精确推导，预期 ${expectedRelative[side]}`);
-    const expectedHorizontal = expectedRelative.left <= expectedRelative.right ? "left" : "right";
-    const expectedVertical = expectedRelative.top <= expectedRelative.bottom ? "top" : "bottom";
-    // 相等时固定选择 left/top，保证不同实现和不同平台的停靠结果一致。
-    if (docking.horizontal !== expectedHorizontal) report(index, node, `nearest_edge_docking.horizontal 必须为 ${expectedHorizontal}`);
-    if (docking.vertical !== expectedVertical) report(index, node, `nearest_edge_docking.vertical 必须为 ${expectedVertical}`);
-    const expectedOffset = {
-      x: expectedHorizontal === "left" ? expectedRelative.left : -expectedRelative.right,
-      y: expectedVertical === "top" ? expectedRelative.top : -expectedRelative.bottom,
-    };
-    if (!nearlyEqual(offset.x, expectedOffset.x)) report(index, node, `offset.x 必须由 ${expectedHorizontal} 停靠距离推导，预期 ${expectedOffset.x}`);
-    if (!nearlyEqual(offset.y, expectedOffset.y)) report(index, node, `offset.y 必须由 ${expectedVertical} 停靠距离推导，预期 ${expectedOffset.y}`);
-    const expectedAnchor = `${expectedVertical}-${expectedHorizontal}`;
+    // 对齐方向由智能视觉决策提供；几何校验只验证该决策对应的 offset，避免用距离反推审美意图。
+    const expectedOffset = axisAlignmentOffset(parentBounds, targetBounds, alignment);
+    if (!expectedOffset || !nearlyEqual(offset.x, expectedOffset.x)) report(index, node, `offset.x 必须由显式 ${alignment.horizontal} 对齐决策推导，预期 ${expectedOffset?.x}`);
+    if (!expectedOffset || !nearlyEqual(offset.y, expectedOffset.y)) report(index, node, `offset.y 必须由显式 ${alignment.vertical} 对齐决策推导，预期 ${expectedOffset?.y}`);
+    const expectedAnchor = `${alignment.vertical}-${alignment.horizontal}`;
     if (readLayoutNodeField(node, "self_anchor", "selfAnchor") !== expectedAnchor) report(index, node, `self_anchor 必须等于 ${expectedAnchor}`);
     if (readLayoutNodeField(node, "reference_anchor", "referenceAnchor") !== expectedAnchor) report(index, node, `reference_anchor 必须等于 ${expectedAnchor}`);
   }

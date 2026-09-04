@@ -52,6 +52,26 @@ export function computeLayoutContractSha256(document) {
     visual_baseline_version: binding?.visual_baseline_version ?? null,
     reconstruction_contract_version: binding?.reconstruction_contract_version ?? null,
     layout_decomposition_version: binding?.layout_decomposition_version ?? null,
+    // 布局标注图是拆解确认后的独立产物；其文件、元数据和上游身份变化必须让布局合同失效。
+    layout_annotation: isObject(document?.layout_annotation) ? {
+      layout_annotation_sha256: document.layout_annotation.layout_annotation_sha256 ?? null,
+      layout_annotation_width: document.layout_annotation.layout_annotation_width ?? null,
+      layout_annotation_height: document.layout_annotation.layout_annotation_height ?? null,
+      layout_annotation_schema: document.layout_annotation.layout_annotation_schema ?? null,
+      layout_annotation_layout: document.layout_annotation.layout_annotation_layout ?? null,
+      layout_annotation_metadata_sha256: document.layout_annotation.layout_annotation_metadata_sha256 ?? null,
+      layout_annotation_identity_sha256: document.layout_annotation.layout_annotation_identity_sha256 ?? null,
+      decomposition_confirmation_id: document.layout_annotation.decomposition_confirmation_id ?? null,
+      decomposition_confirmation_sha256: document.layout_annotation.decomposition_confirmation_sha256 ?? null,
+      proposal_sha256: document.layout_annotation.proposal_sha256 ?? null,
+      layout_decision_file: document.layout_annotation.layout_decision_file ?? null,
+      layout_decision_sha256: document.layout_annotation.layout_decision_sha256 ?? null,
+      layout_decision_id: document.layout_annotation.layout_decision_id ?? null,
+      target_sha256: document.layout_annotation.target_sha256 ?? null,
+      scene_id: document.layout_annotation.scene_id ?? null,
+      state_id: document.layout_annotation.state_id ?? null,
+      layout_node_ids: Array.isArray(document.layout_annotation.layout_node_ids) ? document.layout_annotation.layout_node_ids.slice().sort() : null,
+    } : null,
     layout_nodes: nodes,
   };
   const digest = createHash("sha256").update(JSON.stringify(canonicalize(projection))).digest("hex");
@@ -326,7 +346,7 @@ function validateLayoutNodes(document, fidelity, binding, spaces, regionIds, err
     }
   });
   if (isEffectImageContract(document)) {
-    // parent_layout_node_id、parent_target_bounds、relative_position、nearest_edge_docking 必须与场景拆解入口使用同一规则。
+    // 父容器、相对测量和显式视觉对齐必须与场景拆解入口使用同一规则。
     for (const issue of validateEffectImageParentChildLayoutNodes(nodes, viewport, { label: "layout_nodes" })) errors.push(issue.message);
   }
   const graph = new Map(); const stableRoots = new Set(["viewport", "safe-area"]);
@@ -344,6 +364,23 @@ function validateLayoutNodes(document, fidelity, binding, spaces, regionIds, err
   });
   validateGraphCycles(graph, "布局节点参照存在循环", errors);
   return { nodeIds, regionNodeIds, nodesById };
+}
+
+/** 校验 effect-image 的独立布局标注身份；布局阶段不能绕过前置拆解确认。 */
+function validateLayoutAnnotationBinding(document, binding, layoutNodes, errors) {
+  if (!isEffectImageContract(document)) return;
+  const annotation = document.layout_annotation;
+  if (!isObject(annotation)) { errors.push("effect-image 必须声明 layout_annotation；布局标注只能后置于拆解确认"); return; }
+  const required = ["layout_annotation_file", "layout_annotation_sha256", "layout_annotation_width", "layout_annotation_height", "layout_annotation_schema", "layout_annotation_layout", "layout_annotation_metadata_sha256", "layout_annotation_identity_sha256", "decomposition_confirmation_id", "decomposition_confirmation_sha256", "proposal_sha256", "layout_decision_file", "layout_decision_sha256", "layout_decision_id", "target_sha256", "scene_id", "state_id"];
+  for (const field of required) if (!(field in annotation)) errors.push(`layout_annotation.${field} 必须存在`);
+  for (const field of ["layout_annotation_sha256", "layout_annotation_metadata_sha256", "layout_annotation_identity_sha256", "decomposition_confirmation_sha256", "proposal_sha256", "layout_decision_sha256", "target_sha256"]) if (field in annotation && (!isString(annotation[field]) || !SHA_PATTERN.test(annotation[field]))) errors.push(`layout_annotation.${field} 必须是合法 sha256`);
+  if (annotation.layout_annotation_schema !== "layout-annotation/png/1") errors.push("layout_annotation.layout_annotation_schema 必须为 layout-annotation/png/1");
+  if (annotation.layout_annotation_layout !== "image-plus-right-panel") errors.push("layout_annotation.layout_annotation_layout 必须为 image-plus-right-panel");
+  for (const field of ["layout_annotation_width", "layout_annotation_height"]) if (!Number.isInteger(annotation[field]) || annotation[field] <= 0) errors.push(`layout_annotation.${field} 必须是正整数`);
+  if (binding && annotation.target_sha256 !== binding.target_sha256) errors.push("layout_annotation.target_sha256 未绑定当前冻结目标");
+  if (binding && (annotation.scene_id !== binding.scene_id || annotation.state_id !== binding.state_id)) errors.push("layout_annotation scene/state 未绑定当前场景");
+  if (!Array.isArray(annotation.layout_node_ids) || annotation.layout_node_ids.length === 0) errors.push("layout_annotation.layout_node_ids 必须是非空数组");
+  else for (const nodeId of annotation.layout_node_ids) if (!layoutNodes.nodeIds.has(nodeId) && !["viewport", "safe-area"].includes(nodeId)) errors.push(`layout_annotation.layout_node_ids 引用了未确认布局节点：${nodeId}`);
 }
 
 /** 校验绑定中的布局合同身份哈希，拒绝节点或目标修改后继续复用旧身份。 */
@@ -409,7 +446,7 @@ function validateEvidenceMatrix(matrix, errors) { if (!isObject(matrix)) return;
 /** 验证布局合同并返回稳定结果。 */
 export function validateContract(document) {
   const errors = []; const warnings = []; const specialized = []; validateRoot(document, errors); if (!isObject(document)) return { status: "failed", errors, warnings, specialized_review: specialized };
-  validateScope(document.scope, errors); const fidelity = validateFidelityLifecycle(document, errors); const requiresFrozenLayout = fidelity?.applicability === "frozen-target" || isEffectImageContract(document); if (requiresFrozenLayout) validateFrozenVisualTarget(document.frozen_visual_target, errors); const binding = validateSceneReconstructionBinding(document, fidelity, errors); validateTargets(document.targets, errors); const spaces = validateCoordinateSpaces(document.coordinate_spaces, errors); const ids = validateRegions(document, spaces, errors, specialized); validateScopeRegionIds(document.scope, ids, errors); validateReferenceGraph(document, ids, errors); const layoutNodes = validateLayoutNodes(document, fidelity, binding, spaces, ids, errors); validateLayoutContractIdentity(document, binding, errors); validateContent(document.content, errors); validateBreakpoints(document.breakpoints, errors); validatePlatformAndScrolling(document, ids, errors); validateDynamicContent(document.dynamic_content, ids, errors); validateOverlays(document.overlay_rules, ids, errors, specialized); validateOverlayCoverage(document, ids, errors); validateInvariants(document.invariants, ids, errors);
+  validateScope(document.scope, errors); const fidelity = validateFidelityLifecycle(document, errors); const requiresFrozenLayout = fidelity?.applicability === "frozen-target" || isEffectImageContract(document); if (requiresFrozenLayout) validateFrozenVisualTarget(document.frozen_visual_target, errors); const binding = validateSceneReconstructionBinding(document, fidelity, errors); validateTargets(document.targets, errors); const spaces = validateCoordinateSpaces(document.coordinate_spaces, errors); const ids = validateRegions(document, spaces, errors, specialized); validateScopeRegionIds(document.scope, ids, errors); validateReferenceGraph(document, ids, errors); const layoutNodes = validateLayoutNodes(document, fidelity, binding, spaces, ids, errors); validateLayoutAnnotationBinding(document, binding, layoutNodes, errors); validateLayoutContractIdentity(document, binding, errors); validateContent(document.content, errors); validateBreakpoints(document.breakpoints, errors); validatePlatformAndScrolling(document, ids, errors); validateDynamicContent(document.dynamic_content, ids, errors); validateOverlays(document.overlay_rules, ids, errors, specialized); validateOverlayCoverage(document, ids, errors); validateInvariants(document.invariants, ids, errors);
   if (requiresFrozenLayout) {
     validateCriticalAlignments(document.critical_alignments, ids, layoutNodes, document.frozen_visual_target, document.scope?.bindings?.code_candidate, fidelity?.status, errors);
     if (fidelity?.status === "verified") {
@@ -446,6 +483,20 @@ export async function checkContractFiles(document, projectRoot) {
       if (!await isFile(file)) errors.push(`frozen_visual_target.original_file 文件不存在：${target.original_file}`);
       else { const digest = createHash("sha256").update(await readFile(file)).digest("hex"); if (target.target_sha256 !== `sha256:${digest}`) errors.push("frozen_visual_target.target_sha256 与原图文件 SHA-256 不一致"); }
     } catch (error) { errors.push(`frozen_visual_target.original_file：${error.message}`); }
+  }
+  if (isObject(document.layout_annotation) && isString(document.layout_annotation.layout_annotation_file)) {
+    try {
+      const file = projectPath(projectRoot, document.layout_annotation.layout_annotation_file);
+      if (!await isFile(file)) errors.push(`layout_annotation.layout_annotation_file 文件不存在：${document.layout_annotation.layout_annotation_file}`);
+      else { const digest = createHash("sha256").update(await readFile(file)).digest("hex"); if (document.layout_annotation.layout_annotation_sha256 !== `sha256:${digest}`) errors.push("layout_annotation.layout_annotation_sha256 与文件 SHA-256 不一致"); }
+    } catch (error) { errors.push(`layout_annotation.layout_annotation_file：${error.message}`); }
+  }
+  if (isObject(document.layout_annotation) && isString(document.layout_annotation.layout_decision_file)) {
+    try {
+      const file = projectPath(projectRoot, document.layout_annotation.layout_decision_file);
+      if (!await isFile(file)) errors.push(`layout_annotation.layout_decision_file 文件不存在：${document.layout_annotation.layout_decision_file}`);
+      else { const digest = createHash("sha256").update(await readFile(file)).digest("hex"); if (document.layout_annotation.layout_decision_sha256 !== `sha256:${digest}`) errors.push("layout_annotation.layout_decision_sha256 与文件 SHA-256 不一致"); }
+    } catch (error) { errors.push(`layout_annotation.layout_decision_file：${error.message}`); }
   }
   for (const [index, item] of (document.critical_alignments ?? []).entries()) {
     for (const field of ["target_evidence", ...(document.fidelity.status === "verified" ? ["runtime_evidence"] : [])]) for (const value of item?.[field] ?? []) paths.push([`critical_alignments[${index}].${field}`, value]);

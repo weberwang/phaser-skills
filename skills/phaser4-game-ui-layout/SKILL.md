@@ -20,7 +20,7 @@ UI 设计与实现优先用符合全局视觉基线且含义清晰、熟悉的�
 ## 核心流程
 
 1. 读取项目的 GDD/TDD、当前候选、总控审核漏斗和适用视觉阶段；确定稳定 UI ID、坐标空间、参照物、状态与平台输入。
-2. 复制 schema 1.1.0 [合同模板](assets/ui-layout-contract-template.yaml)。普通布局使用 `not-applicable` 并保持 `layout_nodes: []`；冻结视觉目标先用 `frozen-target/specified` 同步登记非空 `layout_nodes` 与关键对齐合同，允许尚无运行测量/parity；实际验收后改为 `verified`，要求运行测量、delta、测试通过和全部 parity 通过。
+2. 复制 schema 1.1.0 [合同模板](assets/ui-layout-contract-template.yaml)。普通布局使用 `not-applicable` 并保持 `layout_nodes: []`；冻结视觉目标先用 `frozen-target/specified`。V2 先生成拆解图、技术 JSON 和 `decomposition_elements`，人工修改并确认；确认后由智能视觉判断生成逐元素 `left/center/right × top/center/bottom` 决策，再生成独立布局标注图并人工确认。随后登记由确认元素和视觉决策共同推导的非空 `layout_nodes` 与关键对齐合同。
 3. 用 [Phaser 适配器](references/phaser-adapter.md) 设计唯一布局入口：把视口、安全区、方向、内容尺寸和状态作为输入，分离资源 origin、布局停靠点和动画偏移，保证重排幂等。
 4. specified 阶段运行结构检查 `node scripts/validate_ui_layout_contract.mjs <contract>`；verified 正式验收必须运行 `node scripts/validate_ui_layout_contract.mjs <contract> --check-files --project-root .`，复算冻结原图 SHA 并检查目标/运行/parity 证据文件。
 5. 按 [证据矩阵](references/evidence-matrix.md) 生成同一目标 SHA 与代码候选 SHA 的边界、方向、字号、语言、安全区、动态状态和窄高度证据；关键 UI/HUD 记录稳定 element/reference ID、双轴关系、目标/运行测量、实际测试 ID/状态、视觉证据和项目定义容差。
@@ -30,7 +30,9 @@ UI 设计与实现优先用符合全局视觉基线且含义清晰、熟悉的�
 
 当 Work Item 的 `effect_image_reconstruction.applicability=effect-image` 时，布局合同必须携带 `scene_reconstruction_binding`：绑定冻结目标 SHA、scene/state、visual baseline、reconstruction contract 版本、`layout_contract_sha256`、`layout_decomposition_version` 和精确目标 viewport。`layout_nodes` 中每个节点必须同时绑定一个 `regions`/`scope.ui_ids` 区域和已声明坐标空间，记录参照、双轴锚点、目标 bounds、尺寸策略、层级、裁切、响应式规则与计划测试 ID；同一 coverage region 可以承载多个 layout nodes，但节点间必须使用唯一 `layout_node_id`，多节点区域不能用 region ID 作为有歧义的参照；关键对齐通过 `layout_node_id` 复用这些几何事实。该绑定描述正式 Scene 的目标关系，不能用旧通用布局合同、整屏截图、隐藏覆盖层或绝对叠图代替；target SHA、构图关系或响应式不变量漂移时，V2→V3 必须退回 V1/PROPOSAL。其他 viewport 只验证合同声明的不变量，不能把目标 viewport 的精确还原让位给跨项目固定误差阈值。
 
-效果图节点还必须声明 `parent_layout_node_id`、`parent_target_bounds`、`relative_position` 和 `nearest_edge_docking`。拆解先建立父子关系，再在父内容框内测量 child 到 left/right/top/bottom 的距离；`reference_id` 必须等于父 ID，父级仅可为具体节点或 `viewport`/`safe-area`，不得循环。水平/垂直分别停靠较近边，相等时确定性选 left/top；`offset` 与 `self_anchor`/`reference_anchor` 必须由该测量推导（如 `top-left`），不能凭感觉填写。父子几何字段会进入布局合同身份 SHA，所有入口统一使用 workflow-control 的父子几何校验。
+V2 的布局决策顺序固定为“自动生成拆解图/技术 JSON → 人工修改并确认最终拆解 → 智能视觉判断生成显式双轴对齐决策 → 由确认元素与决策生成独立布局标注图 → 人工修改并独立确认 → 冻结 V2”。布局生成入口拒绝未确认拆解、缺失决策、元素漏绑或未绑定当前 scene/state/target 的输入；布局确认同时绑定上游拆解、视觉决策文件和最终布局图身份。
+
+效果图节点还必须声明 `parent_layout_node_id`、`parent_target_bounds`、`relative_position` 和 `axis_alignment`。拆解确认后，智能布局结合原图构图、视觉重心和元素语义，为每个元素显式判断水平 `left/center/right` 与垂直 `top/center/bottom`；该判断不能由四边距离自动反推。`relative_position` 仍由父子 bounds 测量，用于复核包含关系和几何漂移；`offset`、`self_anchor`、`reference_anchor` 则按已选 `axis_alignment` 计算。`reference_id` 必须等于父 ID，父级仅可为具体节点或 `viewport`/`safe-area`，不得循环。视觉决策文件及其 SHA 会进入布局图和确认身份，缺失决策必须阻断布局生成。
 
 ## 资源导航
 

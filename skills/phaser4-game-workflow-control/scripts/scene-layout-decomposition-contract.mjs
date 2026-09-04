@@ -263,8 +263,10 @@ export function validateLayoutNode(node, contract, targetInfo, stage, errors, in
 }
 
 /** 校验 effect-image 的布局分解、节点身份和布局合同绑定。 */
-export function validateLayoutDecomposition(contract, targetInfo, stage, errors, effectImage = false) {
+export function validateLayoutDecomposition(contract, targetInfo, stage, errors, effectImage = false, options = {}) {
   if (!effectImage) return { decomposition: null, nodes: [], nodeById: new Map(), binding: null };
+  // V1 和 V2 中间态只确认拆解元素；布局图/布局节点属于后置完成门，不能提前制造硬依赖。
+  if (options.requireLayout === false) return { decomposition: null, nodes: [], nodeById: new Map(), binding: null };
   const decomposition = field(contract, "layout_decomposition", "layoutDecomposition", "layout_decomposition_contract", "layoutDecompositionContract");
   if (!isObject(decomposition)) {
     errors.push(contractError(stage, contract, null, "effect-image 缺少 layout_decomposition", { missing: "layout_decomposition", returnStage: "V1/PROPOSAL" }));
@@ -287,7 +289,7 @@ export function validateLayoutDecomposition(contract, targetInfo, stage, errors,
     if (nodeById.has(nodeId)) errors.push(contractError(stage, contract, node, "layout_node_id 重复", { actual: nodeId, returnStage: "V1/PROPOSAL" }));
     else nodeById.set(nodeId, node);
   }
-  // effect-image 的 parent_layout_node_id、parent_target_bounds、relative_position、nearest_edge_docking 统一由共享几何合同校验。
+  // effect-image 的父容器、相对测量和显式视觉对齐统一由共享几何合同校验。
   for (const issue of validateEffectImageParentChildLayoutNodes(nodes, targetInfo?.viewport, { label: "layout_nodes" })) {
     const node = issue.index >= 0 ? nodes[issue.index] : decomposition;
     errors.push(contractError(stage, contract, node, issue.message, { returnStage: "V1/PROPOSAL" }));

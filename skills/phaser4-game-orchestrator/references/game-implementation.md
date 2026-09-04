@@ -39,7 +39,7 @@
 
 效果图拆解与布局拆解必须同步：先整屏构图，再冻结布局节点与元素/状态，随后完成 coverage、布局合同、placement 三方绑定，最后按布局合同装配并在 V4 做布局+视觉双验收。effect-image region 的 `layout_node_ids` 必须非空唯一，`scene_reconstruction_contract.layout_decomposition.layout_nodes` 必须与 coverage 双向关联；每个 placement 的 `layout_node_id` 只能引用本区域节点，运行时布局实现必须声明其消费节点，禁止孤立、跨区域或重复消费。`target_bounds` 只代表参考事实，布局合同负责运行时计算，runtime measurement 只能作为候选证据。proposal/PNG/confirmation 的区域定义 SHA 必须覆盖布局字段，并绑定 target SHA、scene/state、layout contract version。布局基础、视觉资源/程序元素和场景装配是对应场景内部的实现职责，不得重新定义或替换全局 `executionUnits` 顺序；`DISPLAY_LAYER` 必须紧邻宿主 `SCENE`，V3 组合预验收同时检查正式资源和正式布局，V4 必须检查 coverage=1、零孤立、逐节点几何差异和整屏 fidelity。
 
-高保真布局节点还必须记录 `parent_layout_node_id`、`parent_target_bounds`、`relative_position` 和 `nearest_edge_docking`。先确定父容器，再测量子节点在父内容框内到四边的精确距离；`reference_id` 必须等于父 ID，父级仅允许布局节点、`viewport` 或 `safe-area`，且不得循环，子 bounds 不得越界。水平/垂直停靠分别取最近边，相等取 left/top；`offset` 以及 `self_anchor`/`reference_anchor` 必须由该测量推导，不能凭感觉填写。上述字段同时进入布局合同身份投影，运行时只能消费校验通过的结果。
+高保真布局节点还必须记录 `parent_layout_node_id`、`parent_target_bounds`、`relative_position` 和 `axis_alignment`。拆解人工确认后，智能布局结合原图构图、视觉重心和元素语义显式选择水平 `left/center/right` 与垂直 `top/center/bottom`，不得由四边距离自动反推。几何测量只负责父子包含、相对距离、偏移和漂移复核；`offset` 与锚点必须按显式视觉决策计算。布局决策文件及上述字段都进入布局身份投影，运行时只能消费校验通过且人工确认的结果。
 6. V3 生产并验证资源与正式组合；只有机器清单状态为 `accepted` 且来源或生成记录、授权、正式布局、运行时输出、Phaser 和玩法视觉证据完整时，才可交给后续正式功能实现。效果图区域还必须逐 `annotation_number/region_id` 显式声明七个生产合同字段以及状态/部件映射；不得在 V3 之前以占位资源启动正式功能代码。
 
 原子部件补充：`component_count` 只计唯一 `atomic_visual_key`，重复可见实例必须用多个 `placements` 和 `visible_instance_count` 表达。② 六按钮逐部件登记；⑧ 三个相同表面可为一个 component 加三个 placements；⑨ 按实际复用关系登记。ImageGen 每个唯一 component×required state 只允许独立位图，强制 individual 且禁止 atlas；说明、图例和 atomic image requirements 放在标注图右侧栏，左侧原图只保留框和编号/placement 标记；热区逐 placement 绑定，不计入资产。

@@ -14,7 +14,7 @@ effect-image 例外：V1–V3 必须先验证 `scene_reconstruction_contract`、
 
 ## 阶段映射
 
-- V1/V2 处于 `PROPOSAL`、`REVIEW`；未决取舍以 `USER_INPUT_REQUIRED` 阻断，记录 `USER_DECISION` 后从 `REVIEW` 直接进入适用验证或实施状态。
+- V1/V2 处于 `PROPOSAL`、`REVIEW`；V2 固定先生成并人工确认拆解图和技术 JSON，再由智能视觉判断生成逐元素双轴对齐决策，最后消费已确认元素与该决策生成独立布局标注图。布局决策或布局图人工修改后必须重新生成并通过独立 `layout-annotation-confirmation/1.0`；缺失视觉决策时不得按距离兜底。
 - V3/V4/V5 处于 `IMPLEMENTING`、`VALIDATING`、`PASSED`、`INTEGRATING`。
 - G0-G3 保留为 `stageId`，不能改变全局状态。
 

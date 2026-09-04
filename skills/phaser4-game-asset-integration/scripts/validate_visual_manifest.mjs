@@ -402,7 +402,7 @@ export function validateManifest(data, options = {}) {
   if (!Array.isArray(data.assets)) { errors.push("assets 必须是数组"); return errors; }
   const assetIds = new Set(data.assets.filter(isObject).map((item) => item.id).filter(nonEmptyString));
   const assetById = new Map(data.assets.filter(isObject).filter((item) => nonEmptyString(item.id)).map((item) => [item.id, item]));
-  const fixedMappings = reconstruction?.applicability === "effect-image" ? validateCoverageAudit(data.coverage_audit, target, assetIds, errors, assetById, baseline) : new Map(); const layoutBindings = reconstruction?.applicability === "effect-image" ? validateEffectImageLayoutBindings(data, errors) : null;
+  const fixedMappings = reconstruction?.applicability === "effect-image" ? validateCoverageAudit(data.coverage_audit, target, assetIds, errors, assetById, baseline) : new Map(); const layoutBindings = reconstruction?.applicability === "effect-image" ? validateEffectImageLayoutBindings(data, errors, { stage: requestedStage }) : null;
   const coverageRegions = Array.isArray(data.coverage_audit?.regions) ? data.coverage_audit.regions : [];
   const fixedRegionAssetIds = (region) => (Array.isArray(region?.asset_ids) ? region.asset_ids : [region?.asset_id]).filter(nonEmptyString);
   const bitmapAssetIds = new Set(coverageRegions.filter((region) => isObject(region) && region.owner_type === "fixed-production-visual" && region.production_origin === "bitmap-decomposition").flatMap(fixedRegionAssetIds));
@@ -417,7 +417,7 @@ export function validateManifest(data, options = {}) {
     const stage = requestedStage ?? (reconstruction.lifecycle === "v4-complete" ? "V4" : "V2");
     // V2 拆解图确认之后，清单上的所有后续证据都只能是确定性机器验证；旧复核字段 fail closed。
     errors.push(...validateVisualPostApprovalReviewFields(data, { stage }));
-    errors.push(...validateSceneReconstructionGate(data, { stage }));
+    errors.push(...validateSceneReconstructionGate(data, { stage, requireFinalLayout: stage === "V3" || stage === "V4" || reconstruction.lifecycle === "v4-complete" || [data.visualStageState, data.visual_stage_state].includes("v2-production-planning-complete") }));
     const fileGateError = productionFileGateError(data, options, stage);
     if (fileGateError) errors.push(fileGateError);
     errors.push(...validateVisualProductionCoverage(fixedVisualAuditManifest(data), { stage: "V2", requireManualConfirmation: false }));
