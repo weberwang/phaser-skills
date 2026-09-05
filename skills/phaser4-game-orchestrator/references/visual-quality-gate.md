@@ -1,5 +1,7 @@
 # 视觉质量门
 
+全部显示层可按[控制面子任务规则](../../phaser4-game-workflow-control/references/control-model.md#显示层子任务与宿主继续推进)独立分工：未就绪先登记 `deferred_layers`，不自动抢占宿主主线。各任务满足自身前置再实施，常驻层不因拆任务丢失主图归属；瞬态层正式实施仍须完整上下文、两次 V2 确认与 V3。场景整体 V4 门拒绝未关闭待办，不能把并行准备当作已经验收。
+
 视觉拆解确认只能由编排层在收到用户确认消息后写入受保护的 `user-resolution-ledger/1.0`；Work Item 仅引用 `visualConfirmationAuthorityRefs[]`，不得内嵌 receipt 或自称 authority。前置文件冻结在 taskAuthorization，控制面写入 ledger/receipt 后必须冻结新的 Git commit/tree 基线；loader 从 `baselineHash` 复读并比对 baseline blob，当前新建、篡改、基线缺文件或非 Git 对象均拒绝。
 
 视觉领域规则只能收紧 [`phaser4-game-workflow-control`](../../phaser4-game-workflow-control/SKILL.md)。V0-V4 是 `stageId`；全局状态、审批与 F0-F4 语义不得改写。

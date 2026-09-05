@@ -1,5 +1,7 @@
 # 视觉与功能还原
 
+缺少瞬态弹窗宿主图时先按[显示层待办规则](../../phaser4-game-workflow-control/references/control-model.md#显示层子任务与宿主继续推进)登记 `deferred_layers`，宿主继续自身 V1–V3 与实现，不自动切换去补弹窗图。下文完整上下文要求在 V1–V3 仅作用于本次 inventory；待办不能替代已有主图中的视觉内容，也不能绕过弹窗自身前置。最终 V4 联合完成必须清零待办并保留全部层的真实验收证据。
+
 参考截图、效果图、录屏、运行项目和源码是输入，不是通过结论。参考还原属于 V0 的完整路径并执行 V1-V4；功能契约仍优先定义玩法行为，但当 Work Item 明确以指定效果图或参考截图为还原目标时，必须启用“忠实还原模式”。
 
 effect-image ImageGen 的 canonical 提示词模板、asset_prompt 事实继承和生成记录绑定见[《Effect-image ImageGen 忠实还原提示词合同》](effect-image-prompt-contract.md)；本文只规定场景还原路由与视觉事实门。

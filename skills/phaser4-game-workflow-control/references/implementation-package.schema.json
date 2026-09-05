@@ -719,7 +719,8 @@
       "properties": {
         "version": {"type": "string", "minLength": 1},
         "scene_master": {"$ref": "#/$defs/displaySceneMaster"},
-        "inventory": {"type": "array", "items": {"$ref": "#/$defs/displayLayer"}}
+        "inventory": {"type": "array", "items": {"$ref": "#/$defs/displayLayer"}},
+        "deferred_layers": {"type": "array", "items": {"$ref": "#/$defs/deferredDisplayLayer"}, "description": "宿主场景下暂未完成上下文效果图、拆解或布局确认的显示层待办。该数组与完整 inventory 分离，允许宿主场景继续推进；待办不能伪造 target 或上下文证据，V4 联合验收前必须补齐并移入 inventory。"}
       },
       "additionalProperties": false
     },
@@ -759,6 +760,26 @@
         "relations": {"$ref": "#/$defs/displayLayerRelations"},
         "runtime_replay": {"$ref": "#/$defs/displayLayerRuntimeReplay"}
       },
+      "additionalProperties": false
+    },
+    "deferredDisplayLayer": {
+      "type": "object",
+      "description": "宿主场景下可并行准备的显示层子任务最小记录；缺少宿主上下文效果图或完整层事实时不进入完整 inventory，也不得用于绕过完整显示层证据门。",
+      "required": ["layer_id", "host_scene_id", "type", "persistence", "in_scene_master", "owner", "reason"],
+      "properties": {
+        "layer_id": {"type": "string", "minLength": 1},
+        "host_scene_id": {"type": "string", "minLength": 1},
+        "type": {"enum": ["hud", "modal", "popup", "drawer", "toast"]},
+        "persistence": {"enum": ["persistent", "transient"]},
+        "in_scene_master": {"type": "boolean"},
+        "owner": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1}
+      },
+      "allOf": [
+        {"if": {"properties": {"type": {"const": "hud"}}}, "then": {"properties": {"persistence": {"const": "persistent"}}}},
+        {"if": {"properties": {"persistence": {"const": "persistent"}}}, "then": {"properties": {"in_scene_master": {"const": true}}}},
+        {"if": {"properties": {"persistence": {"const": "transient"}}}, "then": {"properties": {"in_scene_master": {"const": false}}}}
+      ],
       "additionalProperties": false
     },
     "displayLayerState": {

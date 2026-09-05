@@ -1,5 +1,7 @@
 # V0-V4 视觉生产管线
 
+HUD、modal、popup、drawer、toast 统一作为宿主子任务分开排期；未就绪先登记 `display_layer_planning.deferred_layers`，不自动转向子任务 V0/补图。宿主满足自身前置继续拆解确认、布局确认、V3 和正式实现；子任务可并行准备，完整图/拆解/布局/资源前置齐全才进入其正式实现。V1–V3 完整上下文要求作用于 inventory，待办不伪装已验收；常驻层即使待办也保留主图归属和可见事实。V4 联合验收必须关闭全部待办。字段和调度边界统一见[控制模型](../../phaser4-game-workflow-control/references/control-model.md#显示层子任务与宿主继续推进)。
+
 effect-image ImageGen 的完整提示词与实际参考输入合同统一见[Effect-image ImageGen 忠实还原提示词合同](effect-image-prompt-contract.md)；管线只引用该合同，不重复维护模板正文。
 
 ## V0 分流
@@ -49,6 +51,8 @@ F2 必须由确定性机器验证执行，并绑定当前 baseline/diff 身份�
 当前场景 Work Item 的 V1 冻结目标和初步还原草案有效后进入 V2。V2 不再制作独立 Phaser 候选或要求真人方向审批，而是把 V1 的视觉事实细化为可确认、可执行的还原方案，并按两个串行硬门完成：阶段 A 先冻结拆解图、技术 JSON、按序 `decomposition_elements`、component×state 和资源生产事实；阶段 B 仅在拆解确认后补充父子关系、停靠/对齐关系、布局测量、显示层关系和布局容差，冻结后置布局标注图。
 
 V2 布局必须后置于拆解确认：阶段 A 先由冻结原图、区域和组件事实生成拆解图及技术 JSON，并明确按人工确认顺序排列的 `decomposition_elements`；允许人工修改并确认最终拆解。只有 `visual-decomposition-confirmation/1.0` 通过后，智能布局才可结合原图构图、视觉重心和元素语义，为每个确认元素按原顺序生成唯一的 `left/center/right × top/center/bottom` 对齐决策；几何测量不得替代该视觉判断。布局入口只消费该决策与 `proposal.decomposition_elements`，按原顺序推导后置布局节点并生成独立布局标注图，不能读取预存 `layout_nodes`，也不生成新的视觉参考图或多个布局候选。布局决策和布局图都允许人工修改，重新生成后再以 `layout-annotation-confirmation/1.0` 绑定最终图、决策文件及全部上游身份。
+
+布局图的每个框必须与右栏共用唯一短编号，并注明父编号，保持确认元素原序；编号避让只能调整标注，不得改变元素布局。右栏逐节点说明自身相对上级的双轴停靠、锚点与偏移，父容器、空容器同样必填，根明确无上级。技术 ID 和四边距离仅辅助追溯；长说明必须换行且完整可见，不能用被裁切的文本或元数据完整标记代替可读图。详细规则见 [UI 布局合同](../../phaser4-game-ui-layout/references/layout-contract.md#v2-串行拆解与布局标注)。
 
 `docs/visual-assets.json` 使用 schema 1.5。普通资产声明 `not-applicable`；效果图还原进入正式生产前声明 `effect-image/v2-ready`，此时冻结目标、合同回对、coverage、拆解图确认和生产方案必需，而 fidelity case 可为空。coverage 必须逐冻结 scene/state 声明目标画布、画布内 region 和完整性摘要，覆盖率为 1、未覆盖列表为空、状态通过且绑定证据；不能用单个微小区域冒充全覆盖。每个固定视觉 region 还要有稳定编号、实现分类和七个生产合同字段；`production_method` 使用 `imagegen`、`authored-raster`、`authored-svg`、`phaser-graphics`、`runtime-program`、`reuse`，`delivery_kind` 使用 `raster-image`、`vector-image`、`runtime-drawing`、`runtime-program`、`existing-asset`。实现分类为 `generate-now`、`reuse-existing`、`runtime-program`，并在冻结效果图标注图中同时呈现。
 

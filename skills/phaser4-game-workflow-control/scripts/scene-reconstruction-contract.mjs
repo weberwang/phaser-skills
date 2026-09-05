@@ -466,8 +466,12 @@ export function validateSceneReconstructionContract(contract, manifest = null, o
   const targetInfo = validateTargetConditions(contract, manifest, stage, errors, effectImage);
   const requireFinalLayout = options.requireFinalLayout ?? (["V3", "V4"].includes(String(stage).toUpperCase()) || (String(stage).toUpperCase() === "V2" && (manifest?.visualStageState === "v2-production-planning-complete" || manifest?.visual_stage_state === "v2-production-planning-complete" || manifest?.effect_image_reconstruction?.lifecycle === "v4-complete")));
   if (effectImage && ["V2", "V3", "V4"].includes(String(stage).toUpperCase())) validateV2LayoutStage(contract, targetInfo, stage, errors, requireFinalLayout);
-  // G0/V1 必须显式盘点显示层；inventory=[] 表示确认没有显示层，不表示漏规划。
-  errors.push(...validateDisplayLayerPlanning(field(contract, "display_layer_planning"), targetInfo, { stage, visual_baseline: manifest?.visual_baseline, reference_target: manifest?.reference_target }));
+  // G0/V1 必须显式盘点显示层；只有 inventory 与 deferred_layers 都为空才表示确认没有显示层。
+  // requestedStage 可能只是调用方的检查范围；一旦清单生命周期已到 V4，延期显示层仍必须阻断最终联合验收。
+  const lifecycle = manifest?.effect_image_reconstruction?.lifecycle;
+  const normalizedStage = String(stage).toUpperCase();
+  const displayLayerStage = normalizedStage === "V4" || String(lifecycle ?? "").toLowerCase() === "v4-complete" ? "V4" : normalizedStage;
+  errors.push(...validateDisplayLayerPlanning(field(contract, "display_layer_planning"), targetInfo, { stage: displayLayerStage, visual_baseline: manifest?.visual_baseline, reference_target: manifest?.reference_target }));
   const toleranceBlock = field(contract, "predeclared_tolerances", "predeclaredTolerances", "tolerance_set", "toleranceSet", "tolerances");
   const toleranceIds = Array.isArray(toleranceBlock) ? new Set(toleranceBlock.map((item) => item?.id ?? item?.tolerance_id ?? item?.toleranceId).filter(nonEmptyString)) : new Set();
   const regions = field(contract, "coverage_regions", "coverageRegions", "regions");

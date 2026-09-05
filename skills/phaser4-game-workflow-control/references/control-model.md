@@ -60,6 +60,21 @@ Work Item 的 `taskAuthorization` 保存用户原始请求、目标、范围、�
 
 ## V0→V4 跨阶段硬门
 
+### 显示层子任务与宿主继续推进
+
+所有显示层（HUD、modal、popup、drawer、toast）统一作为宿主场景下的子任务，可分开排期并行推进。未准备好的层先在 `scene_reconstruction_contract.display_layer_planning.deferred_layers` 登记，以 `layer_id` 为稳定标识、`host_scene_id` 为父场景关联，分别指定负责人；不自动转向子任务 V0、补图或代码实现。宿主沿自己的拆解确认、布局确认、V3 资源预验收和正式代码实现推进，但自身冻结目标、资源与证据门仍须满足。子任务未完成不等于场景整体完成：V4 联合验收必须关闭全部显示层子任务。
+
+- `inventory` 保存本次进入完整视觉规划的显示层；其中瞬态层的 required state 仍必须有真实冻结上下文图。`deferred_layers` 保存未就绪显示层子任务，不伪造 target SHA、图或 PASS。
+- 每项待办只含 `layer_id`、`host_scene_id`、`type`、`persistence`、`in_scene_master`、`owner`、`reason`；ID、负责人和原因非空，宿主匹配；类型为 hud/modal/popup/drawer/toast。不得与 inventory 或其他待办重复。HUD 必须 persistent；常驻待办仍为 `in_scene_master=true` 并列入 `persistent_layer_ids`，瞬态待办为 false 且不列入；拆任务不能删掉原主图可见内容。
+- 没有延期可省略数组；一旦有未规划弹窗必须明确登记，不能用 `inventory=[]` 假装没有弹窗。已有完整层缺图不会被验证器自动转为待办。
+- 合法待办不阻断宿主 V1/V2/V3；V2 根计划引用的 `sceneReconstructionContract` 保留待办，`displayLayerContexts` 只列已冻结上下文。宿主 SCENE 不要求待办层的图；准备执行的 DISPLAY_LAYER 仍必须拥有自身唯一上下文及有效 V2/V3，不能以待办身份进入可执行包。
+- 弹窗可由用户或其他执行者并行推进自身参考、拆解确认、布局确认和生产；代码并行仍需已冻结宿主接口、各自前置有效及文件/状态所有权互斥，不要求宿主代码全部完成后才开始。现有执行单元仍使用同一场景 Work Item 的证据，不新增全局状态机或放宽跨工作项身份。
+- 宿主可先实现稳定触发事件/公开接口，弹窗内容、资源与接线由其责任方补齐；不得因延期删掉原图中的按钮、重排布局、加载未验收资源或伪造弹窗行为通过证据。
+- 弹窗准备就绪后，以完整 inventory 项替换其待办并更新受影响的场景合同/证据/实施计划，不直接往运行中的冻结包塞单元。真实身份变化按影响刷新，不能复用已过期的确认或单元结果。
+- V4 检测到任一待办必须阻断最终联合验收；补齐每层适用的视觉、资源、正式消费与生命周期证据，瞬态层还需上下文图及打开→交互→关闭→恢复证据。常驻层按自身交互/状态验收，不虚构弹窗式关闭行为。不得通过清空待办、永久禁用入口或删除需求来冒充完成；真实取消需求另走范围变更。
+
+本节限定下文“必需宿主上下文图”和“全部显示层”的生效时点：前者在 V1–V3 指本次完整规划的 inventory，后者在场景整体 V4/完成时包括全部已登记待办。
+
 视觉阶段是唯一的机器枚举 `V0`、`V1`、`V2`、`V3`、`V4`，且必须同时声明有语义的 `visualStageState`。V0/V1 必须先建立全局基线 brief、生成恰好三张同条件候选效果图、同屏交给人工并确认其中一张；`globalVisualBaselineSelectionRef` 通过后才可写入 `global-static-baseline-frozen`。该引用通过不可变 `path` + `sha256` 跨 Work Item 复用，根证据顶层 `workItemId` 始终是生产者身份，不是当前消费者；该状态只冻结颜色、字体、栅格等静态规则；它不等于 `v2-production-planning-complete`，三候选人工选择也不能替代逐场景 V2 拆解图确认。V2 方案冻结必须由拆解图、技术 JSON、coverage、生产计划和拆解确认证据派生。
 
 ```text

@@ -25,7 +25,7 @@ description: Phaser 4 游戏领域编排角色；在全局控制面已建立 Wor
 
 ## 视觉与场景
 
-效果图还原、显示层和正式 Scene 接入仍属于当前场景 Work Item；按 [`visual-quality-gate.md`](references/visual-quality-gate.md) 提交场景主图、宿主上下文、组件/状态、布局合同和运行态证据。全局基线只表达静态视觉语言，不能代替场景方向证据。
+效果图还原、显示层和正式 Scene 接入仍属于当前场景 Work Item；按 [`visual-quality-gate.md`](references/visual-quality-gate.md) 提交场景主图、宿主上下文、组件/状态、布局合同和运行态证据。所有显示层统一为[宿主子任务](../phaser4-game-workflow-control/references/control-model.md#显示层子任务与宿主继续推进)，未就绪先登记 `deferred_layers`，不抢占宿主主线；各任务满足自身前置并按依赖并行推进，最终 V4 联合验收要求全部关闭，常驻层仍保留主图归属。全局基线不能代替场景方向证据。
 
 ## 状态与返工
 
