@@ -74,7 +74,7 @@ function explicitlyContainer(node) {
 /**
  * 将拆解确认中的元素转换为阶段 B 的布局节点。
  * 显式 parent 优先；未声明时选择最小包含容器，否则绑定 viewport，避免布局
- * 阶段读取预存 layout_decomposition.layout_nodes 或重新识别原图元素。
+ * 阶段 B 不读取预存 layout_decomposition.layout_nodes，也不重新识别原图元素。
  * 每个节点还必须接收同一批智能视觉决策给出的双轴对齐，缺失时关闭生成。
  */
 export function deriveLayoutNodesFromDecompositionElements(elements, canvas, context = {}) {
@@ -95,8 +95,9 @@ export function deriveLayoutNodesFromDecompositionElements(elements, canvas, con
       if (!parent || parent.element_type !== "container") throw new Error(`拆解元素 ${element.element_id} 的 parent_element_id 必须引用容器`);
       return explicit;
     }
-    const candidates = containers.filter((candidate) => candidate.element_id !== element.element_id && area(candidate.bounds) > area(element.bounds) && contains(candidate.bounds, element.bounds)).sort((left, right) => area(left.bounds) - area(right.bounds) || left.element_id.localeCompare(right.element_id));
-    return candidates[0]?.element_id ?? "viewport";
+    // 这里只是在确定父容器时挑选最小包含者，不是生成可供选择的布局候选方案。
+    const containingContainers = containers.filter((candidate) => candidate.element_id !== element.element_id && area(candidate.bounds) > area(element.bounds) && contains(candidate.bounds, element.bounds)).sort((left, right) => area(left.bounds) - area(right.bounds) || left.element_id.localeCompare(right.element_id));
+    return containingContainers[0]?.element_id ?? "viewport";
   };
   const parentIds = new Map(elements.map((element) => [element.element_id, parentOf(element)])); const childCounts = new Map(); for (const parentId of parentIds.values()) childCounts.set(parentId, (childCounts.get(parentId) ?? 0) + 1);
   // empty_container 是拆解确认的显式事实；若与自动推导的直接子项数冲突，必须失败而不能静默改写。
@@ -110,7 +111,7 @@ export function deriveLayoutNodesFromDecompositionElements(elements, canvas, con
   return elements.map((element) => {
     const parentId = parentIds.get(element.element_id); const bounds = { ...element.bounds }; const isContainer = element.element_type === "container";
     return { layout_node_id: element.element_id, element_id: element.element_id, element_type: element.element_type, layout_role: element.role, parent_layout_node_id: parentId, target_bounds: bounds, bounds, is_container: isContainer, empty_container: isContainer && element.empty_container === true, axis_alignment: alignmentFor(element), scene_id: element.scene_id ?? context.sceneId ?? context.scene_id, state_id: element.state_id ?? context.stateId ?? context.state_id, region_id: element.region_id, component_id: element.component_id, placement_id: element.placement_id };
-  }).sort((left, right) => left.layout_node_id.localeCompare(right.layout_node_id));
+  });
 }
 /** 由深度计算确定性的颜色；相邻深度使用不同色相，同层节点复用同一颜色。 */
 export function colorForLayoutDepth(depth) {
@@ -141,16 +142,17 @@ export function deriveAutomaticLayoutFacts(layoutNodes, canvas, context = {}) {
     const item = source.get(id); return item ? depthOf(item.parentId, [...trail, id]) + 1 : 0;
   };
   const parentBoundsOf = (parentId) => ROOT_IDS.has(parentId) ? rootBounds : source.get(parentId)?.bounds;
-  for (const item of [...source.values()].sort((left, right) => left.id.localeCompare(right.id))) {
+  // source 按确认 proposal 的元素顺序建立；这里只做几何计算，不重排公开布局节点。
+  for (const item of source.values()) {
     const parentBounds = parentBoundsOf(item.parentId); if (!parentBounds) throw new Error(`布局节点 ${item.id} 缺少父容器 bounds`);
     const relative = relativePosition(parentBounds, item.bounds); if (Object.values(relative).some((value) => value < 0)) throw new Error(`布局节点 ${item.id} 超出已确认父容器 bounds`);
-    const alignment = field(item.node, "axis_alignment", "axisAlignment"); if (!isValidAxisAlignment(alignment)) throw new Error(`由已确认拆解元素推导的布局节点 ${item.id} 缺少合法显式 axis_alignment`); const offset = axisAlignmentOffset(parentBounds, item.bounds, alignment); const depth = depthOf(item.id); const childIds = (children.get(item.id) ?? []).slice().sort(); const isContainer = childIds.length > 0 || explicitlyContainer(item.node);
+    const alignment = field(item.node, "axis_alignment", "axisAlignment"); if (!isValidAxisAlignment(alignment)) throw new Error(`由已确认拆解元素推导的布局节点 ${item.id} 缺少合法显式 axis_alignment`); const offset = axisAlignmentOffset(parentBounds, item.bounds, alignment); const depth = depthOf(item.id); const childIds = (children.get(item.id) ?? []).slice(); const isContainer = childIds.length > 0 || explicitlyContainer(item.node);
     facts.push({ layout_node_id: item.id, element_id: field(item.node, "element_id", "elementId", "region_id", "regionId") ?? item.id, parent_layout_node_id: item.parentId, reference_id: item.parentId, parent_target_bounds: parentBounds, depth, color: colorForLayoutDepth(depth), bounds: item.bounds, target_bounds: item.bounds, is_container: isContainer, empty_container: isContainer && childIds.length === 0, child_layout_node_ids: childIds, relative_position: relative, axis_alignment: alignment, offset, self_anchor: field(item.node, "self_anchor", "selfAnchor") ?? `${alignment.vertical}-${alignment.horizontal}`, reference_anchor: field(item.node, "reference_anchor", "referenceAnchor") ?? `${alignment.vertical}-${alignment.horizontal}`, is_root_container: false });
   }
   for (const rootId of rootIds) {
-    const childIds = (children.get(rootId) ?? []).slice().sort(); facts.push({ layout_node_id: rootId, element_id: rootId, parent_layout_node_id: null, depth: 0, color: colorForLayoutDepth(0), bounds: rootBounds, target_bounds: rootBounds, is_container: true, empty_container: childIds.length === 0, child_layout_node_ids: childIds, relative_position: { left: 0, right: 0, top: 0, bottom: 0 }, axis_alignment: { horizontal: "left", vertical: "top" }, offset: { x: 0, y: 0 }, self_anchor: "top-left", reference_anchor: "top-left", is_root_container: true });
+    const childIds = (children.get(rootId) ?? []).slice(); facts.push({ layout_node_id: rootId, element_id: rootId, parent_layout_node_id: null, depth: 0, color: colorForLayoutDepth(0), bounds: rootBounds, target_bounds: rootBounds, is_container: true, empty_container: childIds.length === 0, child_layout_node_ids: childIds, relative_position: { left: 0, right: 0, top: 0, bottom: 0 }, axis_alignment: { horizontal: "left", vertical: "top" }, offset: { x: 0, y: 0 }, self_anchor: "top-left", reference_anchor: "top-left", is_root_container: true });
   }
-  return facts.sort((left, right) => left.depth - right.depth || left.layout_node_id.localeCompare(right.layout_node_id)).map((fact) => ({ ...fact, scene_id: context.sceneId ?? context.scene_id ?? null, state_id: context.stateId ?? context.state_id ?? null }));
+  return facts.map((fact) => ({ ...fact, scene_id: context.sceneId ?? context.scene_id ?? null, state_id: context.stateId ?? context.state_id ?? null }));
 }
 /** 计算布局节点身份，确认记录会把该身份与上游拆解确认绑定。 */
 export function computeLayoutNodeIdentitySha256(facts) { return sha256(canonicalJson((facts ?? []).map((fact) => ({ ...fact })))); }
@@ -162,11 +164,11 @@ export function computeLayoutAnnotationIdentitySha256(annotationSha256, width, h
 export function deriveLayoutAnnotationRows(facts) {
   const byParent = new Map(); for (const fact of facts.filter((item) => item.is_container === true || item.is_root_container === true)) byParent.set(fact.layout_node_id, facts.filter((child) => child.parent_layout_node_id === fact.layout_node_id));
   const rows = [{ kind: "header", text: "布局标注说明" }];
-  for (const parent of facts.filter((fact) => byParent.has(fact.layout_node_id)).sort((left, right) => left.depth - right.depth || left.layout_node_id.localeCompare(right.layout_node_id))) {
+  for (const parent of facts.filter((fact) => byParent.has(fact.layout_node_id))) {
     rows.push({ kind: "parent", parent_layout_node_id: parent.layout_node_id, layout_node_id: parent.layout_node_id, text: `父容器 ${parent.layout_node_id}${parent.empty_container ? "（空容器）" : ""}` });
     const children = byParent.get(parent.layout_node_id) ?? [];
     if (children.length === 0) rows.push({ kind: "empty", parent_layout_node_id: parent.layout_node_id, layout_node_id: parent.layout_node_id, text: "  空容器" });
-    for (const child of children.sort((left, right) => left.layout_node_id.localeCompare(right.layout_node_id))) rows.push({ kind: "child", parent_layout_node_id: parent.layout_node_id, layout_node_id: child.layout_node_id, text: `  子组件 ${child.layout_node_id}：left=${child.relative_position.left} right=${child.relative_position.right} top=${child.relative_position.top} bottom=${child.relative_position.bottom} 对齐=${child.axis_alignment.horizontal}/${child.axis_alignment.vertical} offset=${child.offset.x}/${child.offset.y} 锚点=${child.self_anchor}/${child.reference_anchor}` });
+    for (const child of children) rows.push({ kind: "child", parent_layout_node_id: parent.layout_node_id, layout_node_id: child.layout_node_id, text: `  子组件 ${child.layout_node_id}：left=${child.relative_position.left} right=${child.relative_position.right} top=${child.relative_position.top} bottom=${child.relative_position.bottom} 对齐=${child.axis_alignment.horizontal}/${child.axis_alignment.vertical} offset=${child.offset.x}/${child.offset.y} 锚点=${child.self_anchor}/${child.reference_anchor}` });
   }
   return rows;
 }
@@ -194,9 +196,9 @@ export function validateLayoutAnnotationPng(bytes, expected = {}, errors = [], l
   const expectedFacts = expected.layoutNodes ? deriveAutomaticLayoutFacts(expected.layoutNodes, { width: metadata.original_width, height: metadata.original_height }, expected) : expected.layoutFacts;
   if (Array.isArray(expectedFacts)) {
     const projectFact = (fact) => ({ layout_node_id: fact.layout_node_id, element_id: fact.element_id, parent_layout_node_id: fact.parent_layout_node_id, depth: fact.depth, color: fact.color, bounds: fact.bounds, is_container: fact.is_container, empty_container: fact.empty_container, child_layout_node_ids: fact.child_layout_node_ids, relative_position: fact.relative_position, axis_alignment: fact.axis_alignment, offset: fact.offset, self_anchor: fact.self_anchor, reference_anchor: fact.reference_anchor });
-    const actualProjection = metadata.nodes.map(projectFact).sort((left, right) => left.layout_node_id.localeCompare(right.layout_node_id));
-    const expectedProjection = expectedFacts.map(projectFact).sort((left, right) => left.layout_node_id.localeCompare(right.layout_node_id));
-    if (canonicalJson(actualProjection) !== canonicalJson(expectedProjection)) errors.push(`${label}.nodes 未完整绑定已确认拆解元素或布局关系`);
+    const actualProjection = metadata.nodes.map(projectFact);
+    const expectedProjection = expectedFacts.map(projectFact);
+    if (canonicalJson(actualProjection) !== canonicalJson(expectedProjection)) errors.push(`${label}.nodes 必须按已确认 decomposition_elements 原顺序完整绑定布局关系`);
     const rowText = metadata.visible_rows.map((row) => String(row.text ?? "")).join("\n"); for (const fact of expectedFacts.filter((item) => item.is_root_container || item.child_layout_node_ids.length > 0 || item.empty_container)) { if (!rowText.includes(`父容器 ${fact.layout_node_id}`)) errors.push(`${label} 右栏缺少父容器 ${fact.layout_node_id}`); if (fact.empty_container && !rowText.includes("空容器")) errors.push(`${label} 右栏必须明确标记空容器`); } for (const fact of expectedFacts.filter((item) => !item.is_root_container)) if (!rowText.includes(`子组件 ${fact.layout_node_id}`)) errors.push(`${label} 右栏缺少子组件 ${fact.layout_node_id}`);
   }
   const annotationSha256 = sha256(bytes); if (expected.annotationSha256 && expected.annotationSha256 !== annotationSha256) errors.push(`${label} 文件 SHA-256 与确认记录不一致`); const identity = computeLayoutAnnotationIdentitySha256(annotationSha256, decoded.width, decoded.height, metadata.metadata_sha256); if (expected.identitySha256 && expected.identitySha256 !== identity) errors.push(`${label} identity_sha256 与确认记录不一致`); return { decoded, metadata, annotationSha256, identitySha256: identity, metadataSha256: metadata.metadata_sha256 };

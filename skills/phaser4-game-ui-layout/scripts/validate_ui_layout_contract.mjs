@@ -41,7 +41,8 @@ function canonicalize(value) {
  */
 export function computeLayoutContractSha256(document) {
   const binding = document?.scene_reconstruction_binding ?? document?.sceneReconstructionBinding ?? {};
-  const nodes = (Array.isArray(document?.layout_nodes) ? document.layout_nodes : []).filter(isObject).map(layoutNodeIdentityProjection).sort((left, right) => { const leftId = String(left.layout_node_id ?? ""); const rightId = String(right.layout_node_id ?? ""); return leftId < rightId ? -1 : leftId > rightId ? 1 : 0; });
+  // 布局节点数组的顺序继承已确认拆解元素；身份哈希不能排序后再计算，否则调序会复用旧确认。
+  const nodes = (Array.isArray(document?.layout_nodes) ? document.layout_nodes : []).filter(isObject).map(layoutNodeIdentityProjection);
   const projection = {
     contract_id: document?.contract_id ?? null,
     contract_version: document?.contract_version ?? null,
@@ -70,7 +71,7 @@ export function computeLayoutContractSha256(document) {
       target_sha256: document.layout_annotation.target_sha256 ?? null,
       scene_id: document.layout_annotation.scene_id ?? null,
       state_id: document.layout_annotation.state_id ?? null,
-      layout_node_ids: Array.isArray(document.layout_annotation.layout_node_ids) ? document.layout_annotation.layout_node_ids.slice().sort() : null,
+      layout_node_ids: Array.isArray(document.layout_annotation.layout_node_ids) ? document.layout_annotation.layout_node_ids.slice() : null,
     } : null,
     layout_nodes: nodes,
   };
@@ -314,7 +315,7 @@ function sameBounds(left, right) {
  */
 function validateLayoutNodes(document, fidelity, binding, spaces, regionIds, errors) {
   const nodes = document.layout_nodes;
-  const nodeIds = new Set(); const regionNodeIds = new Map(); const nodesById = new Map();
+  const nodeIds = new Set(); const orderedNodeIds = []; const regionNodeIds = new Map(); const nodesById = new Map();
   if (!Array.isArray(nodes)) { errors.push("layout_nodes 必须是数组"); return { nodeIds, regionNodeIds, nodesById }; }
   const requiresLayoutNodes = fidelity?.applicability === "frozen-target" || isEffectImageContract(document);
   if (fidelity?.applicability === "not-applicable" && !isEffectImageContract(document) && nodes.length > 0) errors.push("普通布局 layout_nodes 必须为空数组");
@@ -327,7 +328,7 @@ function validateLayoutNodes(document, fidelity, binding, spaces, regionIds, err
     for (const field of ["layout_node_id", "region_id", "coordinate_space", "reference_id", "self_anchor", "reference_anchor", "size_policy", "clip_policy", "responsive_rule", "planned_test_id"]) if (!isString(node[field])) errors.push(`${label}.${field} 必须是非空字符串`);
     if (isString(node.layout_node_id)) {
       if (nodeIds.has(node.layout_node_id)) errors.push(`重复布局节点 ID：${node.layout_node_id}`);
-      nodeIds.add(node.layout_node_id); nodesById.set(node.layout_node_id, node);
+      nodeIds.add(node.layout_node_id); orderedNodeIds.push(node.layout_node_id); nodesById.set(node.layout_node_id, node);
     }
     if (isString(node.region_id)) {
       const boundNodes = regionNodeIds.get(node.region_id) ?? [];
@@ -363,7 +364,7 @@ function validateLayoutNodes(document, fidelity, binding, spaces, regionIds, err
     }
   });
   validateGraphCycles(graph, "布局节点参照存在循环", errors);
-  return { nodeIds, regionNodeIds, nodesById };
+  return { nodeIds, orderedNodeIds, regionNodeIds, nodesById };
 }
 
 /** 校验 effect-image 的独立布局标注身份；布局阶段不能绕过前置拆解确认。 */
@@ -380,7 +381,7 @@ function validateLayoutAnnotationBinding(document, binding, layoutNodes, errors)
   if (binding && annotation.target_sha256 !== binding.target_sha256) errors.push("layout_annotation.target_sha256 未绑定当前冻结目标");
   if (binding && (annotation.scene_id !== binding.scene_id || annotation.state_id !== binding.state_id)) errors.push("layout_annotation scene/state 未绑定当前场景");
   if (!Array.isArray(annotation.layout_node_ids) || annotation.layout_node_ids.length === 0) errors.push("layout_annotation.layout_node_ids 必须是非空数组");
-  else for (const nodeId of annotation.layout_node_ids) if (!layoutNodes.nodeIds.has(nodeId) && !["viewport", "safe-area"].includes(nodeId)) errors.push(`layout_annotation.layout_node_ids 引用了未确认布局节点：${nodeId}`);
+  else if (JSON.stringify(annotation.layout_node_ids) !== JSON.stringify(layoutNodes.orderedNodeIds)) errors.push("layout_annotation.layout_node_ids 必须按已确认拆解元素原顺序完整绑定");
 }
 
 /** 校验绑定中的布局合同身份哈希，拒绝节点或目标修改后继续复用旧身份。 */

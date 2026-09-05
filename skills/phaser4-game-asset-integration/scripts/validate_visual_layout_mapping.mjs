@@ -77,16 +77,16 @@ function validateLayoutAnnotationBinding(data, decomposition, nodeById, label, e
   for (const field of ["layout_annotation_sha256", "layout_annotation_metadata_sha256", "layout_annotation_identity_sha256", "decomposition_confirmation_sha256", "proposal_sha256", "layout_decision_sha256", "target_sha256"]) if (Object.hasOwn(annotation, field) && (!isString(annotation[field]) || !SHA_PATTERN.test(annotation[field]))) errors.push(`${label}.layout_annotation.${field} 必须是合法 sha256`);
   const target = data.scene_reconstruction_contract?.target_conditions;
   for (const [field, expected] of [["target_sha256", target?.target_sha256], ["scene_id", target?.scene_id], ["state_id", target?.state_id]]) if (expected !== undefined && annotation[field] !== expected) errors.push(`${label}.layout_annotation.${field} 未绑定当前冻结场景`);
-  const expectedNodeIds = [...nodeById.keys()].sort(); const actualNodeIds = Array.isArray(annotation.layout_node_ids) ? annotation.layout_node_ids.slice().sort() : null;
-  if (!actualNodeIds || actualNodeIds.length === 0 || expectedNodeIds.some((id) => !actualNodeIds.includes(id)) || actualNodeIds.some((id) => !nodeById.has(id))) errors.push(`${label}.layout_annotation.layout_node_ids 必须完整且只能来自已确认拆解`);
+  const expectedNodeIds = [...nodeById.keys()]; const actualNodeIds = Array.isArray(annotation.layout_node_ids) ? annotation.layout_node_ids : null;
+  if (!actualNodeIds || actualNodeIds.length === 0 || canonicalLayoutJson(actualNodeIds) !== canonicalLayoutJson(expectedNodeIds)) errors.push(`${label}.layout_annotation.layout_node_ids 必须按布局节点原顺序完整且只能来自已确认拆解`);
   if (!isObject(confirmation) || confirmation.status !== "accepted" || confirmation.confirmation_mode !== "manual") errors.push(`${label}.layout_annotation_confirmation 必须是 accepted/manual`);
   else for (const field of ["layout_annotation_file", "layout_annotation_sha256", "layout_annotation_width", "layout_annotation_height", "layout_annotation_schema", "layout_annotation_layout", "layout_annotation_metadata_sha256", "layout_annotation_identity_sha256", "decomposition_confirmation_id", "decomposition_confirmation_sha256", "proposal_sha256", "layout_decision_file", "layout_decision_sha256", "layout_decision_id"]) if (confirmation[field] !== annotation[field]) errors.push(`${label}.layout_annotation_confirmation.${field} 未绑定最终布局图或显式布局决策`);
 }
 
 /** 校验 technical_analysis 的聚合布局节点身份。 */
 export function validateTechnicalLayoutNodeIds(technical, regions, label, errors) {
-  const expected = regions.flatMap((region) => decompositionElementIdList(region)).sort();
-  const actual = Array.isArray(technical.layout_node_ids) ? technical.layout_node_ids.slice().sort() : technical.layout_node_ids;
+  const expected = regions.flatMap((region) => decompositionElementIdList(region));
+  const actual = Array.isArray(technical.layout_node_ids) ? technical.layout_node_ids : technical.layout_node_ids;
   if (!Array.isArray(technical.layout_node_ids) || canonicalLayoutJson(actual) !== canonicalLayoutJson(expected)) errors.push(`${label}.proposal 技术文件 layout_node_ids 必须等于已确认 decomposition_elements ID`);
   const elementErrors = []; const elementMap = validateDecompositionElements(technical.decomposition_elements, regions, technical.canvas, `${label}.proposal.decomposition_elements`, elementErrors);
   if (elementErrors.length > 0 || !(elementMap instanceof Map) || canonicalLayoutJson(decompositionElementIds(technical.decomposition_elements ?? [])) !== canonicalLayoutJson(expected)) errors.push(...(elementErrors.length > 0 ? elementErrors : [`${label}.proposal 技术文件 decomposition_elements 与当前清单不一致`]));
@@ -95,9 +95,9 @@ export function validateTechnicalLayoutNodeIds(technical, regions, label, errors
 /** 校验单个技术区域的布局节点与 placement 布局身份。 */
 export function validateTechnicalRegionLayout(region, item, expectedPlacements, label, errors) {
   const expectedElementIds = decompositionElementIdList(region);
-  if (!Array.isArray(item.layout_node_ids) || canonicalLayoutJson(item.layout_node_ids.slice().sort()) !== canonicalLayoutJson(expectedElementIds)) errors.push(`${label}.proposal 技术文件 ${region.id} layout_node_ids 必须等于已确认 decomposition_elements ID`);
+  if (!Array.isArray(item.layout_node_ids) || canonicalLayoutJson(item.layout_node_ids) !== canonicalLayoutJson(expectedElementIds)) errors.push(`${label}.proposal 技术文件 ${region.id} layout_node_ids 必须按已确认 decomposition_elements 原顺序一致`);
   const actualElements = Array.isArray(item.decomposition_elements) ? item.decomposition_elements : [];
-  if (canonicalLayoutJson(actualElements.slice().sort((left, right) => String(left?.element_id).localeCompare(String(right?.element_id)))) !== canonicalLayoutJson(decompositionElements(region).slice().sort((left, right) => String(left?.element_id).localeCompare(String(right?.element_id))))) errors.push(`${label}.proposal 技术文件 ${region.id} decomposition_elements 与当前清单不一致`);
+  if (canonicalLayoutJson(actualElements) !== canonicalLayoutJson(decompositionElements(region))) errors.push(`${label}.proposal 技术文件 ${region.id} decomposition_elements 必须按当前清单原顺序一致`);
   if (expectedPlacements.some((placement) => !nonEmptyString(placement.layout_node_id)) || (Array.isArray(item.placements) && item.placements.some((placement) => !nonEmptyString(placement?.layout_node_id)))) errors.push(`${label}.proposal 技术文件 ${region.id} placement 缺少 layout_node_id`);
 }
 
@@ -105,7 +105,7 @@ export function validateTechnicalRegionLayout(region, item, expectedPlacements, 
 export function validatePngLayoutMetadata(region, item, expectedPlacements, label, errors) {
   const expectedNodeIds = decompositionElementIdList(region);
   const expectedPlacementBindings = expectedPlacements.map((placement) => ({ placement_id: placement.placement_id, layout_node_id: placement.layout_node_id })).sort((left, right) => String(left.placement_id).localeCompare(String(right.placement_id)));
-  if (!Array.isArray(item.layout_node_ids) || canonicalLayoutJson(item.layout_node_ids.slice().sort()) !== canonicalLayoutJson(expectedNodeIds)) errors.push(`${label}.${region.id} PNG layout_node_ids 与当前清单不一致`);
+  if (!Array.isArray(item.layout_node_ids) || canonicalLayoutJson(item.layout_node_ids) !== canonicalLayoutJson(expectedNodeIds)) errors.push(`${label}.${region.id} PNG layout_node_ids 必须按当前清单原顺序一致`);
   if (!Array.isArray(item.placement_layout_node_ids) || canonicalLayoutJson(item.placement_layout_node_ids.slice().sort((left, right) => String(left?.placement_id).localeCompare(String(right?.placement_id)))) !== canonicalLayoutJson(expectedPlacementBindings)) errors.push(`${label}.${region.id} PNG placement_layout_node_ids 与当前清单不一致`);
 }
 

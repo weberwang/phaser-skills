@@ -334,6 +334,8 @@ export function validateLayoutRegionBindings(regions, layoutInfo, contract, stag
     for (const nodeId of ids) if (!layoutInfo.nodeById.has(nodeId)) continue;
     const nodeIdsForRegion = new Set(layoutInfo.nodes.filter((node) => field(node, "region_id", "regionId") === field(region, "region_id", "regionId", "id")).map((node) => field(node, "layout_node_id", "layoutNodeId")));
     for (const nodeId of nodeIdsForRegion) if (!ids.includes(nodeId)) errors.push(contractError(stage, contract, region, "coverage region 缺少对应 layout node 引用", { missing: nodeId, returnStage: "V1/PROPOSAL" }));
+    const orderedNodeIdsForRegion = layoutInfo.nodes.filter((node) => field(node, "region_id", "regionId") === field(region, "region_id", "regionId", "id")).map((node) => field(node, "layout_node_id", "layoutNodeId"));
+    if (JSON.stringify(ids) !== JSON.stringify(orderedNodeIdsForRegion)) errors.push(contractError(stage, contract, region, "coverage region layout_node_ids 必须按已确认拆解元素原顺序绑定", { expected: JSON.stringify(orderedNodeIdsForRegion), actual: JSON.stringify(ids), returnStage: "V1/PROPOSAL" }));
   }
 }
 

@@ -51,10 +51,10 @@ function buildRegionElements(region) {
   return elements;
 }
 
-/** 生成 proposal 顶层与 technical_analysis 共用的稳定拆解元素投影。 */
-export function buildDecompositionElements(regions = []) { return regions.flatMap((region) => buildRegionElements(region)).map((element) => ({ ...element, bounds: validBounds(element.bounds) ? copyBounds(element.bounds) : element.bounds })).sort((left, right) => String(left.element_id).localeCompare(String(right.element_id))); }
-/** 返回不含重复的稳定元素 ID，供布局结果和合同投影使用。 */
-export function decompositionElementIds(elements = []) { return elements.map((element) => element?.element_id).filter(nonEmptyString).sort((left, right) => left.localeCompare(right)); }
+/** 生成 proposal 顶层与 technical_analysis 共用的拆解元素投影；原顺序就是人工确认顺序。 */
+export function buildDecompositionElements(regions = []) { return regions.flatMap((region) => buildRegionElements(region)).map((element) => ({ ...element, bounds: validBounds(element.bounds) ? copyBounds(element.bounds) : element.bounds })); }
+/** 按确认 proposal 原顺序返回元素 ID；重复项交给校验器拒绝，不能通过排序或去重掩盖。 */
+export function decompositionElementIds(elements = []) { return elements.map((element) => element?.element_id).filter(nonEmptyString); }
 
 /** 校验已确认 proposal 的拆解元素；允许人工修改几何，但不允许越界、漏区域或伪造角色。 */
 export function validateDecompositionElements(elements, regions = [], canvas = null, label = "decomposition_elements", errors = []) {

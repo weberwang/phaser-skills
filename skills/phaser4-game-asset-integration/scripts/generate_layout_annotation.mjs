@@ -56,16 +56,10 @@ async function readBoundFile(projectRoot, file, expectedSha, label, parseJson = 
   return { bytes, sha256: expectedSha, json };
 }
 
-/** 比较带重复检测的排序 ID 集合，防止通过重复项掩盖遗漏元素。 */
-function sameSortedIds(actual, expected, label) {
-  if (!Array.isArray(actual) || !Array.isArray(expected) || actual.some((item) => !nonEmptyString(item)) || expected.some((item) => !nonEmptyString(item))) throw new Error(`${label} 必须是非空字符串数组`);
-  const left = actual.slice().sort(); const right = expected.slice().sort();
-  if (new Set(left).size !== left.length || JSON.stringify(left) !== JSON.stringify(right)) throw new Error(`${label} 与已确认拆解元素集合不一致`);
-}
 /** 规范化元素清单，确保技术投影不能悄悄替换确认过的 bounds/角色。 */
 function canonicalJson(value) { if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`; if (isObject(value)) return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`; const encoded = JSON.stringify(value); return encoded === undefined ? "null" : encoded; }
-/** 比较 proposal 顶层和 technical_analysis 的同一份拆解元素身份。 */
-function sameElements(actual, expected, label) { if (!Array.isArray(actual) || canonicalJson(actual.slice().sort((left, right) => String(left?.element_id).localeCompare(String(right?.element_id)))) !== canonicalJson(expected.slice().sort((left, right) => String(left?.element_id).localeCompare(String(right?.element_id))))) throw new Error(`${label} 与已确认拆解元素清单不一致`); }
+/** 比较 proposal 顶层和 technical_analysis 的同一份拆解元素身份及顺序。 */
+function sameElementSequence(actual, expected, label) { if (!Array.isArray(actual) || canonicalJson(actual) !== canonicalJson(expected)) throw new Error(`${label} 必须按已确认拆解元素原顺序逐项一致`); }
 
 /** 校验拆解标注 PNG 的真实 metadata/尺寸/冻结目标身份。 */
 function validateDecompositionAnnotation(bytes, record, targetSha, expectedRegions) {
@@ -87,14 +81,14 @@ function validateDecompositionProposal(proposal, record, scene, expectedRegions)
   const elements = proposal.decomposition_elements;
   const elementErrors = []; const elementById = validateDecompositionElements(elements, expectedRegions, scene.target.viewport, "proposal.decomposition_elements", elementErrors); if (elementErrors.length > 0 || !(elementById instanceof Map) || elementById.size !== elements?.length) throw new Error(elementErrors[0] ?? "已确认 proposal.decomposition_elements 无效");
   const technicalElements = proposal.technical_analysis?.decomposition_elements;
-  sameElements(technicalElements, elements, "proposal.technical_analysis.decomposition_elements");
+  sameElementSequence(technicalElements, elements, "proposal.technical_analysis.decomposition_elements");
   const proposalRegions = proposal.regions; if (!Array.isArray(proposalRegions) || proposalRegions.length !== expectedRegions.length) throw new Error("已确认 proposal.regions 未完整覆盖当前区域");
   for (const region of expectedRegions) {
     const item = proposalRegions.find((candidate) => candidate?.region_id === region.id);
     if (!item || item.annotation_number !== region.annotation_number || item.scene_id !== scene.sceneId || item.state_id !== scene.stateId || item.region_definition_sha256 !== computeRegionDefinitionSha256(region)) throw new Error(`proposal 未绑定区域 ${region.id} 的编号、scene/state/region identity`);
   }
   const technicalRegions = proposal.technical_analysis?.regions; if (!Array.isArray(technicalRegions) || technicalRegions.length !== expectedRegions.length) throw new Error("proposal.technical_analysis.regions 未完整冻结区域元素");
-  for (const region of expectedRegions) { const item = technicalRegions.find((candidate) => candidate?.region_id === region.id); const regionElements = elements.filter((element) => element.region_id === region.id); if (!item || item.scene_id !== scene.sceneId || item.state_id !== scene.stateId || item.region_definition_sha256 !== computeRegionDefinitionSha256(region)) throw new Error(`proposal technical_analysis 遗漏或篡改区域 ${region.id}`); sameElements(item.decomposition_elements, regionElements, `proposal.technical_analysis.${region.id}.decomposition_elements`); }
+  for (const region of expectedRegions) { const item = technicalRegions.find((candidate) => candidate?.region_id === region.id); const regionElements = elements.filter((element) => element.region_id === region.id); if (!item || item.scene_id !== scene.sceneId || item.state_id !== scene.stateId || item.region_definition_sha256 !== computeRegionDefinitionSha256(region)) throw new Error(`proposal technical_analysis 遗漏或篡改区域 ${region.id}`); sameElementSequence(item.decomposition_elements, regionElements, `proposal.technical_analysis.${region.id}.decomposition_elements`); }
   return { elements, elementIds: decompositionElementIds(elements) };
 }
 
@@ -129,11 +123,11 @@ function sceneContract(manifest, sceneId, stateId) {
 }
 /** 从当前 scene/state 的人工确认记录中取唯一上游身份，并复算 proposal/拆解图文件。 */
 async function resolveDecompositionConfirmation(manifest, sceneId, stateId, projectRoot, args, scene) {
-  const candidates = scene.regions.map((region) => region.confirmation).filter(isObject);
-  if (candidates.length > 0 && candidates.length !== scene.regions.length) throw new Error("当前 scene/state 存在未确认的拆解区域，布局阶段禁止启动");
-  const confirmation = candidates.find((item) => item.confirmation_id === args.decompositionConfirmationId) ?? (candidates.length === 0 ? scene.contract.visual_decomposition_confirmation : null);
+  const regionConfirmations = scene.regions.map((region) => region.confirmation).filter(isObject);
+  if (regionConfirmations.length > 0 && regionConfirmations.length !== scene.regions.length) throw new Error("当前 scene/state 存在未确认的拆解区域，布局阶段禁止启动");
+  const confirmation = regionConfirmations.find((item) => item.confirmation_id === args.decompositionConfirmationId) ?? (regionConfirmations.length === 0 ? scene.contract.visual_decomposition_confirmation : null);
   if (!isObject(confirmation)) throw new Error("当前 scene/state 缺少可复核的拆解确认");
-  for (const item of candidates) {
+  for (const item of regionConfirmations) {
     for (const field of ["confirmation_id", "confirmation_sha256", "proposal_id", "proposal_sha256", "proposal_file", "annotation_file", "annotation_sha256", "decision_record_file", "decision_record_sha256", "user_decision_receipt_file", "user_decision_receipt_sha256"]) if (item[field] !== confirmation[field]) throw new Error(`拆解区域确认 ${field} 不一致，不能拼接未同批确认元素`);
   }
   return validateDecompositionConfirmationFiles(confirmation, scene, args, projectRoot, scene.regions);

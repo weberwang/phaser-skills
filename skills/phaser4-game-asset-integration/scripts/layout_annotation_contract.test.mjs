@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
-import { encodePngRgba } from "./effect_image_raster.mjs";
+import { decodePngRgba, encodePngRgba } from "./effect_image_raster.mjs";
 import { buildDecompositionElements } from "./decomposition-elements.mjs";
 import { colorForLayoutDepth, deriveAutomaticLayoutFacts, deriveLayoutAnnotationRows, deriveLayoutNodesFromDecompositionElements, renderLayoutAnnotation, validateLayoutAnnotationPng } from "./layout_annotation_contract.mjs";
 
@@ -33,6 +33,8 @@ test("布局事实按深度稳定着色，普通叶子不冒充空容器", () =>
   assert.equal(panel.color, colorForLayoutDepth(panel.depth));
   assert.equal(empty.color, colorForLayoutDepth(empty.depth));
   assert.notEqual(panel.color, empty.color);
+  assert.deepEqual(facts.filter((item) => !item.is_root_container).map((item) => item.layout_node_id), ["panel", "empty-slot", "icon"]);
+  assert.deepEqual(panel.child_layout_node_ids, ["empty-slot", "icon"]);
 });
 
 test("一次自动生成独立布局 PNG，右栏包含父子距离和空容器", () => {
@@ -80,4 +82,8 @@ test("同一几何允许不同视觉对齐决策，中心选项不由测量反�
   assert.deepEqual(edged.axis_alignment, { horizontal: "left", vertical: "top" });
   assert.notDeepEqual(centered.offset, edged.offset);
   assert.equal(centered.self_anchor, "center-center");
+});
+
+test("布局 PNG metadata 节点调序必须被拒绝", () => {
+  const canvas = { width: 64, height: 48 }; const context = { targetSha256: ORIGINAL_SHA, sceneId: "main", stateId: "default", decompositionConfirmationId: "decomp-1", decompositionConfirmationSha256: SHA, decompositionProposalSha256: SHA }; const facts = deriveAutomaticLayoutFacts(confirmedNodes(), canvas, context); const rendered = renderLayoutAnnotation(originalPng(), canvas, facts, context); const decoded = decodePngRgba(rendered.bytes); const metadata = structuredClone(decoded.metadata); metadata.nodes.reverse(); const tampered = encodePngRgba(decoded.width, decoded.height, decoded.pixels, metadata); const errors = []; validateLayoutAnnotationPng(tampered, { layoutFacts: facts, ...context }, errors, "layout"); assert(errors.some((item) => item.includes("原顺序")));
 });

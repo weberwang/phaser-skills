@@ -46,9 +46,9 @@ F2 必须由确定性机器验证执行，并绑定当前 baseline/diff 身份�
 
 ## V2 拆解确认与生产方案
 
-当前场景 Work Item 的 V1 冻结目标和初步还原草案有效后进入 V2。V2 不再制作独立 Phaser 候选或要求真人方向审批，而是把 V1 的视觉事实细化为可确认、可执行的还原方案：拆解图、技术 JSON、component×state、父子关系、停靠/对齐关系、布局测量、显示层关系、资源生产路线和容差绑定必须一次成套冻结。
+当前场景 Work Item 的 V1 冻结目标和初步还原草案有效后进入 V2。V2 不再制作独立 Phaser 候选或要求真人方向审批，而是把 V1 的视觉事实细化为可确认、可执行的还原方案，并按两个串行硬门完成：阶段 A 先冻结拆解图、技术 JSON、按序 `decomposition_elements`、component×state 和资源生产事实；阶段 B 仅在拆解确认后补充父子关系、停靠/对齐关系、布局测量、显示层关系和布局容差，冻结后置布局标注图。
 
-V2 布局必须后置于拆解确认：阶段 A 先由冻结原图、区域和组件事实生成拆解图及技术 JSON，并明确机读 `decomposition_elements`；允许人工修改并确认最终拆解。只有 `visual-decomposition-confirmation/1.0` 通过后，智能布局才可结合原图构图、视觉重心和元素语义，为每个确认元素生成显式 `left/center/right × top/center/bottom` 对齐决策；几何测量不得替代该视觉判断。布局入口消费该决策与 `proposal.decomposition_elements`，推导后置布局节点并生成独立布局标注图，不能读取预存 `layout_nodes`。布局决策和布局图都允许人工修改，重新生成后再以 `layout-annotation-confirmation/1.0` 绑定最终图、决策文件及全部上游身份。
+V2 布局必须后置于拆解确认：阶段 A 先由冻结原图、区域和组件事实生成拆解图及技术 JSON，并明确按人工确认顺序排列的 `decomposition_elements`；允许人工修改并确认最终拆解。只有 `visual-decomposition-confirmation/1.0` 通过后，智能布局才可结合原图构图、视觉重心和元素语义，为每个确认元素按原顺序生成唯一的 `left/center/right × top/center/bottom` 对齐决策；几何测量不得替代该视觉判断。布局入口只消费该决策与 `proposal.decomposition_elements`，按原顺序推导后置布局节点并生成独立布局标注图，不能读取预存 `layout_nodes`，也不生成新的视觉参考图或多个布局候选。布局决策和布局图都允许人工修改，重新生成后再以 `layout-annotation-confirmation/1.0` 绑定最终图、决策文件及全部上游身份。
 
 `docs/visual-assets.json` 使用 schema 1.5。普通资产声明 `not-applicable`；效果图还原进入正式生产前声明 `effect-image/v2-ready`，此时冻结目标、合同回对、coverage、拆解图确认和生产方案必需，而 fidelity case 可为空。coverage 必须逐冻结 scene/state 声明目标画布、画布内 region 和完整性摘要，覆盖率为 1、未覆盖列表为空、状态通过且绑定证据；不能用单个微小区域冒充全覆盖。每个固定视觉 region 还要有稳定编号、实现分类和七个生产合同字段；`production_method` 使用 `imagegen`、`authored-raster`、`authored-svg`、`phaser-graphics`、`runtime-program`、`reuse`，`delivery_kind` 使用 `raster-image`、`vector-image`、`runtime-drawing`、`runtime-program`、`existing-asset`。实现分类为 `generate-now`、`reuse-existing`、`runtime-program`，并在冻结效果图标注图中同时呈现。
 

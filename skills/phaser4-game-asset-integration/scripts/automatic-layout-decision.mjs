@@ -4,7 +4,7 @@
  * V2 阶段 B 的自动布局视觉决策合同。
  *
  * 对齐语义由智能视觉判断显式给出，不能由几何距离反推；本模块只负责
- * 验证决策文件与已确认拆解元素一一对应，并把它转换为只读查找表。
+ * 验证决策文件与已确认拆解元素逐项按序对应，并把它转换为只读查找表。
  */
 import { isValidAxisAlignment } from "../../phaser4-game-workflow-control/scripts/layout-node-parent-geometry.mjs";
 
@@ -19,7 +19,7 @@ function nonEmptyString(value) { return typeof value === "string" && value.trim(
 
 /**
  * 校验自动布局的显式视觉决策，并返回 element_id 到双轴对齐的映射。
- * 决策集合必须与确认 proposal 完全相等，防止漏绑、重复或偷偷新增节点。
+ * 决策数组必须与确认 proposal 完全相等且顺序一致，防止漏绑、重复、调序或偷偷新增节点。
  */
 export function validateAutomaticLayoutDecision(document, context = {}, errors = [], label = "automatic_layout_decision") {
   if (!isObject(document)) { errors.push(`${label} 必须是 JSON 对象`); return null; }
@@ -44,8 +44,8 @@ export function validateAutomaticLayoutDecision(document, context = {}, errors =
     if (!isValidAxisAlignment({ horizontal: item.horizontal_alignment, vertical: item.vertical_alignment })) errors.push(`${label}.elements[${index}] 必须声明合法 horizontal_alignment/vertical_alignment`);
     else map.set(item.element_id, { horizontal: item.horizontal_alignment, vertical: item.vertical_alignment });
   }
-  const actualIds = [...seen].sort(); const sortedExpected = [...new Set(expectedIds)].sort();
-  if (expectedIds.length === 0 || new Set(expectedIds).size !== expectedIds.length || JSON.stringify(actualIds) !== JSON.stringify(sortedExpected) || decisions.length !== expectedIds.length) errors.push(`${label}.elements 必须与已确认 decomposition_elements 一一对应`);
+  const actualIds = decisions.map((item) => item?.element_id);
+  if (expectedIds.length === 0 || new Set(expectedIds).size !== expectedIds.length || decisions.length !== expectedIds.length || JSON.stringify(actualIds) !== JSON.stringify(expectedIds)) errors.push(`${label}.elements 必须按原顺序与已确认 decomposition_elements 逐项对应`);
   return errors.length > 0 ? null : map;
 }
 
