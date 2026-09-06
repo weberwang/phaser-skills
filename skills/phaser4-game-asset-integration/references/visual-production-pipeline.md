@@ -48,7 +48,9 @@ F2 必须由确定性机器验证执行，并绑定当前 baseline/diff 身份�
 
 ## V2 拆解确认与生产方案
 
-当前场景 Work Item 的 V1 冻结目标和初步还原草案有效后进入 V2。V2 把 V1 的视觉事实细化为可确认、可执行的还原方案，并按两个串行硬门完成：阶段 A 先冻结拆解图、技术 JSON、按序 `decomposition_elements`、component×state 和资源生产事实；阶段 B 仅在拆解确认后补充父子关系、停靠/对齐关系、布局测量、显示层关系和布局容差，冻结后置布局标注图。
+功能分组遵守[功能语义分组约束](../../phaser4-game-ui-layout/references/functional-semantic-grouping.md)。阶段 A 为每个元素明确 `parent_element_id` 和 `semantic_grouping.kind/rationale`，将区域组织与功能组件内部部件区分开；文字独立登记但归属对应功能组件，不按元素类型集中归组。语义歧义留在拆解审阅，机器不根据距离或最小包含矩形补父级。阶段 B 只继承已确认归属；新增容器或修改归属、理由必须重新拆解确认，不能复用旧布局身份。
+
+当前场景 Work Item 的 V1 冻结目标和初步还原草案有效后进入 V2。V2 把 V1 的视觉事实细化为可确认、可执行的还原方案，并按两个串行硬门完成：阶段 A 先冻结拆解图、技术 JSON、按序 `decomposition_elements`、功能归属与理由、component×state 和资源生产事实；阶段 B 仅在拆解确认后继承功能父子归属，补充停靠/对齐关系、布局测量、显示层关系和布局容差，冻结后置布局标注图。
 
 V2 布局必须后置于拆解确认：阶段 A 先由冻结原图、区域和组件事实生成拆解图及技术 JSON，并明确按人工确认顺序排列的 `decomposition_elements`；允许人工修改并确认最终拆解。只有 `visual-decomposition-confirmation/1.0` 通过后，智能布局才可结合原图构图、视觉重心和元素语义，为每个确认元素按原顺序生成唯一的 `left/center/right × top/center/bottom` 对齐决策；几何测量不得替代该视觉判断。布局入口只消费该决策与 `proposal.decomposition_elements`，按原顺序推导后置布局节点并生成独立布局标注图，不能读取预存 `layout_nodes`，也不生成新的视觉参考图或多个布局候选。布局决策和布局图都允许人工修改，重新生成后再以 `layout-annotation-confirmation/1.0` 绑定最终图、决策文件及全部上游身份。
 

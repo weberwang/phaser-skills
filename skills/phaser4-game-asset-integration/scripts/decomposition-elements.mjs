@@ -5,6 +5,8 @@
  * 几何结果。该模块不读取 layout_decomposition，避免两个阶段共享旧节点。
  */
 
+import { normalizeSemanticGrouping, semanticGroupingOf, validateSemanticGrouping } from "./semantic-grouping-contract.mjs";
+
 const CONTAINER_ROLES = new Set(["container", "parent", "group", "layout-container", "empty-container"]);
 
 /** 判断普通对象。 */
@@ -29,7 +31,8 @@ function normalizeElement(element, region, index = 0) {
   const componentId = field(element, "component_id", "componentId") ?? `${region.id}-component-${index + 1}`;
   const placementId = field(element, "placement_id", "placementId") ?? `${componentId}-placement-${index + 1}`;
   const bounds = field(element, "bounds", "target_bounds", "targetBounds");
-  return { element_id: field(element, "element_id", "elementId") ?? `${region.id}-element-${index + 1}`, element_type: elementType, role: field(element, "role", "layout_role", "layoutRole", "node_type", "nodeType") ?? (nonEmptyString(declaredType) ? declaredType : elementType), bounds: validBounds(bounds) ? copyBounds(bounds) : bounds, scene_id: region.scene_id, state_id: region.state_id, region_id: region.id, component_id: componentId, placement_id: placementId, ...(nonEmptyString(parentElementId(element)) ? { parent_element_id: parentElementId(element) } : {}), empty_container: elementType === "container" && field(element, "empty_container", "emptyContainer") === true };
+  const semanticGrouping = field(element, "semantic_grouping");
+  return { element_id: field(element, "element_id", "elementId") ?? `${region.id}-element-${index + 1}`, element_type: elementType, role: field(element, "role", "layout_role", "layoutRole", "node_type", "nodeType") ?? (nonEmptyString(declaredType) ? declaredType : elementType), bounds: validBounds(bounds) ? copyBounds(bounds) : bounds, scene_id: region.scene_id, state_id: region.state_id, region_id: region.id, component_id: componentId, placement_id: placementId, ...(nonEmptyString(parentElementId(element)) ? { parent_element_id: parentElementId(element) } : {}), ...(semanticGrouping !== undefined ? { semantic_grouping: normalizeSemanticGrouping(semanticGrouping) } : {}), empty_container: field(element, "empty_container", "emptyContainer") === true };
 }
 
 /** 从当前区域生成稳定元素；显式 decomposition_elements 优先，支持人工声明空容器。 */
@@ -39,12 +42,14 @@ function buildRegionElements(region) {
   const components = componentList(region); const elements = [];
   for (const [index, component] of components.entries()) {
     const componentId = field(component, "component_id", "componentId") ?? `${region.id}-component-${index + 1}`; const role = field(component, "role", "layout_role", "layoutRole", "node_type", "nodeType") ?? "component"; const placements = Array.isArray(component?.placements) ? component.placements : []; const container = explicitlyContainer(component); const containerId = `container:${componentId}`;
-    if (container) elements.push(normalizeElement({ element_id: containerId, element_type: "container", role, bounds: field(component, "bounds", "target_bounds", "targetBounds") ?? region.bounds, component_id: componentId, placement_id: `${componentId}-container`, parent_element_id: parentElementId(component), empty_container: placements.length === 0 }, region, index));
+    if (container) elements.push(normalizeElement({ element_id: containerId, element_type: "container", role, bounds: field(component, "bounds", "target_bounds", "targetBounds") ?? region.bounds, component_id: componentId, placement_id: `${componentId}-container`, parent_element_id: parentElementId(component), semantic_grouping: semanticGroupingOf(component), empty_container: placements.length === 0 }, region, index));
     // 显式容器没有 placements 时只保留容器本身；只有普通叶子才需要合成默认子元素。
     const sourcePlacements = placements.length > 0 || container ? placements : [null];
     for (const [placementIndex, placement] of sourcePlacements.entries()) {
       const placementId = field(placement, "placement_id", "placementId") ?? `${componentId}-placement-${placementIndex + 1}`; const elementId = field(placement, "element_id", "elementId") ?? field(placement, "layout_node_id", "layoutNodeId") ?? `${componentId}:${placementId}`; const bounds = field(placement, "bounds", "target_bounds", "targetBounds") ?? field(component, "bounds", "target_bounds", "targetBounds") ?? region.bounds;
-      elements.push(normalizeElement({ element_id: elementId, element_type: "component", role: field(component, "role", "element_type", "elementType") ?? "component", bounds, component_id: componentId, placement_id: placementId, parent_element_id: parentElementId(placement) ?? (container ? containerId : parentElementId(component)) }, region, placementIndex));
+      // 没有 placement 的单实例直接继承 component 自身的显式声明；多实例不按共享资源身份补归属。
+      const source = placement ?? component;
+      elements.push(normalizeElement({ element_id: elementId, element_type: "component", role: field(component, "role", "element_type", "elementType") ?? "component", bounds, component_id: componentId, placement_id: placementId, semantic_grouping: semanticGroupingOf(source), parent_element_id: parentElementId(source) }, region, placementIndex));
     }
   }
   if (elements.length === 0) elements.push(normalizeElement({ element_id: region.id, element_type: "component", role: "component", bounds: region.bounds, component_id: `${region.id}-component`, placement_id: `${region.id}-placement` }, region));
@@ -72,10 +77,10 @@ export function validateDecompositionElements(elements, regions = [], canvas = n
     const region = regionById.get(element.region_id); if (!region) errors.push(`${itemLabel}.region_id 未绑定当前 scene/state 区域`); else { regionIds.add(element.region_id); if (element.scene_id !== region.scene_id || element.state_id !== region.state_id) errors.push(`${itemLabel} scene/state 未绑定所属区域`); if (validBounds(region.bounds) && validBounds(element.bounds) && !containsBounds(region.bounds, element.bounds)) errors.push(`${itemLabel}.bounds 超出所属区域`); }
     if (isObject(canvas) && Number.isFinite(canvas.width) && Number.isFinite(canvas.height) && validBounds(element.bounds) && !containsBounds({ x: 0, y: 0, width: canvas.width, height: canvas.height }, element.bounds)) errors.push(`${itemLabel}.bounds 超出目标画布`);
   }
-  for (const element of elements) if (nonEmptyString(element?.parent_element_id)) { const parent = elementById.get(element.parent_element_id); if (!parent || parent.element_type !== "container") errors.push(`${label}.${element.element_id}.parent_element_id 必须引用已声明容器`); }
+  validateSemanticGrouping(elements, { canvas }, errors, label);
   const expectedRegionIds = [...regionById.keys()].filter(nonEmptyString).sort(); const actualRegionIds = [...regionIds].sort(); if (JSON.stringify(actualRegionIds) !== JSON.stringify(expectedRegionIds)) errors.push(`${label} 未完整覆盖当前 scene/state 区域`);
   return elementById;
 }
 
-/** 判断父容器是否完整包含子元素，用于隐式最小包含父级推导。 */
+/** 判断父容器是否完整包含子元素；只用于验证显式归属，不参与父级推导。 */
 function containsBounds(parent, child) { return child.x >= parent.x && child.y >= parent.y && child.x + child.width <= parent.x + parent.width && child.y + child.height <= parent.y + parent.height; }

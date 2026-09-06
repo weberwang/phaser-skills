@@ -147,6 +147,7 @@
   <script>
     const REVIEW_PAYLOAD = JSON.parse(document.getElementById("layout-review-data").textContent);
     const NAME_RULES = __NAME_RULES__;
+    const SEMANTIC_GROUPING_LABELS = { region: "区域", component: "功能组件", part: "组件部件", standalone: "独立元素" };
     const nodesDocument = REVIEW_PAYLOAD.nodesDocument;
     const bindings = REVIEW_PAYLOAD.bindings;
     const viewport = nodesDocument.viewport;
@@ -260,6 +261,9 @@
       details.appendChild(heading);
       addDetailRow("顺序 / 标记", `${index + 1} / ${node.marker_id || "—"}`);
       addDetailRow("父节点", relationName(node.parent_layout_node_id));
+      const grouping = node.semantic_grouping;
+      addDetailRow("功能分组", grouping?.kind ? `${SEMANTIC_GROUPING_LABELS[grouping.kind] || grouping.kind}（kind=${grouping.kind}）` : "—");
+      addDetailRow("分组理由", grouping?.rationale || "—");
       addDetailRow("子节点", relationNames(node.child_layout_node_ids));
       addDetailRow("水平 / 垂直对齐", formatAlignment(node.axis_alignment));
       addDetailRow("偏移", node.offset ? `x=${node.offset.x ?? "—"}，y=${node.offset.y ?? "—"}` : "—");

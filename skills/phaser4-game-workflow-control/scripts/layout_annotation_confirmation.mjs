@@ -12,6 +12,7 @@ import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { decodePngRgba } from "../../phaser4-game-asset-integration/scripts/effect_image_raster.mjs";
 import { deriveAutomaticLayoutFacts, validateLayoutAnnotationPng } from "../../phaser4-game-asset-integration/scripts/layout_annotation_contract.mjs";
+import { validateDecompositionElements } from "../../phaser4-game-asset-integration/scripts/decomposition-elements.mjs";
 import { validateAutomaticLayoutDecision } from "../../phaser4-game-asset-integration/scripts/automatic-layout-decision.mjs";
 import { computeLayoutReviewIdentitySha256, readAndValidateLayoutReviewPayload, renderLayoutReviewBundle, validateLayoutNodesDocument } from "../../phaser4-game-asset-integration/scripts/layout_review_bundle.mjs";
 
@@ -98,6 +99,37 @@ function expectedLayoutFacts(context, nodesDocument, errors, label) {
   try { return deriveAutomaticLayoutFacts(context.layoutNodes, nodesDocument.viewport, { sceneId: context.sceneId, stateId: context.stateId }); } catch (error) { errors.push(`${label} 无法从当前 layout_nodes 重建 PNG 布局事实：${error.message}`); return null; }
 }
 
+/** 读取提案中用于验证父级/语义的区域边界；不从布局节点反推拆解区域。 */
+function proposalRegions(proposal) {
+  const regions = proposal?.technical_analysis?.regions;
+  if (!Array.isArray(regions)) return [];
+  return regions.map((region) => ({ id: region?.region_id, scene_id: region?.scene_id, state_id: region?.state_id, bounds: region?.bounds }));
+}
+
+/** 读取布局节点的真实元素几何，兼容节点文档中的 target_bounds/bounds 同义位置。 */
+function nodeBounds(node) { return node?.target_bounds ?? node?.targetBounds ?? node?.bounds; }
+
+/** 校验手工布局节点必须逐项继承真实 proposal 的语义归属，禁止改 parent 后复用旧确认。 */
+function validateLayoutNodesAgainstProposal(proposal, nodesDocument, context, errors, label) {
+  const elements = proposal?.decomposition_elements;
+  const regions = proposalRegions(proposal);
+  const elementErrors = [];
+  const elementById = validateDecompositionElements(elements, regions, nodesDocument?.viewport ?? context.viewport, `${label}.proposal.decomposition_elements`, elementErrors);
+  errors.push(...elementErrors);
+  if (!(elementById instanceof Map) || elementById.size !== elements?.length) return;
+  const actualNodes = Array.isArray(nodesDocument?.layout_nodes) ? nodesDocument.layout_nodes : [];
+  if (actualNodes.length !== elements.length) { errors.push(`${label}.layout_nodes 必须与 proposal.decomposition_elements 数量一致`); return; }
+  for (const [index, element] of elements.entries()) {
+    const node = actualNodes[index];
+    const expectedBounds = element.bounds;
+    const expectedContainer = element.element_type === "container";
+    const expectedEmpty = expectedContainer && element.empty_container === true;
+    if (!node || node.layout_node_id !== element.element_id || node.element_id !== element.element_id || node.element_type !== element.element_type || node.is_container !== expectedContainer || node.empty_container !== expectedEmpty || node.parent_layout_node_id !== element.parent_element_id || node.parent_element_id !== element.parent_element_id || canonicalJson(nodeBounds(node)) !== canonicalJson(expectedBounds) || node.scene_id !== element.scene_id || node.state_id !== element.state_id || node.component_id !== element.component_id || node.placement_id !== element.placement_id || canonicalJson(node.semantic_grouping) !== canonicalJson(element.semantic_grouping)) {
+      errors.push(`${label}.layout_nodes[${index}] 未逐项继承 proposal 的元素、bounds、semantic_grouping 或 parent_element_id`);
+    }
+  }
+}
+
 /** 校验 review.html、layout-nodes.json 及其引用文件的真实字节身份。 */
 function validateLayoutReviewFiles(record, context, files, image, errors, label) {
   const { review, nodes, layoutDecision } = files;
@@ -121,10 +153,11 @@ function validateLayoutReviewFiles(record, context, files, image, errors, label)
   if (bindings.decision?.sha256 !== record.layout_decision_sha256 || bindings.nodes?.sha256 !== record.layout_nodes_sha256 || bindings.annotation?.sha256 !== record.layout_annotation_sha256) errors.push(`${label} 未绑定同一批 PNG、节点和布局决策字节`);
   if (computeLayoutReviewIdentitySha256(bindings) !== record.layout_review_identity_sha256) errors.push(`${label}.layout_review_identity_sha256 复算失败`);
   const references = [];
-  for (const [name, item] of [["reference", bindings.reference], ["proposal", bindings.proposal]]) if (isObject(item)) references.push([name, readBoundFile(context.projectRoot, item.file, item.sha256, `${label}.${name}`, errors)]);
+  for (const [name, item] of [["reference", bindings.reference], ["proposal", bindings.proposal]]) if (isObject(item)) references.push([name, readBoundFile(context.projectRoot, item.file, item.sha256, `${label}.${name}`, errors, name === "proposal")]);
   const reference = references.find(([name]) => name === "reference")?.[1]; const proposal = references.find(([name]) => name === "proposal")?.[1];
   if (reference && reference.sha256 !== record.target_sha256) errors.push(`${label}.reference.sha256 未绑定冻结参考图`);
   if (proposal && proposal.sha256 !== record.proposal_sha256) errors.push(`${label}.proposal.sha256 未绑定当前拆解提案`);
+  if (proposal?.json) validateLayoutNodesAgainstProposal(proposal.json, payload.externalNodes, context, errors, label);
   if (layoutDecision && reference && proposal) {
     try {
       const rebuilt = renderLayoutReviewBundle({ nodesDocument: payload.nodesDocument, bindings, originalBytes: reference.bytes, annotationBytes: image?.bytes, nodesBytes: nodes.bytes, decisionBytes: layoutDecision.bytes });

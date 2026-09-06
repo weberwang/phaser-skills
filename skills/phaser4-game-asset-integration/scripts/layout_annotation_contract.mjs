@@ -19,6 +19,7 @@ const SHA_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const ROOT_IDS = new Set(["viewport", "safe-area"]);
 const LAYOUT_MARKER_PATTERN = /^[LR][0-9]{2,}$/;
 const ALIGNMENT_LABELS = Object.freeze({ left: "左", center: "中", right: "右", top: "上", bottom: "下" });
+const SEMANTIC_GROUPING_LABELS = Object.freeze({ region: "区域", component: "功能组件", part: "组件部件", standalone: "独立元素" });
 const PANEL_MIN_WIDTH = 330;
 const PANEL_MAX_WIDTH = 900;
 const PANEL_HORIZONTAL_PADDING = 12;
@@ -81,8 +82,7 @@ function explicitlyContainer(node) {
 }
 /**
  * 将拆解确认中的元素转换为阶段 B 的布局节点。
- * 显式 parent 优先；未声明时选择最小包含容器，否则绑定 viewport，避免布局
- * 阶段 B 不读取预存 layout_decomposition.layout_nodes，也不重新识别原图元素。
+ * 布局阶段只消费已确认的显式 parent，不从几何包含关系选择父级或绑定 viewport；
  * 每个节点还必须接收同一批智能视觉决策给出的双轴对齐，缺失时关闭生成。
  */
 export function deriveLayoutNodesFromDecompositionElements(elements, canvas, context = {}) {
@@ -92,24 +92,7 @@ export function deriveLayoutNodesFromDecompositionElements(elements, canvas, con
   const syntheticRegions = [...new Map(elements.map((element) => [element.region_id, { id: element.region_id, scene_id: element.scene_id, state_id: element.state_id, bounds: canvas }])).values()];
   validateDecompositionElements(elements, syntheticRegions, canvas, "decomposition_elements", validationErrors);
   if (validationErrors.length > 0) throw new Error(validationErrors[0]);
-  const byId = new Map(elements.map((element) => [element.element_id, element]));
-  const containers = elements.filter((element) => element.element_type === "container");
-  const area = (bounds) => bounds.width * bounds.height;
-  const contains = (parent, child) => child.x >= parent.x && child.y >= parent.y && child.x + child.width <= parent.x + parent.width && child.y + child.height <= parent.y + parent.height;
-  const parentOf = (element) => {
-    const explicit = field(element, "parent_element_id", "parentElementId", "parent_id", "parentId");
-    if (explicit !== undefined && explicit !== null && String(explicit).trim() !== "") {
-      const parent = byId.get(explicit);
-      if (!parent || parent.element_type !== "container") throw new Error(`拆解元素 ${element.element_id} 的 parent_element_id 必须引用容器`);
-      return explicit;
-    }
-    // 这里只是在确定父容器时挑选最小包含者，不是生成可供选择的布局候选方案。
-    const containingContainers = containers.filter((candidate) => candidate.element_id !== element.element_id && area(candidate.bounds) > area(element.bounds) && contains(candidate.bounds, element.bounds)).sort((left, right) => area(left.bounds) - area(right.bounds) || left.element_id.localeCompare(right.element_id));
-    return containingContainers[0]?.element_id ?? "viewport";
-  };
-  const parentIds = new Map(elements.map((element) => [element.element_id, parentOf(element)])); const childCounts = new Map(); for (const parentId of parentIds.values()) childCounts.set(parentId, (childCounts.get(parentId) ?? 0) + 1);
-  // empty_container 是拆解确认的显式事实；若与自动推导的直接子项数冲突，必须失败而不能静默改写。
-  for (const element of containers) if (element.empty_container !== ((childCounts.get(element.element_id) ?? 0) === 0)) throw new Error(`拆解容器 ${element.element_id} 的 empty_container 声明与实际直接子项不一致`);
+  const parentIds = new Map(elements.map((element) => [element.element_id, element.parent_element_id]));
   const alignmentDecisions = context.alignmentDecisions ?? context.alignment_decisions;
   const alignmentFor = (element) => {
     const alignment = alignmentDecisions instanceof Map ? alignmentDecisions.get(element.element_id) : alignmentDecisions?.[element.element_id];
@@ -118,7 +101,7 @@ export function deriveLayoutNodesFromDecompositionElements(elements, canvas, con
   };
   return elements.map((element) => {
     const parentId = parentIds.get(element.element_id); const bounds = { ...element.bounds }; const isContainer = element.element_type === "container"; const displayNameZh = field(element, "display_name_zh", "displayNameZh");
-    return { layout_node_id: element.element_id, element_id: element.element_id, element_type: element.element_type, layout_role: element.role, display_name_zh: displayNameZh ?? null, display_name: displayNameZh ?? field(element, "display_name", "displayName", "label", "name") ?? null, parent_layout_node_id: parentId, target_bounds: bounds, bounds, is_container: isContainer, empty_container: isContainer && element.empty_container === true, axis_alignment: alignmentFor(element), scene_id: element.scene_id ?? context.sceneId ?? context.scene_id, state_id: element.state_id ?? context.stateId ?? context.state_id, region_id: element.region_id, component_id: element.component_id, placement_id: element.placement_id };
+    return { layout_node_id: element.element_id, element_id: element.element_id, element_type: element.element_type, layout_role: element.role, display_name_zh: displayNameZh ?? null, display_name: displayNameZh ?? field(element, "display_name", "displayName", "label", "name") ?? null, parent_layout_node_id: parentId, parent_element_id: parentId, target_bounds: bounds, bounds, is_container: isContainer, empty_container: isContainer && element.empty_container === true, semantic_grouping: element.semantic_grouping, axis_alignment: alignmentFor(element), scene_id: element.scene_id ?? context.sceneId ?? context.scene_id, state_id: element.state_id ?? context.stateId ?? context.state_id, region_id: element.region_id, component_id: element.component_id, placement_id: element.placement_id };
   });
 }
 /** 由深度计算确定性的颜色；相邻深度使用不同色相，同层节点复用同一颜色。 */
@@ -177,10 +160,10 @@ export function deriveAutomaticLayoutFacts(layoutNodes, canvas, context = {}) {
     const relative = relativePosition(parentBounds, item.bounds); if (Object.values(relative).some((value) => value < 0)) throw new Error(`布局节点 ${item.id} 超出已确认父容器 bounds`);
     const alignment = field(item.node, "axis_alignment", "axisAlignment"); if (!isValidAxisAlignment(alignment)) throw new Error(`由已确认拆解元素推导的布局节点 ${item.id} 缺少合法显式 axis_alignment`); const offset = axisAlignmentOffset(parentBounds, item.bounds, alignment); const depth = depthOf(item.id); const childIds = (children.get(item.id) ?? []).slice(); const isContainer = childIds.length > 0 || explicitlyContainer(item.node); const selfAnchor = field(item.node, "self_anchor", "selfAnchor") ?? `${alignment.vertical}-${alignment.horizontal}`; const referenceAnchor = field(item.node, "reference_anchor", "referenceAnchor") ?? `${alignment.vertical}-${alignment.horizontal}`;
     const displayNameZh = field(item.node, "display_name_zh", "displayNameZh");
-    facts.push({ layout_node_id: item.id, element_id: field(item.node, "element_id", "elementId", "region_id", "regionId") ?? item.id, display_name_zh: displayNameZh ?? null, display_name: displayNameZh ?? field(item.node, "display_name", "displayName", "label", "name") ?? null, layout_role: field(item.node, "layout_role", "layoutRole", "role", "node_type", "nodeType") ?? null, parent_layout_node_id: item.parentId, reference_id: item.parentId, parent_target_bounds: parentBounds, depth, color: colorForLayoutDepth(depth), bounds: item.bounds, target_bounds: item.bounds, is_container: isContainer, empty_container: isContainer && childIds.length === 0, child_layout_node_ids: childIds, relative_position: relative, axis_alignment: alignment, offset, self_anchor: selfAnchor, reference_anchor: referenceAnchor, docking: { horizontal: alignment.horizontal, vertical: alignment.vertical, self_anchor: selfAnchor, reference_anchor: referenceAnchor, offset }, is_root_container: false });
+    facts.push({ layout_node_id: item.id, element_id: field(item.node, "element_id", "elementId", "region_id", "regionId") ?? item.id, element_type: field(item.node, "element_type", "elementType") ?? (isContainer ? "container" : "component"), display_name_zh: displayNameZh ?? null, display_name: displayNameZh ?? field(item.node, "display_name", "displayName", "label", "name") ?? null, layout_role: field(item.node, "layout_role", "layoutRole", "role", "node_type", "nodeType") ?? null, parent_layout_node_id: item.parentId, parent_element_id: field(item.node, "parent_element_id", "parentElementId") ?? item.parentId, reference_id: item.parentId, parent_target_bounds: parentBounds, depth, color: colorForLayoutDepth(depth), bounds: item.bounds, target_bounds: item.bounds, is_container: isContainer, empty_container: isContainer && childIds.length === 0, semantic_grouping: field(item.node, "semantic_grouping") ?? null, region_id: field(item.node, "region_id", "regionId") ?? null, component_id: field(item.node, "component_id", "componentId") ?? null, placement_id: field(item.node, "placement_id", "placementId") ?? null, child_layout_node_ids: childIds, relative_position: relative, axis_alignment: alignment, offset, self_anchor: selfAnchor, reference_anchor: referenceAnchor, docking: { horizontal: alignment.horizontal, vertical: alignment.vertical, self_anchor: selfAnchor, reference_anchor: referenceAnchor, offset }, is_root_container: false });
   }
   for (const rootId of rootIds) {
-    const childIds = (children.get(rootId) ?? []).slice(); facts.push({ layout_node_id: rootId, element_id: rootId, display_name: rootId === "safe-area" ? "安全区域" : "根视口", layout_role: "root", parent_layout_node_id: null, reference_id: null, parent_target_bounds: null, depth: 0, color: colorForLayoutDepth(0), bounds: rootBounds, target_bounds: rootBounds, is_container: true, empty_container: childIds.length === 0, child_layout_node_ids: childIds, relative_position: null, axis_alignment: null, offset: null, self_anchor: null, reference_anchor: null, docking: null, is_root_container: true });
+    const childIds = (children.get(rootId) ?? []).slice(); facts.push({ layout_node_id: rootId, element_id: rootId, display_name: rootId === "safe-area" ? "安全区域" : "根视口", layout_role: "root", parent_layout_node_id: null, parent_element_id: null, reference_id: null, parent_target_bounds: null, depth: 0, color: colorForLayoutDepth(0), bounds: rootBounds, target_bounds: rootBounds, is_container: true, empty_container: childIds.length === 0, semantic_grouping: null, child_layout_node_ids: childIds, relative_position: null, axis_alignment: null, offset: null, self_anchor: null, reference_anchor: null, docking: null, is_root_container: true });
   }
   return assignLayoutMarkers(facts.map((fact) => ({ ...fact, scene_id: context.sceneId ?? context.scene_id ?? null, state_id: context.stateId ?? context.state_id ?? null })));
 }
@@ -198,7 +181,9 @@ function displayNodeName(fact) { const id = String(fact.layout_node_id); const d
 function layoutNodeDescription(fact) {
   if (fact.is_root_container) return `根视口 [${fact.marker_id}]（id=${fact.layout_node_id}；无上级）`;
   const kind = fact.is_container ? "父容器" : "子组件"; const parent = fact.parent_marker_id ?? fact.parent_layout_node_id; const distance = fact.relative_position;
-  return `${kind} [${fact.marker_id}]${fact.empty_container ? "（空容器）" : ""}（父：[${parent}]） 停靠=${alignmentDescription(fact.axis_alignment)}；自身锚点=${fact.self_anchor}；父锚点=${fact.reference_anchor}；偏移=x=${fact.offset.x}/y=${fact.offset.y}；标识=${displayNodeName(fact)}；辅助距离 left=${distance.left} right=${distance.right} top=${distance.top} bottom=${distance.bottom}`;
+  // 仅折叠展示文本中的换行；确认理由原文仍完整保留在节点与身份中。
+  const grouping = fact.semantic_grouping; const groupingText = isObject(grouping) ? `；功能分组=${SEMANTIC_GROUPING_LABELS[grouping.kind] ?? grouping.kind}（kind=${grouping.kind}）；分组理由=${String(grouping.rationale ?? "").replace(/\s+/gu, " ")}` : "；功能分组=缺失";
+  return `${kind} [${fact.marker_id}]${fact.empty_container ? "（空容器）" : ""}（父：[${parent}]）${groupingText} 停靠=${alignmentDescription(fact.axis_alignment)}；自身锚点=${fact.self_anchor}；父锚点=${fact.reference_anchor}；偏移=x=${fact.offset.x}/y=${fact.offset.y}；标识=${displayNodeName(fact)}；辅助距离 left=${distance.left} right=${distance.right} top=${distance.top} bottom=${distance.bottom}`;
 }
 /** 把颜色、距离和停靠事实展开为人工可读的右栏行。 */
 export function deriveLayoutAnnotationRows(facts) {
@@ -320,7 +305,7 @@ export function validateLayoutAnnotationPng(bytes, expected = {}, errors = [], l
   if (!Array.isArray(metadata.visible_rows) || metadata.visible_rows.length === 0 || metadata.visible_rows.some((row) => !isObject(row)) || metadata.panel_content_complete !== true) { errors.push(`${label} 右侧说明栏必须完整落盘`); return null; }
   const expectedFactsRaw = expected.layoutNodes ? deriveAutomaticLayoutFacts(expected.layoutNodes, { width: metadata.original_width, height: metadata.original_height }, expected) : expected.layoutFacts; const expectedFacts = Array.isArray(expectedFactsRaw) ? (expectedFactsRaw.every((fact) => LAYOUT_MARKER_PATTERN.test(String(fact?.marker_id ?? ""))) ? expectedFactsRaw : assignLayoutMarkers(expectedFactsRaw)) : null;
   if (Array.isArray(expectedFacts)) {
-    const projectFact = (fact) => ({ layout_node_id: fact.layout_node_id, element_id: fact.element_id, display_name_zh: fact.display_name_zh ?? null, display_name: fact.display_name ?? null, layout_role: fact.layout_role ?? null, parent_layout_node_id: fact.parent_layout_node_id, parent_marker_id: fact.parent_marker_id ?? null, marker_id: fact.marker_id, depth: fact.depth, color: fact.color, bounds: fact.bounds, is_container: fact.is_container, empty_container: fact.empty_container, child_layout_node_ids: fact.child_layout_node_ids, relative_position: fact.relative_position, axis_alignment: fact.axis_alignment, offset: fact.offset, self_anchor: fact.self_anchor, reference_anchor: fact.reference_anchor, docking: fact.docking ?? null, is_root_container: fact.is_root_container === true });
+    const projectFact = (fact) => ({ layout_node_id: fact.layout_node_id, element_id: fact.element_id, element_type: fact.element_type ?? (fact.is_container ? "container" : "component"), display_name_zh: fact.display_name_zh ?? null, display_name: fact.display_name ?? null, layout_role: fact.layout_role ?? null, parent_layout_node_id: fact.parent_layout_node_id, parent_element_id: fact.parent_element_id ?? fact.parent_layout_node_id ?? null, parent_marker_id: fact.parent_marker_id ?? null, marker_id: fact.marker_id, depth: fact.depth, color: fact.color, bounds: fact.bounds, is_container: fact.is_container, empty_container: fact.empty_container, semantic_grouping: fact.semantic_grouping ?? null, region_id: fact.region_id ?? null, component_id: fact.component_id ?? null, placement_id: fact.placement_id ?? null, child_layout_node_ids: fact.child_layout_node_ids, relative_position: fact.relative_position, axis_alignment: fact.axis_alignment, offset: fact.offset, self_anchor: fact.self_anchor, reference_anchor: fact.reference_anchor, docking: fact.docking ?? null, is_root_container: fact.is_root_container === true });
     const actualProjection = Array.isArray(metadata.nodes) ? metadata.nodes.map(projectFact) : []; const expectedProjection = expectedFacts.map(projectFact); if (canonicalJson(actualProjection) !== canonicalJson(expectedProjection)) errors.push(`${label}.nodes 必须按已确认 decomposition_elements 原顺序完整绑定布局关系`);
     const expectedMarkerMap = expectedFacts.map((fact) => ({ marker_id: fact.marker_id, layout_node_id: fact.layout_node_id, element_id: fact.element_id, parent_layout_node_id: fact.parent_layout_node_id, parent_marker_id: fact.parent_marker_id ?? null, is_root_container: fact.is_root_container === true })); if (canonicalJson(metadata.marker_map) !== canonicalJson(expectedMarkerMap)) errors.push(`${label}.marker_map 必须一一绑定编号、元素和父编号`); const markers = (metadata.nodes ?? []).map((fact) => fact.marker_id); if (new Set(markers).size !== markers.length || markers.some((marker) => !LAYOUT_MARKER_PATTERN.test(String(marker)))) errors.push(`${label} 节点编号必须唯一且使用 Lxx/Rxx 格式`);
     const expectedRows = deriveLayoutAnnotationRows(expectedFacts); const actualRows = metadata.visible_rows;

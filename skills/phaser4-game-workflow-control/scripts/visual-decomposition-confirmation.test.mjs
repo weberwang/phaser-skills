@@ -6,7 +6,8 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { computeRegionDefinitionSha256 } from "../../phaser4-game-asset-integration/scripts/effect_image_annotation_core.mjs";
-import { encodePngRgba } from "../../phaser4-game-asset-integration/scripts/effect_image_raster.mjs";
+import { decodePngRgba, encodePngRgba } from "../../phaser4-game-asset-integration/scripts/effect_image_raster.mjs";
+import { buildDecompositionElements } from "../../phaser4-game-asset-integration/scripts/decomposition-elements.mjs";
 import { buildVisualConfirmationAuthorityByRegion, computeVisualAnnotationIdentitySha256, computeVisualAnnotationMetadataSha256, computeVisualConfirmationSha256, computeVisualUserMessageSha256, validateFixedVisualProductionMethod, validateVisualDecompositionConfirmationBinding, validateVisualDecompositionConfirmationRecord, validateVisualDecompositionConfirmations } from "./visual-decomposition-confirmation.mjs";
 import { validateVisualConfirmationReferences, visualConfirmationAuthority } from "./visual-confirmation-authority.mjs";
 
@@ -39,6 +40,8 @@ function decompositionRegion(overrides = {}) {
     production_method: "imagegen",
     delivery_kind: "raster-image",
     image_generation_required: true,
+    bounds: { x: 0, y: 0, width: 2, height: 1 },
+    decomposition_elements: [{ element_id: "button-element", element_type: "component", role: "button", bounds: { x: 0, y: 0, width: 2, height: 1 }, parent_element_id: "viewport", semantic_grouping: { kind: "standalone", rationale: "完整按钮图形在该区域独立布局" }, component_id: "button-1", placement_id: "button-placement", empty_container: false }],
     implementation_plan: { mode: "generate-now" },
     component_inventory: {
       components: [{ component_id: "button-1", state_coverage: [{ state_id: "default" }] }],
@@ -107,6 +110,7 @@ function confirmedFixture(region) {
   mkdirSync(evidenceDir, { recursive: true }); mkdirSync(resolutionDir, { recursive: true });
   const acceptedAt = new Date(Date.now() - 60_000).toISOString();
   const createdAt = new Date(Date.now() - 120_000).toISOString();
+  const decompositionElements = buildDecompositionElements([region]);
   const annotationFile = join(evidenceDir, "buttons-annotated.png");
   const snapshot = {
     annotation_number: region.annotation_number,
@@ -123,19 +127,23 @@ function confirmedFixture(region) {
     asset_requirement_ids: ["req-button-1"],
     asset_ids: [],
   };
-  const metadata = { schema: "effect-image-annotation/png/1", layout: "image-plus-right-panel", width: 2, height: 1, panel_content_complete: true, original_sha256: HASH, regions: [snapshot] };
+  const metadataSnapshot = { ...snapshot, decomposition_elements: decompositionElements };
+  const metadata = { schema: "effect-image-annotation/png/1", layout: "image-plus-right-panel", width: 2, height: 1, original_width: 2, original_height: 1, panel_content_complete: true, original_sha256: HASH, regions: [metadataSnapshot] };
   const annotationBytes = encodePngRgba(2, 1, Buffer.from([20, 30, 40, 255, 50, 60, 70, 200]), metadata);
   writeFileSync(annotationFile, annotationBytes);
   const annotationSha = `sha256:${createHash("sha256").update(annotationBytes).digest("hex")}`;
   const metadataSha = computeVisualAnnotationMetadataSha256(metadata);
   const annotationIdentity = computeVisualAnnotationIdentitySha256(annotationSha, 2, 1, metadataSha, metadata.schema, metadata.layout);
+  const technicalRegion = { annotation_number: region.annotation_number, region_id: region.id, scene_id: region.scene_id, state_id: region.state_id, region_definition_sha256: computeRegionDefinitionSha256(region), bounds: region.bounds, decomposition_elements: decompositionElements };
   const proposal = {
     proposal_id: "proposal-buttons-1",
     target_sha256: HASH,
     annotation_file: "evidence/visual/buttons-annotated.png",
     annotation_sha256: annotationSha,
     created_at: createdAt,
+    decomposition_elements: decompositionElements,
     regions: [snapshot],
+    technical_analysis: { schema_version: "1", decomposition_elements: decompositionElements, regions: [technicalRegion] },
   };
   const proposalBytes = Buffer.from(JSON.stringify(proposal));
   writeFileSync(join(evidenceDir, "buttons-proposal.json"), proposalBytes);
@@ -212,7 +220,7 @@ function confirmedFixture(region) {
     manifest,
     projectRoot,
     ledger,
-    options: { ...authority, sceneId: region.scene_id, stateId: region.state_id, annotationNumber: region.annotation_number, regionId: region.id, regionDefinitionSha256: computeRegionDefinitionSha256(region), authority, authorityByRegion: buildVisualConfirmationAuthorityByRegion({ coverage_audit: { regions: [region] } }, authority) },
+    options: { ...authority, sceneId: region.scene_id, stateId: region.state_id, annotationNumber: region.annotation_number, regionId: region.id, regionDefinitionSha256: computeRegionDefinitionSha256(region), authority, allRegions: [region], authorityByRegion: buildVisualConfirmationAuthorityByRegion({ coverage_audit: { regions: [region] } }, authority) },
   };
 }
 
@@ -220,11 +228,13 @@ function confirmedFixture(region) {
 function appendConfirmedGroup(valid, region, prefix) {
   const evidenceDir = join(valid.projectRoot, "evidence", "visual");
   const acceptedAt = new Date(Date.now() - 60_000).toISOString(); const createdAt = new Date(Date.now() - 120_000).toISOString();
+  const decompositionElements = buildDecompositionElements([region]);
   const snapshot = { annotation_number: region.annotation_number, region_id: region.id, scene_id: region.scene_id, state_id: region.state_id, region_definition_sha256: computeRegionDefinitionSha256(region), production_origin: region.production_origin, production_method: region.production_method, delivery_kind: region.delivery_kind, production_label: "本次生成", component_ids: ["button-1"], state_ids: [region.state_id], asset_requirement_ids: ["req-button-1"], asset_ids: [] };
-  const metadata = { schema: "effect-image-annotation/png/1", layout: "image-plus-right-panel", width: 2, height: 1, panel_content_complete: true, original_sha256: HASH, regions: [snapshot] };
+  const metadataSnapshot = { ...snapshot, decomposition_elements: decompositionElements };
+  const metadata = { schema: "effect-image-annotation/png/1", layout: "image-plus-right-panel", width: 2, height: 1, original_width: 2, original_height: 1, panel_content_complete: true, original_sha256: HASH, regions: [metadataSnapshot] };
   const annotationFile = `evidence/visual/${prefix}-annotated.png`; const annotationBytes = encodePngRgba(2, 1, Buffer.from([80, 90, 100, 255, 110, 120, 130, 200]), metadata); writeFileSync(join(valid.projectRoot, annotationFile), annotationBytes);
   const annotationSha = `sha256:${createHash("sha256").update(annotationBytes).digest("hex")}`; const metadataSha = computeVisualAnnotationMetadataSha256(metadata); const annotationIdentity = computeVisualAnnotationIdentitySha256(annotationSha, 2, 1, metadataSha, metadata.schema, metadata.layout);
-  const proposalFile = `evidence/visual/${prefix}-proposal.json`; const proposal = { proposal_id: `${prefix}-proposal`, target_sha256: HASH, annotation_file: annotationFile, annotation_sha256: annotationSha, created_at: createdAt, regions: [snapshot] }; const proposalBytes = Buffer.from(JSON.stringify(proposal)); writeFileSync(join(valid.projectRoot, proposalFile), proposalBytes); const proposalSha = `sha256:${createHash("sha256").update(proposalBytes).digest("hex")}`;
+  const proposalFile = `evidence/visual/${prefix}-proposal.json`; const technicalRegion = { annotation_number: region.annotation_number, region_id: region.id, scene_id: region.scene_id, state_id: region.state_id, region_definition_sha256: computeRegionDefinitionSha256(region), bounds: region.bounds, decomposition_elements: decompositionElements }; const proposal = { proposal_id: `${prefix}-proposal`, target_sha256: HASH, annotation_file: annotationFile, annotation_sha256: annotationSha, created_at: createdAt, decomposition_elements: decompositionElements, regions: [snapshot], technical_analysis: { schema_version: "1", decomposition_elements: decompositionElements, regions: [technicalRegion] } }; const proposalBytes = Buffer.from(JSON.stringify(proposal)); writeFileSync(join(valid.projectRoot, proposalFile), proposalBytes); const proposalSha = `sha256:${createHash("sha256").update(proposalBytes).digest("hex")}`;
   const userText = `确认 ${region.scene_id}/${region.state_id} 的独立拆解并进入图片生产。`; const decisionFile = `evidence/visual/${prefix}-decision.json`; const decision = { status: "accepted", confirmation_mode: "manual", confirmation_id: `${prefix}-confirmation`, proposal_id: proposal.proposal_id, proposal_sha256: proposalSha, user_statement: userText, user_message_sha256: computeVisualUserMessageSha256(userText), accepted_at: acceptedAt, target_sha256: HASH, work_item_id: "work-item-1", candidate_version: "candidate-1", candidate_sha256: HASH, regions: [snapshot] }; const decisionBytes = Buffer.from(JSON.stringify(decision)); writeFileSync(join(valid.projectRoot, decisionFile), decisionBytes); const decisionSha = `sha256:${createHash("sha256").update(decisionBytes).digest("hex")}`;
   const receiptFile = `.phaser-workflow/user-resolutions/${prefix}-receipt.json`; const receipt = { message_id: `${prefix}-message`, thread_id: `${prefix}-thread`, author_role: "user", user_message_sha256: computeVisualUserMessageSha256(userText), decision_record_sha256: decisionSha, accepted_at: acceptedAt, work_item_id: "work-item-1", candidate_version: "candidate-1", candidate_sha256: HASH, target_sha256: HASH, scene_id: region.scene_id, state_id: region.state_id, task_authorization_id: "task-auth-1", resolution_id: `${prefix}-resolution`, resolution_status: "resolved", resolved_from: "USER_INPUT_REQUIRED", user_statement: userText }; const receiptBytes = Buffer.from(JSON.stringify(receipt)); writeFileSync(join(valid.projectRoot, receiptFile), receiptBytes); const receiptSha = `sha256:${createHash("sha256").update(receiptBytes).digest("hex")}`;
   const record = confirmationFor(region, { confirmation_id: `${prefix}-confirmation`, proposal_id: proposal.proposal_id, proposal_file: proposalFile, proposal_sha256: proposalSha, annotation_file: annotationFile, annotation_sha256: annotationSha, annotation_width: 2, annotation_height: 1, annotation_metadata_sha256: metadataSha, annotation_identity_sha256: annotationIdentity, decision_record_file: decisionFile, decision_record_sha256: decisionSha, user_decision_receipt_file: receiptFile, user_decision_receipt_sha256: receiptSha, user_original_text: userText, user_message_sha256: computeVisualUserMessageSha256(userText), accepted_at: acceptedAt, component_ids: ["button-1"], state_ids: [region.state_id] }); record.confirmation_sha256 = computeVisualConfirmationSha256(record);
@@ -246,6 +256,65 @@ test("拆解分析图必须由人工 accepted 确认，AUTO、pending 和旧记�
     const errors = validateVisualDecompositionConfirmationRecord({ ...valid.record, ...overrides }, region, { stage: "V3" }, valid.options);
     assert(errors.length > 0, JSON.stringify(overrides));
   }
+});
+
+test("真实确认文件门拒绝旧 proposal 复用时的语义理由变更", () => {
+  const region = decompositionRegion();
+  const valid = confirmedFixture(region);
+  const proposalPath = join(valid.projectRoot, valid.record.proposal_file);
+  const proposal = JSON.parse(readFileSync(proposalPath, "utf8"));
+  proposal.decomposition_elements[0].semantic_grouping.rationale = "未重新确认的旧提案理由";
+  writeFileSync(proposalPath, JSON.stringify(proposal));
+  const errors = validateVisualDecompositionConfirmationRecord(valid.record, region, { stage: "V3" }, valid.options);
+  assert(errors.some((message) => message.includes("SHA-256") || message.includes("语义元素")));
+});
+
+test("真实确认文件门在更新全部 SHA 后仍拒绝 PNG 缺失 decomposition_elements", () => {
+  const region = decompositionRegion();
+  const valid = confirmedFixture(region);
+  const annotationPath = join(valid.projectRoot, valid.record.annotation_file);
+  const annotation = decodePngRgba(readFileSync(annotationPath));
+  delete annotation.metadata.regions[0].decomposition_elements;
+  const annotationBytes = encodePngRgba(annotation.width, annotation.height, annotation.pixels, annotation.metadata);
+  writeFileSync(annotationPath, annotationBytes);
+  const annotationSha = `sha256:${createHash("sha256").update(annotationBytes).digest("hex")}`;
+  const metadataSha = computeVisualAnnotationMetadataSha256(annotation.metadata);
+  const annotationIdentity = computeVisualAnnotationIdentitySha256(annotationSha, annotation.width, annotation.height, metadataSha, annotation.metadata.schema, annotation.metadata.layout);
+
+  const proposalPath = join(valid.projectRoot, valid.record.proposal_file);
+  const proposal = JSON.parse(readFileSync(proposalPath, "utf8"));
+  proposal.annotation_sha256 = annotationSha;
+  const proposalBytes = Buffer.from(JSON.stringify(proposal));
+  writeFileSync(proposalPath, proposalBytes);
+  const proposalSha = `sha256:${createHash("sha256").update(proposalBytes).digest("hex")}`;
+  const decisionPath = join(valid.projectRoot, valid.record.decision_record_file);
+  const decision = JSON.parse(readFileSync(decisionPath, "utf8"));
+  decision.proposal_sha256 = proposalSha;
+  const decisionBytes = Buffer.from(JSON.stringify(decision));
+  writeFileSync(decisionPath, decisionBytes);
+  const decisionSha = `sha256:${createHash("sha256").update(decisionBytes).digest("hex")}`;
+  const receiptPath = join(valid.projectRoot, valid.record.user_decision_receipt_file);
+  const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+  receipt.decision_record_sha256 = decisionSha;
+  const receiptBytes = Buffer.from(JSON.stringify(receipt));
+  writeFileSync(receiptPath, receiptBytes);
+  const receiptSha = `sha256:${createHash("sha256").update(receiptBytes).digest("hex")}`;
+  Object.assign(valid.record, { annotation_sha256: annotationSha, annotation_metadata_sha256: metadataSha, annotation_identity_sha256: annotationIdentity, proposal_sha256: proposalSha, decision_record_sha256: decisionSha, user_decision_receipt_sha256: receiptSha });
+  valid.record.confirmation_sha256 = computeVisualConfirmationSha256(valid.record);
+
+  const entry = valid.ledger.entries[0];
+  Object.assign(entry, { annotation_sha256: annotationSha, annotation_metadata_sha256: metadataSha, annotation_identity_sha256: annotationIdentity, proposal_sha256: proposalSha, receipt_sha256: receiptSha, decision_record_sha256: decisionSha });
+  entry.entry_sha256 = canonicalSha(entry, "entry_sha256");
+  valid.ledger.ledger_sha256 = canonicalSha(valid.ledger, "ledger_sha256");
+  writeFileSync(join(valid.projectRoot, valid.work.visualConfirmationAuthorityRefs[0].ledger_file), JSON.stringify(valid.ledger));
+  valid.work.visualConfirmationAuthorityRefs[0].receipt_sha256 = receiptSha;
+  // 此用例只验证内容绑定，先冻结新的测试基线，避免被更早的 Git blob 漂移检查截断。
+  valid.work.baselineHash = freezeBaseline(valid.projectRoot);
+  const authority = visualConfirmationAuthority(valid.work, valid.manifest, { projectRoot: valid.projectRoot, checkFiles: true });
+  assert.deepEqual(authority.loaderErrors ?? [], []);
+  const options = { ...valid.options, ...authority, authority, allRegions: [region], authorityByRegion: buildVisualConfirmationAuthorityByRegion({ coverage_audit: { regions: [region] } }, authority) };
+  const errors = validateVisualDecompositionConfirmationRecord(valid.record, region, { stage: "V3" }, options);
+  assert(errors.some((message) => message.includes("annotation-meta.regions.decomposition_elements") || message.includes("语义元素")), errors.join("；"));
 });
 
 test("人工确认必须绑定当前编号、区域定义 SHA、原子部件/状态/资产需求", () => {

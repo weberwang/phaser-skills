@@ -5,6 +5,8 @@ description: 为 Phaser 4 游戏建立可验证的 UI 布局合同、坐标空�
 
 # Phaser 4 游戏 UI 布局
 
+效果图 V2 拆解与布局遵守[功能语义分组约束](references/functional-semantic-grouping.md)：先人工确认功能归属与理由，再生成停靠方案；禁止按文字类型或几何最小包含关系自动归父级。
+
 ## 全局控制接入
 
 控制面边界：可提议、可审查、可在已建立且任务授权有效的 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审计和状态迁移；仅实际 A4-A6 操作请求批准。

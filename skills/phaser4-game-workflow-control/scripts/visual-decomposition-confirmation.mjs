@@ -12,6 +12,7 @@ import { existsSync, statSync, readFileSync, realpathSync } from "node:fs";
 import { resolve, relative, isAbsolute } from "node:path";
 import { computeRegionDefinitionSha256, normalizeVisualRegionDefinition } from "../../phaser4-game-asset-integration/scripts/effect_image_annotation_core.mjs";
 import { decodePngRgba } from "../../phaser4-game-asset-integration/scripts/effect_image_raster.mjs";
+import { validateDecompositionElements } from "../../phaser4-game-asset-integration/scripts/decomposition-elements.mjs";
 import { deriveAtomicImageRequirements, normalizeAtomicImageRequirements } from "./visual-atomic-contract.mjs";
 import { isTrustedVisualConfirmationAuthority, visualConfirmationGroupKey } from "./visual-confirmation-authority.mjs";
 import { VISUAL_FIXED_IMAGE_METHODS as FIXED_VISUAL_IMAGE_METHODS, VISUAL_PROGRAM_METHODS as PROGRAM_VISUAL_METHODS } from "./visual-contract-core.mjs";
@@ -150,6 +151,31 @@ function validateConfirmationRegionSet(observed, regions, context, errors, label
   const expected = regions.map(regionSnapshot).sort((left, right) => `${left.annotation_number}\0${left.region_id}`.localeCompare(`${right.annotation_number}\0${right.region_id}`));
   const actual = observed.slice().sort((left, right) => `${left?.annotation_number}\0${left?.region_id}`.localeCompare(`${right?.annotation_number}\0${right?.region_id}`));
   if (JSON.stringify(actual) !== JSON.stringify(expected)) errors.push(confirmationError(context, `${label} 未完整冻结全部编号、生产标签、组件、状态和资产需求`, { missing: label }));
+}
+/** 校验真实 proposal 的显式元素、父级和技术分析投影，防止只改布局节点绕过拆解确认。 */
+function validateProposalDecompositionElements(proposal, regions, canvas, context, errors, annotationMetadata) {
+  const elements = proposal?.decomposition_elements;
+  const elementErrors = [];
+  const elementById = validateDecompositionElements(elements, regions, canvas, "proposal_file.decomposition_elements", elementErrors);
+  errors.push(...elementErrors.map((message) => confirmationError(context, message, { missing: "proposal.decomposition_elements" })));
+  if (!(elementById instanceof Map) || elementById.size !== elements?.length) return;
+  const technical = proposal?.technical_analysis;
+  if (!isObject(technical) || !Array.isArray(technical.decomposition_elements)) {
+    errors.push(confirmationError(context, "proposal_file.technical_analysis.decomposition_elements 必须完整保留已确认元素", { missing: "proposal.technical_analysis.decomposition_elements" }));
+  } else if (canonicalJson(technical.decomposition_elements) !== canonicalJson(elements)) {
+    errors.push(confirmationError(context, "proposal_file technical_analysis 的语义元素/父级与顶层 proposal 不一致", { missing: "proposal.technical_analysis.decomposition_elements" }));
+  }
+  const metadataRegions = annotationMetadata?.regions;
+  const metadataElements = Array.isArray(metadataRegions) ? metadataRegions.flatMap((item) => Array.isArray(item?.decomposition_elements) ? item.decomposition_elements : []) : [];
+  if (!Array.isArray(metadataRegions) || canonicalJson(metadataElements) !== canonicalJson(elements)) errors.push(confirmationError(context, "proposal_file.decomposition_elements 未绑定拆解图中的同一语义元素顺序", { missing: "annotation-meta.regions.decomposition_elements" }));
+  const technicalRegions = Array.isArray(technical?.regions) ? technical.regions : [];
+  for (const region of regions) {
+    const expected = elements.filter((element) => element.region_id === regionIdOf(region));
+    const item = technicalRegions.find((candidate) => candidate?.region_id === regionIdOf(region));
+    if (!item || canonicalJson(item.decomposition_elements) !== canonicalJson(expected)) errors.push(confirmationError({ ...context, annotation_number: region.annotation_number, region_id: regionIdOf(region) }, "proposal_file technical_analysis 区域未保留同一语义元素与父级", { missing: "technical_analysis.regions.decomposition_elements" }));
+    const metadataRegion = Array.isArray(metadataRegions) ? metadataRegions.find((candidate) => candidate?.region_id === regionIdOf(region)) : null;
+    if (!metadataRegion || canonicalJson(metadataRegion.decomposition_elements) !== canonicalJson(expected)) errors.push(confirmationError({ ...context, annotation_number: region.annotation_number, region_id: regionIdOf(region) }, "拆解图 metadata 未逐区域绑定同一语义元素与父级", { missing: "annotation-meta.region.decomposition_elements" }));
+  }
 }
 /** 生成 Implementation Package 需要携带的带确认身份区域快照。 */
 function packageRegionSnapshot(region = {}) {
@@ -323,10 +349,14 @@ export function validateVisualDecompositionConfirmationRecord(record, region, co
   if (authority.checkFiles === true && nonEmptyString(authority.projectRoot)) {
     const annotation = readConfirmationFile(authority.projectRoot, record.annotation_file, record.annotation_sha256, "annotation_file", local, errors);
     let annotationIdentity;
+    let annotationMetadata = null;
+    let annotationCanvas = null;
     if (annotation) {
       try {
         const decoded = decodePngRgba(annotation.bytes);
         const metadata = decoded.metadata;
+        annotationMetadata = metadata;
+        if (Number.isFinite(metadata?.original_width) && Number.isFinite(metadata?.original_height)) annotationCanvas = { width: metadata.original_width, height: metadata.original_height };
         if (!isObject(metadata) || metadata.schema !== "effect-image-annotation/png/1" || metadata.layout !== "image-plus-right-panel" || metadata.width !== decoded.width || metadata.height !== decoded.height || metadata.panel_content_complete !== true || !Array.isArray(metadata.regions)) error("annotation_file 必须包含完整标准重建 metadata（schema/layout/尺寸/regions）", { missing: "annotation-meta" });
         if (!isObject(metadata) || !isSha256(metadata.original_sha256)) error("annotation_file metadata 缺少冻结原图 original_sha256", { missing: "annotation-meta.original_sha256" });
         else if (metadata.original_sha256 !== authority.targetSha) error("annotation_file metadata.original_sha256 未绑定当前冻结目标", { missing: "annotation-meta.original_sha256" });
@@ -346,7 +376,11 @@ export function validateVisualDecompositionConfirmationRecord(record, region, co
       if (proposalData.proposal_id !== record.proposal_id || proposalData.target_sha256 !== authority.targetSha || proposalData.annotation_file !== record.annotation_file || proposalData.annotation_sha256 !== record.annotation_sha256) error("proposal_file 未绑定当前编号标注、冻结目标或提案身份");
       if (!nonEmptyString(proposalData.created_at) || Number.isNaN(Date.parse(proposalData.created_at))) error("proposal_file.created_at 无效", { missing: "proposal.created_at" });
       if (Number.isFinite(Date.parse(record.accepted_at)) && Number.isFinite(Date.parse(proposalData.created_at)) && Date.parse(record.accepted_at) <= Date.parse(proposalData.created_at)) error("accepted_at 必须晚于 proposal.created_at");
-      if (Array.isArray(options.allRegions)) validateConfirmationRegionSet(proposalData.regions, options.allRegions, local, errors, "proposal_file.regions");
+      if (!Array.isArray(options.allRegions) || options.allRegions.length === 0) error("文件门缺少当前 scene/state 的完整 allRegions，不能跳过 proposal 语义校验", { missing: "options.allRegions" });
+      else {
+        validateConfirmationRegionSet(proposalData.regions, options.allRegions, local, errors, "proposal_file.regions");
+        validateProposalDecompositionElements(proposalData, options.allRegions, annotationCanvas, local, errors, annotationMetadata);
+      }
     }
     if (decisionData) {
       if (decisionData.status !== "accepted" || decisionData.confirmation_mode !== "manual") error("decision_record_file 必须是 accepted/manual 的权威用户决定");

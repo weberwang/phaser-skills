@@ -13,9 +13,9 @@ function sha256(bytes) { return `sha256:${createHash("sha256").update(bytes).dig
 /** 构造同时包含普通叶子和显式空容器的已确认节点集合。 */
 function confirmedNodes() {
   return [
-    { layout_node_id: "panel", element_id: "panel", parent_layout_node_id: "viewport", layout_role: "container", axis_alignment: { horizontal: "center", vertical: "top" }, target_bounds: { x: 8, y: 6, width: 48, height: 34 } },
-    { layout_node_id: "empty-slot", element_id: "empty-slot", parent_layout_node_id: "panel", node_type: "container", axis_alignment: { horizontal: "left", vertical: "top" }, target_bounds: { x: 12, y: 10, width: 12, height: 10 } },
-    { layout_node_id: "icon", element_id: "icon", parent_layout_node_id: "panel", node_type: "element", axis_alignment: { horizontal: "center", vertical: "center" }, target_bounds: { x: 30, y: 20, width: 10, height: 10 } },
+    { layout_node_id: "panel", element_id: "panel", element_type: "container", parent_layout_node_id: "viewport", parent_element_id: "viewport", semantic_grouping: { kind: "component", rationale: "面板内元素需要共同停靠" }, layout_role: "container", axis_alignment: { horizontal: "center", vertical: "top" }, target_bounds: { x: 8, y: 6, width: 48, height: 34 } },
+    { layout_node_id: "empty-slot", element_id: "empty-slot", element_type: "container", parent_layout_node_id: "panel", parent_element_id: "panel", semantic_grouping: { kind: "component", rationale: "预留一个明确用途的空功能容器" }, node_type: "container", axis_alignment: { horizontal: "left", vertical: "top" }, target_bounds: { x: 12, y: 10, width: 12, height: 10 } },
+    { layout_node_id: "icon", element_id: "icon", element_type: "component", parent_layout_node_id: "panel", parent_element_id: "panel", semantic_grouping: { kind: "part", rationale: "图标属于面板功能组件" }, node_type: "element", axis_alignment: { horizontal: "center", vertical: "center" }, target_bounds: { x: 30, y: 20, width: 10, height: 10 } },
   ];
 }
 
@@ -73,7 +73,7 @@ test("布局生成拒绝缺失父节点或越界节点，不能从草案补父�
 });
 
 test("显式空容器不合成普通子元素，叶子组件不进入父容器说明", () => {
-  const region = { id: "empty-region", scene_id: "main", state_id: "default", bounds: { x: 4, y: 4, width: 20, height: 16 }, component_inventory: { components: [{ component_id: "slot", role: "container", bounds: { x: 5, y: 5, width: 8, height: 6 }, placements: [] }] } };
+  const region = { id: "empty-region", scene_id: "main", state_id: "default", bounds: { x: 4, y: 4, width: 20, height: 16 }, component_inventory: { components: [{ component_id: "slot", role: "container", bounds: { x: 5, y: 5, width: 8, height: 6 }, parent_element_id: "viewport", semantic_grouping: { kind: "component", rationale: "预留有明确用途的空状态槽位" }, placements: [] }] } };
   const elements = buildDecompositionElements([region]);
   assert.equal(elements.length, 1);
   assert.equal(elements[0].element_type, "container");
@@ -84,7 +84,7 @@ test("显式空容器不合成普通子元素，叶子组件不进入父容器�
 });
 
 test("同一几何允许不同视觉对齐决策，中心选项不由测量反推", () => {
-  const element = { element_id: "visual-item", element_type: "component", role: "component", bounds: { x: 10, y: 8, width: 8, height: 6 }, scene_id: "main", state_id: "default", region_id: "region", component_id: "item", placement_id: "item-placement", empty_container: false };
+  const element = { element_id: "visual-item", element_type: "component", role: "component", bounds: { x: 10, y: 8, width: 8, height: 6 }, scene_id: "main", state_id: "default", region_id: "region", component_id: "item", placement_id: "item-placement", parent_element_id: "viewport", semantic_grouping: { kind: "standalone", rationale: "完整独立美术无需功能组件容器" }, empty_container: false };
   const canvas = { width: 40, height: 30 };
   const makeFact = (horizontal, vertical) => deriveAutomaticLayoutFacts(deriveLayoutNodesFromDecompositionElements([element], canvas, { alignmentDecisions: new Map([[element.element_id, { horizontal, vertical }]]) }), canvas).find((item) => item.element_id === element.element_id);
   const centered = makeFact("center", "center");

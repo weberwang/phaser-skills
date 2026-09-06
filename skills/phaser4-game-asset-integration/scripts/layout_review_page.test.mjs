@@ -42,6 +42,7 @@ function fixture({ longName = false } = {}) {
         element_id: "container:dialog",
         display_name: longName ? "这是一个用于验证长中文名称换行的布局节点名称" : null,
         layout_role: "container",
+        semantic_grouping: { kind: "component", rationale: "对话框内部功能组件需要共同停靠" },
         parent_layout_node_id: "viewport",
         parent_target_bounds: { x: 0, y: 0, width: 120, height: 80 },
         target_bounds: parent,
@@ -59,6 +60,7 @@ function fixture({ longName = false } = {}) {
         element_id: "visual:title",
         display_name: null,
         layout_role: "visual-component",
+        semantic_grouping: { kind: "part", rationale: "标题文字属于对话框功能组件并保持相对位置" },
         parent_layout_node_id: "container:dialog",
         parent_target_bounds: parent,
         target_bounds: child,
@@ -107,6 +109,8 @@ test("通用页面内嵌离线产物、保持两栏和同 viewport 映射", () =
   assert.match(html, /data:application\/json;base64,/);
   assert.match(html, /当前节点（蓝色实线）/);
   assert.match(html, /父节点（橙色虚线）/);
+  assert.match(html, /功能分组/);
+  assert.match(html, /对话框内部功能组件需要共同停靠/);
   assert.doesNotMatch(html, /fetch\s*\(/i);
   assert.doesNotMatch(html, /localStorage|sessionStorage/);
 });
@@ -114,6 +118,7 @@ test("通用页面内嵌离线产物、保持两栏和同 viewport 映射", () =
 test("输出确定且动态名称在 JSON script 中安全转义", () => {
   const value = fixture({ longName: true });
   value.nodesDocument.layout_nodes[1].display_name = "__NAME_RULES__ $& $` $' </script><img src=x onerror=alert(1)>\u2028";
+  value.nodesDocument.layout_nodes[1].semantic_grouping.rationale = "分组理由 </script><img src=x onerror=alert(1)>";
   value.nodesBytes = Buffer.from(JSON.stringify(value.nodesDocument));
   value.bindings.nodes.sha256 = sha256(value.nodesBytes);
   const first = renderLayoutReviewPage(value);
@@ -121,6 +126,7 @@ test("输出确定且动态名称在 JSON script 中安全转义", () => {
   assert.equal(first, second);
   assert.doesNotMatch(first, /<\/script><img/i);
   assert.equal(readLayoutReviewPayload(first).nodesDocument.layout_nodes[1].display_name, "__NAME_RULES__ $& $` $' </script><img src=x onerror=alert(1)>\u2028");
+  assert.equal(readLayoutReviewPayload(first).nodesDocument.layout_nodes[1].semantic_grouping.rationale, "分组理由 </script><img src=x onerror=alert(1)>");
   assert.equal((first.match(/id="layout-review-data"/g) || []).length, 1);
   assert.match(first, /overflow-wrap: anywhere/);
 });

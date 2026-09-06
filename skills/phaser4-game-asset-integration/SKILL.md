@@ -15,6 +15,8 @@ description: 为 Phaser 4 游戏规划、生产、登记、验证并集成 UI、
 
 ### 场景还原合同（effect-image 强制）
 
+V2 拆解先遵守[功能语义分组约束](../phaser4-game-ui-layout/references/functional-semantic-grouping.md)：确认区域、功能组件、部件和独立元素的归属与理由；布局不得按文字类型或几何包含重新分组。归属不明留在拆解确认，不自动生成可放行布局。
+
 `effect-image` 表示正式 Scene 的忠实还原，不是独立 PNG 生产。全局基线冻结并完成基础实施后，V1 冻结 `scene_reconstruction_contract`、主参考、响应式、逐区视觉事实与容差，并把 HUD、modal、popup、drawer、toast 统一记录为宿主显示层子任务。本次完整 inventory 的瞬态层按 required state 冻结宿主同屏图；未就绪者按[子任务规则](../phaser4-game-workflow-control/references/control-model.md#显示层子任务与宿主继续推进)登记 `deferred_layers` 并行推进，不自动抢占宿主主线。常驻层仍保留主图归属；宿主满足自身前置后继续 V2 两次确认、V3 与正式实现。V4 必须关闭全部待办，并验证瞬态层打开→交互→关闭/恢复轨迹；不能报告缺层的整体完成。完整 inventory 缺图或合同/目标不匹配仍按真实影响修复/重验，冻结事实失效才回退。
 
 效果图/参考图是否适用只看当前场景 Work Item 是否把它指定为正式运行画面的视觉目标，与是否生成、制作或新增资源无关。适用时，参考还原是同一场景实现生命周期内的视觉模式与合同叠加，必须进入 `effect-image` 的 V1→V4 还原链，包含 `scene_reconstruction_contract`、布局绑定、coverage、宿主场景同屏组合和 fidelity 验收；即使所有区域都用 `reuse-existing`/`runtime-program` 实现、零新资源且零 ImageGen 也不例外。不创建第二个场景 Work Item 或第二条 V1→V4。仅仅生成新资源，或仅把图片作为灵感、说明或临时参考，不足以触发 `effect-image`，仍按普通资产、组件或场景路径分类。`image_generation_required`、`generate-now`、资源数量和 `production_method` 只能在已经触发后由 V2 决定生产路线，不能参与 V0 applicability 判定。
