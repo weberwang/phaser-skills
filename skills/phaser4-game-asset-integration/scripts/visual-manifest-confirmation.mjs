@@ -90,7 +90,7 @@ export function confirmationAuthorityBase(data, projectRoot, options = {}, group
   const receipt = authority.userDecisionReceipt ?? authority.receipt ?? authority.user_decision_receipt ?? authority;
   const camelFields = {
     target_sha256: "targetSha", target_frozen_at: "targetFrozenAt", work_item_id: "workItemId",
-    candidate_version: "candidateVersion", candidate_sha256: "candidateSha", task_authorization_id: "taskAuthorizationId",
+    candidate_version: "candidateVersion", candidate_sha256: "candidateSha",
     annotation_width: "annotationWidth", annotation_height: "annotationHeight", annotation_schema: "annotationSchema",
     annotation_layout: "annotationLayout", annotation_metadata_sha256: "annotationMetadataSha256", annotation_identity_sha256: "annotationIdentitySha256",
   };
@@ -109,7 +109,6 @@ export function confirmationAuthorityBase(data, projectRoot, options = {}, group
     candidateVersion: options.candidateVersion ?? read("candidate_version"),
     candidateSha: options.candidateSha ?? read("candidate_sha256"),
     candidateSha256: options.candidateSha ?? read("candidate_sha256"),
-    taskAuthorizationId: options.taskAuthorizationId ?? read("task_authorization_id"),
     userDecisionReceipt: receipt,
     annotationWidth: read("annotation_width"),
     annotationHeight: read("annotation_height"),

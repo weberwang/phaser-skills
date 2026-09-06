@@ -1,4 +1,4 @@
-/** 风险驱动门禁 CLI 的授权、审批和不可绕过边界回归测试。 */
+/** 风险驱动门禁 CLI 的工作项范围、审批和不可绕过边界回归测试。 */
 
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -10,6 +10,7 @@ import test from 'node:test';
 import { createExecutionState, executionStatePath, scopedDiffFingerprint } from './execution-unit-control.mjs';
 import { parallelBatchFingerprint } from './parallel-batch-control.mjs';
 import { createReturnRecord } from './return-disposition.mjs';
+import { registerRelaxedWorkflowTests } from './workflow-control-relaxed-cases.mjs';
 
 const CLI = resolve(import.meta.dirname, 'workflow-control.mjs');
 const INITIALIZER = resolve(import.meta.dirname, '..', '..', 'phaser4-game-orchestrator', 'scripts', 'initialize_project_docs.mjs');
@@ -60,7 +61,7 @@ function makeRepo() {
 function makeWork(head, overrides = {}) {
   return {
     workItemId: 'WI-1', projectId: 'P-1', moduleIds: ['core', 'scene'], domain: 'code', stageId: 'G1', globalState: 'IMPLEMENTING', baselineId: head, baselineVersion: '1', baselineHash: HASH,
-    objective: '实现明确 Phaser 功能', taskAuthorization: { authorizationId: 'TASK-WI-1', userOriginalText: '实现 core Phaser 功能', authorizedObjective: '实现明确 Phaser 功能', authorizedScope: ['core'], authorizedActions: ['phaser-inspect', 'phaser-spec-candidate', 'phaser-prototype', 'phaser-code-change'], authorizedActionLevels: ['A0', 'A1', 'A2', 'A3'], authorizedPaths: ['src', 'docs'], authorizedAt: '2026-08-11T00:00:00.000Z' },
+    objective: '实现明确 Phaser 功能', userOriginalText: '实现 core Phaser 功能',
     inScope: ['core'], outOfScope: ['release'], approvedRequirements: ['REQ-1'], allowedActions: ['phaser-inspect', 'phaser-spec-candidate', 'phaser-prototype', 'phaser-code-change', 'phaser-integration', 'phaser-build-upload', 'phaser-release'], allowedActionLevels: ['A0', 'A1', 'A2', 'A3'], explicitApprovalActionLevels: ['A4', 'A5', 'A6'], prohibitedActions: [], allowedPaths: ['src', 'docs'], forbiddenPaths: ['.git', 'src/secret'], allowedExternalTargets: ['store/app'], protectedExternalTargets: ['production'], requiredGates: ['F0', 'F1', 'F2', 'F3'], approvalRecord: null,
     assignedAgent: 'implementer', delegatedAgents: [], expectedOutputs: ['src/main.js'], validationPlan: ['node --test'], exitCriteria: ['tests pass'], nextGate: 'F0', rollbackPolicy: '不自动回滚共享工作区', evidenceRoot: '.workflow-control/evidence/WI-1',
     pendingApprovalId: 'PENDING-1', pendingApprovalObject: 'core implementation', pendingApprovalStage: 'G1', pendingApprovalActionLevel: 'A3', pendingApprovalGate: 'F0', pendingApprovalState: 'IMPLEMENTING', pendingApprovalContext: 'implementation', pendingApprovalActionType: 'phaser-code-change', pendingApprovalImpactSummary: [], pendingApprovalFileScope: ['src'], pendingApprovalServices: [], pendingApprovalAllowServiceStart: false, pendingApprovalAllowDelete: false, pendingApprovalExternalWrite: false, pendingApprovalDestructive: false, pendingApprovalPhysicalDevice: false, pendingApprovalRelease: false, pendingApprovalExternalTargets: [], pendingApprovalPreparedAt: '2026-08-11T00:00:00.000Z', pendingApprovalPresentedId: null, pendingApprovalPresentedAt: null,
@@ -70,9 +71,9 @@ function makeWork(head, overrides = {}) {
   };
 }
 
-/** 构造绑定任务授权而非审批记录的 Implementation Package。 */
+/** 构造直接绑定 Work Item 而非审批记录的 Implementation Package。 */
 function makePackage(overrides = {}) {
-  return { packageId: 'PKG-1', workItemId: 'WI-1', baselineVersion: '1', baselineHash: HASH, taskAuthorizationId: 'TASK-WI-1', approvedRequirements: ['REQ-1'], approvedArchitecture: 'ARCH-FACT', fileOwnership: { 'src/main.js': 'implementer', 'src/module': 'implementer', 'src/scene': 'implementer' }, executionUnits: [
+  return { packageId: 'PKG-1', workItemId: 'WI-1', baselineVersion: '1', baselineHash: HASH, approvedRequirements: ['REQ-1'], approvedArchitecture: 'ARCH-FACT', fileOwnership: { 'src/main.js': 'implementer', 'src/module': 'implementer', 'src/scene': 'implementer' }, executionUnits: [
     { unitId: 'SHARED-1', unitType: 'SHARED', scopeId: 'runtime-contract', moduleId: 'core', sceneId: null, displayLayerId: null, hostSceneId: null, owner: 'implementer', parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: ['src/main.js'], stateOwnership: ['runtime-contract'], acceptanceCommands: ['node --test'], serializationReason: '先冻结共享契约', highFidelityPrerequisite: null },
     { unitId: 'MODULE-1', unitType: 'MODULE', scopeId: 'core-module', moduleId: 'core', sceneId: null, displayLayerId: null, hostSceneId: null, owner: 'implementer', parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: ['src/module'], stateOwnership: ['core-state'], acceptanceCommands: ['node --test'], serializationReason: '等待共享契约冻结', highFidelityPrerequisite: null },
     { unitId: 'SCENE-1', unitType: 'SCENE', scopeId: 'play-scene', moduleId: 'scene', sceneId: 'play', displayLayerId: null, hostSceneId: null, owner: 'implementer', parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: ['src/scene'], stateOwnership: ['scene-state'], acceptanceCommands: ['node --test'], serializationReason: '等待全部模块完成', highFidelityPrerequisite: { workItemId: 'WI-1', status: 'COMPLETE', stage: 'V2', frozen: true, sceneId: 'play', displayLayerId: null, hostSceneId: null, targetSha256: HASH, candidateSha256: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF, evidenceFile: 'docs/high-fidelity-scene.json', evidenceSha256: '' } }
@@ -101,7 +102,7 @@ function makePhaseOrderedParallelPackage() {
 
 /** 构造绑定单个实施单元的 A3 委派。 */
 function makeDelegation(agent, unitId, group, ownership, overrides = {}) {
-  return { workItemId: 'WI-1', stageId: 'G1', authorizationId: 'TASK-WI-1', owner: 'orchestrator', assignedAgent: agent, executionUnitIds: [unitId], parallelGroup: group, ownership: [ownership], allowedActions: ['phaser-code-change'], forbiddenActions: [], actionLevel: 'A3', allowedPaths: [ownership], forbiddenPaths: ['.git', 'src/secret'], acceptanceCommands: ['node --test'], completionBoundary: '完成返回', outOfScopeReturn: '越界返回', preserveOthersChanges: true, ...overrides };
+  return { workItemId: 'WI-1', stageId: 'G1', owner: 'orchestrator', assignedAgent: agent, executionUnitIds: [unitId], parallelGroup: group, ownership: [ownership], allowedActions: ['phaser-code-change'], forbiddenActions: [], actionLevel: 'A3', allowedPaths: [ownership], forbiddenPaths: ['.git', 'src/secret'], acceptanceCommands: ['node --test'], completionBoundary: '完成返回', outOfScopeReturn: '越界返回', preserveOthersChanges: true, ...overrides };
 }
 
 /** 从当前委派文件构造带内容哈希和派生索引的不可变并行批次。 */
@@ -267,8 +268,10 @@ function makeEvidence(fixture, audit) {
   writeFileSync(output, 'tests passed\n');
   const rel = '.workflow-control/evidence/WI-1/test-output.txt';
   const common = { status: 'PASS', baselineHash: HASH, diffFingerprint: audit.diffFingerprint };
-  return { evidenceId: 'EV-1', batchId: 'BATCH-1', workItemId: 'WI-1', baselineHash: HASH, codeFingerprint: `git:${fixture.head}`, diffFingerprint: audit.diffFingerprint, recordedAt: new Date(Date.parse(audit.recordedAt) + 1000).toISOString(), commands: [{ command: 'node --test', exitCode: 0, outputFile: rel, outputHash: hashFile(output) }], environment: { node: process.version }, dataSources: ['git diff'], files: [rel], fileHashes: { [rel]: hashFile(output) }, gateResults: { F0: { ...common, authorizationId: 'TASK-WI-1' }, F1: { ...common }, F2: { ...common, reviewer: 'independent-reviewer', reviewMode: 'INDEPENDENT' }, F3: { ...common, evidenceId: 'EV-1' } }, verdict: 'PASS', uncoveredItems: [], completedOutputs: ['src/main.js'], completedUnitIds: JSON.parse(readFileSync(fixture.packagePath, 'utf8')).executionUnits.map((unit) => unit.unitId), satisfiedExitCriteria: ['tests pass'] };
+  return { evidenceId: 'EV-1', batchId: 'BATCH-1', workItemId: 'WI-1', baselineHash: HASH, codeFingerprint: `git:${fixture.head}`, diffFingerprint: audit.diffFingerprint, recordedAt: new Date(Date.parse(audit.recordedAt) + 1000).toISOString(), commands: [{ command: 'node --test', exitCode: 0, outputFile: rel, outputHash: hashFile(output) }], environment: { node: process.version }, dataSources: ['git diff'], files: [rel], fileHashes: { [rel]: hashFile(output) }, gateResults: { F0: { ...common, workItemId: 'WI-1', authorizationBasis: 'TASK_SCOPE' }, F1: { ...common }, F2: { ...common, reviewer: 'independent-reviewer', reviewMode: 'INDEPENDENT' }, F3: { ...common, evidenceId: 'EV-1' } }, verdict: 'PASS', uncoveredItems: [], completedOutputs: ['src/main.js'], completedUnitIds: JSON.parse(readFileSync(fixture.packagePath, 'utf8')).executionUnits.map((unit) => unit.unitId), satisfiedExitCriteria: ['tests pass'] };
 }
+
+registerRelaxedWorkflowTests({ assert, test, setup, makeFoundationPackage, makePackage, writeBoundPackage, run, rejects, readFileSync, writeJson, join, rmSync, existsSync, makeEvidence, hash: HASH });
 
 test('基础实施包：仅伪造冻结状态而缺少三候选人工证据时 fail closed', () => {
   const f = setup();
@@ -304,20 +307,20 @@ test('正式场景执行：V3 未完成时拒绝创建执行状态', () => {
   );
 });
 
-test('A0-A2：只读、文档和隔离原型依任务授权直接通过', () => {
+test('A0-A2：只读、文档和隔离原型依 Work Item 范围直接通过', () => {
   const f = setup({ globalState: 'REVIEW' });
   for (const [level, action, path] of [['A0', 'phaser-inspect', 'src/main.js'], ['A1', 'phaser-spec-candidate', 'docs/spec.md']]) {
     const args = ['--work-item', f.workPath, '--action-level', level, '--path', path];
     args.push('--action-type', action);
     const result = run('preflight', args, f.repo);
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(JSON.parse(result.stdout).authorizationBasis, 'TASK_AUTHORIZATION');
+    assert.equal(JSON.parse(result.stdout).authorizationBasis, 'TASK_SCOPE');
   }
   const a2 = setup({ globalState: 'IMPLEMENTING' });
   assert.equal(run('preflight', ['--work-item', a2.workPath, '--action-level', 'A2', '--action-type', 'phaser-prototype', '--path', 'src/main.js'], a2.repo).status, 0);
 });
 
-test('A3：有效实施包和任务授权无需 Approval Ledger', () => {
+test('A3：有效实施包依 Work Item 范围无需 Approval Ledger', () => {
   const f = setup();
   const result = run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo);
   assert.equal(result.status, 0, result.stderr);
@@ -404,21 +407,12 @@ test('Phaser 命名空间：未知动作和非 Phaser 审批工件明确拒绝',
   rejects(run('route', ['--work-item', ledger.workPath, '--ledger', ledger.ledgerPath], ledger.repo), /Approval Ledger.actionType.*不是受控 Phaser/);
 });
 
-test('A4：高影响集成默认需要 F4 精确显式批准', () => {
-  const base = makeWork('HEAD', { globalState: 'INTEGRATING', approvalRecord: 'AP-1', pendingApprovalId: 'PENDING-A4', pendingApprovalObject: 'replace entry', pendingApprovalActionLevel: 'A4', pendingApprovalGate: 'F4', pendingApprovalState: 'PASSED', pendingApprovalContext: 'phaser-integration', pendingApprovalActionType: 'phaser-integration', pendingApprovalImpactSummary: ['替换正式入口'], pendingApprovalFileScope: ['src'], nextGate: 'F4' });
-  const approval = makeApproval(base);
-  const f = setup({ ...base, baselineId: undefined }, [approval]);
-  const work = JSON.parse(readFileSync(f.workPath, 'utf8')); work.baselineId = f.head; writeJson(f.workPath, work);
-  const result = run('preflight', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--implementation-package', f.packagePath, '--action-level', 'A4', '--action-type', 'phaser-integration', '--gate', 'F4', '--object', 'replace entry', '--path', 'src/main.js'], f.repo);
-  assert.equal(result.status, 0, result.stderr);
-});
-
 test('A5：没有当前精确外部目标批准时拒绝', () => {
   const f = setup({ globalState: 'INTEGRATING', pendingApprovalActionLevel: 'A5', pendingApprovalActionType: 'phaser-build-upload', pendingApprovalImpactSummary: ['上传游戏构建'], pendingApprovalExternalWrite: true, pendingApprovalExternalTargets: ['store/app'], pendingApprovalFileScope: [] });
   rejects(run('preflight', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--action-level', 'A5', '--action-type', 'phaser-build-upload', '--object', 'game build', '--external', '--external-target', 'store/app'], f.repo), /没有唯一|审批/);
 });
 
-test('A6：破坏、真机与发布永不按任务授权放行', () => {
+test('A6：破坏、真机与发布永不按 Work Item 范围放行', () => {
   const f = setup({ globalState: 'RELEASE_APPROVAL_REQUIRED', releaseWorkItem: true, pendingApprovalActionLevel: 'A6', pendingApprovalActionType: 'phaser-release', pendingApprovalImpactSummary: ['发布到应用商店'], pendingApprovalExternalWrite: true, pendingApprovalRelease: true, pendingApprovalExternalTargets: ['store/app'], pendingApprovalFileScope: [] });
   rejects(run('preflight', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--action-level', 'A6', '--action-type', 'phaser-release', '--object', 'store release', '--external-target', 'store/app', '--release'], f.repo), /没有唯一|审批/);
   const device = setup();
@@ -459,23 +453,22 @@ test('模块与视觉：已有事实基线不机械触发人工门', () => {
   rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /USER_INPUT_REQUIRED/);
 });
 
-test('任务授权：范围外路径和伪造 Implementation Package 均被拒绝', () => {
+test('Work Item 范围：仓库越界拒绝，旧授权字段不再作为绑定凭据', () => {
   const f = setup();
   rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', '../outside.js'], f.repo), /越出仓库|allowedPaths/);
   writeBoundPackage(f, makePackage({ taskAuthorizationId: 'FAKE' }));
-  rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /任务授权/);
+  rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /Schema 禁止字段|taskAuthorizationId/);
 });
 
-test('任务授权：手改扩大动作、自动等级或路径时 Work Item 校验拒绝', () => {
-  for (const mutate of [
-    (work) => work.allowedActions.push('phaser-asset-change'),
-    (work) => { work.taskAuthorization.authorizedActionLevels = ['A0', 'A1', 'A2']; },
-    (work) => work.allowedPaths.push('secrets')
-  ]) {
-    const f = setup();
-    const work = JSON.parse(readFileSync(f.workPath, 'utf8')); mutate(work); writeJson(f.workPath, work);
-    rejects(run('status', ['--work-item', f.workPath], f.repo), /超出任务授权|授权等级不一致/);
-  }
+test('Work Item 范围可在任务内更新，禁止路径和动作冲突仍受校验', () => {
+  const f = setup();
+  const work = JSON.parse(readFileSync(f.workPath, 'utf8'));
+  work.allowedPaths.push('secrets');
+  work.allowedActions.push('phaser-asset-change');
+  writeJson(f.workPath, work);
+  assert.equal(run('status', ['--work-item', f.workPath], f.repo).status, 0);
+  work.prohibitedActions.push('phaser-code-change'); writeJson(f.workPath, work);
+  rejects(run('status', ['--work-item', f.workPath], f.repo), /当前动作必须已允许|不得相交/);
 });
 
 test('工作项动作集合：pending 未允许或同时被禁止时 status/diff-audit 均拒绝', () => {
@@ -492,16 +485,9 @@ test('工作项动作集合：pending 未允许或同时被禁止时 status/diff
   rejects(run('diff-audit', ['--work-item', prohibited.workPath, '--implementation-package', prohibited.packagePath, '--baseline', prohibited.head, '--baseline-hash', HASH, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--record', join(prohibited.root, 'blocked-audit.json')], prohibited.repo), /当前动作必须已允许|不得相交/);
 });
 
-test('任务授权与委派：A4-A6 操作不能伪装成任务授权或委派动作', () => {
+test('范围与委派：A4-A6 操作不能伪装成 A0-A3 委派动作', () => {
   const f = setup({ delegatedAgents: ['worker'] });
-  const work = JSON.parse(readFileSync(f.workPath, 'utf8'));
-  work.taskAuthorization.authorizedActions.push('phaser-integration');
-  writeJson(f.workPath, work);
-  rejects(run('status', ['--work-item', f.workPath], f.repo), /只能包含 A0-A3/);
-
-  work.taskAuthorization.authorizedActions.pop();
-  writeJson(f.workPath, work);
-  const delegation = { workItemId: 'WI-1', stageId: 'G1', authorizationId: 'TASK-WI-1', owner: 'orchestrator', assignedAgent: 'worker', executionUnitIds: ['MODULE-1'], parallelGroup: null, ownership: ['src/module'], allowedActions: ['phaser-integration'], forbiddenActions: [], actionLevel: 'A4', allowedPaths: ['src/module'], forbiddenPaths: ['.git'], acceptanceCommands: ['node --test'], completionBoundary: '完成返回', outOfScopeReturn: '越界返回', preserveOthersChanges: true };
+  const delegation = { workItemId: 'WI-1', stageId: 'G1', owner: 'orchestrator', assignedAgent: 'worker', executionUnitIds: ['MODULE-1'], parallelGroup: null, ownership: ['src/module'], allowedActions: ['phaser-integration'], forbiddenActions: [], actionLevel: 'A4', allowedPaths: ['src/module'], forbiddenPaths: ['.git'], acceptanceCommands: ['node --test'], completionBoundary: '完成返回', outOfScopeReturn: '越界返回', preserveOthersChanges: true };
   const path = join(f.root, 'delegations', 'high-risk.json'); writeJson(path, delegation);
   rejects(run('delegate-check', ['--work-item', f.workPath, '--delegation', path, '--implementation-package', f.packagePath], f.repo), /只能委派 A0-A3/);
 });
@@ -515,7 +501,7 @@ test('固定动作等级：A0-A3 携带高风险副作用时直接拒绝', () =>
     ['--device', '--external-target', 'store/app']
   ]) {
     const f = setup();
-    rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js', ...extra], f.repo), /至少为 A5|必须为 A6|删除旧实现只允许 A4\/A6/);
+    rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js', ...extra], f.repo), /至少为 A5|必须为 A6|破坏性动作必须为 A4\/A6|删除旧实现只允许 A4\/A6/);
     assert.deepEqual(JSON.parse(readFileSync(f.ledgerPath, 'utf8')).approvals, []);
   }
   const wrongLevel = setup();
@@ -525,7 +511,7 @@ test('固定动作等级：A0-A3 携带高风险副作用时直接拒绝', () =>
 test('用户选择：视觉或实质取舍输出 USER_INPUT_REQUIRED 且不创建审批', () => {
   const visual = setup({ globalState: 'REVIEW', visualDecisionRequired: true, pendingApprovalActionLevel: 'A1', pendingApprovalActionType: 'phaser-spec-candidate', pendingApprovalFileScope: ['docs'] });
   const route = JSON.parse(run('route', ['--work-item', visual.workPath], visual.repo).stdout);
-  assert.equal(route.authorizationBasis, 'TASK_AUTHORIZATION');
+  assert.equal(route.authorizationBasis, 'TASK_SCOPE');
   assert.equal(route.userInputRequired, true);
   rejects(run('preflight', ['--work-item', visual.workPath, '--action-level', 'A1', '--action-type', 'phaser-spec-candidate', '--path', 'docs/spec.md'], visual.repo), /USER_INPUT_REQUIRED/);
   rejects(run('advance', ['--work-item', visual.workPath], visual.repo), /USER_INPUT_REQUIRED/);
@@ -534,7 +520,7 @@ test('用户选择：视觉或实质取舍输出 USER_INPUT_REQUIRED 且不创�
   rejects(run('preflight', ['--work-item', substantive.workPath, '--implementation-package', substantive.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], substantive.repo), /USER_INPUT_REQUIRED/);
 });
 
-test('用户选择：A1-A3 即使有未决选择也不能 prepare-approval，澄清后继续任务授权', () => {
+test('用户选择：A1-A3 即使有未决选择也不能 prepare-approval，澄清后继续 Work Item', () => {
   const ordinary = setup({ globalState: 'REVIEW', pendingApprovalState: 'REVIEW', pendingApprovalActionLevel: 'A1', pendingApprovalActionType: 'phaser-spec-candidate', pendingApprovalFileScope: ['docs'] });
   const baseArgs = ['--work-item', ordinary.workPath, '--ledger', ordinary.ledgerPath, '--pending-id', 'PENDING-NEW', '--object', 'visual choice', '--stage', 'G1', '--action-type', 'phaser-spec-candidate', '--action-level', 'A1', '--gate', 'F0', '--context', 'decision', '--path', 'docs'];
   rejects(run('prepare-approval', baseArgs, ordinary.repo), /不能在|A1/);
@@ -544,10 +530,10 @@ test('用户选择：A1-A3 即使有未决选择也不能 prepare-approval，澄
   assert.equal(run('preflight', ['--work-item', ordinary.workPath, '--action-level', 'A1', '--action-type', 'phaser-spec-candidate', '--path', 'docs/spec.md'], ordinary.repo).status, 0);
 });
 
-test('route：明确区分任务授权与显式批准', () => {
+test('route：明确区分 Work Item 范围与显式批准', () => {
   const safe = setup();
   const safeRoute = run('route', ['--work-item', safe.workPath], safe.repo);
-  assert.equal(JSON.parse(safeRoute.stdout).authorizationBasis, 'TASK_AUTHORIZATION');
+  assert.equal(JSON.parse(safeRoute.stdout).authorizationBasis, 'TASK_SCOPE');
   const external = setup({ globalState: 'INTEGRATING', pendingApprovalActionLevel: 'A5', pendingApprovalActionType: 'phaser-build-upload', pendingApprovalImpactSummary: ['上传游戏构建'], pendingApprovalExternalWrite: true, pendingApprovalExternalTargets: ['store/app'], pendingApprovalFileScope: [] });
   const externalRoute = run('route', ['--work-item', external.workPath, '--ledger', external.ledgerPath], external.repo);
   assert.equal(JSON.parse(externalRoute.stdout).authorizationBasis, 'EXPLICIT_APPROVAL');
@@ -555,7 +541,7 @@ test('route：明确区分任务授权与显式批准', () => {
 
 test('操作审批：A4-A6 缺少影响摘要时拒绝准备', () => {
   const f = setup({ globalState: 'PASSED' });
-  const args = ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--pending-id', 'PENDING-A4', '--object', 'replace entry', '--stage', 'G1', '--action-type', 'phaser-integration', '--action-level', 'A4', '--gate', 'F4', '--context', 'phaser-integration', '--path', 'src'];
+  const args = ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--pending-id', 'PENDING-A4', '--object', 'replace entry', '--stage', 'G1', '--action-type', 'phaser-integration', '--action-level', 'A4', '--gate', 'F4', '--context', 'phaser-integration', '--path', 'src', '--destructive'];
   rejects(run('prepare-approval', args, f.repo), /--impact|影响/);
 });
 
@@ -575,7 +561,7 @@ test('操作审批：A5/A6 缺少必需副作用时拒绝且不改 Work Item', (
 
 test('操作审批：操作与影响精确匹配可通过，篡改或遗漏影响被拒绝', () => {
   const f = setup({ globalState: 'PASSED' });
-  const args = ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--pending-id', 'PENDING-A4', '--object', 'replace entry', '--stage', 'G1', '--action-type', 'phaser-integration', '--action-level', 'A4', '--gate', 'F4', '--context', 'phaser-integration', '--path', 'src', '--impact', '替换正式入口'];
+  const args = ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--pending-id', 'PENDING-A4', '--object', 'replace entry', '--stage', 'G1', '--action-type', 'phaser-integration', '--action-level', 'A4', '--gate', 'F4', '--context', 'phaser-integration', '--path', 'src', '--impact', '替换正式入口', '--destructive'];
   assert.equal(run('prepare-approval', args, f.repo).status, 0);
   assert.equal(run('handoff', ['--work-item', f.workPath], f.repo).status, 0);
   const work = JSON.parse(readFileSync(f.workPath, 'utf8'));
@@ -629,25 +615,6 @@ test('服务复用：已有健康实例时禁止重复启动', () => {
   rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js', '--start-process', '--process-evidence', processPath], f.repo), /必须复用/);
 });
 
-test('A4：缺少批准、路径不匹配和删除未授权均拒绝', () => {
-  const base = makeWork('HEAD', { globalState: 'INTEGRATING', pendingApprovalId: 'PENDING-A4', pendingApprovalObject: 'replace entry', pendingApprovalActionLevel: 'A4', pendingApprovalGate: 'F4', pendingApprovalState: 'PASSED', pendingApprovalContext: 'phaser-integration', pendingApprovalActionType: 'phaser-integration', pendingApprovalImpactSummary: ['替换正式入口'], pendingApprovalFileScope: ['src/main.js'], nextGate: 'F4' });
-  const f = setup({ ...base, baselineId: undefined });
-  const work = JSON.parse(readFileSync(f.workPath, 'utf8')); work.baselineId = f.head; writeJson(f.workPath, work);
-  rejects(run('preflight', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--implementation-package', f.packagePath, '--action-level', 'A4', '--action-type', 'phaser-integration', '--gate', 'F4', '--object', 'replace entry', '--path', 'src/main.js'], f.repo), /没有唯一|审批/);
-  const approval = makeApproval(work, { approvalId: 'AP-A4', fileScope: ['src/main.js'] });
-  writeJson(f.ledgerPath, { schemaVersion: '1.0', approvals: [approval] });
-  work.approvalRecord = 'AP-A4'; writeJson(f.workPath, work);
-  rejects(run('preflight', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--implementation-package', f.packagePath, '--action-level', 'A4', '--action-type', 'phaser-integration', '--gate', 'F4', '--object', 'replace entry', '--path', 'src/old.js'], f.repo), /没有唯一|审批/);
-  work.pendingApprovalAllowDelete = true;
-  work.pendingApprovalFileScope = ['src/old.js'];
-  work.approvalRecord = 'AP-A4-DELETE';
-  const deleteApproval = makeApproval(work, { approvalId: 'AP-A4-DELETE' });
-  writeJson(f.workPath, work);
-  writeJson(f.ledgerPath, { schemaVersion: '1.0', approvals: [deleteApproval] });
-  const allowedDelete = run('preflight', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--implementation-package', f.packagePath, '--action-level', 'A4', '--action-type', 'phaser-integration', '--gate', 'F4', '--object', 'replace entry', '--path', 'src/old.js', '--delete'], f.repo);
-  assert.equal(allowedDelete.status, 0, allowedDelete.stderr);
-});
-
 test('A5/A6：错误外部目标、受保护目标和低等级设备动作均拒绝', () => {
   const f = setup({ globalState: 'INTEGRATING', pendingApprovalActionLevel: 'A5', pendingApprovalActionType: 'phaser-build-upload', pendingApprovalImpactSummary: ['上传游戏构建'], pendingApprovalExternalWrite: true, pendingApprovalExternalTargets: ['store/app'], pendingApprovalFileScope: [] });
   rejects(run('preflight', ['--work-item', f.workPath, '--ledger', f.ledgerPath, '--action-level', 'A5', '--action-type', 'phaser-build-upload', '--object', 'push', '--external', '--external-target', 'production'], f.repo), /受保护|未授权/);
@@ -677,15 +644,6 @@ test('Diff Audit：空 A3、审计后篡改和伪造 owner 均拒绝', () => {
   rejects(run('transition', ['--work-item', f.workPath, '--to', 'VALIDATING'], f.repo), /ownership 不一致/);
   audit.entries[0].owner = 'implementer'; writeJson(record, audit); writeFileSync(join(f.repo, 'src', 'main.js'), 'export const value = 10;\n');
   rejects(run('transition', ['--work-item', f.workPath, '--to', 'VALIDATING'], f.repo), /已过期/);
-});
-
-test('委派门：未登记代理、所有权冲突和伪造授权均拒绝', () => {
-  const f = setup({ delegatedAgents: ['worker'] });
-  const delegation = { workItemId: 'WI-1', stageId: 'G1', authorizationId: 'FAKE', owner: 'orchestrator', assignedAgent: 'worker', executionUnitIds: ['MODULE-1'], parallelGroup: null, ownership: ['src/module'], allowedActions: ['phaser-code-change'], forbiddenActions: [], actionLevel: 'A3', allowedPaths: ['src/module'], forbiddenPaths: ['.git', 'src/secret'], acceptanceCommands: ['node --test'], completionBoundary: '完成返回', outOfScopeReturn: '越界返回', preserveOthersChanges: true };
-  const path = join(f.root, 'delegations', 'worker.json'); writeJson(path, delegation);
-  rejects(run('delegate-check', ['--work-item', f.workPath, '--delegation', path, '--implementation-package', f.packagePath], f.repo), /任务授权/);
-  delegation.authorizationId = 'TASK-WI-1'; delegation.assignedAgent = 'unregistered'; writeJson(path, delegation);
-  rejects(run('delegate-check', ['--work-item', f.workPath, '--delegation', path, '--implementation-package', f.packagePath], f.repo), /未登记/);
 });
 
 test('并行计划：两个 MODULE 单元可在同组通过并行委派检查', () => {
@@ -795,7 +753,7 @@ test('单元证据：缺失、旧基线和旧路径 diff 均拒绝 READY，有�
 
 test('委派结构与状态：A0-A2 不携带实施单元，A3 必须携带且仅 IMPLEMENTING', () => {
   const a1 = setup({ globalState: 'REVIEW', delegatedAgents: ['worker'] });
-  const base = { workItemId: 'WI-1', stageId: 'G1', authorizationId: 'TASK-WI-1', owner: 'orchestrator', assignedAgent: 'worker', ownership: ['docs'], allowedActions: ['phaser-spec-candidate'], forbiddenActions: [], actionLevel: 'A1', allowedPaths: ['docs'], forbiddenPaths: ['.git', 'src/secret'], acceptanceCommands: ['node --test'], completionBoundary: '完成返回', outOfScopeReturn: '越界返回', preserveOthersChanges: true };
+  const base = { workItemId: 'WI-1', stageId: 'G1', owner: 'orchestrator', assignedAgent: 'worker', ownership: ['docs'], allowedActions: ['phaser-spec-candidate'], forbiddenActions: [], actionLevel: 'A1', allowedPaths: ['docs'], forbiddenPaths: ['.git', 'src/secret'], acceptanceCommands: ['node --test'], completionBoundary: '完成返回', outOfScopeReturn: '越界返回', preserveOthersChanges: true };
   const path = join(a1.root, 'delegations', 'a1.json'); writeJson(path, base);
   assert.equal(run('delegate-check', ['--work-item', a1.workPath, '--delegation', path], a1.repo).status, 0);
   writeJson(path, { ...base, executionUnitIds: ['MODULE-1'], parallelGroup: null });
@@ -974,7 +932,7 @@ test('负向：无 Work Item 不能直接运行领域 initializer', () => {
   assert.match(result.stderr, /--work-item/);
 });
 
-test('正向：initializer 使用 A1 任务授权且不强制读取 Ledger', () => {
+test('正向：initializer 使用 A1 Work Item 范围且不强制读取 Ledger', () => {
   const f = setup({ globalState: 'REVIEW' });
   const result = spawnSync(process.execPath, [INITIALIZER, '--project-root', f.repo, '--work-item', f.workPath, '--object', 'initialize project docs'], { cwd: f.repo, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);

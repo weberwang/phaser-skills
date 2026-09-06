@@ -6,6 +6,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { DPR_POLICY, MAX_DPR, isDeviceDprInput, isWorkflowDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
 import { layoutNodeIdentityProjection, validateEffectImageParentChildLayoutNodes } from "../../phaser4-game-workflow-control/scripts/layout-node-parent-geometry.mjs";
+import { resolveVisualValidationMode, validateVisualValidationPolicy } from "../../phaser4-game-workflow-control/scripts/visual-validation-policy.mjs";
 
 const ROOT_REQUIRED = ["schema_version", "contract_id", "contract_version", "scope", "fidelity", "frozen_visual_target", "targets", "coordinate_spaces", "regions", "layout_nodes", "content", "platform_insets", "scrolling", "dynamic_content", "overlay_rules", "breakpoints", "invariants", "critical_alignments", "parity_cases", "evidence_matrix"];
 const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
@@ -152,7 +153,8 @@ function validateDelta(value, label, errors) {
 }
 
 /** 验证冻结视觉目标下的关键 UI/HUD 对齐合同。 */
-function validateCriticalAlignments(items, ids, layoutNodes, target, codeCandidate, status, errors) {
+function validateCriticalAlignments(items, ids, layoutNodes, target, codeCandidate, status, errors, mode = "usability") {
+  const exact = mode === "exact";
   if (!Array.isArray(items) || items.length === 0) { errors.push("critical_alignments 必须是非空数组"); return; }
   const alignmentIds = new Set();
   items.forEach((item, index) => {
@@ -172,17 +174,17 @@ function validateCriticalAlignments(items, ids, layoutNodes, target, codeCandida
       if (!isObject(relation)) errors.push(`${label}.${axis} 缺少关系`);
       else for (const field of ["type", "element_anchor", "reference_anchor"]) if (!isString(relation[field])) errors.push(`${label}.${axis}.${field} 必须是非空字符串`);
     }
-    validateMeasurement(item.target_measurement, `${label}.target_measurement`, errors);
-    if (layoutNode && !sameBounds(item.target_measurement, layoutNode.target_bounds)) errors.push(`${label}.target_measurement 与绑定布局节点 target_bounds 不一致，存在目标几何漂移`);
+    if (exact || item.target_measurement != null) validateMeasurement(item.target_measurement, `${label}.target_measurement`, errors);
+    if (exact && layoutNode && item.target_measurement != null && !sameBounds(item.target_measurement, layoutNode.target_bounds)) errors.push(`${label}.target_measurement 与绑定布局节点 target_bounds 不一致，存在目标几何漂移`);
     if (!Array.isArray(item.target_evidence) || item.target_evidence.length === 0 || !item.target_evidence.every(isString)) errors.push(`${label}.target_evidence 必须是非空字符串数组`);
     const runtimeMeasurement = item.runtime_measurement ?? item.actual_bounds;
     if (status === "verified") {
       if (!isString(item.actual_test_id)) errors.push(`${label}.actual_test_id 必须是非空字符串`);
       else if (item.actual_test_id !== item.planned_test_id) errors.push(`${label}.actual_test_id 必须等于 planned_test_id`);
       validateMeasurement(runtimeMeasurement, `${label}.runtime_measurement`, errors);
-      validateDelta(item.delta, `${label}.delta`, errors);
+      if (exact || item.delta != null) validateDelta(item.delta, `${label}.delta`, errors);
       if (isObject(item.target_measurement) && isObject(runtimeMeasurement) && isObject(item.delta) && ["x", "y", "width", "height"].every((field) => isNumber(item.target_measurement[field]) && isNumber(runtimeMeasurement[field]) && isNumber(item.delta[field]))) {
-        for (const field of ["x", "y", "width", "height"]) if (item.delta[field] !== runtimeMeasurement[field] - item.target_measurement[field]) errors.push(`${label}.delta.${field} 必须等于 runtime_measurement 与 target_measurement 的差值`);
+        if (exact) for (const field of ["x", "y", "width", "height"]) if (item.delta[field] !== runtimeMeasurement[field] - item.target_measurement[field]) errors.push(`${label}.delta.${field} 必须等于 runtime_measurement 与 target_measurement 的差值`);
       }
       if (item.test_status !== "passed") errors.push(`${label}.test_status 必须为 passed，未执行测试不得通过`);
       if (!Array.isArray(item.runtime_evidence) || item.runtime_evidence.length === 0 || !item.runtime_evidence.every(isString)) errors.push(`${label}.runtime_evidence 必须是非空字符串数组`);
@@ -190,15 +192,16 @@ function validateCriticalAlignments(items, ids, layoutNodes, target, codeCandida
       if (runtimeMeasurement != null) validateMeasurement(runtimeMeasurement, `${label}.runtime_measurement`, errors);
       if (item.delta != null) validateDelta(item.delta, `${label}.delta`, errors);
     }
-    if (!isObject(item.tolerance) || !isString(item.tolerance.unit) || !isNumber(item.tolerance.value) || item.tolerance.value < 0) errors.push(`${label}.tolerance 必须是项目定义的 unit 与非负 value`);
+    if (exact && (!isObject(item.tolerance) || !isString(item.tolerance.unit) || !isNumber(item.tolerance.value) || item.tolerance.value < 0)) errors.push(`${label}.tolerance 必须是项目定义的 unit 与非负 value`);
     if (isString(target?.target_sha256) && item.target_sha256 !== target.target_sha256) errors.push(`${label}.target_sha256 与冻结目标不一致`);
     if (isString(codeCandidate) && item.candidate_sha256 !== codeCandidate) errors.push(`${label}.candidate_sha256 与当前代码候选不一致`);
   });
 }
 
 /** 验证布局 parity case 绑定同一目标、候选和可复现条件。 */
-function validateParityCases(items, target, codeCandidate, scope, contractVersion, errors) {
-  if (!Array.isArray(items) || items.length === 0) { errors.push("parity_cases 必须是非空数组"); return; }
+function validateParityCases(items, target, codeCandidate, scope, contractVersion, errors, mode = "usability") {
+  const exact = mode === "exact";
+  if (!Array.isArray(items) || items.length === 0) { if (exact) errors.push("parity_cases 必须是非空数组"); return; }
   const ids = new Set();
   items.forEach((item, index) => {
     const label = `parity_cases[${index}]`;
@@ -214,7 +217,7 @@ function validateParityCases(items, target, codeCandidate, scope, contractVersio
     if (!isWorkflowDpr(item.dpr)) errors.push(`${label}.${workflowDprError("dpr", item.dpr)}`);
     if (!(Number.isInteger(item.random_seed) || isString(item.random_seed))) errors.push(`${label}.random_seed 必须是整数或非空字符串`);
     for (const field of ["reference_evidence", "candidate_evidence"]) if (!Array.isArray(item[field]) || item[field].length === 0 || !item[field].every(isString)) errors.push(`${label}.${field} 必须是非空字符串数组`);
-    if (!isObject(item.tolerance) || !isString(item.tolerance.unit) || !isNumber(item.tolerance.value) || item.tolerance.value < 0) errors.push(`${label}.tolerance 必须是项目定义的 unit 与非负 value`);
+    if (exact && (!isObject(item.tolerance) || !isString(item.tolerance.unit) || !isNumber(item.tolerance.value) || item.tolerance.value < 0)) errors.push(`${label}.tolerance 必须是项目定义的 unit 与非负 value`);
     if (!Array.isArray(item.exception_ids) || !item.exception_ids.every(isString)) errors.push(`${label}.exception_ids 必须是字符串数组`);
     if (!["passed", "failed"].includes(item.conclusion)) errors.push(`${label}.conclusion 必须为 passed 或 failed`);
     if (isString(item.id)) { if (ids.has(item.id)) errors.push(`${label}.id 重复：${item.id}`); ids.add(item.id); }
@@ -429,8 +432,9 @@ function validateOverlays(overlays, ids, errors, specialized) {
 function validateOverlayCoverage(document, ids, errors) { if (!Array.isArray(document.regions) || !Array.isArray(document.overlay_rules)) return; const declared = new Set(document.overlay_rules.filter(isObject).map((rule) => `${rule.element_id}\0${rule.mode}`)); const modes = { "fixed-overlay": "fixed", "floating-overlay": "floating", "docked-overlay": "docked" }; for (const region of document.regions) if (isObject(region) && ids.has(region.id) && modes[region.layout_participation] && !declared.has(`${region.id}\0${modes[region.layout_participation]}`)) errors.push(`区域 ${region.id} 的 ${region.layout_participation} 缺少对应 overlay_rules`); }
 
 /** 验证布局不变量及证据映射。 */
-function validateInvariants(invariants, ids, errors) {
-  if (!Array.isArray(invariants) || invariants.length === 0) { errors.push("invariants 必须是非空数组"); return; } const seen = new Set(); invariants.forEach((item, index) => { const label = `invariants[${index}]`; if (!isObject(item)) { errors.push(`${label} 必须是对象`); return; } if (!isString(item.id)) errors.push(`${label}.id 必须是非空字符串`); else if (seen.has(item.id)) errors.push(`重复不变量 ID：${item.id}`); else seen.add(item.id); for (const field of ["description", "expression"]) if (!isString(item[field])) errors.push(`${label}.${field} 必须是非空字符串`); if (!Array.isArray(item.applies_to) || item.applies_to.length === 0) errors.push(`${label}.applies_to 必须是非空数组`); else for (const target of item.applies_to) if (!isString(target) || !ids.has(target)) errors.push(`${label}.applies_to 引用不存在的区域：${target}`); if (!isNumber(item.tolerance) || item.tolerance < 0) errors.push(`${label}.tolerance 必须是非负数`); if (!isObject(item.evidence)) errors.push(`${label}.evidence 必须是对象`); else for (const kind of ["automation", "visual"]) if (!Array.isArray(item.evidence[kind]) || item.evidence[kind].length === 0 || !item.evidence[kind].every(isString)) errors.push(`${label}.evidence.${kind} 必须是非空数组且仅含非空字符串`); });
+function validateInvariants(invariants, ids, errors, mode = "usability") {
+  const exact = mode === "exact";
+  if (!Array.isArray(invariants) || invariants.length === 0) { errors.push("invariants 必须是非空数组"); return; } const seen = new Set(); invariants.forEach((item, index) => { const label = `invariants[${index}]`; if (!isObject(item)) { errors.push(`${label} 必须是对象`); return; } if (!isString(item.id)) errors.push(`${label}.id 必须是非空字符串`); else if (seen.has(item.id)) errors.push(`重复不变量 ID：${item.id}`); else seen.add(item.id); for (const field of ["description", "expression"]) if (!isString(item[field])) errors.push(`${label}.${field} 必须是非空字符串`); if (!Array.isArray(item.applies_to) || item.applies_to.length === 0) errors.push(`${label}.applies_to 必须是非空数组`); else for (const target of item.applies_to) if (!isString(target) || !ids.has(target)) errors.push(`${label}.applies_to 引用不存在的区域：${target}`); if (exact && (!isNumber(item.tolerance) || item.tolerance < 0)) errors.push(`${label}.tolerance 必须是非负数`); if (!isObject(item.evidence)) errors.push(`${label}.evidence 必须是对象`); else for (const kind of ["automation", "visual"]) if (!Array.isArray(item.evidence[kind]) || item.evidence[kind].length === 0 || !item.evidence[kind].every(isString)) errors.push(`${label}.evidence.${kind} 必须是非空数组且仅含非空字符串`); });
 }
 
 /** 验证证据矩阵绑定和必需轴。 */
@@ -447,20 +451,21 @@ function validateEvidenceMatrixDpr(value, path, errors, seen = new Set()) {
 }
 
 /** 验证证据矩阵绑定和必需轴。 */
-function validateEvidenceMatrix(matrix, errors) { if (!isObject(matrix)) return; for (const field of ["candidate_binding", "golden_policy", "snapshot_stability"]) if (!isString(matrix[field])) errors.push(`evidence_matrix.${field} 必须是非空字符串`); if (!Array.isArray(matrix.required_axes) || matrix.required_axes.length === 0 || !matrix.required_axes.every(isString)) errors.push("evidence_matrix.required_axes 必须是非空数组"); else { const missing = [...REQUIRED_EVIDENCE_AXES].filter((axis) => !matrix.required_axes.includes(axis)).sort(); if (missing.length) errors.push(`evidence_matrix.required_axes 缺少必需轴：${missing.join(", ")}`); } validateEvidenceMatrixDpr(matrix, "evidence_matrix", errors); }
+function validateEvidenceMatrix(matrix, errors, mode = "usability") { if (!isObject(matrix)) return; for (const field of ["candidate_binding", "golden_policy", "snapshot_stability"]) if (!isString(matrix[field])) errors.push(`evidence_matrix.${field} 必须是非空字符串`); const exact = mode === "exact"; if (exact && (!Array.isArray(matrix.required_axes) || matrix.required_axes.length === 0 || !matrix.required_axes.every(isString))) errors.push("evidence_matrix.required_axes 必须是非空数组"); else if (Array.isArray(matrix.required_axes) && matrix.required_axes.some((axis) => !isString(axis))) errors.push("evidence_matrix.required_axes 只能包含非空字符串"); else if (exact) { const missing = [...REQUIRED_EVIDENCE_AXES].filter((axis) => !matrix.required_axes.includes(axis)).sort(); if (missing.length) errors.push(`evidence_matrix.required_axes 缺少必需轴：${missing.join(", ")}`); } validateEvidenceMatrixDpr(matrix, "evidence_matrix", errors); }
 
 /** 验证布局合同并返回稳定结果。 */
 export function validateContract(document) {
   const errors = []; const warnings = []; const specialized = []; validateRoot(document, errors); if (!isObject(document)) return { status: "failed", errors, warnings, specialized_review: specialized };
-  validateScope(document.scope, errors); const fidelity = validateFidelityLifecycle(document, errors); const requiresFrozenLayout = fidelity?.applicability === "frozen-target" || isEffectImageContract(document); if (requiresFrozenLayout) validateFrozenVisualTarget(document.frozen_visual_target, errors); const binding = validateSceneReconstructionBinding(document, fidelity, errors); validateTargets(document.targets, errors); const spaces = validateCoordinateSpaces(document.coordinate_spaces, errors); const ids = validateRegions(document, spaces, errors, specialized); validateScopeRegionIds(document.scope, ids, errors); validateReferenceGraph(document, ids, errors); const layoutNodes = validateLayoutNodes(document, fidelity, binding, spaces, ids, errors); validateLayoutAnnotationBinding(document, binding, layoutNodes, errors); validateLayoutContractIdentity(document, binding, errors); validateContent(document.content, errors); validateBreakpoints(document.breakpoints, errors); validatePlatformAndScrolling(document, ids, errors); validateDynamicContent(document.dynamic_content, ids, errors); validateOverlays(document.overlay_rules, ids, errors, specialized); validateOverlayCoverage(document, ids, errors); validateInvariants(document.invariants, ids, errors);
+  const mode = resolveVisualValidationMode(document); validateVisualValidationPolicy(errors, "visual_validation", document);
+  validateScope(document.scope, errors); const fidelity = validateFidelityLifecycle(document, errors); const requiresFrozenLayout = fidelity?.applicability === "frozen-target" || isEffectImageContract(document); if (requiresFrozenLayout) validateFrozenVisualTarget(document.frozen_visual_target, errors); const binding = validateSceneReconstructionBinding(document, fidelity, errors); validateTargets(document.targets, errors); const spaces = validateCoordinateSpaces(document.coordinate_spaces, errors); const ids = validateRegions(document, spaces, errors, specialized); validateScopeRegionIds(document.scope, ids, errors); validateReferenceGraph(document, ids, errors); const layoutNodes = validateLayoutNodes(document, fidelity, binding, spaces, ids, errors); validateLayoutAnnotationBinding(document, binding, layoutNodes, errors); validateLayoutContractIdentity(document, binding, errors); validateContent(document.content, errors); validateBreakpoints(document.breakpoints, errors); validatePlatformAndScrolling(document, ids, errors); validateDynamicContent(document.dynamic_content, ids, errors); validateOverlays(document.overlay_rules, ids, errors, specialized); validateOverlayCoverage(document, ids, errors); validateInvariants(document.invariants, ids, errors, mode);
   if (requiresFrozenLayout) {
-    validateCriticalAlignments(document.critical_alignments, ids, layoutNodes, document.frozen_visual_target, document.scope?.bindings?.code_candidate, fidelity?.status, errors);
+    validateCriticalAlignments(document.critical_alignments, ids, layoutNodes, document.frozen_visual_target, document.scope?.bindings?.code_candidate, fidelity?.status, errors, mode);
     if (fidelity?.status === "verified") {
-      validateParityCases(document.parity_cases, document.frozen_visual_target, document.scope?.bindings?.code_candidate, document.scope, document.contract_version, errors);
-      if (Array.isArray(document.parity_cases) && document.parity_cases.some((item) => item?.conclusion !== "passed")) errors.push("verified 的 parity_cases 必须全部 passed");
+      validateParityCases(document.parity_cases, document.frozen_visual_target, document.scope?.bindings?.code_candidate, document.scope, document.contract_version, errors, mode);
+      if (mode === "exact" && Array.isArray(document.parity_cases) && document.parity_cases.some((item) => item?.conclusion !== "passed")) errors.push("verified 的 parity_cases 必须全部 passed");
     } else if (!Array.isArray(document.parity_cases) || document.parity_cases.length > 0) errors.push("specified 的 parity_cases 必须为空数组");
   }
-  validateEvidenceMatrix(document.evidence_matrix, errors);
+  validateEvidenceMatrix(document.evidence_matrix, errors, mode);
   if (isObject(document.dynamic_content?.localization) && !["forbid-critical", "forbid"].includes(document.dynamic_content.localization.truncate_policy)) warnings.push("本地化截断策略未明确禁止关键文本");
   return { status: errors.length ? "failed" : "passed", errors, warnings, specialized_review: specialized };
 }

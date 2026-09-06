@@ -6,6 +6,7 @@ import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { validateContract as validateUiLayoutContract } from "../../phaser4-game-ui-layout/scripts/validate_ui_layout_contract.mjs";
 import { DEFAULT_DPR, isDeviceDprInput, isWorkflowDpr, parseDeviceDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
+import { DEFAULT_VISUAL_VALIDATION_MODE, isExactVisualValidation, resolveVisualValidationMode, validateVisualValidationPolicy } from "../../phaser4-game-workflow-control/scripts/visual-validation-policy.mjs";
 
 export const DEFAULT_HOOK_NAME = "__PHASER_VISUAL_VALIDATION__";
 const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
@@ -138,6 +139,7 @@ export function normalizeContract(raw = {}) {
   const strategyValue = viewport.strategy ?? source.strategy;
   const modeValue = viewport.mode ?? source.mode;
   const normalized = {
+    visual_validation: { mode: resolveVisualValidationMode(source) },
     applicability: source.applicability ?? null,
     viewport: {
       mode: modeValue === undefined || modeValue === null ? undefined : String(modeValue).toLowerCase(),
@@ -175,6 +177,9 @@ export function normalizeContract(raw = {}) {
     viewports: source.viewports ?? source.viewportMatrix ?? null,
     dprErrors: collectDprErrors(source)
   };
+  // UI 合同和响应式脚本共享同一视觉模式；非法模式沿用 usability 计算，但在报告中明确暴露错误。
+  normalized.visualValidationErrors = [];
+  validateVisualValidationPolicy(normalized.visualValidationErrors, "visual_validation", source);
   // 仅模块内部生成的不可序列化标记允许重复归一化，JSON 调用方无法伪造权威身份。
   Object.defineProperty(normalized, NORMALIZED_CONTRACT, { value: true });
   return normalized;
@@ -217,6 +222,7 @@ function deriveScaling(canvasRect, logicalSize, dpr, hookScale) {
 /** 评估一个 viewport；失败优先于 decision_gap，避免几何硬失败被缺字段掩盖。 */
 export function evaluateViewport({ viewportRect, canvasRect, hookSnapshot, contract, devicePixelRatio, screenshot = null }) {
   const normalized = normalizeContract(contract);
+  const exact = isExactVisualValidation(normalized);
   const viewport = normalizeRect(viewportRect);
   const canvas = normalizeRect(canvasRect);
   const hook = readHookData(hookSnapshot);
@@ -229,6 +235,7 @@ export function evaluateViewport({ viewportRect, canvasRect, hookSnapshot, contr
   const unverified = [];
 
   if (normalized.dprErrors.length > 0) failures.push(...normalized.dprErrors);
+  if (normalized.visualValidationErrors.length > 0) failures.push(...normalized.visualValidationErrors);
   const measuredDpr = parseDeviceDpr(devicePixelRatio, DEFAULT_DPR);
   if (devicePixelRatio !== undefined && !isDeviceDprInput(devicePixelRatio)) failures.push(workflowDprError("实际测得原始设备 DPR", devicePixelRatio));
   if (!viewport || !canvas) unverified.push("viewportRect 或 canvasRect 缺失");
@@ -238,12 +245,13 @@ export function evaluateViewport({ viewportRect, canvasRect, hookSnapshot, contr
   if (fullViewport && edgeGaps && normalized.viewport.allowWhitespace === false && Object.values(edgeGaps).some((gap) => gap > tolerance)) {
     failures.push("Canvas 四边存在未许可留白");
   }
-  if (normalized.viewport.allowWhitespace === undefined) decisionGaps.push("未定义留白许可");
-  if (normalized.viewport.strategy === undefined) decisionGaps.push("未定义适配策略");
-  if (normalized.viewport.mode === undefined) decisionGaps.push("未定义 viewport 判定面");
-  if (normalized.viewport.backgroundCoverageTarget === null || normalized.viewport.backgroundCoverageTarget === undefined) decisionGaps.push("未定义背景覆盖目标");
-  if (!normalized.safeArea.requiredDefined) decisionGaps.push("未定义安全区要求");
-  if (!normalized.resize.requiredDefined) decisionGaps.push("未定义动态 resize 要求");
+  // usability 只报告真实可见性问题；这些精确判定面和矩阵字段由 exact 模式强制声明。
+  if (exact && normalized.viewport.allowWhitespace === undefined) decisionGaps.push("未定义留白许可");
+  if (exact && normalized.viewport.strategy === undefined) decisionGaps.push("未定义适配策略");
+  if (exact && normalized.viewport.mode === undefined) decisionGaps.push("未定义 viewport 判定面");
+  if (exact && (normalized.viewport.backgroundCoverageTarget === null || normalized.viewport.backgroundCoverageTarget === undefined)) decisionGaps.push("未定义背景覆盖目标");
+  if (exact && !normalized.safeArea.requiredDefined) decisionGaps.push("未定义安全区要求");
+  if (exact && !normalized.resize.requiredDefined) decisionGaps.push("未定义动态 resize 要求");
   if (normalized.viewport.backgroundCoverageTarget !== null && normalized.viewport.backgroundCoverageTarget !== undefined) {
     if (backgroundCoverage === null) unverified.push("缺少背景矩形 Hook");
     else if (backgroundCoverage + 1e-9 < normalized.viewport.backgroundCoverageTarget) failures.push("背景覆盖率低于契约目标");
@@ -316,6 +324,7 @@ export function buildResizeRecords(measurements, contract = {}) {
 /** 检查运行矩阵是否覆盖契约声明的命名视口，缺项不能默认为通过。 */
 export function evaluateMatrixCoverage(measurements, contract = {}) {
   const normalized = normalizeContract(contract);
+  const exact = isExactVisualValidation(normalized);
   const declared = normalized.viewports;
   const expected = Array.isArray(declared)
     ? declared.map((item, index) => item?.name ?? `viewport-${index + 1}`)
@@ -333,8 +342,11 @@ export function evaluateMatrixCoverage(measurements, contract = {}) {
     const expectedDpr = declaredDpr === undefined ? DEFAULT_DPR : wanted?.deviceScaleFactor !== undefined ? parseDeviceDpr(declaredDpr) : declaredDpr;
     if (actualWidth !== finiteNumber(wanted?.width) || actualHeight !== finiteNumber(wanted?.height) || !isWorkflowDpr(expectedDpr) || !isWorkflowDpr(actualDpr) || actualDpr !== expectedDpr) mismatched.push(name);
   }
-  const status = expected.length === 0 || missing.length > 0 ? "decision_gap" : mismatched.length > 0 ? "fail" : "pass";
-  return { expected, observed: [...observed], missing, mismatched, status };
+  // usability 只需要至少一个代表性实测视口；完整声明矩阵和逐项尺寸/DPR 对齐留给 exact。
+  const status = exact
+    ? expected.length === 0 || missing.length > 0 ? "decision_gap" : mismatched.length > 0 ? "fail" : "pass"
+    : measurements.length === 0 ? "unverified" : "pass";
+  return { expected, observed: [...observed], missing, mismatched, status, mode: normalized.visual_validation.mode ?? DEFAULT_VISUAL_VALIDATION_MODE };
 }
 
 /** 验证响应式报告的不可变候选与视觉身份。 */

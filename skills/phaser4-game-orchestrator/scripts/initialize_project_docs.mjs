@@ -46,7 +46,7 @@ export function initializeDocuments(projectRoot, templates, force) {
   for (let index = 0; index < targets.length; index += 1) { mkdirSync(resolve(targets[index], ".."), { recursive: true }); writeFileSync(targets[index], templates[Object.keys(templates)[index]], "utf8"); } return targets;
 }
 
-/** 调用唯一控制 CLI 验证 A1 任务授权；Ledger 仅在调用方显式提供时传递。 */
+/** 调用唯一控制 CLI 验证 A1 Work Item 范围；Ledger 仅在调用方显式提供时传递。 */
 export function runPreflight(projectRoot, workItem, ledger, approvalObject, templates) {
   const cli = resolve(import.meta.dirname, "../../phaser4-game-workflow-control/scripts/workflow-control.mjs"); if (!existsSync(cli)) throw new InitializationError(`找不到全局控制 CLI：${cli}`); const command = [cli, "preflight", "--repo", projectRoot, "--work-item", resolve(workItem), "--action-level", "A1", "--action-type", "phaser-spec-candidate", "--gate", "F0", "--object", approvalObject]; for (const filename of Object.keys(templates)) command.push("--path", `docs/${filename}`);
   if (ledger) command.push("--ledger", resolve(ledger));

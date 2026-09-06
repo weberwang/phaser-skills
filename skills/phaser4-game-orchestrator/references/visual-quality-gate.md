@@ -2,7 +2,7 @@
 
 全部显示层可按[控制面子任务规则](../../phaser4-game-workflow-control/references/control-model.md#显示层子任务与宿主继续推进)独立分工：未就绪先登记 `deferred_layers`，不自动抢占宿主主线。各任务满足自身前置再实施，常驻层不因拆任务丢失主图归属；瞬态层正式实施仍须完整上下文、两次 V2 确认与 V3。场景整体 V4 门拒绝未关闭待办，不能把并行准备当作已经验收。
 
-视觉拆解确认只能由编排层在收到用户确认消息后写入受保护的 `user-resolution-ledger/1.0`；Work Item 仅引用 `visualConfirmationAuthorityRefs[]`，不得内嵌 receipt 或自称 authority。前置文件冻结在 taskAuthorization，控制面写入 ledger/receipt 后必须冻结新的 Git commit/tree 基线；loader 从 `baselineHash` 复读并比对 baseline blob，当前新建、篡改、基线缺文件或非 Git 对象均拒绝。
+视觉拆解确认只能由编排层在收到用户确认消息后写入受保护的 `user-resolution-ledger/1.0`；Work Item 仅引用 `visualConfirmationAuthorityRefs[]`，不得内嵌 receipt 或自称 authority。前置文件冻结在 Work Item 根的 `visualConfirmationPrerequisiteFiles`，控制面写入 ledger/receipt 后必须冻结新的 Git commit/tree 基线；loader 从 `baselineHash` 复读并比对 baseline blob，当前新建、篡改、基线缺文件或非 Git 对象均拒绝。V2 ledger 不记录 `task_authorization_id`。
 
 视觉领域规则只能收紧 [`phaser4-game-workflow-control`](../../phaser4-game-workflow-control/SKILL.md)。V0-V4 是 `stageId`；全局状态、审批与 F0-F4 语义不得改写。
 
@@ -30,10 +30,10 @@ ImageGen 生产合同贯穿 V2-V4：`independent-production` 与 `generate-now` 
 
 ## 统一门
 
-F0-F4、授权边界和失败处置以[控制模型](../../phaser4-game-workflow-control/references/control-model.md)与[状态、阶段与停止门](../../phaser4-game-workflow-control/references/state-gates.md)为唯一来源。本领域只提交视觉领域 F2、当前候选的 F3 证据，以及与 V2/V3/V4 产物的绑定关系；机器检查不能替代两次 V2 确认。
+F0-F4、任务范围、高影响操作批准和失败处置以[控制模型](../../phaser4-game-workflow-control/references/control-model.md)与[状态、阶段与停止门](../../phaser4-game-workflow-control/references/state-gates.md)为唯一来源。本领域只提交视觉领域 F2、当前候选的 F3 证据，以及与 V2/V3/V4 产物的绑定关系；机器检查不能替代两次 V2 确认。
 
-冻结前候选图、临时提示和评审草稿保持 transient；冻结后记录原图、候选 ID、SHA、时间及 scene/state。V1/V2/V4 沿用同一生产 Scene 骨架；fidelity/parity case 必须绑定目标/候选 SHA、完整复现条件、合同/基线版本、双方证据、容差、例外和结论，身份变化即失效。
+冻结前候选图、临时提示和评审草稿保持 transient；冻结后记录原图、候选 ID、SHA、时间及 scene/state。V1/V2/V4 沿用同一生产 Scene 骨架；fidelity/parity case 必须绑定目标/候选 SHA、适用的复现条件、合同/基线版本、双方证据、容差、例外和结论。默认 `visual_validation.mode=usability` 使用代表性视口/状态并检查关系、可读性、边界和交互；只有 `exact` 或明确需求时才要求完整矩阵和严格差异。上游事实或当前受影响候选身份变化才使对应案例失效。
 
 ## 失效与返回
 
-缺字段、路径、对象绑定或可补证据问题在当前阶段 `repair`；候选与上游冻结身份未变的生产、运行态或机器证据问题在当前门 `revalidate`。只有需求/结构、拆解方案、基线、授权范围或冻结候选身份真实变化时才 `return` 到 V1/V2/V3 中最早受影响阶段；普通路径修正和 V3/V4 候选/diff 正常演进不得使 V2 拆解确认失效。
+缺字段、路径、对象绑定或可补证据问题在当前阶段 `repair`；上游事实未变的生产、运行态或机器证据问题在当前门 `revalidate`。只有上游事实失效、任务范围真实变化或硬门将被绕过时才 `return` 到 V1/V2/V3 中最早受影响阶段；普通候选身份变化、路径修正和 V3/V4 候选/diff 正常演进不得使 V2 拆解确认失效。

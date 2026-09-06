@@ -89,7 +89,7 @@ export class ValidationContext {
   /** 缓存当前 Work Item、实施包及其拆解委派对应的 immutable authority。 */
   authorityFor(pkg, work, delegations = [], manifestSnapshot = this.loadVisualManifestSnapshot(pkg)) {
     if (!this.deps.visualConfirmationAuthority || !pkg || !work) return null;
-    // authority 会读取完整合同内容；只拼接少量 ID 会在范围、授权或包字段变化时误命中旧结论。
+    // authority 会读取完整合同内容；只拼接少量 ID 会在范围或包字段变化时误命中旧结论。
     const identity = stableIdentity({ repo: this.repo, work, pkg, delegations, manifestSnapshot });
     const key = `authority:${identity}`;
     if (!this.cache.has(key)) {
@@ -105,7 +105,7 @@ export class ValidationContext {
 
   /** 校验并缓存实施包；manifest 和 authority 都从同一上下文派生，避免重复合同遍历。 */
   validateImplementationPackage(pkg, work, delegations = []) {
-    // 包校验依赖完整 Work Item、包和委派内容，任何授权、范围或执行计划变化都必须重验。
+    // 包校验依赖完整 Work Item、包和委派内容，任何范围或执行计划变化都必须重验。
     const packageKey = `package:${stableIdentity({ repo: this.repo, work, pkg, delegations })}`;
     if (!this.cache.has(packageKey)) {
       const manifestSnapshot = this.loadVisualManifestSnapshot(pkg);

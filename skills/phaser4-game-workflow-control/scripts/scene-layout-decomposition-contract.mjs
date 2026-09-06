@@ -6,6 +6,7 @@
  */
 
 import { validateEffectImageParentChildLayoutNodes } from "./layout-node-parent-geometry.mjs";
+import { resolveVisualValidationMode, visualGeometryDifferenceExceeds, visualBoundsOutsideViewport } from "./visual-validation-policy.mjs";
 
 /** 判断是否为普通对象。 */
 function isObject(value) {
@@ -376,21 +377,28 @@ function factsDiffer(targetValue, candidateValue) {
 }
 
 /** 校验 V4 effect-image 布局几何预验收，确保正式 Scene 的每个节点都被实际测量。 */
-export function validateLayoutGeometryFacts(contract, preacceptance, stage, errors, layoutInfo) {
+export function validateLayoutGeometryFacts(contract, preacceptance, stage, errors, layoutInfo, options = {}) {
+  const mode = resolveVisualValidationMode(options, contract);
+  const exact = mode === "exact";
   const geometry = field(preacceptance, "layout_geometry", "layoutGeometry", "layout_geometry_check", "layoutGeometryCheck");
   if (!isObject(geometry)) {
-    errors.push(contractError(stage, contract, preacceptance, "V4 同屏组合缺少 layout_geometry 几何检查", { missing: "layout_geometry", returnStage: "V3/V4", rootCause: "执行问题" }));
+    if (exact) errors.push(contractError(stage, contract, preacceptance, "V4 同屏组合缺少 layout_geometry 几何检查", { missing: "layout_geometry", returnStage: "V3/V4", rootCause: "执行问题" }));
     return;
   }
   const formalLayout = field(geometry, "formal_layout_structure", "formalLayoutStructure", "formal_layout", "formalLayout", "structure", "formal_structure")
     ?? field(preacceptance, "formal_layout_structure", "formalLayoutStructure", "formal_layout", "formalLayout", "layout_structure", "layoutStructure");
-  if (!hasStructuredValue(formalLayout)) errors.push(contractError(stage, contract, geometry, "V4 layout_geometry 缺少正式布局结构", { missing: "layout_geometry.formal_layout_structure", returnStage: "V3/V4", rootCause: "执行问题" }));
+  if (exact && !hasStructuredValue(formalLayout)) errors.push(contractError(stage, contract, geometry, "V4 layout_geometry 缺少正式布局结构", { missing: "layout_geometry.formal_layout_structure", returnStage: "V3/V4", rootCause: "执行问题" }));
   const measurements = field(geometry, "node_measurements", "nodeMeasurements", "actual_measurements", "actualMeasurements", "layout_node_measurements", "layoutNodeMeasurements", "measurements");
   if (!Array.isArray(measurements) || measurements.length === 0) {
-    errors.push(contractError(stage, contract, geometry, "V4 layout_geometry 缺少所有节点实际测量", { missing: "layout_geometry.node_measurements", returnStage: "V3/V4", rootCause: "执行问题" }));
+    if (exact) errors.push(contractError(stage, contract, geometry, "V4 layout_geometry 缺少所有节点实际测量", { missing: "layout_geometry.node_measurements", returnStage: "V3/V4", rootCause: "执行问题" }));
+    else errors.push(contractError(stage, contract, geometry, "V4 layout_geometry 至少需要一个关键 layout node 实际测量", { missing: "layout_geometry.node_measurements", returnStage: "V3/V4", rootCause: "验收问题" }));
     return;
   }
   const expectedIds = new Set(layoutInfo.nodes.map((node) => field(node, "layout_node_id", "layoutNodeId")).filter(nonEmptyString));
+  const criticalIds = new Set([
+    ...layoutInfo.nodes.filter((node) => node?.critical === true || node?.is_critical === true || node?.required === true).map((node) => field(node, "layout_node_id", "layoutNodeId")).filter(nonEmptyString),
+    ...(Array.isArray(geometry.critical_node_ids) ? geometry.critical_node_ids : Array.isArray(geometry.criticalNodeIds) ? geometry.criticalNodeIds : []).filter(nonEmptyString),
+  ]);
   const seenIds = new Set();
   const sceneRegions = new Map((field(contract, "coverage_regions", "coverageRegions", "regions") ?? []).map((region) => [field(region, "region_id", "regionId", "id"), region]));
   const tolerances = field(contract, "predeclared_tolerances", "predeclaredTolerances", "tolerance_set", "toleranceSet", "tolerances");
@@ -398,7 +406,7 @@ export function validateLayoutGeometryFacts(contract, preacceptance, stage, erro
   for (const key of ["missing_node_ids", "missingNodeIds", "extra_node_ids", "extraNodeIds", "orphan_node_ids", "orphanNodeIds"]) {
     const value = geometry[key];
     if (value !== undefined && (!Array.isArray(value) || value.some((id) => !nonEmptyString(id)))) errors.push(contractError(stage, contract, geometry, `V4 layout_geometry.${key} 必须是字符串数组`, { actual: JSON.stringify(value), returnStage: "V3/V4", rootCause: "执行问题" }));
-    if (Array.isArray(value) && value.length > 0) errors.push(contractError(stage, contract, geometry, `V4 layout_geometry 存在 ${key}，不能有 missing/extra/orphan`, { actual: JSON.stringify(value), returnStage: "V3/V4", rootCause: "执行问题" }));
+    if (exact && Array.isArray(value) && value.length > 0) errors.push(contractError(stage, contract, geometry, `V4 layout_geometry 存在 ${key}，不能有 missing/extra/orphan`, { actual: JSON.stringify(value), returnStage: "V3/V4", rootCause: "执行问题" }));
   }
   for (const [index, measurement] of measurements.entries()) {
     const label = `layout_geometry.node_measurements[${index}]`;
@@ -417,30 +425,42 @@ export function validateLayoutGeometryFacts(contract, preacceptance, stage, erro
     const delta = field(measurement, "delta", "delta_measurement", "deltaMeasurement");
     const toleranceId = field(measurement, "tolerance_reference", "toleranceReference", "tolerance_id", "toleranceId");
     const result = String(field(measurement, "result", "status", "verdict") ?? "").toLowerCase();
+    const regionId = field(node, "region_id", "regionId");
+    const sceneRegion = sceneRegions.get(regionId);
     if (!validLayoutBounds(targetBounds)) errors.push(contractError(stage, contract, measurement, `${label} 缺少有效 target_bounds`, { missing: `${label}.target_bounds`, returnStage: "V3/V4", rootCause: "执行问题" }));
     if (!validLayoutBounds(actualBounds)) errors.push(contractError(stage, contract, measurement, `${label} 缺少有效 actual/candidate bounds`, { missing: `${label}.actual_bounds`, returnStage: "V3/V4", rootCause: "执行问题" }));
-    if (!hasStructuredValue(delta)) errors.push(contractError(stage, contract, measurement, `${label} 缺少 delta`, { missing: `${label}.delta`, returnStage: "V3/V4", rootCause: "执行问题" }));
-    if (!nonEmptyString(toleranceId) || !toleranceDefinitions.has(toleranceId)) errors.push(contractError(stage, contract, measurement, `${label} 必须引用预声明 tolerance ID`, { missing: `${label}.tolerance_reference`, expected: [...toleranceDefinitions.keys()].join(",") || "predeclared_tolerances", returnStage: "V3/V4", rootCause: "方案缺失" }));
-    const regionId = field(node, "region_id", "regionId");
-    const regionToleranceId = field(sceneRegions.get(regionId), "tolerance_reference", "toleranceReference", "tolerance_id", "toleranceId");
-    if (regionToleranceId && toleranceId !== regionToleranceId) errors.push(contractError(stage, contract, measurement, `${label} tolerance 必须引用对应 coverage region 的预声明 ID`, { expected: regionToleranceId, actual: toleranceId, returnStage: "V3/V4", rootCause: "方案缺失" }));
+    const targetViewport = field(field(contract, "target_conditions", "targetConditions") ?? {}, "viewport", "target_viewport", "targetViewport");
+    const visibilitySource = { ...node, ...measurement, ...actualBounds };
+    if (visualBoundsOutsideViewport(actualBounds, targetViewport, visibilitySource, sceneRegion)) {
+      errors.push(contractError(stage, contract, measurement, `${label} actual/candidate bounds 超出目标 viewport，存在越界或裁切`, { expected: `0<=x,y 且 right<=${targetViewport.width}, bottom<=${targetViewport.height}`, actual: JSON.stringify(actualBounds), returnStage: "V3/V4", rootCause: "验收问题" }));
+    }
+    if (exact && !hasStructuredValue(delta)) errors.push(contractError(stage, contract, measurement, `${label} 缺少 delta`, { missing: `${label}.delta`, returnStage: "V3/V4", rootCause: "执行问题" }));
+    if (exact && (!nonEmptyString(toleranceId) || !toleranceDefinitions.has(toleranceId))) errors.push(contractError(stage, contract, measurement, `${label} 必须引用预声明 tolerance ID`, { missing: `${label}.tolerance_reference`, expected: [...toleranceDefinitions.keys()].join(",") || "predeclared_tolerances", returnStage: "V3/V4", rootCause: "方案缺失" }));
+    const regionToleranceId = field(sceneRegion, "tolerance_reference", "toleranceReference", "tolerance_id", "toleranceId");
+    if (exact && regionToleranceId && toleranceId !== regionToleranceId) errors.push(contractError(stage, contract, measurement, `${label} tolerance 必须引用对应 coverage region 的预声明 ID`, { expected: regionToleranceId, actual: toleranceId, returnStage: "V3/V4", rootCause: "方案缺失" }));
     if (!["passed", "pass", "failed", "fail"].includes(result)) errors.push(contractError(stage, contract, measurement, `${label} result 不能为 unknown/unverified/missing`, { actual: result || "missing", returnStage: "V3/V4", rootCause: "执行问题" }));
     if (!hasEvidence(field(measurement, "evidence", "evidence_paths", "evidencePaths"))) errors.push(contractError(stage, contract, measurement, `${label} 缺少几何 evidence`, { missing: `${label}.evidence`, returnStage: "V3/V4", rootCause: "执行问题" }));
     const limit = toleranceDefinitions.has(toleranceId) ? toleranceLimit(toleranceDefinitions.get(toleranceId)) : null;
-    const exceeds = limit !== null && [...numericDeltas(delta), ...numericFactDeltas(targetBounds, actualBounds)].some((value) => value > limit);
-    if (exceeds) errors.push(contractError(stage, contract, measurement, `${label} 几何结果超出预声明 tolerance`, { expected: `<=${limit}`, actual: JSON.stringify(delta), returnStage: "V3/V4", rootCause: "验收问题" }));
-    if ((result === "passed" || result === "pass") && exceeds) errors.push(contractError(stage, contract, measurement, `${label} PASS 不能掩盖超容差几何差异`, { returnStage: "V3/V4", rootCause: "验收问题" }));
+    const exceeds = exact
+      ? limit !== null && [...numericDeltas(delta), ...numericFactDeltas(targetBounds, actualBounds)].some((value) => value > limit)
+      : visualGeometryDifferenceExceeds(targetBounds, actualBounds, delta, { mode, declaredLimit: limit });
+    if (exceeds) errors.push(contractError(stage, contract, measurement, exact ? `${label} 几何结果超出预声明 tolerance` : `${label} 几何偏差超过 usability 允许范围`, { expected: exact ? `<=${limit}` : "小于等于有限 usability 几何容差", actual: JSON.stringify(delta), returnStage: "V3/V4", rootCause: "验收问题" }));
+    if ((result === "passed" || result === "pass") && exceeds) errors.push(contractError(stage, contract, measurement, exact ? `${label} PASS 不能掩盖超容差几何差异` : `${label} PASS 不能掩盖明显几何偏差`, { returnStage: "V3/V4", rootCause: "验收问题" }));
   }
-  for (const nodeId of expectedIds) if (!seenIds.has(nodeId)) errors.push(contractError(stage, contract, { id: nodeId }, "V4 layout_geometry 缺少 layout node 实际测量", { missing: nodeId, returnStage: "V3/V4", rootCause: "执行问题" }));
-  for (const nodeId of seenIds) if (!expectedIds.has(nodeId)) errors.push(contractError(stage, contract, { id: nodeId }, "V4 layout_geometry 存在 extra/orphan 实际测量", { actual: nodeId, returnStage: "V3/V4", rootCause: "执行问题" }));
+  if (exact) {
+    for (const nodeId of expectedIds) if (!seenIds.has(nodeId)) errors.push(contractError(stage, contract, { id: nodeId }, "V4 layout_geometry 缺少 layout node 实际测量", { missing: nodeId, returnStage: "V3/V4", rootCause: "执行问题" }));
+    for (const nodeId of seenIds) if (!expectedIds.has(nodeId)) errors.push(contractError(stage, contract, { id: nodeId }, "V4 layout_geometry 存在 extra/orphan 实际测量", { actual: nodeId, returnStage: "V3/V4", rootCause: "执行问题" }));
+  } else for (const nodeId of criticalIds) if (!seenIds.has(nodeId)) errors.push(contractError(stage, contract, { id: nodeId }, "V4 layout_geometry 缺少关键 layout node 实际测量", { missing: nodeId, returnStage: "V3/V4", rootCause: "验收问题" }));
   const geometryResult = String(field(geometry, "result", "status", "verdict", "conclusion", "geometry_result", "geometryResult") ?? "").toLowerCase();
-  if (!["passed", "pass"].includes(geometryResult)) errors.push(contractError(stage, contract, geometry, "V4 layout_geometry 几何结果必须 passed", { actual: geometryResult || "missing", returnStage: "V3/V4", rootCause: "验收问题" }));
+  if ((exact && !["passed", "pass"].includes(geometryResult)) || (!exact && ["failed", "fail"].includes(geometryResult))) errors.push(contractError(stage, contract, geometry, "V4 layout_geometry 几何结果未通过", { actual: geometryResult || "missing", returnStage: "V3/V4", rootCause: "验收问题" }));
   const failedMeasurements = measurements.filter((measurement) => !["passed", "pass"].includes(String(field(measurement, "result", "status", "verdict") ?? "").toLowerCase()));
   if (["passed", "pass"].includes(geometryResult) && failedMeasurements.length > 0) errors.push(contractError(stage, contract, geometry, "V4 layout_geometry=passed 与节点几何结果失败冲突", { actual: `${failedMeasurements.length} 个节点未通过`, returnStage: "V3/V4", rootCause: "验收问题" }));
 }
 
 /** 校验 effect-image V4 每个布局节点的目标/候选边界、差异和证据。 */
-export function validateEffectImageLayoutNodeFidelity(item, sceneContract, stage, errors, toleranceDefinitions, sceneRegions) {
+export function validateEffectImageLayoutNodeFidelity(item, sceneContract, stage, errors, toleranceDefinitions, sceneRegions, options = {}) {
+  const mode = resolveVisualValidationMode(options, sceneContract);
+  const exact = mode === "exact";
   const label = "layout_node_results";
   const decomposition = field(sceneContract, "layout_decomposition", "layoutDecomposition", "layout_decomposition_contract", "layoutDecompositionContract");
   const nodes = isObject(decomposition) && Array.isArray(field(decomposition, "layout_nodes", "layoutNodes")) ? field(decomposition, "layout_nodes", "layoutNodes") : [];
@@ -451,13 +471,13 @@ export function validateEffectImageLayoutNodeFidelity(item, sceneContract, stage
   }
   const results = field(item, "layout_node_results", "layoutNodeResults", "per_layout_node_results", "perLayoutNodeResults", "layout_geometry_results", "layoutGeometryResults", "layout_node_diff_results", "layoutNodeDiffResults");
   if (!Array.isArray(results) || results.length === 0) {
-    errors.push(contractError(stage, item, item, `effect-image ${label} 必须是非空逐节点布局差异证据`, { missing: label, returnStage: "VALIDATING", rootCause: "验收问题" }));
+    errors.push(contractError(stage, item, item, exact ? `effect-image ${label} 必须是非空逐节点布局差异证据` : `effect-image ${label} 至少需要一个关键布局节点证据`, { missing: label, returnStage: "VALIDATING", rootCause: "验收问题" }));
     return;
   }
   for (const key of ["missing_node_ids", "missingNodeIds", "extra_node_ids", "extraNodeIds", "orphan_node_ids", "orphanNodeIds"]) {
     const value = item[key];
     if (value !== undefined && (!Array.isArray(value) || value.some((id) => !nonEmptyString(id)))) errors.push(contractError(stage, item, item, `effect-image ${label}.${key} 必须是字符串数组`, { actual: JSON.stringify(value), returnStage: "VALIDATING", rootCause: "验收问题" }));
-    if (Array.isArray(value) && value.length > 0) errors.push(contractError(stage, item, item, `effect-image ${label} 存在 ${key}`, { actual: JSON.stringify(value), returnStage: "VALIDATING", rootCause: "验收问题" }));
+    if (exact && Array.isArray(value) && value.length > 0) errors.push(contractError(stage, item, item, `effect-image ${label} 存在 ${key}`, { actual: JSON.stringify(value), returnStage: "VALIDATING", rootCause: "验收问题" }));
   }
   const seen = new Set();
   for (const [index, result] of results.entries()) {
@@ -477,23 +497,38 @@ export function validateEffectImageLayoutNodeFidelity(item, sceneContract, stage
     const delta = field(result, "delta", "delta_measurement", "deltaMeasurement");
     const toleranceId = field(result, "tolerance_reference", "toleranceReference", "tolerance_id", "toleranceId");
     const resultValue = String(field(result, "result", "status", "verdict") ?? "").toLowerCase();
+    const regionId = field(node, "region_id", "regionId");
+    const sceneRegion = sceneRegions?.get?.(regionId);
     if (!validLayoutBounds(targetBounds)) errors.push(contractError(stage, item, result, `${resultLabel} 缺少有效 target bounds`, { missing: `${resultLabel}.target_bounds`, returnStage: "VALIDATING", rootCause: "验收问题" }));
     if (!validLayoutBounds(candidateBounds)) errors.push(contractError(stage, item, result, `${resultLabel} 缺少有效 candidate bounds`, { missing: `${resultLabel}.candidate_bounds`, returnStage: "VALIDATING", rootCause: "验收问题" }));
-    if (!hasStructuredValue(delta)) errors.push(contractError(stage, item, result, `${resultLabel} 缺少 delta`, { missing: `${resultLabel}.delta`, returnStage: "VALIDATING", rootCause: "验收问题" }));
-    if (!nonEmptyString(toleranceId) || !toleranceDefinitions.has(toleranceId)) errors.push(contractError(stage, item, result, `${resultLabel} 必须引用预声明 tolerance ID`, { missing: `${resultLabel}.tolerance_reference`, expected: [...toleranceDefinitions.keys()].join(",") || "scene_reconstruction_contract.predeclared_tolerances", returnStage: "VALIDATING", rootCause: "方案缺失" }));
-    const regionId = field(node, "region_id", "regionId");
-    const regionToleranceId = field(sceneRegions.get(regionId), "tolerance_reference", "toleranceReference", "tolerance_id", "toleranceId");
-    if (regionToleranceId && toleranceId !== regionToleranceId) errors.push(contractError(stage, item, result, `${resultLabel} tolerance 必须引用对应 coverage region 的预声明 ID`, { expected: regionToleranceId, actual: toleranceId, returnStage: "VALIDATING", rootCause: "方案缺失" }));
+    const caseViewport = field(item, "viewport", "target_viewport", "targetViewport");
+    const targetViewport = validViewport(caseViewport) ? caseViewport : field(field(sceneContract, "target_conditions", "targetConditions") ?? {}, "viewport", "target_viewport", "targetViewport");
+    const visibilitySource = { ...node, ...result, ...candidateBounds };
+    if (visualBoundsOutsideViewport(candidateBounds, targetViewport, visibilitySource, sceneRegion)) errors.push(contractError(stage, item, result, `${resultLabel} candidate bounds 超出目标 viewport，存在越界或裁切`, { expected: `0<=x,y 且 right<=${targetViewport.width}, bottom<=${targetViewport.height}`, actual: JSON.stringify(candidateBounds), returnStage: "VALIDATING", rootCause: "验收问题" }));
+    if (exact && !hasStructuredValue(delta)) errors.push(contractError(stage, item, result, `${resultLabel} 缺少 delta`, { missing: `${resultLabel}.delta`, returnStage: "VALIDATING", rootCause: "验收问题" }));
+    if (exact && (!nonEmptyString(toleranceId) || !toleranceDefinitions.has(toleranceId))) errors.push(contractError(stage, item, result, `${resultLabel} 必须引用预声明 tolerance ID`, { missing: `${resultLabel}.tolerance_reference`, expected: [...toleranceDefinitions.keys()].join(",") || "scene_reconstruction_contract.predeclared_tolerances", returnStage: "VALIDATING", rootCause: "方案缺失" }));
+    const regionToleranceId = field(sceneRegion, "tolerance_reference", "toleranceReference", "tolerance_id", "toleranceId");
+    if (exact && regionToleranceId && toleranceId !== regionToleranceId) errors.push(contractError(stage, item, result, `${resultLabel} tolerance 必须引用对应 coverage region 的预声明 ID`, { expected: regionToleranceId, actual: toleranceId, returnStage: "VALIDATING", rootCause: "方案缺失" }));
     if (!["passed", "pass", "failed", "fail"].includes(resultValue)) errors.push(contractError(stage, item, result, `${resultLabel} result 不能为 unknown/unverified/missing`, { actual: resultValue || "missing", returnStage: "VALIDATING", rootCause: "验收问题" }));
     if (!hasEvidence(field(result, "evidence", "evidence_paths", "evidencePaths"))) errors.push(contractError(stage, item, result, `${resultLabel} 缺少 layout diff evidence`, { missing: `${resultLabel}.evidence`, returnStage: "VALIDATING", rootCause: "验收问题" }));
     if (node && validLayoutBounds(targetBounds) && factsDiffer(targetBounds, field(node, "target_bounds", "targetBounds", "bounds"))) errors.push(contractError(stage, item, result, `${resultLabel} target bounds 未绑定冻结 layout node`, { expected: JSON.stringify(field(node, "target_bounds", "targetBounds", "bounds")), actual: JSON.stringify(targetBounds), returnStage: "VALIDATING", rootCause: "验收问题" }));
     const limit = toleranceDefinitions.has(toleranceId) ? toleranceLimit(toleranceDefinitions.get(toleranceId)) : null;
-    const exceeds = limit !== null && [...numericDeltas(delta), ...numericFactDeltas(targetBounds, candidateBounds)].some((value) => value > limit);
-    if (exceeds) errors.push(contractError(stage, item, result, `${resultLabel} 存在未解释差异：几何 delta 超出预声明 tolerance`, { expected: `<=${limit}`, actual: JSON.stringify(delta), returnStage: "VALIDATING", rootCause: "验收问题" }));
-    if ((resultValue === "passed" || resultValue === "pass") && exceeds) errors.push(contractError(stage, item, result, `${resultLabel} PASS 不能掩盖超容差布局差异`, { returnStage: "VALIDATING", rootCause: "验收问题" }));
+    const exceeds = exact
+      ? limit !== null && [...numericDeltas(delta), ...numericFactDeltas(targetBounds, candidateBounds)].some((value) => value > limit)
+      : visualGeometryDifferenceExceeds(targetBounds, candidateBounds, delta, { mode, declaredLimit: limit });
+    if (exceeds) errors.push(contractError(stage, item, result, exact ? `${resultLabel} 存在未解释差异：几何 delta 超出预声明 tolerance` : `${resultLabel} 几何偏差超过 usability 允许范围`, { expected: exact ? `<=${limit}` : "小于等于有限 usability 几何容差", actual: JSON.stringify(delta), returnStage: "VALIDATING", rootCause: "验收问题" }));
+    if ((resultValue === "passed" || resultValue === "pass") && exceeds) errors.push(contractError(stage, item, result, exact ? `${resultLabel} PASS 不能掩盖超容差布局差异` : `${resultLabel} PASS 不能掩盖明显几何偏差`, { returnStage: "VALIDATING", rootCause: "验收问题" }));
   }
-  for (const nodeId of nodeById.keys()) if (!seen.has(nodeId)) errors.push(contractError(stage, item, { id: nodeId }, `effect-image ${label} 缺少 layout node 证据`, { missing: nodeId, returnStage: "VALIDATING", rootCause: "验收问题" }));
-  for (const nodeId of seen) if (!nodeById.has(nodeId)) errors.push(contractError(stage, item, { id: nodeId }, `effect-image ${label} 存在 extra/orphan layout node 证据`, { actual: nodeId, returnStage: "VALIDATING", rootCause: "验收问题" }));
+  if (exact) {
+    for (const nodeId of nodeById.keys()) if (!seen.has(nodeId)) errors.push(contractError(stage, item, { id: nodeId }, `effect-image ${label} 缺少 layout node 证据`, { missing: nodeId, returnStage: "VALIDATING", rootCause: "验收问题" }));
+    for (const nodeId of seen) if (!nodeById.has(nodeId)) errors.push(contractError(stage, item, { id: nodeId }, `effect-image ${label} 存在 extra/orphan layout node 证据`, { actual: nodeId, returnStage: "VALIDATING", rootCause: "验收问题" }));
+  } else {
+    const criticalIds = new Set([
+      ...nodes.filter((node) => node?.critical === true || node?.is_critical === true || node?.required === true).map((node) => field(node, "layout_node_id", "layoutNodeId")).filter(nonEmptyString),
+      ...(Array.isArray(item.critical_node_ids) ? item.critical_node_ids : Array.isArray(item.criticalNodeIds) ? item.criticalNodeIds : []).filter(nonEmptyString),
+    ]);
+    for (const nodeId of criticalIds) if (!seen.has(nodeId)) errors.push(contractError(stage, item, { id: nodeId }, `effect-image ${label} 缺少关键 layout node 证据`, { missing: nodeId, returnStage: "VALIDATING", rootCause: "验收问题" }));
+  }
   const failed = results.filter((result) => ["failed", "fail", "unknown", "unverified", "missing"].includes(String(field(result, "result", "status", "verdict") ?? "").toLowerCase()));
   if (failed.length > 0 && ["passed", "PASS"].includes(String(item.conclusion ?? ""))) errors.push(contractError(stage, item, item, `effect-image ${label} 存在未通过节点但 fidelity case=PASS`, { actual: `${failed.length} 个节点未通过`, returnStage: "VALIDATING", rootCause: "验收问题" }));
 }

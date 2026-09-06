@@ -1,12 +1,12 @@
 # 项目交付物规范
 
-全局机器事实使用 [`phaser4-game-workflow-control`](../../phaser4-game-workflow-control/SKILL.md) 定义的 Work Item、Approval Ledger、Implementation Package、Change Request、Delegation Package 和 Evidence Manifest。保存在 `.workflow-control/`；只有全局控制面写全局状态和审批。
+全局机器事实使用 [`phaser4-game-workflow-control`](../../phaser4-game-workflow-control/SKILL.md) 定义的 Work Item、Approval Ledger、Implementation Package、Change Request、Delegation Package 和 Evidence Manifest。保存在 `.workflow-control/`；只有全局控制面写全局状态和高影响操作审批，普通任务不建立独立授权记录。
 
-首次运行受限 `init`：基于明确 A1 bootstrap 原文一次创建空账本、首个 Work Item 及标准目录。重复 init 拒绝，且 init 不创建领域文档。之后 initializer 使用已存在 Work Item 并通过 A1 任务授权 preflight；A1 不要求 ledger。
+首次运行受限 `init`：基于明确 A1 bootstrap 原文一次创建首个 Work Item 及标准目录；仅在需要记录高影响操作时创建 Approval Ledger。重复 init 拒绝，且 init 不创建领域文档。之后 initializer 使用已存在 Work Item 并通过 A1 范围与流程 preflight。
 
-只有 A4-A6 的具体操作由控制 CLI 运行 `prepare-approval`、`handoff` 和 `approve`，并冻结非空影响摘要。A0-A3 安全动作使用 `taskAuthorization`。实质取舍记录为 `USER_DECISION` 并回写任务授权或权威工件，不得写 Approval Ledger。
+只有涉及外部写入、付费、真机、破坏性或外部删除、发布副作用的 A4-A6 操作由控制 CLI 运行 `prepare-approval`、`handoff` 和 `approve`，并冻结非空影响摘要。A0-A3 和无副作用本地 A4 直接依据当前用户任务。实质取舍记录为 `USER_DECISION` 并回写 Work Item 或权威工件，不得写 Approval Ledger。
 
-总控 `route` 自动推导 A1-A6 风险通道、授权依据和缺失工件。A1/A2 直接执行；安全 A3 需要 Implementation Package、真实 diff、独立审查和 F0-F3，随后直接完成。A4-A6 保留精确硬门，外部动作与发布不自动执行。
+总控 `route` 自动推导 A1-A6 风险通道、任务范围依据和缺失工件。A1/A2 直接执行；安全 A3 需要 Implementation Package、真实 diff、独立审查和 F0-F3，随后直接完成。无副作用本地 A4 可直接执行；外部写入、付费、真机、破坏性或外部删除、发布保留精确批准硬门，且不自动执行。
 
 ## 领域工件
 
@@ -29,6 +29,6 @@
 
 - 旧 Markdown 状态和未绑定具体 pending 的历史审批只读保留，标记 legacy，不迁移为有效新审批。
 - 需求变化建立 Change Request；未决实质取舍阻断受影响范围。首次模块或边界变化只有存在实质取舍才绑定 grilling 决策。
-- A3 前冻结严格 Implementation Package：任务授权 ID、需求、架构结论、文件所有权、路径、预期增删文件、测试、非目标、兼容策略、完成定义与停止条件必须和当前工作项/基线一致；安全 A3 不得包含删除。
+- A3 前冻结严格 Implementation Package：当前任务范围、需求、架构结论、文件所有权、路径、预期增删文件、测试、非目标、兼容策略、完成定义与停止条件必须和当前工作项/基线一致；安全 A3 不得包含删除。
 - 委派包、diff 审计和证据清单引用领域工件，不复制事实正文。
 - 不记录凭据、个人数据或受限合同全文；不自动回滚、合并、发布或清理共享工作区。

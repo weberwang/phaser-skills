@@ -2,6 +2,7 @@ import { resolveProductionContract } from "../../phaser4-game-workflow-control/s
 
 import { validateEffectImageParentChildLayoutNodes } from "../../phaser4-game-workflow-control/scripts/layout-node-parent-geometry.mjs";
 import { buildDecompositionElements, decompositionElementIds, validateDecompositionElements } from "./decomposition-elements.mjs";
+import { resolveVisualValidationMode, visualBoundsOutsideViewport } from "../../phaser4-game-workflow-control/scripts/visual-validation-policy.mjs";
 
 const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
@@ -232,14 +233,16 @@ export function validateEffectImageLayoutBindings(data, errors, options = {}) {
 }
 
 /** V4 逐布局节点复核目标 bounds、候选 bounds、几何差异和证据。 */
-export function validateV4LayoutMeasurements(data, layoutBindings, errors) {
+export function validateV4LayoutMeasurements(data, layoutBindings, errors, options = {}) {
+  const mode = resolveVisualValidationMode(options, data, data?.scene_reconstruction_contract);
+  const exact = mode === "exact";
   const nodes = layoutBindings?.nodeById;
   if (!(nodes instanceof Map) || nodes.size === 0) { errors.push("V4 缺少可用于逐节点几何验收的 layout_nodes"); return; }
   const cases = Array.isArray(data?.fidelity_cases) ? data.fidelity_cases : [];
   for (const [caseIndex, item] of cases.entries()) {
     const label = `fidelity_cases[${caseIndex}]`;
     const measurements = item?.layout_node_results;
-    if (!Array.isArray(measurements) || measurements.length === 0) { errors.push(`${label}.layout_node_results 必须是非空逐节点几何差异数组`); continue; }
+    if (!Array.isArray(measurements) || measurements.length === 0) { errors.push(`${label}.layout_node_results ${exact ? "必须是非空逐节点几何差异数组" : "至少需要一个关键布局节点几何证据"}`); continue; }
     const seen = new Set();
     for (const [index, result] of measurements.entries()) {
       const resultLabel = `${label}.layout_node_results[${index}]`;
@@ -252,13 +255,30 @@ export function validateV4LayoutMeasurements(data, layoutBindings, errors) {
       const candidateBounds = result.candidate_bounds ?? result.candidate_measurement?.bounds;
       if (!layoutBoundsEqual(targetBounds, node.target_bounds)) errors.push(`${resultLabel}.target_bounds 必须等于布局节点参考 target_bounds`);
       if (!validLayoutBounds(candidateBounds)) errors.push(`${resultLabel}.candidate_bounds 必须包含有限的候选几何`);
-      if (!isObject(result.delta) || !["x", "y", "width", "height"].every((field) => Number.isFinite(result.delta[field]))) errors.push(`${resultLabel}.delta 必须逐轴记录 x/y/width/height`);
-      // 几何差异是候选测量的可重算事实，禁止手填一个与两组 bounds 不相符的 delta。
-      else if (validLayoutBounds(targetBounds) && validLayoutBounds(candidateBounds) && ["x", "y", "width", "height"].some((field) => result.delta[field] !== candidateBounds[field] - targetBounds[field])) errors.push(`${resultLabel}.delta 必须由 candidate_bounds 减 target_bounds 逐轴计算`);
+      const viewport = item?.viewport ?? data?.scene_reconstruction_contract?.target_conditions?.viewport ?? data?.scene_reconstruction_contract?.target_conditions?.target_viewport;
+      const region = data?.coverage_audit?.regions?.find((item) => item?.id === node.region_id)
+        ?? data?.scene_reconstruction_contract?.coverage_regions?.find((item) => (item?.region_id ?? item?.id) === node.region_id);
+      const visibilitySource = { ...node, ...result, ...candidateBounds };
+      if (visualBoundsOutsideViewport(candidateBounds, viewport, visibilitySource, region)) errors.push(`${resultLabel}.candidate_bounds 超出目标 viewport，存在越界或裁切`);
+      if (exact && (!isObject(result.delta) || !["x", "y", "width", "height"].every((field) => Number.isFinite(result.delta[field])))) errors.push(`${resultLabel}.delta 必须逐轴记录 x/y/width/height`);
+      if (!exact && result.delta != null && (!isObject(result.delta) || !["x", "y", "width", "height"].every((field) => Number.isFinite(result.delta[field])))) {
+        errors.push(`${resultLabel}.delta 如提供必须逐轴记录 x/y/width/height`);
+      } else if (isObject(result.delta) && validLayoutBounds(targetBounds) && validLayoutBounds(candidateBounds) && ["x", "y", "width", "height"].every((field) => Number.isFinite(result.delta[field])) && ["x", "y", "width", "height"].some((field) => result.delta[field] !== candidateBounds[field] - targetBounds[field])) {
+        // 几何差异是候选测量的可重算事实，禁止手填一个与两组 bounds 不相符的 delta。
+        errors.push(`${resultLabel}.delta 必须由 candidate_bounds 减 target_bounds 逐轴计算`);
+      }
       if (!['passed', 'failed'].includes(result.result)) errors.push(`${resultLabel}.result 必须为 passed 或 failed`);
       validatePathList(result.evidence, `${resultLabel}.evidence`, errors);
     }
-    for (const nodeId of nodes.keys()) if (!seen.has(nodeId)) errors.push(`${label}.layout_node_results 缺少布局节点：${nodeId}`);
+    if (exact) {
+      for (const nodeId of nodes.keys()) if (!seen.has(nodeId)) errors.push(`${label}.layout_node_results 缺少布局节点：${nodeId}`);
+    } else {
+      const criticalIds = new Set([
+        ...[...nodes.values()].filter((node) => node?.critical === true || node?.is_critical === true || node?.required === true).map((node) => node.layout_node_id).filter(nonEmptyString),
+        ...(Array.isArray(item?.critical_node_ids) ? item.critical_node_ids : Array.isArray(item?.criticalNodeIds) ? item.criticalNodeIds : []).filter(nonEmptyString),
+      ]);
+      for (const nodeId of criticalIds) if (!seen.has(nodeId)) errors.push(`${label}.layout_node_results 缺少关键布局节点：${nodeId}`);
+    }
     if (item?.conclusion === "passed" && measurements.some((result) => result?.result !== "passed")) errors.push(`${label}.conclusion=passed 与布局节点未全部通过冲突`);
   }
 }

@@ -13,6 +13,7 @@ function copy() { return structuredClone(base); }
 /** 构造冻结目标的 specified 或 verified 布局合同。 */
 function fidelityContract(status = "verified") {
   const document = copy(); const targetSha = `sha256:${"1".repeat(64)}`; const candidateSha = document.scope.bindings.code_candidate;
+  document.visual_validation = { mode: "exact" };
   document.fidelity = { applicability: "frozen-target", status }; document.effect_image_reconstruction = { applicability: "effect-image" };
   document.frozen_visual_target = { candidate_id: "mockup-a", original_file: "evidence/target.png", target_sha256: targetSha, visual_baseline_version: "ui-v1", status: "frozen" };
   document.scene_reconstruction_binding = { target_sha256: targetSha, scene_id: "MainScene", state_id: "default", visual_baseline_version: "ui-v1", reconstruction_contract_version: "1.0.0", layout_contract_sha256: "pending", layout_decomposition_version: "layout-v1", target_viewport: { width: 390, height: 844 } };
@@ -72,7 +73,7 @@ test("覆盖层缺少回退失败", () => { const document = copy(); delete docu
 test("特殊布局缺少覆盖规则失败", () => { const document = copy(); document.regions[5].layout_participation = "fixed-overlay"; assertFailed(document, "fixed-overlay 缺少对应 overlay_rules"); });
 test("不变量必须具备两类证据", () => { const document = copy(); document.invariants[0].evidence.visual = []; assertFailed(document, "evidence.visual 必须是非空数组"); });
 test("重复 UI ID 失败", () => { const document = copy(); document.scope.ui_ids.push("title"); assertFailed(document, "重复 UI ID"); });
-test("证据矩阵缺少必需轴失败", () => { const document = copy(); document.evidence_matrix.required_axes.splice(document.evidence_matrix.required_axes.indexOf("dpr"), 1); assertFailed(document, "required_axes 缺少必需轴"); });
+test("exact 证据矩阵缺少必需轴失败", () => { const document = copy(); document.visual_validation = { mode: "exact" }; document.evidence_matrix.required_axes.splice(document.evidence_matrix.required_axes.indexOf("dpr"), 1); assertFailed(document, "required_axes 缺少必需轴"); });
 test("无效断点条件失败", () => { const document = copy(); document.breakpoints[0].when = { width_lt: null }; assertFailed(document, "when 必须包含非空键和有效值"); });
 test("绝对和固定布局触发专项审查", () => { const document = copy(); document.regions[2].positioning = "absolute"; document.regions[2].size.strategy = "fixed"; const result = validateContract(document); assert.equal(result.status, "passed", JSON.stringify(result)); assert(result.specialized_review.includes("title:absolute-positioning")); assert(result.specialized_review.includes("title:fixed-size")); });
 test("CLI 对无效合同返回非零", async () => { const document = copy(); delete document.regions[0].anchors.horizontal; const directory = await mkdtemp(join(tmpdir(), "layout-contract-")); const path = join(directory, "contract.yaml"); await writeFile(path, JSON.stringify(document)); assert.notEqual(await main([path]), 0); });

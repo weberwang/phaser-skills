@@ -34,7 +34,7 @@ export function repositoryLint(repo, fail) {
     if (!existsSync(skillPath) || name === 'phaser4-game-workflow-control') continue;
     const text = readFileSync(skillPath, 'utf8');
     if (!text.includes('phaser4-game-workflow-control')) fail(`${name} 未引用唯一控制面`);
-    if (!/(提议|提出)/.test(text) || !/(审查|审阅)/.test(text) || !/(任务授权|A4-A6.{0,20}批准)/.test(text) || !/(回到|回总控|提交给).*?(控制面|phaser4-game-workflow-control)/s.test(text)) fail(`${name} 未声明提议/审查/任务授权内修改/回控制面边界`);
+    if (!/(提议|提出)/.test(text) || !/(审查|审阅)/.test(text) || !/(Work Item|工作项范围|A4-A6.{0,20}批准)/.test(text) || !/(回到|回总控|提交给).*?(控制面|phaser4-game-workflow-control)/s.test(text)) fail(`${name} 未声明提议/审查/工作项范围内修改/回控制面边界`);
     if (oldSemantics.some((pattern) => pattern.test(text))) fail(`${name} 保留旧 F0-F4 执行者语义`);
     if (unconditionalVisualApproval.some((pattern) => pattern.test(text))) fail(`${name} 保留无条件 V1/V2 人工确认语义`);
     if (oldOutsideControl.some((pattern) => pattern.test(text))) fail(`${name} 错把非 Phaser 操作纳入生命周期控制`);

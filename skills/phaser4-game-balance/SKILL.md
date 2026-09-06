@@ -7,13 +7,13 @@ description: Phaser 4 移动端 2D 游戏的数值设计角色。需要设计、
 
 ## 全局控制接入
 
-控制面边界：可提议、可审查、可在已建立且任务授权有效的 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审计和状态迁移；仅实际 A4-A6 操作请求批准。
+控制面边界：可提议、可审查、可在当前用户任务的 Work Item 范围内修改，且必须回到 `$phaser4-game-workflow-control` 审计和状态迁移；仅涉及外部写入、付费、真机、破坏性或外部删除、发布副作用的 A4-A6 操作请求批准。
 
-本领域可提议、审查，并仅在已建立且任务授权有效的 Work Item、Implementation Package、A 等级与路径内修改；变更结果必须回到 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 审计和状态迁移，仅实际 A4-A6 操作请求批准。
+本领域可提议、审查，并在当前用户任务、Implementation Package、A 等级与路径范围内修改；变更结果必须回到 [`phaser4-game-workflow-control`](../phaser4-game-workflow-control/SKILL.md) 审计和状态迁移，仅涉及外部写入、付费、真机、破坏性或外部删除、发布副作用的 A4-A6 操作请求批准。
 
 将体验目标转为可解释、可调整、可验证的模型，不以未记录的主观调参替代证据。
 
-读取全局 Work Item、项目配置、GDD、当前玩法实现和数值模型。按 F0 授权合规、F1 规格一致性、F2 数值质量、F3 模拟/实测/回归证据和 F4 集成/发布决策推进。
+读取全局 Work Item、项目配置、GDD、当前玩法实现和数值模型。按 F0 范围与流程、F1 规格一致性、F2 数值质量、F3 模拟/实测/回归证据和 F4 集成/发布决策推进。
 
 1. 定义玩家节奏、成功率、资源来源与消耗、失败成本和保底机制。
 2. 在 balance.md 记录参数、单位、默认值、来源、影响、公式和验证方式；运行时集中读取配置。

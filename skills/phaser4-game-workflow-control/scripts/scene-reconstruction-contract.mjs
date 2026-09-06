@@ -22,6 +22,7 @@ import { validateDisplayLayerPlanning } from "./display-layer-planning-contract.
 import { validateSceneTextDecomposition } from "./scene-text-decomposition-contract.mjs";
 import { validateSceneVisualRouteContract } from "./scene-visual-route-contract.mjs";
 import { validateLayoutAnnotationConfirmation } from "./layout_annotation_confirmation.mjs";
+import { resolveVisualValidationMode, validateVisualValidationPolicy, visualGeometryDifferenceExceeds, visualBoundsOutsideViewport } from "./visual-validation-policy.mjs";
 
 export { validateDisplayLayerPlanning } from "./display-layer-planning-contract.mjs";
 export { validateSceneVisualRouteAnalysis, validateSceneVisualRouteContract } from "./scene-visual-route-contract.mjs";
@@ -211,7 +212,7 @@ function validateTargetConditions(contract, manifest, stage, errors, effectImage
 }
 
 /** 验证区域事实；runtime owner 也必须承担完整 fidelity obligation。 */
-function validateCoverageRegion(region, contract, stage, toleranceIds, errors, effectImage = false, requireLayout = true) {
+function validateCoverageRegion(region, contract, stage, toleranceIds, errors, effectImage = false, requireLayout = true, mode = "usability") {
   const label = `scene_reconstruction_contract.coverage_regions[${region?.annotation_number ?? "?"}]`;
   if (!isObject(region)) {
     errors.push(contractError(stage, contract, null, `${label} 必须是对象`, { missing: "coverage region", returnStage: "V1/PROPOSAL" }));
@@ -226,7 +227,7 @@ function validateCoverageRegion(region, contract, stage, toleranceIds, errors, e
       errors.push(contractError(stage, contract, region, `${label} layout_node_ids 不能重复`, { actual: JSON.stringify(layoutNodeIds), returnStage: "V1/PROPOSAL" }));
     }
   }
-  for (const [names, text] of [
+  const requiredFacts = [
     [["annotation_number", "annotationNumber"], "annotation_number"],
     [["region_id", "regionId", "id"], "region_id"],
     [["coordinate_space", "coordinateSpace"], "coordinate_space"],
@@ -247,9 +248,11 @@ function validateCoverageRegion(region, contract, stage, toleranceIds, errors, e
     [["implementation_plan", "implementationPlan"], "implementation plan"],
     [["applicable_states", "applicableStates", "states"], "applicable states"],
     [["evidence", "evidence_paths", "evidencePaths"], "evidence"],
-    [["tolerance_reference", "toleranceReference", "tolerance_id", "toleranceId"], "predeclared tolerance"],
     [["approved_exception_ids", "approvedExceptionIds", "exception_ids", "exceptionIds"], "approved exception IDs"],
-  ]) {
+  ];
+  // usability 模式不要求为普通几何偏差预先填写精确 tolerance；身份、布局和可用性事实仍保留。
+  if (mode === "exact") requiredFacts.splice(requiredFacts.length - 1, 0, [["tolerance_reference", "toleranceReference", "tolerance_id", "toleranceId"], "predeclared tolerance"]);
+  for (const [names, text] of requiredFacts) {
     const value = field(region, ...names);
     const valid = Array.isArray(value) ? (text === "approved exception IDs" || value.length > 0) : isObject(value) ? Object.keys(value).length > 0 : nonEmptyString(value) || typeof value === "number" || typeof value === "boolean";
     if (!valid) errors.push(contractError(stage, contract, region, `${label} 缺少 ${text}`, { missing: text, returnStage: "V1/PROPOSAL" }));
@@ -266,7 +269,7 @@ function validateCoverageRegion(region, contract, stage, toleranceIds, errors, e
 }
 
 /** 验证整屏构图、响应式绑定和实现计划。 */
-function validateCompositionAndResponsive(contract, targetInfo, stage, errors, effectImage = false) {
+function validateCompositionAndResponsive(contract, targetInfo, stage, errors, effectImage = false, mode = "usability") {
   const composition = field(contract, "composition", "composition_contract", "compositionContract", "full_scene_composition");
   if (!isObject(composition)) {
     errors.push(contractError(stage, contract, null, "缺少完整场景构图合同", { missing: "composition", returnStage: "V1/PROPOSAL" }));
@@ -291,9 +294,9 @@ function validateCompositionAndResponsive(contract, targetInfo, stage, errors, e
     const targetViewport = field(responsive, "target_viewport", "targetViewport");
     if (!validViewport(targetViewport)) errors.push(contractError(stage, contract, null, "响应式合同缺少精确目标 viewport", { missing: "responsive_contract.target_viewport", returnStage: "V1/PROPOSAL" }));
     const other = field(responsive, "other_viewports", "otherViewports", "verification_viewports", "verificationViewports");
-    if (!Array.isArray(other) || other.length === 0) errors.push(contractError(stage, contract, null, "响应式合同缺少其他 viewport 验证关系", { missing: "responsive_contract.other_viewports", returnStage: "V1/PROPOSAL" }));
+    if (mode === "exact" && (!Array.isArray(other) || other.length === 0)) errors.push(contractError(stage, contract, null, "响应式合同缺少其他 viewport 验证关系", { missing: "responsive_contract.other_viewports", returnStage: "V1/PROPOSAL" }));
     const invariants = field(responsive, "relationship_invariants", "relationshipInvariants", "invariants");
-    if (!Array.isArray(invariants) || invariants.length === 0) errors.push(contractError(stage, contract, null, "响应式合同缺少关系不变量", { missing: "responsive_contract.relationship_invariants", returnStage: "V1/PROPOSAL" }));
+    if (mode === "exact" && (!Array.isArray(invariants) || invariants.length === 0)) errors.push(contractError(stage, contract, null, "响应式合同缺少关系不变量", { missing: "responsive_contract.relationship_invariants", returnStage: "V1/PROPOSAL" }));
     const binding = field(responsive, "layout_contract_binding", "layoutContractBinding", "layout_contract", "layoutContract");
     if (!isObject(binding)) errors.push(contractError(stage, contract, null, "响应式合同缺少 target-bound layout contract", { missing: "responsive_contract.layout_contract_binding", returnStage: "V1/PROPOSAL" }));
     else {
@@ -304,8 +307,8 @@ function validateCompositionAndResponsive(contract, targetInfo, stage, errors, e
     if (targetInfo && validViewport(targetViewport) && (targetViewport.width !== targetInfo.viewport.width || targetViewport.height !== targetInfo.viewport.height)) errors.push(contractError(stage, contract, null, "响应式目标 viewport 与冻结目标不一致", { expected: `${targetInfo.viewport.width}x${targetInfo.viewport.height}`, actual: `${targetViewport.width}x${targetViewport.height}`, returnStage: "V1/PROPOSAL" }));
   }
   const tolerances = field(contract, "predeclared_tolerances", "predeclaredTolerances", "tolerance_set", "toleranceSet", "tolerances");
-  if (!Array.isArray(tolerances) || tolerances.length === 0) errors.push(contractError(stage, contract, null, "缺少项目预声明容差集合", { missing: "predeclared_tolerances", returnStage: "V1/PROPOSAL" }));
-  else for (const [index, item] of tolerances.entries()) {
+  if (mode === "exact" && (!Array.isArray(tolerances) || tolerances.length === 0)) errors.push(contractError(stage, contract, null, "缺少项目预声明容差集合", { missing: "predeclared_tolerances", returnStage: "V1/PROPOSAL" }));
+  else if (Array.isArray(tolerances)) for (const [index, item] of tolerances.entries()) {
     if (!isObject(item) || !nonEmptyString(item.id ?? item.tolerance_id ?? item.toleranceId)) errors.push(contractError(stage, contract, null, `predeclared_tolerances[${index}] 缺少精确 ID`, { missing: `predeclared_tolerances[${index}].id`, returnStage: "V1/PROPOSAL" }));
     if (isObject(item) && item.value === undefined && item.rules === undefined && item.measurements === undefined) errors.push(contractError(stage, contract, null, `predeclared_tolerances[${index}] 缺少可执行规则`, { missing: `predeclared_tolerances[${index}].rules`, returnStage: "V1/PROPOSAL" }));
   }
@@ -383,6 +386,8 @@ function validateEffectImageCombinationFacts(contract, preacceptance, stage, err
 /** 验证 V3 同屏组合预验收必须使用正式 Scene 结构。 */
 export function validateSceneCombinationPreacceptance(contract, stage = "V3", options = {}) {
   const errors = [];
+  const mode = resolveVisualValidationMode(options, options.manifest, contract);
+  validateVisualValidationPolicy(errors, "visual_validation", options, options.manifest, contract);
   const preacceptance = field(contract, "combination_preacceptance", "combinationPreacceptance", "same_screen_preacceptance", "sameScreenPreacceptance");
   if (!isObject(preacceptance)) {
     errors.push(contractError(stage, contract, null, "缺少同屏组合预验收", { missing: "combination_preacceptance", returnStage: "V2/V3" }));
@@ -415,7 +420,7 @@ export function validateSceneCombinationPreacceptance(contract, stage = "V3", op
     const decomposition = field(contract, "layout_decomposition", "layoutDecomposition", "layout_decomposition_contract", "layoutDecompositionContract");
     const nodes = isObject(decomposition) && Array.isArray(field(decomposition, "layout_nodes", "layoutNodes")) ? field(decomposition, "layout_nodes", "layoutNodes") : [];
     const nodeById = new Map(nodes.map((node) => [field(node, "layout_node_id", "layoutNodeId"), node]).filter(([id]) => nonEmptyString(id)));
-    validateLayoutGeometryFacts(contract, preacceptance, stage, errors, { nodes, nodeById });
+    validateLayoutGeometryFacts(contract, preacceptance, stage, errors, { nodes, nodeById }, { visual_validation: { mode } });
   }
   return errors;
 }
@@ -454,6 +459,8 @@ export function validateSceneReconstructionContract(contract, manifest = null, o
     errors.push(contractError(stage, contract, null, "effect-image 工件缺少 scene_reconstruction_contract；旧独立资源工件不兼容", { missing: "scene_reconstruction_contract", returnStage: "V1/PROPOSAL" }));
     return errors;
   }
+  const mode = resolveVisualValidationMode(options, manifest, contract);
+  validateVisualValidationPolicy(errors, "visual_validation", options, manifest, contract);
   const version = contractVersion(contract);
   if (!nonEmptyString(version)) errors.push(contractError(stage, contract, null, "scene_reconstruction_contract 缺少版本", { missing: "contract_version", returnStage: "V1/PROPOSAL" }));
   const effectImage = isEffectImageContract(contract, manifest, options);
@@ -479,7 +486,7 @@ export function validateSceneReconstructionContract(contract, manifest = null, o
   else {
     const ids = new Set();
     for (const region of regions) {
-      validateCoverageRegion(region, contract, stage, toleranceIds, errors, effectImage, requireFinalLayout);
+      validateCoverageRegion(region, contract, stage, toleranceIds, errors, effectImage, requireFinalLayout, mode);
       const regionId = field(region, "region_id", "regionId", "id");
       if (nonEmptyString(regionId) && ids.has(regionId)) errors.push(contractError(stage, contract, region, "coverage region_id 重复", { actual: regionId, returnStage: "V1/PROPOSAL" }));
       if (nonEmptyString(regionId)) ids.add(regionId);
@@ -496,7 +503,7 @@ export function validateSceneReconstructionContract(contract, manifest = null, o
   errors.push(...validateSceneTextDecomposition(contract, { stage, manifest, effectImage, regions, layoutInfo, toleranceDefinitions: toleranceBlock }));
   // effect-image 的每个视觉区域都必须先完成来源路线分析；普通游戏 UI 不受该忠实还原硬门影响。
   if (effectImage) errors.push(...validateSceneVisualRouteContract(contract, manifest, { ...options, stage, toleranceDefinitions: toleranceBlock }));
-  validateCompositionAndResponsive(contract, targetInfo, stage, errors, effectImage);
+  validateCompositionAndResponsive(contract, targetInfo, stage, errors, effectImage, mode);
   const responsive = field(contract, "responsive_contract", "responsiveContract", "responsive");
   const responsiveBinding = field(responsive, "layout_contract_binding", "layoutContractBinding", "layout_contract", "layoutContract");
   validateLayoutBindingConsistency(responsiveBinding, layoutInfo.binding, contract, stage, errors, "responsive_contract layout binding", "layout_decomposition binding", effectImage);
@@ -505,7 +512,7 @@ export function validateSceneReconstructionContract(contract, manifest = null, o
     const lifecycle = field(contract, "status", "lifecycle", "stage_status", "stageStatus");
     if (lifecycle === "proposal-missing" || lifecycle === "missing") errors.push(contractError(stage, contract, null, "还原方案缺失，不能进入生产", { actual: lifecycle, returnStage: "V1/PROPOSAL" }));
   }
-  if (stage === "V3" || stage === "V4") errors.push(...validateSceneCombinationPreacceptance(contract, "V3", { effectImage, manifest }));
+  if (stage === "V3" || stage === "V4") errors.push(...validateSceneCombinationPreacceptance(contract, "V3", { effectImage, manifest, visual_validation: { mode } }));
   return errors;
 }
 
@@ -545,7 +552,8 @@ function validDifferenceEvidence(value) {
 }
 
 /** 读取归一化后的 viewport、DPR 和逻辑坐标等价证明。 */
-function validateNormalizationEquivalence(item, label, stage, errors) {
+function validateNormalizationEquivalence(item, label, stage, errors, mode = "usability") {
+  const exact = mode === "exact";
   const proof = field(item, "normalization_equivalence", "normalizationEquivalence", "condition_equivalence", "conditionEquivalence", "viewport_dpr_logical_equivalence", "viewportDprLogicalEquivalence");
   const direct = {
     viewport: field(item, "viewport_equivalence", "viewportEquivalence"),
@@ -554,7 +562,7 @@ function validateNormalizationEquivalence(item, label, stage, errors) {
   };
   const source = isObject(proof) ? proof : direct;
   if (!isObject(source)) {
-    errors.push(contractError(stage, item, item, `${label} 缺少 viewport/DPR/逻辑坐标等价证明`, { missing: "normalization_equivalence", returnStage: "VALIDATING", rootCause: "验收问题" }));
+    if (exact) errors.push(contractError(stage, item, item, `${label} 缺少 viewport/DPR/逻辑坐标等价证明`, { missing: "normalization_equivalence", returnStage: "VALIDATING", rootCause: "验收问题" }));
     return;
   }
   for (const [key, names, text] of [
@@ -564,15 +572,15 @@ function validateNormalizationEquivalence(item, label, stage, errors) {
   ]) {
     const entry = field(source, ...names);
     if (!isObject(entry)) {
-      errors.push(contractError(stage, item, item, `${label} 缺少 ${text} 等价证明`, { missing: `normalization_equivalence.${key}`, returnStage: "VALIDATING", rootCause: "验收问题" }));
+      if (exact) errors.push(contractError(stage, item, item, `${label} 缺少 ${text} 等价证明`, { missing: `normalization_equivalence.${key}`, returnStage: "VALIDATING", rootCause: "验收问题" }));
       continue;
     }
     const target = field(entry, "target", "reference", "target_viewport", "targetViewport", "reference_viewport", "referenceViewport", "target_dpr", "targetDpr", "target_coordinates", "targetCoordinates");
     const candidate = field(entry, "candidate", "actual", "candidate_viewport", "candidateViewport", "candidate_dpr", "candidateDpr", "candidate_coordinates", "candidateCoordinates");
     const equivalent = field(entry, "equivalent", "is_equivalent", "isEquivalent", "status");
-    if (target === undefined || candidate === undefined || !(equivalent === true || ["equivalent", "equal", "same", "passed", "pass"].includes(String(equivalent).toLowerCase()))) errors.push(contractError(stage, item, item, `${label} ${text} 等价证明必须同时记录 target、candidate 和 equivalent`, { missing: `normalization_equivalence.${key}.target/candidate/equivalent`, actual: JSON.stringify(entry), returnStage: "VALIDATING", rootCause: "验收问题" }));
+    if (exact && (target === undefined || candidate === undefined || !(equivalent === true || ["equivalent", "equal", "same", "passed", "pass"].includes(String(equivalent).toLowerCase())))) errors.push(contractError(stage, item, item, `${label} ${text} 等价证明必须同时记录 target、candidate 和 equivalent`, { missing: `normalization_equivalence.${key}.target/candidate/equivalent`, actual: JSON.stringify(entry), returnStage: "VALIDATING", rootCause: "验收问题" }));
     // DPR 等价证明不要求设备都达到上限，但必须是有效值、两侧相等且由机器明确标记等价。
-    if (key === "dpr" && (!isWorkflowDpr(target) || !isWorkflowDpr(candidate) || target !== candidate || equivalent !== true)) errors.push(contractError(stage, item, item, `${label} DPR 等价证明必须使用有效 DPR、target 与 candidate 相等且 equivalent=true`, { expected: JSON.stringify({ target: "(0,1.5]", candidate: "与 target 相等", equivalent: true }), actual: JSON.stringify(entry), returnStage: "VALIDATING", rootCause: "验收问题" }));
+    if (exact && key === "dpr" && (!isWorkflowDpr(target) || !isWorkflowDpr(candidate) || target !== candidate || equivalent !== true)) errors.push(contractError(stage, item, item, `${label} DPR 等价证明必须使用有效 DPR、target 与 candidate 相等且 equivalent=true`, { expected: JSON.stringify({ target: "(0,1.5]", candidate: "与 target 相等", equivalent: true }), actual: JSON.stringify(entry), returnStage: "VALIDATING", rootCause: "验收问题" }));
   }
 }
 
@@ -618,6 +626,52 @@ function nonNumericFactsDiffer(targetValue, candidateValue) {
   return JSON.stringify(targetValue) !== JSON.stringify(candidateValue);
 }
 
+/** 在 usability 模式下忽略几何、排版和证据元数据，保留其它视觉语义事实。 */
+function usabilitySemanticFactsDiffer(targetValue, candidateValue, key = "") {
+  const normalizedKey = String(key).replace(/[A-Z]/g, (character) => `_${character.toLowerCase()}`);
+  const presentationKeys = new Set(["x", "y", "width", "height", "left", "right", "top", "bottom", "offset", "position", "bounds", "rect", "geometry", "size", "target_bounds", "candidate_bounds", "actual_bounds", "reference_bounds", "pixel_bounds", "logical_bounds", "spacing", "margin", "padding", "scale", "transform", "coordinate_space", "anchor", "reference", "alignment", "axis_alignment", "self_anchor", "reference_anchor", "line_break", "line_breaks", "wrap", "whitespace", "font", "font_family", "font_size", "font_weight", "font_style", "line_height", "letter_spacing", "baseline", "glyph_bounds", "text_align", "text_anchor"]);
+  const metadataKeys = new Set(["evidence", "evidence_path", "evidence_paths", "target_sha", "target_sha256", "candidate_sha", "candidate_sha256", "sha", "sha256", "identity", "source", "origin", "timestamp", "dpr", "viewport", "locale", "seed", "random_seed", "input_trace", "test_id", "planned_test_id"]);
+  if (presentationKeys.has(normalizedKey) || metadataKeys.has(normalizedKey)) return false;
+  if (Array.isArray(targetValue) && Array.isArray(candidateValue)) return targetValue.length !== candidateValue.length || targetValue.some((value, index) => usabilitySemanticFactsDiffer(value, candidateValue[index], key));
+  if (Array.isArray(targetValue) || Array.isArray(candidateValue)) return true;
+  if (isObject(targetValue) && isObject(candidateValue)) {
+    const keys = new Set([...Object.keys(targetValue), ...Object.keys(candidateValue)]);
+    return [...keys].some((childKey) => usabilitySemanticFactsDiffer(targetValue[childKey], candidateValue[childKey], childKey));
+  }
+  if (isObject(targetValue) || isObject(candidateValue)) return true;
+  if (normalizedKey === "measurement" && (typeof targetValue === "number" || typeof candidateValue === "number")) return false;
+  return JSON.stringify(targetValue) !== JSON.stringify(candidateValue);
+}
+
+/** 判断目标到候选是否出现已知的可用性负向变化，避免批准例外掩盖真实失败。 */
+function usabilityNegativeFactsDiffer(targetValue, candidateValue, key = "") {
+  const normalizedKey = String(key).replace(/[A-Z]/g, (character) => `_${character.toLowerCase()}`);
+  const positiveKey = /(^|_)(visible|visibility|readable|readability|enabled|interactive|clickable|available|availability|usable|accessible|accessibility|present|active)($|_)/.test(normalizedKey);
+  const negativeKey = /(^|_)(occluded|occlusion|unreadable|hidden|invisible|blocked|disabled|cropped|clipped|offscreen|out_of_viewport|overflowed|interaction_failed)($|_)/.test(normalizedKey);
+  if (Array.isArray(targetValue) || Array.isArray(candidateValue)) {
+    const targetArray = Array.isArray(targetValue) ? targetValue : [];
+    const candidateArray = Array.isArray(candidateValue) ? candidateValue : [];
+    return Array.from({ length: Math.max(targetArray.length, candidateArray.length) }, (_, index) => index).some((index) => usabilityNegativeFactsDiffer(targetArray[index], candidateArray[index], key));
+  }
+  if (isObject(targetValue) || isObject(candidateValue)) {
+    const targetObject = isObject(targetValue) ? targetValue : {};
+    const candidateObject = isObject(candidateValue) ? candidateValue : {};
+    const keys = new Set([...Object.keys(targetObject), ...Object.keys(candidateObject)]);
+    return [...keys].some((childKey) => usabilityNegativeFactsDiffer(targetObject[childKey], candidateObject[childKey], childKey));
+  }
+  const candidateToken = typeof candidateValue === "string" ? candidateValue.trim().toLowerCase().replace(/[_ -]+/g, "_") : "";
+  const candidateNegative = (positiveKey && candidateValue === false)
+    || (negativeKey && candidateValue === true)
+    || /(^|_)(unreadable|hidden|invisible|occluded|blocked|disabled|cropped|clipped|offscreen|out_of_viewport|overflowed|interaction_failed|failed|fail|unusable|unavailable)($|_)/.test(candidateToken);
+  return candidateNegative && JSON.stringify(targetValue) !== JSON.stringify(candidateValue);
+}
+
+/** 从候选事实提取矩形，兼容 bounds/rect 包装而不改变事实身份校验。 */
+function factBounds(value) {
+  if (!isObject(value)) return value;
+  return isObject(value.bounds) ? value.bounds : isObject(value.rect) ? value.rect : value;
+}
+
 /** 校验 V4 结构化 fidelity case，禁止只凭资源加载或模糊 tolerance 放行。 */
 export function validateStructuredFidelityCases(cases, manifest = null, options = {}) {
   const errors = [];
@@ -626,6 +680,9 @@ export function validateStructuredFidelityCases(cases, manifest = null, options 
     errors.push(contractError(stage, null, null, "fidelity_cases 必须是非空结构化数组", { missing: "fidelity_cases", returnStage: "VALIDATING" }));
     return errors;
   }
+  const mode = resolveVisualValidationMode(options, manifest, manifest?.scene_reconstruction_contract, ...cases);
+  const exact = mode === "exact";
+  validateVisualValidationPolicy(errors, "visual_validation", options, manifest, manifest?.scene_reconstruction_contract, ...cases);
   const target = manifest?.reference_target ?? {};
   const targetSha = target.target_sha256;
   const targetPairs = new Set((target.scene_ids ?? []).flatMap((scene) => (target.state_ids ?? []).map((state) => `${scene}\0${state}`)));
@@ -665,12 +722,14 @@ export function validateStructuredFidelityCases(cases, manifest = null, options 
     if (!validSize(normalizedCandidateSize)) errors.push(contractError(stage, item, null, `${label} 缺少 candidate 原始尺寸`, { missing: "original_candidate_size", returnStage: "VALIDATING" }));
     const transform = field(item, "normalization_transform", "normalizationTransform", "deterministic_normalization_transform", "deterministicNormalizationTransform");
     if (!isObject(transform) || (!nonEmptyString(transform.type) && !nonEmptyString(transform.kind)) || (transform.scale_x === undefined && transform.scaleX === undefined && transform.matrix === undefined && transform.operations === undefined)) errors.push(contractError(stage, item, null, `${label} 缺少确定性归一化变换`, { missing: "normalization_transform", returnStage: "VALIDATING" }));
-    validateNormalizationEquivalence(item, label, stage, errors);
+    validateNormalizationEquivalence(item, label, stage, errors, mode);
     const canvas = field(item, "normalized_comparison_canvas", "normalizedComparisonCanvas", "comparison_canvas", "comparisonCanvas");
-    if (!validSize(canvas)) errors.push(contractError(stage, item, null, `${label} 缺少 normalized comparison canvas`, { missing: "normalized_comparison_canvas", returnStage: "VALIDATING" }));
+    if (exact && !validSize(canvas)) errors.push(contractError(stage, item, null, `${label} 缺少 normalized comparison canvas`, { missing: "normalized_comparison_canvas", returnStage: "VALIDATING" }));
     for (const [names, text] of [[["full_viewport_reference", "fullViewportReference", "reference_full_viewport"], "完整参考画面"], [["full_viewport_candidate", "fullViewportCandidate", "candidate_full_viewport"], "完整候选画面"], [["side_by_side_evidence", "sideBySideEvidence"], "side-by-side evidence"], [["overlay_evidence", "overlayEvidence"], "overlay evidence"]]) {
       const value = field(item, ...names);
-      if (!(nonEmptyString(value) || (Array.isArray(value) && value.length > 0) || (isObject(value) && Object.keys(value).length > 0))) errors.push(contractError(stage, item, null, `${label} 缺少 ${text}`, { missing: text, returnStage: "VALIDATING" }));
+      // usability 只要求代表性参考/候选证据；side-by-side 与 overlay 属于可选的精确比对材料。
+      if (exact && !(nonEmptyString(value) || (Array.isArray(value) && value.length > 0) || (isObject(value) && Object.keys(value).length > 0))) errors.push(contractError(stage, item, null, `${label} 缺少 ${text}`, { missing: text, returnStage: "VALIDATING" }));
+      if (!exact && ["完整参考画面", "完整候选画面"].includes(text) && !(nonEmptyString(value) || (Array.isArray(value) && value.length > 0) || (isObject(value) && Object.keys(value).length > 0))) errors.push(contractError(stage, item, null, `${label} 缺少 ${text}`, { missing: text, returnStage: "VALIDATING" }));
     }
     const targetPixelSize = field(target, "original_pixel_size", "originalPixelSize", "original_size", "originalSize") ?? {};
     const targetWidth = targetPixelSize.width; const targetHeight = targetPixelSize.height;
@@ -682,9 +741,9 @@ export function validateStructuredFidelityCases(cases, manifest = null, options 
     if (nonEmptyString(manifestDiffIdentity) && candidateDiffIdentity !== manifestDiffIdentity) errors.push(contractError(stage, item, item, `${label} candidate diff identity 未绑定当前候选 diff`, { expected: manifestDiffIdentity, actual: candidateDiffIdentity, returnStage: "VALIDATING", rootCause: "验收问题" }));
     if (targetWidth && normalizedTargetSize?.width && (normalizedTargetSize.width !== targetWidth || normalizedTargetSize.height !== targetHeight)) errors.push(contractError(stage, item, null, `${label} target 原始尺寸与冻结目标不一致`, { expected: `${targetWidth}x${targetHeight}`, actual: `${normalizedTargetSize.width}x${normalizedTargetSize.height}`, returnStage: "VALIDATING" }));
     const differenceEvidence = field(item, "difference_evidence", "differenceEvidence", "diff_evidence", "diffEvidence");
-    if (!validDifferenceEvidence(differenceEvidence)) errors.push(contractError(stage, item, item, `${label} difference evidence 无效；必须提供证据或 not-applicable+reason`, { missing: "difference_evidence", actual: differenceEvidence === null ? "null" : String(differenceEvidence ?? "missing"), returnStage: "VALIDATING", rootCause: "验收问题" }));
+    if (exact && !validDifferenceEvidence(differenceEvidence)) errors.push(contractError(stage, item, item, `${label} difference evidence 无效；必须提供证据或 not-applicable+reason`, { missing: "difference_evidence", actual: differenceEvidence === null ? "null" : String(differenceEvidence ?? "missing"), returnStage: "VALIDATING", rootCause: "验收问题" }));
     const tolerance = field(item, "tolerance_set", "toleranceSet", "tolerance", "tolerances");
-    if (!isObject(tolerance) && !Array.isArray(tolerance)) errors.push(contractError(stage, item, item, `${label} tolerance 必须是结构化对象/集合，不能使用任意字符串`, { missing: "tolerance_set", returnStage: "VALIDATING", rootCause: "方案缺失" }));
+    if (exact && !isObject(tolerance) && !Array.isArray(tolerance)) errors.push(contractError(stage, item, item, `${label} tolerance 必须是结构化对象/集合，不能使用任意字符串`, { missing: "tolerance_set", returnStage: "VALIDATING", rootCause: "方案缺失" }));
     const regionResults = field(item, "per_region_results", "perRegionResults", "region_results", "regionResults");
     if (!Array.isArray(regionResults) || regionResults.length === 0) errors.push(contractError(stage, item, null, `${label} 缺少逐区域结果矩阵`, { missing: "per_region_results", returnStage: "VALIDATING" }));
     else {
@@ -693,7 +752,8 @@ export function validateStructuredFidelityCases(cases, manifest = null, options 
         const regionId = field(result, "region_id", "regionId", "id");
         const regionContract = sceneRegions.get(regionId) ?? manifest?.coverage_audit?.regions?.find((region) => region?.id === regionId);
         const region = { ...(regionContract ?? {}), ...(result ?? {}) };
-        const required = [[["target_measurement", "targetMeasurement", "target_fact", "targetFact"], "target measurement/fact"], [["candidate_measurement", "candidateMeasurement", "candidate_fact", "candidateFact"], "candidate measurement/fact"], [["delta", "delta_measurement", "deltaMeasurement"], "delta"], [["result", "status"], "result"], [["evidence", "evidence_paths", "evidencePaths"], "evidence"]];
+        const required = [[["target_measurement", "targetMeasurement", "target_fact", "targetFact"], "target measurement/fact"], [["candidate_measurement", "candidateMeasurement", "candidate_fact", "candidateFact"], "candidate measurement/fact"], [["result", "status"], "result"], [["evidence", "evidence_paths", "evidencePaths"], "evidence"]];
+        if (exact) required.splice(2, 0, [["delta", "delta_measurement", "deltaMeasurement"], "delta"]);
         for (const [names, text] of required) {
           const value = field(result, ...names);
           if (!(nonEmptyString(value) || typeof value === "number" || typeof value === "boolean" || (isObject(value) && Object.keys(value).length > 0) || (Array.isArray(value) && value.length > 0))) errors.push(contractError(stage, item, region, `${label}.per_region_results[${regionIndex}] 缺少 ${text}`, { missing: text, returnStage: "VALIDATING" }));
@@ -703,11 +763,11 @@ export function validateStructuredFidelityCases(cases, manifest = null, options 
         if (nonEmptyString(regionId)) seen.add(regionId);
         const declaredToleranceId = field(regionContract, "tolerance_reference", "toleranceReference", "tolerance_id", "toleranceId");
         const resultToleranceId = field(result, "tolerance_reference", "toleranceReference", "tolerance_id", "toleranceId");
-        if (!nonEmptyString(declaredToleranceId) || !toleranceDefinitions.has(declaredToleranceId)) errors.push(contractError(stage, item, region, `${label}.per_region_results[${regionIndex}] 未绑定 scene contract 预声明 tolerance ID`, { missing: "coverage_region.tolerance_reference", expected: [...toleranceDefinitions.keys()].join(",") || "scene_reconstruction_contract.predeclared_tolerances", returnStage: "VALIDATING", rootCause: "方案缺失" }));
-        else if (resultToleranceId !== declaredToleranceId) errors.push(contractError(stage, item, region, `${label}.per_region_results[${regionIndex}] tolerance 必须引用 coverage region 的预声明 ID`, { expected: declaredToleranceId, actual: String(resultToleranceId ?? "missing"), returnStage: "VALIDATING", rootCause: "方案缺失" }));
+        if (exact && (!nonEmptyString(declaredToleranceId) || !toleranceDefinitions.has(declaredToleranceId))) errors.push(contractError(stage, item, region, `${label}.per_region_results[${regionIndex}] 未绑定 scene contract 预声明 tolerance ID`, { missing: "coverage_region.tolerance_reference", expected: [...toleranceDefinitions.keys()].join(",") || "scene_reconstruction_contract.predeclared_tolerances", returnStage: "VALIDATING", rootCause: "方案缺失" }));
+        else if (exact && resultToleranceId !== declaredToleranceId) errors.push(contractError(stage, item, region, `${label}.per_region_results[${regionIndex}] tolerance 必须引用 coverage region 的预声明 ID`, { expected: declaredToleranceId, actual: String(resultToleranceId ?? "missing"), returnStage: "VALIDATING", rootCause: "方案缺失" }));
         const toleranceDefinition = toleranceDefinitions.get(declaredToleranceId);
         const declaredLimit = toleranceLimit(toleranceDefinition);
-        if (declaredLimit === null) errors.push(contractError(stage, item, region, `${label}.per_region_results[${regionIndex}] 预声明 tolerance 缺少可执行数值规则`, { missing: `${declaredToleranceId}.rules.value`, returnStage: "VALIDATING", rootCause: "方案缺失" }));
+        if (exact && declaredLimit === null) errors.push(contractError(stage, item, region, `${label}.per_region_results[${regionIndex}] 预声明 tolerance 缺少可执行数值规则`, { missing: `${declaredToleranceId}.rules.value`, returnStage: "VALIDATING", rootCause: "方案缺失" }));
         const resultValue = String(field(result, "result", "status") ?? "").toLowerCase();
         if (!["passed", "pass", "failed", "fail"].includes(resultValue)) errors.push(contractError(stage, item, region, `${label}.per_region_results[${regionIndex}] result 不能为 unverified/unknown/missing`, { actual: resultValue || "missing", returnStage: "VALIDATING" }));
         const exception = field(result, "exception_id", "exceptionId", "exception_ids", "exceptionIds");
@@ -719,28 +779,37 @@ export function validateStructuredFidelityCases(cases, manifest = null, options 
         const approvedExceptionIds = new Set((Array.isArray(declaredExceptions) ? declaredExceptions : nonEmptyString(declaredExceptions) ? [declaredExceptions] : []).filter(nonEmptyString));
         const hasApprovedException = exceptionIds.length > 0 && exceptionIds.every((id) => approvedExceptionIds.has(id));
         const hasUnapprovedException = exceptionIds.length > 0 && !hasApprovedException;
-        const exceedsTolerance = declaredLimit !== null && [...numericDeltas(delta), ...numericFactDeltas(targetFact, candidateFact)].some((value) => value > declaredLimit);
-        const hasFactDifference = nonNumericFactsDiffer(targetFact, candidateFact);
+        // usability 的越界判断使用当前 fidelity case 视口；响应式代表视口可以与冻结目标不同。
+        const targetViewport = viewport;
+        const exceedsTolerance = visualGeometryDifferenceExceeds(targetFact, candidateFact, delta, { mode, declaredLimit });
+        const visibilitySource = isObject(candidateFact) ? { ...candidateFact, ...result } : result;
+        const candidateOutsideViewport = visualBoundsOutsideViewport(factBounds(candidateFact), targetViewport, visibilitySource, regionContract);
+        const hasFactDifference = exact ? nonNumericFactsDiffer(targetFact, candidateFact) : usabilitySemanticFactsDiffer(targetFact, candidateFact, "measurement");
+        const hasNegativeFactDifference = usabilityNegativeFactsDiffer(targetFact, candidateFact);
+        const hasUnexplainedFactDifference = hasFactDifference && !exceedsTolerance && (!hasApprovedException || hasNegativeFactDifference);
         if (hasUnapprovedException) errors.push(contractError(stage, item, region, `${label}.per_region_results[${regionIndex}] exception ID 未被合同显式批准`, { expected: [...approvedExceptionIds].join(",") || "approved_exception_ids", actual: exceptionIds.join(","), returnStage: "VALIDATING", rootCause: "方案缺失" }));
+        if (candidateOutsideViewport) errors.push(contractError(stage, item, region, `${label}.per_region_results[${regionIndex}] candidate bounds 超出目标 viewport，存在越界或裁切`, { expected: "candidate bounds 完全位于目标 viewport 内", actual: JSON.stringify(candidateFact), returnStage: "VALIDATING", rootCause: "验收问题" }));
         if (exceedsTolerance) errors.push(contractError(stage, item, region, `${label}.per_region_results[${regionIndex}] 存在未解释差异：数值 delta 超出预声明 tolerance`, { expected: `<=${declaredLimit}`, actual: JSON.stringify(delta), returnStage: "VALIDATING", rootCause: "验收问题" }));
-        if (hasFactDifference && !exceedsTolerance && !hasApprovedException) errors.push(contractError(stage, item, region, `${label}.per_region_results[${regionIndex}] 存在未解释差异：非数值视觉事实差异且缺精确批准例外 ID`, { missing: "approved exception_id", returnStage: "VALIDATING", rootCause: "验收问题" }));
-        if ((resultValue === "passed" || resultValue === "pass") && (exceedsTolerance || (hasFactDifference && !hasApprovedException))) errors.push(contractError(stage, item, region, `${label}.per_region_results[${regionIndex}] PASS 不能掩盖超容差或未获批准的事实差异`, { expected: "数值差异在预声明容差内，非数值差异有精确批准例外 ID", actual: JSON.stringify({ target: targetFact, candidate: candidateFact, delta }), returnStage: "VALIDATING", rootCause: "验收问题" }));
+        if (hasUnexplainedFactDifference) errors.push(contractError(stage, item, region, `${label}.per_region_results[${regionIndex}] 存在未解释差异：${hasNegativeFactDifference ? "可用性负向事实不得由批准例外绕过" : "非数值视觉事实差异且缺精确批准例外 ID"}`, { missing: hasNegativeFactDifference ? "candidate 可用性事实" : "approved exception_id", returnStage: "VALIDATING", rootCause: "验收问题" }));
+        if ((resultValue === "passed" || resultValue === "pass") && (candidateOutsideViewport || exceedsTolerance || hasUnexplainedFactDifference)) errors.push(contractError(stage, item, region, `${label}.per_region_results[${regionIndex}] PASS 不能掩盖越界、超容差或未批准的事实差异`, { expected: "候选可用性通过且精确模式下差异在预声明容差内", actual: JSON.stringify({ target: targetFact, candidate: candidateFact, delta }), returnStage: "VALIDATING", rootCause: "验收问题" }));
       }
       const failed = regionResults.filter((result) => ["failed", "fail", "unverified", "unknown", "missing"].includes(String(field(result, "result", "status") ?? "").toLowerCase()));
       if (failed.length && ["passed", "PASS"].includes(String(item.conclusion ?? ""))) errors.push(contractError(stage, item, null, `${label}.conclusion=PASS 与逐区域 FAIL/unverified/missing 冲突`, { actual: `${failed.length} 个区域未通过`, returnStage: "VALIDATING" }));
-      if (manifestRegionIds.size) for (const id of manifestRegionIds) if (!regionResults.some((result) => field(result, "region_id", "regionId", "id") === id)) errors.push(contractError(stage, item, { id }, `${label} 缺少 coverage region 结果`, { missing: id, returnStage: "VALIDATING" }));
+      if (exact && manifestRegionIds.size) for (const id of manifestRegionIds) if (!regionResults.some((result) => field(result, "region_id", "regionId", "id") === id)) errors.push(contractError(stage, item, { id }, `${label} 缺少 coverage region 结果`, { missing: id, returnStage: "VALIDATING" }));
     }
-    if (isEffectImageContract(sceneContract, manifest, options)) validateEffectImageLayoutNodeFidelity(item, sceneContract, stage, errors, toleranceDefinitions, sceneRegions);
+    if (isEffectImageContract(sceneContract, manifest, options)) validateEffectImageLayoutNodeFidelity(item, sceneContract, stage, errors, toleranceDefinitions, sceneRegions, { visual_validation: { mode } });
     if (!['passed', 'PASS', 'failed', 'FAIL'].includes(String(item.conclusion ?? ""))) errors.push(contractError(stage, item, null, `${label}.conclusion 必须为 passed 或 failed`, { actual: item.conclusion ?? "missing", returnStage: "VALIDATING" }));
   }
-  if (targetPairs.size) for (const pair of targetPairs) if (!coveredPairs.has(pair)) errors.push(contractError(stage, null, { scene_id: pair.split("\0")[0], state_id: pair.split("\0")[1] }, "fidelity_cases 缺少冻结 scene/state 组合", { missing: pair.replace("\0", "/"), returnStage: "VALIDATING" }));
+  if (exact && targetPairs.size) for (const pair of targetPairs) if (!coveredPairs.has(pair)) errors.push(contractError(stage, null, { scene_id: pair.split("\0")[0], state_id: pair.split("\0")[1] }, "fidelity_cases 缺少冻结 scene/state 组合", { missing: pair.replace("\0", "/"), returnStage: "VALIDATING" }));
   return errors;
 }
 
 /** 对 V4 必须具备的场景合同执行完整门，供 manifest 和实施包共同调用。 */
 export function validateSceneReconstructionGate(manifest, options = {}) {
   const stage = options.stage ?? "V2";
-  const errors = validateSceneReconstructionContract(manifest?.scene_reconstruction_contract, manifest, { ...options, stage });
-  if (stage === "V4") errors.push(...validateStructuredFidelityCases(manifest?.fidelity_cases, manifest, { stage: "V4" }));
+  const mode = resolveVisualValidationMode(options, manifest, manifest?.scene_reconstruction_contract);
+  const visualValidation = { visual_validation: { mode } };
+  const errors = validateSceneReconstructionContract(manifest?.scene_reconstruction_contract, manifest, { ...options, ...visualValidation, stage });
+  if (stage === "V4") errors.push(...validateStructuredFidelityCases(manifest?.fidelity_cases, manifest, { stage: "V4", ...visualValidation }));
   return errors;
 }

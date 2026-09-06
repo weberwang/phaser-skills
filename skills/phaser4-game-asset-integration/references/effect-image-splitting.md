@@ -20,7 +20,7 @@
 
 1. 用内容哈希、来源版本和框选编号形成稳定拆分 ID；先查询机器清单避免重复生产。
 2. 不直接裁出带背景、相邻对象、光晕或阴影污染的区域。需要时重绘边缘、补全遮挡部分并在深浅底检查透明度。
-3. 记录生成工具/模型、提示词或编辑摘要、参数、种子、输入版本、日期和人工编辑步骤；授权无法确认时不得进入 `accepted`。
+3. 记录生成工具/模型、提示词或编辑摘要、参数、种子、输入版本、日期和人工编辑步骤；外部素材的来源或版权/许可无法确认时不得进入 `accepted`。
 4. 按“ownership/F2 事实与实现分类（region 绑定 `ownership_evidence`）→ 先完成状态分析 → 按唯一原子部件登记 placements → 生成左原图+右说明栏 PNG → 等待 `bitmap-decomposition` 的 `generate-now` 区域一次精确确认 → 完整文件校验 → 生产”的顺序执行。用无新增依赖的确定性栅格脚本生成 PNG：
    `node scripts/generate_effect_image_annotation.mjs docs/visual-assets.json --project-root . --scene-id <scene> --state-id <state> --output evidence/coverage/<scene>-<state>-annotation.png --proposal evidence/coverage/<scene>-<state>-proposal.json`。正式生成必须带 `--proposal <file>.json`；省略该参数直接失败，不生成只有用户图示的成功产物。
    标注图必须同时可见三类用户标签：`generate-now`（本次生成）、`reuse-existing`（复用既有资源）和 `runtime-program`（程序实现）；后两者不触发位图拆解确认，但不能从标注图中省略。PNG 右侧每个编号只显示用户摘要和上述中文标签，左侧只画区域/原子框与稳定编号，不显示 placement ID、坐标尺寸、组件/实例/状态/资产 ID 或英文结构字段。`--proposal` 输出的是拆解分析技术 JSON，必须完整保存画布尺寸、区域和 component/placement bounds、状态分析、生产合同、atomic requirements 与资源映射；它与 PNG 元数据、区域定义 SHA、confirmation 的 proposal/annotation SHA 共同构成技术审计链。`reuse-existing` 必须指向不可变 `asset-reuse-snapshot/1.0` 中的 `accepted` 资源、当前 scene/state、视觉基线、许可记录和兼容性证据，并填写精确的 `source_file`、`source_manifest_sha256`、`source_sha256`、`compatibility_evidence_sha256`（连同对应路径字段）；禁止把当前 `visual-assets.json` 自引为快照，文件检查会解析快照并复核这些 SHA。

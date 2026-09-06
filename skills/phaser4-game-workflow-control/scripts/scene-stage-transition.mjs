@@ -46,7 +46,7 @@ function loadPreviousStage(work, repo, validationContext, unitIo) {
  * 入口默认只把目标阶段置为 in-progress；阶段完成状态必须显式提供并绑定对应证据。
  */
 export function prepareSceneStageTransition({ work, target, args, repo, validationContext, unitIo, validateWorkItem }) {
-  if (!['A1', 'A2', 'A3'].includes(work.pendingApprovalActionLevel)) throw new Error('场景内部阶段入口只允许任务授权内的 A1–A3，不能替代集成或发布批准');
+  if (!['A1', 'A2', 'A3'].includes(work.pendingApprovalActionLevel)) throw new Error('场景内部阶段入口只允许 Work Item 范围内的 A1–A3，不能替代集成或发布批准');
   const currentStage = visualStageOrder(work.visualStage);
   const requestedStage = visualStageOrder(args['visual-stage']);
   if (currentStage === null || requestedStage === null || requestedStage < 3) throw new Error('场景阶段入口必须从 V2/V3 相邻推进到 V3/V4');
@@ -80,7 +80,6 @@ export function prepareSceneStageTransition({ work, target, args, repo, validati
   // 阶段身份改变后，旧候选审计和验证批次不能继续证明新阶段。
   delete nextWork.diffAuditRecord;
   delete nextWork.diffAuditLedgerRecord;
-  delete nextWork.diffAuditAuthorizationRecord;
   delete nextWork.pendingVisualPrerequisiteSnapshot;
   nextWork.validationBatchId = `BATCH-${nextWork.workItemId}-${randomUUID()}`;
   validateWorkItem(nextWork);
@@ -99,7 +98,6 @@ export function prepareImplementationPackageActivation({ work, pkg, packagePath,
   const nextWork = structuredClone(work);
   delete nextWork.diffAuditRecord;
   delete nextWork.diffAuditLedgerRecord;
-  delete nextWork.diffAuditAuthorizationRecord;
   nextWork.validationBatchId = `BATCH-${nextWork.workItemId}-${pkg.packageId}`;
   validateWorkItem(nextWork);
   const nextPackage = validationContext.validateImplementationPackage(pkg, nextWork);

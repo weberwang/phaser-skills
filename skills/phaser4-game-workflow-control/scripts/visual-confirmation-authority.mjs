@@ -20,7 +20,7 @@ const SHA_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const RECEIPT_FIELDS = [
   "message_id", "thread_id", "author_role", "user_message_sha256", "decision_record_sha256", "accepted_at",
   "work_item_id", "candidate_version", "candidate_sha256", "target_sha256", "scene_id", "state_id",
-  "task_authorization_id", "resolution_id", "resolution_status", "resolved_from", "user_statement",
+  "resolution_id", "resolution_status", "resolved_from", "user_statement",
 ];
 const ENTRY_FIELDS = [
   ...RECEIPT_FIELDS, "receipt_id", "receipt_file", "receipt_sha256", "entry_sha256", "annotation_file",
@@ -50,7 +50,7 @@ function canonicalSha(value, excludedField) {
 }
 /** 计算文件字节 SHA。 */
 function fileSha(bytes) { return `sha256:${createHash("sha256").update(bytes).digest("hex")}`; }
-/** 规范化 taskAuthorization 冻结的前置文件列表，顺序和分隔符不影响其身份。 */
+/** 规范化 Work Item 冻结的前置文件列表，顺序和分隔符不影响其身份。 */
 function prerequisiteListSha(files) {
   const normalized = [...new Set((Array.isArray(files) ? files : []).map((item) => String(item).replaceAll("\\", "/")))].sort();
   return fileSha(Buffer.from(canonicalJson(normalized), "utf8"));
@@ -93,7 +93,7 @@ export function visualConfirmationGroupKey(sceneId, stateId) { return `${sceneId
 export function validateVisualConfirmationReferences(work = {}) {
   const errors = [];
   if (Object.hasOwn(work, "userDecisionReceipt") || Object.hasOwn(work, "user_decision_receipt") || Object.hasOwn(work, "visualConfirmationAuthority") || Object.hasOwn(work, "visual_confirmation_authority")) errors.push("Work Item 禁止内嵌 userDecisionReceipt/visualConfirmationAuthority；必须引用 user-resolution-ledger");
-  if (Object.hasOwn(work, "visualConfirmationPrerequisiteFiles")) errors.push("Work Item 禁止自报 visualConfirmationPrerequisiteFiles；必须冻结在 taskAuthorization");
+  // 前置文件现在直接归属 Work Item；这里只校验引用形状，文件内容由 loader 复算。
   if (Object.hasOwn(work, "visual_confirmation_authority_refs")) errors.push("Work Item 禁止旧 snake_case visual_confirmation_authority_refs；必须升级为 visualConfirmationAuthorityRefs");
   const refs = work.visualConfirmationAuthorityRefs;
   if (refs === undefined) return errors;
@@ -151,12 +151,12 @@ function readGitBaseline(projectRoot, baselineHash, paths, errors) {
 function validateEntry(entry, receipt, work, manifest, errors) {
   for (const field of ENTRY_FIELDS) if (!Object.hasOwn(entry, field)) errors.push(`ledger entry 缺少 ${field}`);
   for (const field of RECEIPT_FIELDS) if (!Object.hasOwn(receipt ?? {}, field)) errors.push(`receipt 缺少 ${field}`);
-  for (const field of ["message_id", "thread_id", "author_role", "accepted_at", "work_item_id", "candidate_version", "target_sha256", "scene_id", "state_id", "task_authorization_id", "resolution_id", "resolution_status", "resolved_from", "user_statement"]) if (!nonEmptyString(entry?.[field]) || !nonEmptyString(receipt?.[field])) errors.push(`ledger/receipt ${field} 不能为空`);
+  for (const field of ["message_id", "thread_id", "author_role", "accepted_at", "work_item_id", "candidate_version", "target_sha256", "scene_id", "state_id", "resolution_id", "resolution_status", "resolved_from", "user_statement"]) if (!nonEmptyString(entry?.[field]) || !nonEmptyString(receipt?.[field])) errors.push(`ledger/receipt ${field} 不能为空`);
   for (const field of ["user_message_sha256", "decision_record_sha256", "candidate_sha256", "target_sha256"]) if (!isSha256(entry?.[field]) || !isSha256(receipt?.[field])) errors.push(`ledger/receipt ${field} 必须是合法 SHA-256`);
   if (entry.author_role !== "user" || entry.resolution_status !== "resolved" || entry.resolved_from !== "USER_INPUT_REQUIRED") errors.push("ledger entry 必须是用户解除 USER_INPUT_REQUIRED 的记录");
   for (const field of RECEIPT_FIELDS) if (receipt?.[field] !== entry[field]) errors.push(`ledger entry 与 receipt.${field} 不一致`);
-  const expected = { workItemId: work.workItemId, taskAuthorizationId: work.taskAuthorization?.authorizationId, targetSha: manifest?.reference_target?.target_sha256, candidateVersion: manifest?.candidateVersion, candidateSha: manifest?.candidate_identity?.sha256 };
-  for (const [field, value] of [["work_item_id", expected.workItemId], ["task_authorization_id", expected.taskAuthorizationId], ["target_sha256", expected.targetSha], ["candidate_version", expected.candidateVersion], ["candidate_sha256", expected.candidateSha]]) if (!nonEmptyString(value) || entry[field] !== value) errors.push(`ledger entry ${field} 未绑定当前 Work Item/任务授权/manifest 候选身份`);
+  const expected = { workItemId: work.workItemId, targetSha: manifest?.reference_target?.target_sha256, candidateVersion: manifest?.candidateVersion, candidateSha: manifest?.candidate_identity?.sha256 };
+  for (const [field, value] of [["work_item_id", expected.workItemId], ["target_sha256", expected.targetSha], ["candidate_version", expected.candidateVersion], ["candidate_sha256", expected.candidateSha]]) if (!nonEmptyString(value) || entry[field] !== value) errors.push(`ledger entry ${field} 未绑定当前 Work Item/manifest 候选身份`);
   if (!isSha256(entry.entry_sha256) || canonicalSha(entry, "entry_sha256") !== entry.entry_sha256) errors.push(`ledger entry ${entry.receipt_id ?? "?"} entry_sha256 复算失败`);
   if (!isSha256(entry.receipt_sha256)) errors.push(`ledger entry ${entry.receipt_id ?? "?"} receipt_sha256 无效`);
   if (Number.isNaN(Date.parse(entry.accepted_at)) || Date.parse(entry.accepted_at) > Date.now() + 5 * 60 * 1000) errors.push(`ledger entry ${entry.receipt_id ?? "?"} accepted_at 无效或晚于当前时间`);
@@ -174,13 +174,12 @@ export function loadVisualConfirmationAuthority(work, { projectRoot, manifest, c
   if (!Array.isArray(refs) || !refs.length) errors.push("缺少 Work Item.visualConfirmationAuthorityRefs，不能证明人工确认");
   if (!checkFiles || !nonEmptyString(projectRoot)) errors.push("decision gap：loader 必须在 check-files/projectRoot 模式读取 user-resolution-ledger");
   if (!isObject(manifest)) errors.push("decision gap：loader 必须绑定当前 visual manifest");
-  if (Object.hasOwn(work ?? {}, "visualConfirmationPrerequisiteFiles")) errors.push("Work Item 不得自报 visualConfirmationPrerequisiteFiles；必须冻结在 taskAuthorization");
-  const frozenPrerequisites = work?.taskAuthorization?.visualConfirmationPrerequisiteFiles;
-  const frozenPrerequisiteSha = work?.taskAuthorization?.visualConfirmationPrerequisiteFilesSha256;
-  if (!Array.isArray(frozenPrerequisites) || !frozenPrerequisites.length) errors.push("taskAuthorization 缺少冻结的 visualConfirmationPrerequisiteFiles");
+  const frozenPrerequisites = work?.visualConfirmationPrerequisiteFiles;
+  const frozenPrerequisiteSha = work?.visualConfirmationPrerequisiteFilesSha256;
+  if (!Array.isArray(frozenPrerequisites) || !frozenPrerequisites.length) errors.push("Work Item 缺少冻结的 visualConfirmationPrerequisiteFiles");
   const normalizedPrerequisites = Array.isArray(frozenPrerequisites) ? frozenPrerequisites.map((item) => String(item).replaceAll("\\", "/")) : [];
-  if (normalizedPrerequisites.length !== new Set(normalizedPrerequisites).size || JSON.stringify(normalizedPrerequisites) !== JSON.stringify([...normalizedPrerequisites].sort())) errors.push("taskAuthorization.visualConfirmationPrerequisiteFiles 必须是排序且唯一的冻结路径");
-  if (!isSha256(frozenPrerequisiteSha) || frozenPrerequisiteSha !== prerequisiteListSha(frozenPrerequisites)) errors.push("taskAuthorization.visualConfirmationPrerequisiteFilesSha256 复算失败，前置引用未纳入冻结身份");
+  if (normalizedPrerequisites.length !== new Set(normalizedPrerequisites).size || JSON.stringify(normalizedPrerequisites) !== JSON.stringify([...normalizedPrerequisites].sort())) errors.push("Work Item.visualConfirmationPrerequisiteFiles 必须是排序且唯一的冻结路径");
+  if (!isSha256(frozenPrerequisiteSha) || frozenPrerequisiteSha !== prerequisiteListSha(frozenPrerequisites)) errors.push("Work Item.visualConfirmationPrerequisiteFilesSha256 复算失败，前置引用未纳入冻结身份");
   const prerequisiteSet = new Set((Array.isArray(frozenPrerequisites) ? frozenPrerequisites : []).map((item) => String(item).replaceAll("\\", "/")));
   const baselinePaths = [...new Set([...prerequisiteSet, ...(Array.isArray(refs) ? refs.map((ref) => ref?.ledger_file) : [])].filter(nonEmptyString))];
   const baseline = checkFiles && nonEmptyString(projectRoot) ? readGitBaseline(projectRoot, work?.baselineHash, baselinePaths, errors) : null;
@@ -194,7 +193,7 @@ export function loadVisualConfirmationAuthority(work, { projectRoot, manifest, c
       if (seenReceipts.has(identity) && seenReceipts.get(identity) !== groupKey) errors.push(`不同 scene/state 不得共享 receipt 身份：${value}`);
       seenReceipts.set(identity, groupKey);
     }
-    if (!prerequisiteSet.has(ref.ledger_file.replaceAll("\\", "/"))) errors.push(`ledger_file 必须存在于 taskAuthorization 冻结的实施基线/授权前置证据：${ref.ledger_file}`);
+    if (!prerequisiteSet.has(ref.ledger_file.replaceAll("\\", "/"))) errors.push(`ledger_file 必须存在于 Work Item 冻结的实施基线前置证据：${ref.ledger_file}`);
     if (collectCoverage(implementationPackage).some((path) => pathPatternCoversTarget(path, ref.ledger_file)) || collectCoverage(delegations).some((path) => pathPatternCoversTarget(path, ref.ledger_file))) errors.push(`ledger_file 不得被 Implementation Package ownedPaths/outputPaths 或委派动作覆盖：${ref.ledger_file}`);
     const ledgerBytes = existsSync(ledgerPath) ? readFileSync(ledgerPath) : null;
     if (!ledgerBytes) { errors.push(`ledger_file 不存在：${ref.ledger_file}`); continue; }
@@ -203,7 +202,7 @@ export function loadVisualConfirmationAuthority(work, { projectRoot, manifest, c
     let ledger; try { ledger = JSON.parse(ledgerBytes.toString("utf8")); } catch (error) { errors.push(`ledger_file JSON 无效：${error.message}`); continue; }
     if (ledger.schema !== LEDGER_SCHEMA) errors.push(`ledger schema 必须为 ${LEDGER_SCHEMA}`);
     if (!isSha256(ledger.ledger_sha256) || canonicalSha(ledger, "ledger_sha256") !== ledger.ledger_sha256) errors.push(`ledger_sha256 复算失败：${ref.ledger_file}`);
-    if (ledger.work_item_id !== work?.workItemId || ledger.task_authorization_id !== work?.taskAuthorization?.authorizationId) errors.push(`ledger 未绑定当前 Work Item/task authorization：${ref.ledger_file}`);
+    if (ledger.work_item_id !== work?.workItemId) errors.push(`ledger 未绑定当前 Work Item：${ref.ledger_file}`);
     const entries = Array.isArray(ledger.entries) ? ledger.entries : []; const entry = entries.find((item) => item?.receipt_id === ref.receipt_id);
     if (!entry) { errors.push(`ledger 缺少 receipt_id=${ref.receipt_id}`); continue; }
     if (entry.scene_id !== ref.scene_id || entry.state_id !== ref.state_id) errors.push(`receipt_id=${ref.receipt_id} scene/state 与 Work Item 引用不一致`);
@@ -211,7 +210,7 @@ export function loadVisualConfirmationAuthority(work, { projectRoot, manifest, c
     if (!protectedLedgerPath(projectRoot, entry.receipt_file)) errors.push(`receipt_file 必须位于受保护目录 ${PROTECTED_PREFIX}：${entry.receipt_file ?? "missing"}`);
     const receiptFile = readJsonFile(projectRoot, entry.receipt_file, entry.receipt_sha256, `receipt[${ref.receipt_id}]`, errors);
     const receiptPath = String(entry.receipt_file ?? "").replaceAll("\\", "/");
-    if (!prerequisiteSet.has(receiptPath)) errors.push(`receipt_file 必须存在于 taskAuthorization 冻结前置文件：${entry.receipt_file}`);
+    if (!prerequisiteSet.has(receiptPath)) errors.push(`receipt_file 必须存在于 Work Item 冻结前置文件：${entry.receipt_file}`);
     const baselineReceipt = baseline?.get(receiptPath);
     if (!baselineReceipt || !receiptFile?.bytes.equals(baselineReceipt.bytes)) errors.push(`receipt_file 当前内容与 baselineHash 冻结 blob 不一致：${entry.receipt_file}`);
     validateEntry(entry, receiptFile?.json, work, manifest, errors);
@@ -219,7 +218,7 @@ export function loadVisualConfirmationAuthority(work, { projectRoot, manifest, c
     groups[groupKey] = trustedAuthority({
       projectRoot, checkFiles: true, ledgerFile: ref.ledger_file, receiptId: ref.receipt_id, receiptFile: entry.receipt_file, receiptSha256: ref.receipt_sha256,
       sceneId: entry.scene_id, stateId: entry.state_id, targetSha: entry.target_sha256, targetFrozenAt: manifest?.reference_target?.frozen_at,
-      workItemId: entry.work_item_id, taskAuthorizationId: entry.task_authorization_id, candidateVersion: entry.candidate_version, candidateSha: entry.candidate_sha256,
+      workItemId: entry.work_item_id, candidateVersion: entry.candidate_version, candidateSha: entry.candidate_sha256,
       userDecisionReceipt: receiptFile?.json, annotationFile: entry.annotation_file, annotationSha256: entry.annotation_sha256,
       annotationWidth: entry.annotation_width, annotationHeight: entry.annotation_height, annotationSchema: entry.annotation_schema, annotationLayout: entry.annotation_layout,
       annotationMetadataSha256: entry.annotation_metadata_sha256, annotationIdentitySha256: entry.annotation_identity_sha256,
@@ -228,7 +227,7 @@ export function loadVisualConfirmationAuthority(work, { projectRoot, manifest, c
   }
   if (errors.length) return { authority: { loaderErrors: errors }, authorityByGroup: {}, errors };
   const first = Object.values(groups)[0];
-  const authority = trustedAuthority({ projectRoot, checkFiles: true, targetSha: manifest.reference_target.target_sha256, targetFrozenAt: manifest.reference_target.frozen_at, workItemId: work.workItemId, taskAuthorizationId: work.taskAuthorization?.authorizationId, candidateVersion: manifest.candidateVersion, candidateSha: manifest.candidate_identity?.sha256, authorityByGroup: groups });
+  const authority = trustedAuthority({ projectRoot, checkFiles: true, targetSha: manifest.reference_target.target_sha256, targetFrozenAt: manifest.reference_target.frozen_at, workItemId: work.workItemId, candidateVersion: manifest.candidateVersion, candidateSha: manifest.candidate_identity?.sha256, authorityByGroup: groups });
   if (first && Object.keys(groups).length === 1) Object.assign(authority, { sceneId: first.sceneId, stateId: first.stateId, userDecisionReceipt: first.userDecisionReceipt, ledgerFile: first.ledgerFile, receiptId: first.receiptId, receiptFile: first.receiptFile, receiptSha256: first.receiptSha256, annotationFile: first.annotationFile, annotationSha256: first.annotationSha256, annotationWidth: first.annotationWidth, annotationHeight: first.annotationHeight, annotationSchema: first.annotationSchema, annotationLayout: first.annotationLayout, annotationMetadataSha256: first.annotationMetadataSha256, annotationIdentitySha256: first.annotationIdentitySha256 });
   return { authority, authorityByGroup: groups, errors: [] };
 }

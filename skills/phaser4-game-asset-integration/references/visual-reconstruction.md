@@ -2,15 +2,15 @@
 
 缺少瞬态弹窗宿主图时先按[显示层待办规则](../../phaser4-game-workflow-control/references/control-model.md#显示层子任务与宿主继续推进)登记 `deferred_layers`，宿主继续自身 V1–V3 与实现，不自动切换去补弹窗图。下文完整上下文要求在 V1–V3 仅作用于本次 inventory；待办不能替代已有主图中的视觉内容，也不能绕过弹窗自身前置。最终 V4 联合完成必须清零待办并保留全部层的真实验收证据。
 
-参考截图、效果图、录屏、运行项目和源码是输入，不是通过结论。参考还原属于 V0 的完整路径并执行 V1-V4；功能契约仍优先定义玩法行为，但当 Work Item 明确以指定效果图或参考截图为还原目标时，必须启用“忠实还原模式”。
+参考截图、效果图、录屏、运行项目和源码是输入，不是通过结论。参考还原属于 V0 的完整路径并执行 V1-V4；功能契约仍优先定义玩法行为，但当 Work Item 明确以指定效果图或参考截图为还原目标时，必须启用“忠实还原模式”。该模式默认使用 `visual_validation.mode=usability`，不因 effect-image 自动启用 `exact`；只有用户明确要求像素级还原时才选择 `exact`。
 
 effect-image ImageGen 的 canonical 提示词模板、asset_prompt 事实继承和生成记录绑定见[《Effect-image ImageGen 忠实还原提示词合同》](effect-image-prompt-contract.md)；本文只规定场景还原路由与视觉事实门。
 
 ## 忠实还原模式
 
-指定参考在已登记的目标视口、设备像素比、语言、状态、随机种子和动画时间点下构成冻结视觉目标。参考中可观察的构图、层级、相对位置与尺寸、比例、色彩、材质、光影、字体、图标和装饰密度均为冻结视觉事实；未经授权不得重新设计、审美优化、以“提升游戏感”或“专业修复”为由改变，也不得静默偏离。
+指定参考在已登记的目标视口、设备像素比、语言、状态、随机种子和动画时间点下构成冻结视觉目标。参考中可观察的构图、层级、相对位置与尺寸、比例、色彩、材质、光影、字体、图标和装饰密度是设计事实；不得在没有用户明确要求时改成另一种产品方向或玩法语义。默认可用性验证允许小幅位置、尺寸、边距和换行偏差，明显越界、裁切、关键遮挡、不可读或交互失效仍必须修复。
 
-V1 内生成或接收并冻结参考身份、版本、权属、原始文件指纹、适用状态、scene master/reference target、宿主上下文效果图、布局合同、视觉事实、忠实度矩阵结构和项目容差。参考证据明确且不存在可见偏差或实质取舍时记录 `AUTO` 决策依据；存在冲突或取舍时只请求一次精确 `USER_DECISION`。
+V1 内生成或接收并冻结参考身份、版本、权属、原始文件指纹、适用状态、scene master/reference target、宿主上下文效果图、布局合同、视觉事实、验证模式和项目容差。参考证据明确且不存在产品方向、玩法语义或上游结构取舍时记录 `AUTO` 决策依据；存在实质冲突或取舍时只请求一次 `USER_DECISION`。默认 `usability` 不把细节几何偏差升级为决定门。
 
 ## V2 拆解确认与生产方案
 
@@ -26,7 +26,7 @@ V2 布局标注在拆解确认之后串行产出：阶段 A 先生成按人工�
 - `visualProductionUnits` 生产计划，逐 annotation number / region ID 绑定 owner、路径、格式、资源、组件状态、交互热区和输出。
 - `visual-decomposition-confirmation/1.0`，由用户确认拆解图和生产方案，绑定 annotation/proposal/decision SHA、target SHA、baseline SHA、candidate/diff identity、work item、scene/state、全部编号和用户原文；布局另以 `layout-annotation-confirmation/1.0` 绑定最终布局图、决策文件及上游身份。
 
-确认只冻结还原方案与生产边界，不授权改变玩法、布局或视觉事实。提案、目标、区域定义、用户原文、候选身份或布局字段漂移时，确认失效并回到当前 Work Item 的 V2 重做拆解确认。
+确认只冻结还原方案与生产边界，不改变玩法、布局或视觉事实的责任归属。提案、目标、区域定义、用户原文、候选身份或布局字段漂移时，确认失效并回到当前 Work Item 的 V2 重做拆解确认；普通运行候选演进只重验受影响证据。
 
 ## 布局与文本拆解
 
@@ -40,7 +40,7 @@ V2 布局标注在拆解确认之后串行产出：阶段 A 先生成按人工�
 
 ## V3 正式资源与组合预验收
 
-V3 消费 V2 已确认的拆解图、技术 JSON、coverage、布局合同和生产计划，生产正式视觉资源，并完成正式布局与宿主场景同屏组合预验收。正式资源必须保留来源、授权、机器清单、生成记录、运行时文件、组件状态和冻结目标绑定。
+V3 消费 V2 已确认的拆解图、技术 JSON、coverage、布局合同和生产计划，生产正式视觉资源，并完成正式布局与宿主场景同屏组合预验收。正式资源必须保留来源、适用的版权/许可信息、机器清单、生成记录、运行时文件、组件状态和冻结目标绑定。
 
 ImageGen 区域按 V2 `component_inventory` 收齐全部待生成 component × required state，作为[一个批量生成任务](visual-production-pipeline.md#图片批量生成)一次提交；每项交付 individual 位图，`atlas_allowed=false`，不能将独立文件要求解释为逐张调度。宽高由逻辑像素 `ceil(max placement width/height × intended_scale_range.max × 1.5)` 决定，`max_dpr=1.5`，`padding_policy=none`。透明资产必须先生成非透明高对比纯色背景，再执行一次背景移除，并记录完整背景移除与归一化证据。
 
@@ -48,20 +48,20 @@ V3 `combination_preacceptance` 必须使用正式 Scene 同结构、正式资源
 
 ## V4 运行态与动态验收
 
-V4 在冻结目标视口和状态下，用完整 viewport 运行证据验证视觉与功能联合结果。参考与候选必须使用相同视口、实际有效 DPR（动态封顶 1.5）、语言、操作轨迹、随机种子和动画时间点，并逐状态、逐区域更新忠实度矩阵。完整 viewport 是主证据；ROI、并排、叠加和像素差只作为补充。
+V4 按 `visual_validation.mode` 运行证据验证视觉与功能联合结果。默认 `usability` 在目标及代表性视口/状态提供可读画面，检查布局关系、边界、遮挡、交互和恢复；参考与候选记录视口、实际有效 DPR（动态封顶 1.5）、语言、操作轨迹、随机种子和动画时间点。只有 `exact` 或明确精确需求时才要求完整 viewport、逐状态/逐区域忠实度矩阵、严格容差、ROI、并排、叠加和像素差证据。
 
-每个 fidelity/parity case 不可变绑定冻结目标 SHA、当前代码或构建 SHA、scene/state、viewport、实际有效 DPR、语言、随机种子、输入轨迹、动画采样/稳定帧、布局合同版本、视觉基线版本、双方证据、预定义容差、例外 ID 和结论。任一身份变化即令旧案例失效并重新采集。
+每个 fidelity/parity case 不可变绑定冻结目标 SHA、当前代码或构建 SHA、scene/state、viewport、实际有效 DPR、语言、随机种子、输入轨迹、动画采样/稳定帧、布局合同版本、视觉基线版本、双方证据、预定义容差、例外 ID 和结论。上游事实或当前受影响候选身份变化才令对应旧案例失效并重新采集；其他单元路径级结果继续有效。默认 `usability` 保留代表性案例，`exact` 或明确全覆盖需求才要求全部视口/状态组合。
 
-机器清单生命周期固定为：非效果图 `not-applicable`；效果图完成 V2 拆解确认后为 `v2-ready`，此时允许 fidelity case 为空；只有 V4 已验证才为 `v4-complete`，此时 case 必须非空、全部 `passed`，并且冻结目标的每个 scene/state 组合至少有一个 passed case。
+机器清单生命周期固定为：非效果图 `not-applicable`；效果图完成 V2 拆解确认后为 `v2-ready`，此时允许 fidelity case 为空；只有 V4 已验证才为 `v4-complete`，此时当前验证模式要求的关键 case 必须通过。默认 `usability` 保留代表性场景/状态案例；`exact` 或明确全覆盖需求才要求冻结目标的每个 scene/state 组合至少有一个 passed case。
 
 ## 失败条件
 
 出现下列任一情况，V2、V3、V4 或完成报告不得通过：
 
-- 存在未解释差异或超出预定义容差的差异。
-- 缺少同条件参考证据、候选证据、完整 viewport 或适用的响应式证据。
+- `exact` 模式下存在未解释差异或超出预定义容差的差异；`usability` 下存在明显越界、裁切、关键遮挡、不可读或交互失效。
+- 缺少当前验证模式所需的同条件参考证据、候选证据或适用的响应式证据；完整 viewport 只在 `exact` 或明确要求时必需。
 - 缺少 V2 拆解图确认、技术 JSON、coverage、生产计划或任一编号绑定。
-- 偏离冻结视觉事实却没有绑定适用的已批准例外 ID。
+- 改变产品方向、玩法语义或上游结构却没有对应的 `USER_DECISION` 记录。
 - 只有“很像”“更美观”“已专业修复”等主观结论。
 - 使用整屏截图、隐藏覆盖层或绝对叠层冒充还原结果。
 
@@ -72,7 +72,7 @@ V4 在冻结目标视口和状态下，用完整 viewport 运行证据验证视�
 输出：current_stage=V4 未执行真实文件门，V4 FAIL。
 
 成功：node scripts/validate_visual_manifest.mjs docs/visual-assets.json --stage V4 --check-files --project-root .
-输出：scene contract、F2 机器证据、逐区域 fidelity、runtime replay 和文件门通过（exit 0）。
+输出：scene contract、与 `visual_validation.mode` 匹配的 F2 机器证据、runtime replay 和文件门通过（exit 0）。
 ```
 
 ## 全局基线引用

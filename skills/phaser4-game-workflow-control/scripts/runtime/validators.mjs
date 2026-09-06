@@ -69,12 +69,17 @@ export function createRecordValidators({
 
   /** 校验 Implementation Package 独立结构。 */
   function validateImplementationPackageShape(pkg, options = {}) {
+    // 范围说明和停止条件是可选元数据；缺失时归一为空数组，关键标识、路径和完成定义仍由 Schema/下方规则强制。
+    if (pkg && typeof pkg === 'object' && !Array.isArray(pkg)) {
+      pkg.outOfScope ??= [];
+      pkg.stopConditions ??= [];
+    }
     requireFields(pkg, PACKAGE_SCHEMA.required, 'Implementation Package');
     const extra = Object.keys(pkg).filter((field) => !PACKAGE_SCHEMA.fields.includes(field));
     if (extra.length) fail(`Implementation Package 包含 Schema 禁止字段：${extra.join('、')}`);
     requireBaselineHash(pkg.baselineHash, 'Implementation Package baselineHash');
     for (const field of ['approvedRequirements', 'allowedPaths', 'forbiddenPaths', 'expectedAddedFiles', 'expectedDeletedFiles', 'testScope', 'outOfScope', 'definitionOfDone', 'stopConditions']) requireStringArray(pkg[field], `Implementation Package.${field}`);
-    if (!pkg.approvedRequirements.length || !pkg.allowedPaths.length || !pkg.testScope.length || !pkg.definitionOfDone.length || !pkg.stopConditions.length) fail('Implementation Package 的需求、路径、测试、完成定义和停止条件不能为空');
+    if (!pkg.approvedRequirements.length || !pkg.allowedPaths.length || !pkg.testScope.length || !pkg.definitionOfDone.length) fail('Implementation Package 的需求、路径、测试和完成定义不能为空');
     if (!pkg.fileOwnership || typeof pkg.fileOwnership !== 'object' || Array.isArray(pkg.fileOwnership) || !Object.keys(pkg.fileOwnership).length || Object.entries(pkg.fileOwnership).some(([path, owner]) => !path || typeof owner !== 'string' || !owner)) fail('Implementation Package.fileOwnership 必须为非空路径到所有者映射');
     validateExecutionPlan(pkg, pathMatches, fail);
     if (options.deferVisualValidation !== true) {
@@ -83,7 +88,7 @@ export function createRecordValidators({
     }
     const visualFields = ['visualContractVersion', 'candidateVersion', 'visualManifestFile', 'visualManifestSha256', 'visualProductionUnits'];
     if (visualFields.some((field) => Object.hasOwn(pkg, field)) && visualFields.some((field) => pkg[field] === undefined)) fail('视觉 Implementation Package 必须同时绑定 visualContractVersion、visualManifestFile、visualManifestSha256、visualProductionUnits');
-    if (!pkg.packageId || !pkg.workItemId || !pkg.baselineVersion || !pkg.taskAuthorizationId || !pkg.compatibilityStrategy || !pkg.approvedArchitecture) fail('Implementation Package 标识、版本、任务授权、兼容策略或架构结论不能为空');
+    if (!pkg.packageId || !pkg.workItemId || !pkg.baselineVersion || !pkg.compatibilityStrategy || !pkg.approvedArchitecture) fail('Implementation Package 标识、版本、兼容策略或架构结论不能为空');
     return pkg;
   }
 

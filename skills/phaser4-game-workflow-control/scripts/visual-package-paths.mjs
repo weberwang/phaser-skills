@@ -13,7 +13,7 @@ export function declaredPathEntry(item) {
   return { path: hasFile ? item.file : item.path, shareId: hasShareId ? item.share_id : (hasShareAlias ? item.shareId : null), valid: true };
 }
 
-/** 判断 expected asset 是否同时使用两个共享字段别名，避免比较和授权各取一边。 */
+/** 判断 expected asset 是否同时使用两个共享字段别名，避免比较和范围校验各取一边。 */
 export function hasShareAliasConflict(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     && Object.hasOwn(value, "share_id") && Object.hasOwn(value, "shareId");

@@ -180,7 +180,6 @@ function confirmedFixture(region) {
     target_sha256: HASH,
     scene_id: region.scene_id,
     state_id: region.state_id,
-    task_authorization_id: "task-auth-1",
     resolution_id: "resolution-1",
     resolution_status: "resolved",
     resolved_from: "USER_INPUT_REQUIRED",
@@ -206,13 +205,13 @@ function confirmedFixture(region) {
   const ledgerFileName = ".phaser-workflow/user-resolutions/buttons-ledger.json";
   const entry = { ...receipt, receipt_id: "receipt-buttons-1", receipt_file: receiptFileName, receipt_sha256: receiptSha, entry_sha256: HASH, annotation_file: "evidence/visual/buttons-annotated.png", annotation_sha256: annotationSha, annotation_width: 2, annotation_height: 1, annotation_schema: metadata.schema, annotation_layout: metadata.layout, annotation_metadata_sha256: metadataSha, annotation_identity_sha256: annotationIdentity, proposal_id: "proposal-buttons-1", proposal_file: "evidence/visual/buttons-proposal.json", proposal_sha256: proposalSha, decision_record_file: "evidence/visual/buttons-decision.json" };
   entry.entry_sha256 = canonicalSha(entry, "entry_sha256");
-  const ledger = { schema: "user-resolution-ledger/1.0", ledger_id: "ledger-buttons-1", ledger_sha256: HASH, work_item_id: "work-item-1", task_authorization_id: "task-auth-1", entries: [entry] };
+  const ledger = { schema: "user-resolution-ledger/1.0", ledger_id: "ledger-buttons-1", ledger_sha256: HASH, work_item_id: "work-item-1", entries: [entry] };
   ledger.ledger_sha256 = canonicalSha(ledger, "ledger_sha256");
   writeFileSync(join(projectRoot, ledgerFileName), JSON.stringify(ledger));
   const baselineHash = freezeBaseline(projectRoot);
   const prerequisiteFiles = [ledgerFileName, receiptFileName];
   const manifest = { workItemId: "work-item-1", candidateVersion: "candidate-1", candidate_identity: { sha256: HASH }, reference_target: { target_sha256: HASH, frozen_at: new Date(Date.now() - 180_000).toISOString() } };
-  const work = { workItemId: "work-item-1", baselineHash, taskAuthorization: { authorizationId: "task-auth-1", visualConfirmationPrerequisiteFiles: prerequisiteFiles, visualConfirmationPrerequisiteFilesSha256: prerequisiteSha(prerequisiteFiles) }, visualConfirmationAuthorityRefs: [{ scene_id: region.scene_id, state_id: region.state_id, ledger_file: ledgerFileName, receipt_id: entry.receipt_id, receipt_sha256: receiptSha }] };
+  const work = { workItemId: "work-item-1", baselineHash, visualConfirmationPrerequisiteFiles: prerequisiteFiles, visualConfirmationPrerequisiteFilesSha256: prerequisiteSha(prerequisiteFiles), visualConfirmationAuthorityRefs: [{ scene_id: region.scene_id, state_id: region.state_id, ledger_file: ledgerFileName, receipt_id: entry.receipt_id, receipt_sha256: receiptSha }] };
   const authority = visualConfirmationAuthority(work, manifest, { projectRoot, checkFiles: true });
   return {
     record,
@@ -236,10 +235,10 @@ function appendConfirmedGroup(valid, region, prefix) {
   const annotationSha = `sha256:${createHash("sha256").update(annotationBytes).digest("hex")}`; const metadataSha = computeVisualAnnotationMetadataSha256(metadata); const annotationIdentity = computeVisualAnnotationIdentitySha256(annotationSha, 2, 1, metadataSha, metadata.schema, metadata.layout);
   const proposalFile = `evidence/visual/${prefix}-proposal.json`; const technicalRegion = { annotation_number: region.annotation_number, region_id: region.id, scene_id: region.scene_id, state_id: region.state_id, region_definition_sha256: computeRegionDefinitionSha256(region), bounds: region.bounds, decomposition_elements: decompositionElements }; const proposal = { proposal_id: `${prefix}-proposal`, target_sha256: HASH, annotation_file: annotationFile, annotation_sha256: annotationSha, created_at: createdAt, decomposition_elements: decompositionElements, regions: [snapshot], technical_analysis: { schema_version: "1", decomposition_elements: decompositionElements, regions: [technicalRegion] } }; const proposalBytes = Buffer.from(JSON.stringify(proposal)); writeFileSync(join(valid.projectRoot, proposalFile), proposalBytes); const proposalSha = `sha256:${createHash("sha256").update(proposalBytes).digest("hex")}`;
   const userText = `确认 ${region.scene_id}/${region.state_id} 的独立拆解并进入图片生产。`; const decisionFile = `evidence/visual/${prefix}-decision.json`; const decision = { status: "accepted", confirmation_mode: "manual", confirmation_id: `${prefix}-confirmation`, proposal_id: proposal.proposal_id, proposal_sha256: proposalSha, user_statement: userText, user_message_sha256: computeVisualUserMessageSha256(userText), accepted_at: acceptedAt, target_sha256: HASH, work_item_id: "work-item-1", candidate_version: "candidate-1", candidate_sha256: HASH, regions: [snapshot] }; const decisionBytes = Buffer.from(JSON.stringify(decision)); writeFileSync(join(valid.projectRoot, decisionFile), decisionBytes); const decisionSha = `sha256:${createHash("sha256").update(decisionBytes).digest("hex")}`;
-  const receiptFile = `.phaser-workflow/user-resolutions/${prefix}-receipt.json`; const receipt = { message_id: `${prefix}-message`, thread_id: `${prefix}-thread`, author_role: "user", user_message_sha256: computeVisualUserMessageSha256(userText), decision_record_sha256: decisionSha, accepted_at: acceptedAt, work_item_id: "work-item-1", candidate_version: "candidate-1", candidate_sha256: HASH, target_sha256: HASH, scene_id: region.scene_id, state_id: region.state_id, task_authorization_id: "task-auth-1", resolution_id: `${prefix}-resolution`, resolution_status: "resolved", resolved_from: "USER_INPUT_REQUIRED", user_statement: userText }; const receiptBytes = Buffer.from(JSON.stringify(receipt)); writeFileSync(join(valid.projectRoot, receiptFile), receiptBytes); const receiptSha = `sha256:${createHash("sha256").update(receiptBytes).digest("hex")}`;
+  const receiptFile = `.phaser-workflow/user-resolutions/${prefix}-receipt.json`; const receipt = { message_id: `${prefix}-message`, thread_id: `${prefix}-thread`, author_role: "user", user_message_sha256: computeVisualUserMessageSha256(userText), decision_record_sha256: decisionSha, accepted_at: acceptedAt, work_item_id: "work-item-1", candidate_version: "candidate-1", candidate_sha256: HASH, target_sha256: HASH, scene_id: region.scene_id, state_id: region.state_id, resolution_id: `${prefix}-resolution`, resolution_status: "resolved", resolved_from: "USER_INPUT_REQUIRED", user_statement: userText }; const receiptBytes = Buffer.from(JSON.stringify(receipt)); writeFileSync(join(valid.projectRoot, receiptFile), receiptBytes); const receiptSha = `sha256:${createHash("sha256").update(receiptBytes).digest("hex")}`;
   const record = confirmationFor(region, { confirmation_id: `${prefix}-confirmation`, proposal_id: proposal.proposal_id, proposal_file: proposalFile, proposal_sha256: proposalSha, annotation_file: annotationFile, annotation_sha256: annotationSha, annotation_width: 2, annotation_height: 1, annotation_metadata_sha256: metadataSha, annotation_identity_sha256: annotationIdentity, decision_record_file: decisionFile, decision_record_sha256: decisionSha, user_decision_receipt_file: receiptFile, user_decision_receipt_sha256: receiptSha, user_original_text: userText, user_message_sha256: computeVisualUserMessageSha256(userText), accepted_at: acceptedAt, component_ids: ["button-1"], state_ids: [region.state_id] }); record.confirmation_sha256 = computeVisualConfirmationSha256(record);
   const entry = { ...receipt, receipt_id: `${prefix}-receipt`, receipt_file: receiptFile, receipt_sha256: receiptSha, entry_sha256: HASH, annotation_file: annotationFile, annotation_sha256: annotationSha, annotation_width: 2, annotation_height: 1, annotation_schema: metadata.schema, annotation_layout: metadata.layout, annotation_metadata_sha256: metadataSha, annotation_identity_sha256: annotationIdentity, proposal_id: proposal.proposal_id, proposal_file: proposalFile, proposal_sha256: proposalSha, decision_record_file: decisionFile }; entry.entry_sha256 = canonicalSha(entry, "entry_sha256");
-  const ledgerFile = `.phaser-workflow/user-resolutions/${prefix}-ledger.json`; const ledger = { schema: "user-resolution-ledger/1.0", ledger_id: `${prefix}-ledger`, ledger_sha256: HASH, work_item_id: "work-item-1", task_authorization_id: "task-auth-1", entries: [entry] }; ledger.ledger_sha256 = canonicalSha(ledger, "ledger_sha256"); writeFileSync(join(valid.projectRoot, ledgerFile), JSON.stringify(ledger));
+  const ledgerFile = `.phaser-workflow/user-resolutions/${prefix}-ledger.json`; const ledger = { schema: "user-resolution-ledger/1.0", ledger_id: `${prefix}-ledger`, ledger_sha256: HASH, work_item_id: "work-item-1", entries: [entry] }; ledger.ledger_sha256 = canonicalSha(ledger, "ledger_sha256"); writeFileSync(join(valid.projectRoot, ledgerFile), JSON.stringify(ledger));
   return { record, entry, ledger, ledgerFile, receiptFile };
 }
 
@@ -379,7 +378,7 @@ test("确认文件门拒绝浅层调用、任意 confirmation SHA、用户原文
 
 test("Work Item 伪内嵌 receipt、manifest A/B 分裂和 ledger ownedPaths 必须拒绝", () => {
   assert(validateVisualConfirmationReferences({ userDecisionReceipt: { author_role: "user" } }).some((item) => item.includes("禁止内嵌")));
-  assert(validateVisualConfirmationReferences({ visualConfirmationPrerequisiteFiles: [".phaser-workflow/user-resolutions/fake.json"] }).some((item) => item.includes("必须冻结在 taskAuthorization")));
+  assert.deepEqual(validateVisualConfirmationReferences({ visualConfirmationPrerequisiteFiles: [".phaser-workflow/user-resolutions/fake.json"] }), []);
   const region = decompositionRegion(); const valid = confirmedFixture(region);
   const splitManifest = { ...valid.manifest, candidateVersion: "candidate-split" };
   const split = visualConfirmationAuthority(valid.work, splitManifest, { projectRoot: valid.projectRoot, checkFiles: true });
@@ -404,7 +403,7 @@ test("Work Item 伪内嵌 receipt、manifest A/B 分裂和 ledger ownedPaths 必
 });
 
 test("ledger/receipt 必须存在于 baselineHash Git blob，当前篡改或伪造基线均拒绝", () => {
-  const valid = confirmedFixture(decompositionRegion()); const ledgerPath = join(valid.projectRoot, valid.work.taskAuthorization.visualConfirmationPrerequisiteFiles[0]);
+  const valid = confirmedFixture(decompositionRegion()); const ledgerPath = join(valid.projectRoot, valid.work.visualConfirmationPrerequisiteFiles[0]);
   writeFileSync(ledgerPath, Buffer.concat([readFileSync(ledgerPath), Buffer.from("\n")]))
   const tampered = visualConfirmationAuthority(valid.work, valid.manifest, { projectRoot: valid.projectRoot, checkFiles: true });
   assert(tampered.loaderErrors?.some((item) => item.includes("baselineHash 冻结 blob 不一致")));
@@ -426,8 +425,8 @@ test("两个 scene/state 使用不同 ledger receipt 时可独立通过", () => 
   const secondLedger = { ...valid.ledger, ledger_id: "ledger-result-1", ledger_sha256: HASH, entries: [secondReceipt] };
   secondLedger.ledger_sha256 = canonicalSha(secondLedger, "ledger_sha256");
   writeFileSync(join(valid.projectRoot, secondLedgerFile), JSON.stringify(secondLedger));
-  const prerequisiteFiles = [...valid.work.taskAuthorization.visualConfirmationPrerequisiteFiles, secondLedgerFile, secondReceiptFile];
-  const work = { ...valid.work, taskAuthorization: { ...valid.work.taskAuthorization, visualConfirmationPrerequisiteFiles: prerequisiteFiles, visualConfirmationPrerequisiteFilesSha256: prerequisiteSha(prerequisiteFiles) }, visualConfirmationAuthorityRefs: [...valid.work.visualConfirmationAuthorityRefs, { scene_id: secondScene, state_id: secondState, ledger_file: secondLedgerFile, receipt_id: secondReceipt.receipt_id, receipt_sha256: secondReceipt.receipt_sha256 }] };
+  const prerequisiteFiles = [...valid.work.visualConfirmationPrerequisiteFiles, secondLedgerFile, secondReceiptFile];
+  const work = { ...valid.work, visualConfirmationPrerequisiteFiles: prerequisiteFiles, visualConfirmationPrerequisiteFilesSha256: prerequisiteSha(prerequisiteFiles), visualConfirmationAuthorityRefs: [...valid.work.visualConfirmationAuthorityRefs, { scene_id: secondScene, state_id: secondState, ledger_file: secondLedgerFile, receipt_id: secondReceipt.receipt_id, receipt_sha256: secondReceipt.receipt_sha256 }] };
   work.baselineHash = freezeBaseline(valid.projectRoot);
   const authority = visualConfirmationAuthority(work, valid.manifest, { projectRoot: valid.projectRoot, checkFiles: true });
   assert(!authority.loaderErrors, authority.loaderErrors?.join("\n"));
@@ -440,8 +439,8 @@ test("两个 scene/state 的完整确认与 Package 分组可通过，串组和�
   const secondBase = decompositionRegion({ id: "region-result", annotation_number: 7, scene_id: "result-scene", state_id: "victory", component_inventory: { components: [{ component_id: "button-1", state_coverage: [{ state_id: "victory" }] }] }, atomic_image_requirements: [{ requirement_id: "req-button-1", component_id: "button-1", state_id: "victory" }] });
   const second = appendConfirmedGroup(valid, secondBase, "result"); const secondRegion = { ...secondBase, confirmation: second.record };
   const manifest = { ...valid.manifest, coverage_audit: { regions: [firstRegion, secondRegion] } };
-  const prerequisites = [...valid.work.taskAuthorization.visualConfirmationPrerequisiteFiles, second.ledgerFile, second.receiptFile];
-  const work = { ...valid.work, baselineHash: freezeBaseline(valid.projectRoot), taskAuthorization: { ...valid.work.taskAuthorization, visualConfirmationPrerequisiteFiles: prerequisites, visualConfirmationPrerequisiteFilesSha256: prerequisiteSha(prerequisites) }, visualConfirmationAuthorityRefs: [...valid.work.visualConfirmationAuthorityRefs, { scene_id: secondBase.scene_id, state_id: secondBase.state_id, ledger_file: second.ledgerFile, receipt_id: second.entry.receipt_id, receipt_sha256: second.entry.receipt_sha256 }] };
+  const prerequisites = [...valid.work.visualConfirmationPrerequisiteFiles, second.ledgerFile, second.receiptFile];
+  const work = { ...valid.work, baselineHash: freezeBaseline(valid.projectRoot), visualConfirmationPrerequisiteFiles: prerequisites, visualConfirmationPrerequisiteFilesSha256: prerequisiteSha(prerequisites), visualConfirmationAuthorityRefs: [...valid.work.visualConfirmationAuthorityRefs, { scene_id: secondBase.scene_id, state_id: secondBase.state_id, ledger_file: second.ledgerFile, receipt_id: second.entry.receipt_id, receipt_sha256: second.entry.receipt_sha256 }] };
   const authority = visualConfirmationAuthority(work, manifest, { projectRoot: valid.projectRoot, checkFiles: true });
   assert(!authority.loaderErrors, authority.loaderErrors?.join("\n"));
   const authorityByRegion = buildVisualConfirmationAuthorityByRegion(manifest, authority);

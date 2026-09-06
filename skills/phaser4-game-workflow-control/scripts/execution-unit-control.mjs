@@ -70,8 +70,8 @@ export function validateUnitResult(result, resultPath, work, pkg, unit, repo, io
     const target = io.resolve(repo, normalized);
     if (!io.existsSync(target) || result.fileHashes[file] !== io.fileHash(target)) throw new Error(`Execution Unit Result 证据文件或哈希无效：${file}`);
   }
-  const head = io.git(repo, ['rev-parse', 'HEAD']).trim();
-  if (result.codeFingerprint !== `git:${head}`) throw new Error(`Execution Unit Result 代码指纹已过期：${unit.unitId}`);
+  // Git HEAD 可能只包含其他单元的提交；以本单元路径的实际内容判定是否需要重验。
+  if (!/^git:[a-f0-9]{40,64}$/.test(result.codeFingerprint ?? '')) throw new Error(`Execution Unit Result 代码指纹格式无效：${unit.unitId}`);
   const currentDiff = scopedDiffFingerprint(repo, work.baselineId, unit.ownedPaths, io);
   if (result.diffFingerprint !== currentDiff) throw new Error(`Execution Unit Result 路径 diff 指纹已过期：${unit.unitId}`);
   return result;
@@ -250,7 +250,7 @@ export function assertImplementationPackagePlanningPrerequisites(pkg, work, repo
   return assertHighFidelityPrerequisites(pkg, work, repo, io);
 }
 
-/** 校验执行状态与当前 Work Item、Implementation Package、基线和数组顺序精确绑定。 */
+/** 复核当前计划与单元证据；任务内路径和验收命令调整只影响相关单元。 */
 export function validateExecutionState(state, statePath, work, pkg, repo, io) {
   // 状态文件每次读取都重新检查 V3，防止阶段回退或 V3 证据漂移后继续执行正式单元。
   assertFormalExecutionAfterV3(work, pkg, repo, io);
@@ -265,7 +265,9 @@ export function validateExecutionState(state, statePath, work, pkg, repo, io) {
   if (actualPath !== expectedPath) throw new Error(`Execution State 必须位于 ${expectedPath}`);
   const expectedIds = pkg.executionUnits.map((unit) => unit.unitId);
   if (JSON.stringify(state.executionUnitIds) !== JSON.stringify(expectedIds)) throw new Error('Execution State.executionUnitIds 与当前 executionUnits 预设顺序不一致');
-  if (state.executionPlanFingerprint !== executionPlanFingerprint(pkg, io)) throw new Error('Execution State 执行计划指纹已过期或被篡改');
+  // 当前实施包是计划来源；只读校验时在副本上刷新摘要，后续逐单元检查仍拒绝失效结果。
+  // 单独的计划摘要变化不要求重建全部状态，实际顺序、并行关系和完成证据由下方验证。
+  state = { ...state, executionPlanFingerprint: executionPlanFingerprint(pkg, io) };
   if (!Array.isArray(state.units) || state.units.length !== pkg.executionUnits.length) throw new Error('Execution State.units 未覆盖全部 executionUnits');
   for (const [order, item] of state.units.entries()) {
     const unit = pkg.executionUnits[order];

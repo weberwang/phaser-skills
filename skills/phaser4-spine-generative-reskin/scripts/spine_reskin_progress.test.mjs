@@ -21,7 +21,7 @@ async function controlManifest(root) {
   const evidence = join(root, "v2-approval.txt");
   await writeFile(evidence, "accepted spine visual direction");
   const control = join(root, "control.json");
-  await writeFile(control, JSON.stringify({ workItemId: "spine-work-item", taskAuthorization: { authorizationId: "spine-task-auth" }, production_contract: { contract_version: "spine-production/1.0", status: "PASS", scope: ["spine-reskin"] }, visual_human_approval: { review_id: "v2-spine", reviewed_at: "2026-08-23T00:00:00Z", status: "PASS", target_sha256: "a".repeat(64), candidate_sha256: "b".repeat(64), diff_fingerprint: "spine-diff", baseline_sha256: "c".repeat(64), evidence: { path: "v2-approval.txt", sha256: await sha(evidence) }, evidence_sha256: await sha(evidence) } }));
+  await writeFile(control, JSON.stringify({ workItemId: "spine-work-item", production_contract: { contract_version: "spine-production/1.0", status: "PASS", scope: ["spine-reskin"] }, visual_human_approval: { review_id: "v2-spine", reviewed_at: "2026-08-23T00:00:00Z", status: "PASS", target_sha256: "a".repeat(64), candidate_sha256: "b".repeat(64), diff_fingerprint: "spine-diff", baseline_sha256: "c".repeat(64), evidence: { path: "v2-approval.txt", sha256: await sha(evidence) }, evidence_sha256: await sha(evidence) } }));
   return control;
 }
 
@@ -436,7 +436,7 @@ test("pack 阶段 I/O 失败会恢复为 validating 且保留批次锁，可重�
 test("控制面 manifest 漂移会阻断后续批次命令", async () => {
   const value = await fixture();
   await freezeContract(value);
-  await writeFile(value.control, JSON.stringify({ workItemId: "changed-work-item", taskAuthorization: { authorizationId: "spine-task-auth" }, production_contract: { contract_version: "spine-production/1.0", status: "PASS" }, visual_human_approval: { status: "PASS", evidence: { path: "v2-approval.txt", sha256: await sha(join(value.root, "v2-approval.txt")) }, evidence_sha256: await sha(join(value.root, "v2-approval.txt")) } }));
+  await writeFile(value.control, JSON.stringify({ workItemId: "changed-work-item", production_contract: { contract_version: "spine-production/1.0", status: "PASS" }, visual_human_approval: { status: "PASS", evidence: { path: "v2-approval.txt", sha256: await sha(join(value.root, "v2-approval.txt")) }, evidence_sha256: await sha(join(value.root, "v2-approval.txt")) } }));
   const planPath = join(value.root, "drifted-control-plan.json");
   await writeFile(planPath, JSON.stringify({ batches: [{ id: "b1", regions: ["p0:body"] }] }));
   assert.equal(await main(["plan-batches", "--manifest", value.manifest, "--plan", planPath]), 2);

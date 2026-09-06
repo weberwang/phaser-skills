@@ -4,13 +4,12 @@
   "title": "实施包",
   "type": "object",
   "additionalProperties": false,
-  "required": ["packageId", "workItemId", "baselineVersion", "baselineHash", "taskAuthorizationId", "approvedRequirements", "approvedArchitecture", "fileOwnership", "executionUnits", "allowedPaths", "forbiddenPaths", "expectedAddedFiles", "expectedDeletedFiles", "testScope", "outOfScope", "compatibilityStrategy", "definitionOfDone", "stopConditions"],
+  "required": ["packageId", "workItemId", "baselineVersion", "baselineHash", "approvedRequirements", "approvedArchitecture", "fileOwnership", "executionUnits", "allowedPaths", "forbiddenPaths", "expectedAddedFiles", "expectedDeletedFiles", "testScope", "compatibilityStrategy", "definitionOfDone"],
   "properties": {
     "packageId": {"type": "string", "minLength": 1},
     "workItemId": {"type": "string", "minLength": 1},
     "baselineVersion": {"type": "string", "minLength": 1},
     "baselineHash": {"type": "string", "pattern": "^(?:sha256:[a-f0-9]{64}|[a-f0-9]{40}(?:[a-f0-9]{24})?)$"},
-    "taskAuthorizationId": {"type": "string", "minLength": 1},
     "approvedRequirements": {"$ref": "#/$defs/nonEmptyStrings"},
     "approvedArchitecture": {"type": "string", "minLength": 1},
     "fileOwnership": {
@@ -21,7 +20,7 @@
     "executionUnits": {
       "type": "array",
       "minItems": 1,
-      "description": "数组顺序由计划制定者预设并作为唯一执行顺序；串行单元各占一个位置，同一并行组必须连续出现。若全部单元仅为 SHARED/MODULE，则该包属于 foundation-only：无视觉产物或行为的纯工程包只需任务授权、工程基线、冻结实施包和工程证据即可在全局选图前实施；声明 visualProductionUnits、visualManifestFile、visualContractVersion 等视觉合同或资产生产依赖的基础包，必须完整复核 globalVisualBaselineSelectionRef（三张同条件 generated 候选、唯一 SINGLE_HUMAN/CONFIRMED 决定、冻结正文真实 SHA）且 globalStaticBaselineState=global-static-baseline-frozen；声明正式入口或可见资源消费等视觉行为时，仍受正式 V2/V3 门约束。混入 SCENE/DISPLAY_LAYER/INTEGRATION 时仍受正式 V2/V3 门约束。",
+      "description": "数组顺序由计划制定者预设并作为唯一执行顺序；串行单元各占一个位置，同一并行组必须连续出现。若全部单元仅为 SHARED/MODULE，则该包属于 foundation-only：无视觉产物或行为的纯工程包只需 Work Item 范围、工程基线、冻结实施包和工程证据即可在全局选图前实施；声明 visualProductionUnits、visualManifestFile、visualContractVersion 等视觉合同或资产生产依赖的基础包，必须完整复核 globalVisualBaselineSelectionRef（三张同条件 generated 候选、唯一 SINGLE_HUMAN/CONFIRMED 决定、冻结正文真实 SHA）且 globalStaticBaselineState=global-static-baseline-frozen；声明正式入口或可见资源消费等视觉行为时，仍受正式 V2/V3 门约束。混入 SCENE/DISPLAY_LAYER/INTEGRATION 时仍受正式 V2/V3 门约束。",
       "items": {"$ref": "#/$defs/executionUnit"}
     },
     "allowedPaths": {"$ref": "#/$defs/nonEmptyStrings"},
@@ -32,7 +31,7 @@
     "outOfScope": {"$ref": "#/$defs/strings"},
     "compatibilityStrategy": {"type": "string", "minLength": 1},
     "definitionOfDone": {"$ref": "#/$defs/nonEmptyStrings"},
-    "stopConditions": {"$ref": "#/$defs/nonEmptyStrings"},
+    "stopConditions": {"$ref": "#/$defs/strings"},
     "visualContractVersion": {"type": "string", "minLength": 1},
     "candidateVersion": {"type": "string", "minLength": 1},
     "visualManifestFile": {"type": "string", "minLength": 1},

@@ -287,7 +287,6 @@ function resolveAuthority(region, options = {}, context = {}, errors = []) {
     workItemId: choose(current.workItemId ?? current.work_item_id, source.workItemId ?? source.work_item_id, "workItemId"),
     candidateVersion: choose(current.candidateVersion ?? current.candidate_version, source.candidateVersion ?? source.candidate_version, "candidateVersion"),
     candidateSha: choose(current.candidateSha ?? current.candidateSha256 ?? current.candidate_sha256, source.candidateSha ?? source.candidateSha256 ?? source.candidate_sha256, "candidateSha"),
-    taskAuthorizationId: current.taskAuthorizationId ?? current.task_authorization_id ?? source.taskAuthorizationId ?? source.task_authorization_id,
     ledgerFile: source.ledgerFile,
     receiptId: source.receiptId,
     receiptFile: source.receiptFile,
@@ -305,7 +304,7 @@ function resolveAuthority(region, options = {}, context = {}, errors = []) {
     annotationMetadataSha256: source.annotationMetadataSha256 ?? source.annotation_metadata_sha256,
     annotationIdentitySha256: source.annotationIdentitySha256 ?? source.annotation_identity_sha256,
   };
-  for (const field of ["projectRoot", "targetSha", "targetFrozenAt", "workItemId", "candidateVersion", "candidateSha", "taskAuthorizationId", "ledgerFile", "receiptId", "receiptFile", "receiptSha256", "sceneId", "stateId", "annotationNumber", "regionId", "regionDefinitionSha256", "annotationWidth", "annotationHeight", "annotationSchema", "annotationLayout", "annotationMetadataSha256", "annotationIdentitySha256"]) {
+  for (const field of ["projectRoot", "targetSha", "targetFrozenAt", "workItemId", "candidateVersion", "candidateSha", "ledgerFile", "receiptId", "receiptFile", "receiptSha256", "sceneId", "stateId", "annotationNumber", "regionId", "regionDefinitionSha256", "annotationWidth", "annotationHeight", "annotationSchema", "annotationLayout", "annotationMetadataSha256", "annotationIdentitySha256"]) {
     const valid = ["annotationNumber", "annotationWidth", "annotationHeight"].includes(field) ? Number.isInteger(authority[field]) && authority[field] > 0 : nonEmptyString(authority[field]);
     if (!valid) errors.push(confirmationError(context, `缺少权威确认身份 ${field}，不能浅层通过`, { missing: `authority.${field}` }));
   }
@@ -393,11 +392,11 @@ export function validateVisualDecompositionConfirmationRecord(record, region, co
       if (record.confirmation_sha256 !== decisionSha && record.confirmation_sha256 !== computeVisualConfirmationSha256(record)) error("confirmation_sha256 必须等于权威决定 SHA 或规范化确认重算 SHA");
     }
     if (receiptData) {
-      for (const field of ["message_id", "thread_id", "author_role", "user_message_sha256", "decision_record_sha256", "accepted_at", "work_item_id", "candidate_version", "candidate_sha256", "target_sha256", "scene_id", "state_id", "task_authorization_id", "resolution_id", "resolution_status", "resolved_from", "user_statement"]) if (!nonEmptyString(receiptData[field])) error(`user_decision_receipt 缺少 ${field}`, { missing: `user_decision_receipt.${field}` });
+      for (const field of ["message_id", "thread_id", "author_role", "user_message_sha256", "decision_record_sha256", "accepted_at", "work_item_id", "candidate_version", "candidate_sha256", "target_sha256", "scene_id", "state_id", "resolution_id", "resolution_status", "resolved_from", "user_statement"]) if (!nonEmptyString(receiptData[field])) error(`user_decision_receipt 缺少 ${field}`, { missing: `user_decision_receipt.${field}` });
       if (receiptData.author_role !== "user" || receiptData.resolution_status !== "resolved" || receiptData.resolved_from !== "USER_INPUT_REQUIRED") error("user_decision_receipt 必须是用户解除 USER_INPUT_REQUIRED 的权威记录");
-      for (const [field, expected] of [["decision_record_sha256", record.decision_record_sha256], ["user_message_sha256", record.user_message_sha256], ["accepted_at", record.accepted_at], ["work_item_id", authority.workItemId], ["candidate_version", authority.candidateVersion], ["candidate_sha256", authority.candidateSha], ["target_sha256", authority.targetSha], ["scene_id", authority.sceneId], ["state_id", authority.stateId], ["task_authorization_id", authority.taskAuthorizationId], ["user_statement", record.user_original_text]]) if (receiptData[field] !== expected) error(`user_decision_receipt.${field} 与权威上下文不一致`);
+      for (const [field, expected] of [["decision_record_sha256", record.decision_record_sha256], ["user_message_sha256", record.user_message_sha256], ["accepted_at", record.accepted_at], ["work_item_id", authority.workItemId], ["candidate_version", authority.candidateVersion], ["candidate_sha256", authority.candidateSha], ["target_sha256", authority.targetSha], ["scene_id", authority.sceneId], ["state_id", authority.stateId], ["user_statement", record.user_original_text]]) if (receiptData[field] !== expected) error(`user_decision_receipt.${field} 与权威上下文不一致`);
       const expectedReceipt = authority.userDecisionReceipt;
-      if (isObject(expectedReceipt)) for (const field of ["message_id", "thread_id", "author_role", "user_message_sha256", "decision_record_sha256", "accepted_at", "work_item_id", "candidate_version", "candidate_sha256", "target_sha256", "scene_id", "state_id", "task_authorization_id", "resolution_id", "resolution_status", "resolved_from", "user_statement"]) if (receiptData[field] !== expectedReceipt[field]) error(`user_decision_receipt.${field} 未匹配 workflow preflight authority`);
+      if (isObject(expectedReceipt)) for (const field of ["message_id", "thread_id", "author_role", "user_message_sha256", "decision_record_sha256", "accepted_at", "work_item_id", "candidate_version", "candidate_sha256", "target_sha256", "scene_id", "state_id", "resolution_id", "resolution_status", "resolved_from", "user_statement"]) if (receiptData[field] !== expectedReceipt[field]) error(`user_decision_receipt.${field} 未匹配 workflow preflight authority`);
       if (Date.parse(receiptData.accepted_at) > Date.now() + 5 * 60 * 1000) error("user_decision_receipt.accepted_at 不得晚于当前时间（允许 5 分钟时钟偏差）");
     }
     if (Number.isFinite(Date.parse(record.accepted_at)) && Date.parse(record.accepted_at) > Date.now() + 5 * 60 * 1000) error("accepted_at 不得晚于当前时间（允许 5 分钟时钟偏差）");

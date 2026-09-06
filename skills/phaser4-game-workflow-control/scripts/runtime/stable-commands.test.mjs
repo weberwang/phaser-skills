@@ -136,7 +136,7 @@ test('run 进入 IMPLEMENTING 后停止，下一次 run 才能继续证据门', 
 test('run 在缺少证据、用户决定、A4-A6 或 RETURN 时保持只读停止', () => {
   const cases = [
     { name: '缺证据', work: makeInjectedWork({ globalState: 'VALIDATING' }), options: {}, expectedNext: '提交当前候选验证证据' },
-    { name: '用户决定', work: makeInjectedWork({ globalState: 'REVIEW', substantiveTradeoffRequired: true }), options: {}, expectedNext: '澄清用户选择并更新任务授权或权威工件' },
+    { name: '用户决定', work: makeInjectedWork({ globalState: 'REVIEW', substantiveTradeoffRequired: true }), options: {}, expectedNext: '澄清用户选择并更新 Work Item 或权威工件' },
     { name: 'A4', work: makeInjectedWork({ globalState: 'INTEGRATING', pendingApprovalActionLevel: 'A4', pendingApprovalActionType: 'phaser-integration' }), options: {}, expectedNext: '先展示当前待处理事项' },
     { name: 'A5', work: makeInjectedWork({ pendingApprovalActionLevel: 'A5', pendingApprovalActionType: 'phaser-build-upload' }), options: {}, expectedNext: '先展示当前待处理事项' },
     { name: 'A6', work: makeInjectedWork({ pendingApprovalActionLevel: 'A6', pendingApprovalActionType: 'phaser-release' }), options: {}, expectedNext: '先展示当前待处理事项' },
@@ -211,6 +211,8 @@ test('check 指纹随关键输入变化而变化', () => {
   const workPath = join(fixture.repo, '.workflow-control', 'work-items', 'WI-1.json');
   const initialized = invoke(fixture.repo, 'init', ['--repo', fixture.repo, '--work-item-id', 'WI-1', '--project-id', 'P-1', '--module-id', 'core', '--domain', 'code', '--stage-id', 'G0', '--baseline-id', fixture.head, '--baseline-version', '1', '--baseline-hash', fixture.head, '--objective', '建立控制面', '--user-text', '请建立控制面工作项', '--object', 'workflow bootstrap', '--allowed-path', 'src']);
   assert.equal(initialized.status, 0, initialized.stderr);
+  assert.equal(Object.hasOwn(JSON.parse(initialized.stdout), 'ledger'), false);
+  assert.equal(existsSync(join(fixture.repo, '.workflow-control', 'approvals', 'ledger.json')), false);
   const first = JSON.parse(invoke(fixture.repo, 'check', ['--work-item', workPath, '--input', 'src/input.js', '--json']).stdout);
   writeFileSync(join(fixture.repo, 'src', 'input.js'), 'export const value = 2;\n');
   const second = JSON.parse(invoke(fixture.repo, 'check', ['--work-item', workPath, '--input', 'src/input.js', '--json']).stdout);
@@ -225,7 +227,7 @@ test('run/check 阻断返回 2，status 阻断仍返回 0', () => {
   assert.equal(initialized.status, 0, initialized.stderr);
   const work = JSON.parse(readFileSync(workPath, 'utf8'));
   work.globalState = 'INTEGRATING'; work.pendingApprovalActionLevel = 'A4';
-  work.pendingApprovalActionType = 'phaser-integration'; work.pendingApprovalImpactSummary = ['集成入口'];
+  work.pendingApprovalActionType = 'phaser-integration'; work.pendingApprovalImpactSummary = ['破坏性替换集成入口']; work.pendingApprovalDestructive = true;
   work.allowedActions = [...work.allowedActions, 'phaser-integration']; work.explicitApprovalActionLevels = ['A4'];
   writeFileSync(workPath, `${JSON.stringify(work)}\n`);
   const check = invoke(fixture.repo, 'check', ['--repo', fixture.repo, '--work-item', workPath, '--json']);

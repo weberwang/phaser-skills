@@ -6,7 +6,7 @@ import { projectWorkflowView, workflowViewMetadata } from './workflow-view.mjs';
 
 const MAX_SAFE_RUN_STEPS = 16;
 const VISUAL_STAGE_NEXT = Object.freeze({ V2: 'V3', V3: 'V4' });
-const SAFE_RUN_TARGETS = new Set(['BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING', 'VALIDATING', 'PASSED', 'COMPLETE']);
+const SAFE_RUN_TARGETS = new Set(['BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING', 'VALIDATING', 'PASSED', 'INTEGRATING', 'COMPLETE']);
 
 /** 创建 run/check/status 三个代理入口，所有依赖通过注入复用既有硬门。 */
 export function createStableCommands(deps) {
@@ -113,6 +113,13 @@ function inspectWorkflow(rawArgs, command, deps, contextOverride = null) {
   const workPath = args['work-item'];
   const work = validationContext.validateWorkItem(workPath);
   const blockers = [];
+  if (work.globalState === 'RETURN') {
+    // RETURN 是明确的恢复状态，即使没有审批或视觉错误，也必须保持 BLOCKED，避免稳定入口误报 READY。
+    blockers.push({ message: 'Work Item 处于 RETURN 恢复状态，不能按普通流程继续', next: null, disposition: 'repair', errorCode: 'RETURN_STATE' });
+  } else if (work.globalState === 'BLOCKED') {
+    // BLOCKED 同样是状态级阻断，不能依赖其他校验恰好产生 blocker 才被识别。
+    blockers.push({ message: 'Work Item 处于 BLOCKED 状态，需显式恢复后才能继续', next: null, disposition: 'repair', errorCode: 'BLOCKED_STATE' });
+  }
   let packagePath = args['implementation-package'] ?? work.implementationPackageRecord ?? null;
   let packageValue = null;
   let implementationPackage = null;
@@ -220,7 +227,7 @@ function emitInspection(inspection, args, changed = []) {
 function nextAction(inspection) {
   const { work, route, implementationPackage, executionState, evidence } = inspection;
   if (work.globalState === 'RETURN') return '按 returnRecord 的最小受影响范围显式迁移到前序状态';
-  if (route?.userInputRequired) return '澄清用户选择并更新任务授权或权威工件';
+  if (route?.userInputRequired) return '澄清用户选择并更新 Work Item 或权威工件';
   if (route?.explicitApprovalRequired) return work.pendingApprovalPresentedId === work.pendingApprovalId ? '等待确认当前待处理事项' : '先展示当前待处理事项';
   if (work.globalState === 'REVIEW' && work.pendingApprovalActionLevel === 'A3' && !implementationPackage) return '冻结当前阶段实施包后再运行 run';
   // A3 的实施单元是进入候选审计前置的真实执行步骤，未完成时不能提前提示审计。
@@ -229,6 +236,8 @@ function nextAction(inspection) {
   if (['REVIEW', 'IMPLEMENTING'].includes(work.globalState) && !work.diffAuditRecord) return '记录当前候选变更审计';
   if (work.globalState === 'VALIDATING' && !evidence) return '提交当前候选验证证据';
   if (work.globalState === 'PASSED' && ['A1', 'A2', 'A3'].includes(work.pendingApprovalActionLevel) && !evidence) return '提交当前候选验证证据完成闭环';
+  if (work.globalState === 'PASSED' && work.pendingApprovalActionLevel === 'A4' && !route?.explicitApprovalRequired) return '进入普通本地集成阶段';
+  if (work.globalState === 'INTEGRATING' && work.pendingApprovalActionLevel === 'A4' && !route?.explicitApprovalRequired) return evidence ? '运行 run 完成本地集成闭环' : '提交当前候选验证证据';
   if (work.globalState === 'PASSED') return '准备正式集成审批';
   if (inspection.route?.nextLegalState && inspection.route.nextLegalState !== 'RETURN') return '运行 run 推进已满足条件的安全状态';
   return '等待当前阶段门条件满足';
@@ -262,7 +271,6 @@ function safeTransitionTarget(inspection, deps) {
   const { work, route, implementationPackage, executionState, evidence } = inspection;
   const level = work.pendingApprovalActionLevel;
   if (inspection.blockers.length || work.globalState === 'RETURN' || route?.userInputRequired || route?.explicitApprovalRequired) return null;
-  if (['A4', 'A5', 'A6'].includes(level)) return null;
   if (['INTAKE', 'BASELINE', 'PROPOSAL'].includes(work.globalState)) return SAFE_RUN_TARGETS.has(route?.nextLegalState) ? route.nextLegalState : null;
   if (work.globalState === 'REVIEW') {
     if (level === 'A1' && work.diffAuditRecord) return 'VALIDATING';
@@ -280,6 +288,8 @@ function safeTransitionTarget(inspection, deps) {
   }
   if (work.globalState === 'VALIDATING' && evidence) return 'PASSED';
   if (work.globalState === 'PASSED' && evidence && ['A1', 'A2', 'A3'].includes(level)) return 'COMPLETE';
+  if (work.globalState === 'PASSED' && level === 'A4' && !route?.explicitApprovalRequired) return 'INTEGRATING';
+  if (work.globalState === 'INTEGRATING' && level === 'A4' && !route?.explicitApprovalRequired && evidence) return 'COMPLETE';
   return null;
 }
 

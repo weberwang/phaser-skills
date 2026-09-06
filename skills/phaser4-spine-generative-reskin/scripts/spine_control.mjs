@@ -32,10 +32,9 @@ export async function readSpineControlBinding(path) {
   let control;
   try { control = JSON.parse(await readFile(controlPath, "utf8")); } catch (error) { throw new ReskinError(`无法读取控制面 manifest：${error.message}`); }
   const workItemId = control.workItemId ?? control.work_item_id;
-  const taskAuthorizationId = control.taskAuthorization?.authorizationId ?? control.task_authorization_id ?? control.taskAuthorizationId;
   const contract = control.production_contract ?? control.productionContract ?? control.production_contract_audit ?? control.productionContractAudit ?? control.sceneReconstructionContract ?? control.scene_reconstruction_contract;
   const approval = control.visual_human_approval ?? control.visualHumanApproval;
-  if (typeof workItemId !== "string" || !workItemId || typeof taskAuthorizationId !== "string" || !taskAuthorizationId) throw new ReskinError("控制面 manifest 必须包含 workItemId 和 taskAuthorization.authorizationId");
+  if (typeof workItemId !== "string" || !workItemId) throw new ReskinError("控制面 manifest 必须包含 workItemId");
   if (!contract || typeof contract !== "object") throw new ReskinError("控制面 manifest 缺少 production contract");
   if (!approval || !["PASS", "passed"].includes(String(approval.status))) throw new ReskinError("控制面 manifest 缺少唯一 V2 visual_human_approval PASS");
   const contractEvidence = await evidenceReference(contract, controlPath, "production contract");
@@ -44,15 +43,15 @@ export async function readSpineControlBinding(path) {
   if (approvalEvidence.path && approvalSha !== approvalEvidence.sha256) throw new ReskinError("V2 approval evidence_sha256 与文件不一致");
   if (!approval.evidence || !approvalSha) throw new ReskinError("V2 approval 必须包含 evidence 和 evidence_sha256");
   const controlSha = createHash("sha256").update(await readFile(controlPath)).digest("hex");
-  return { control_manifest_path: controlPath, control_manifest_sha256: controlSha, work_item_id: workItemId, task_authorization_id: taskAuthorizationId, production_contract_sha256: contractEvidence.sha256, production_contract_path: contractEvidence.path, visual_human_approval_sha256: stableHash(approval), visual_human_approval_evidence_sha256: approvalSha, visual_human_approval_evidence_path: approvalEvidence.path };
+  return { control_manifest_path: controlPath, control_manifest_sha256: controlSha, work_item_id: workItemId, production_contract_sha256: contractEvidence.sha256, production_contract_path: contractEvidence.path, visual_human_approval_sha256: stableHash(approval), visual_human_approval_evidence_sha256: approvalSha, visual_human_approval_evidence_path: approvalEvidence.path };
 }
 
-/** 重新读取控制面并比较所有绑定字段，防止本地 Spine 流程脱离全局授权。 */
+/** 重新读取控制面并比较所有绑定字段，防止本地 Spine 流程脱离 Work Item。 */
 export async function assertSpineControlBinding(document) {
   const binding = document.control_binding;
   if (!binding?.control_manifest_path || !binding.control_manifest_sha256) throw new ReskinError("缺少 Spine 控制面 manifest 绑定");
   const current = await readSpineControlBinding(binding.control_manifest_path);
-  const fields = ["control_manifest_sha256", "work_item_id", "task_authorization_id", "production_contract_sha256", "visual_human_approval_sha256", "visual_human_approval_evidence_sha256"];
+  const fields = ["control_manifest_sha256", "work_item_id", "production_contract_sha256", "visual_human_approval_sha256", "visual_human_approval_evidence_sha256"];
   for (const field of fields) if (current[field] !== binding[field]) throw new ReskinError(`控制面绑定漂移：${field}`);
   return current;
 }

@@ -13,7 +13,7 @@ function makeInput(repo, timestamp) {
     work: {
       workItemId: 'WI-1', projectId: 'P-1', moduleIds: ['core'], domain: 'code', stageId: 'G1', globalState: 'REVIEW',
       baselineId: 'a'.repeat(40), baselineVersion: '1', baselineHash: `sha256:${'b'.repeat(64)}`,
-      taskAuthorization: { authorizationId: 'TASK-1', userOriginalText: '实现功能', authorizedScope: ['core'], authorizedAt: timestamp, generatedAt: timestamp, recorded_at: timestamp, candidate: 'candidate-1', format: 'png' },
+      objective: '实现功能', inScope: ['core'], userOriginalText: '实现功能',
       allowedPaths: ['src'], changeRequestFiles: [],
     },
     implementationPackage: { packageId: 'PKG-1', candidate: 'candidate-1', format: 'png', generatedAt: timestamp, recorded_at: timestamp },
@@ -39,6 +39,9 @@ test('计划指纹区分业务身份并排除时间字段', () => {
   const timeoutTimeChanged = makeInput(repo, '2027-01-01T00:00:00.000Z');
   timeoutTimeChanged.implementationPackage.timeoutTime = '10s';
   assert.notEqual(first, computePlanFingerprint(timeoutTimeChanged));
+  const scopeChanged = makeInput(repo, '2027-01-01T00:00:00.000Z');
+  scopeChanged.work.allowedPaths = ['src/changed'];
+  assert.notEqual(first, computePlanFingerprint(scopeChanged));
 });
 
 /** 验证只有显式 --input 文件进入哈希，范围目录变化不会触发递归扫描。 */
@@ -49,5 +52,15 @@ test('计划指纹只绑定显式关键输入文件', () => {
   writeFileSync(join(repo, 'src', 'unlisted.js'), 'not-input');
   assert.equal(first, computePlanFingerprint(input));
   writeFileSync(join(repo, 'src', 'input.js'), 'changed');
+  assert.notEqual(first, computePlanFingerprint(input));
+});
+
+test('V2 确认输入直接绑定工作项并随文件内容变化更新计划身份', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'phaser-plan-confirmation-'));
+  const input = makeInput(repo, '2026-01-01T00:00:00.000Z');
+  input.extraPaths = [];
+  input.work.visualConfirmationPrerequisiteFiles = ['src/input.js'];
+  const first = computePlanFingerprint(input);
+  writeFileSync(join(repo, 'src/input.js'), '确认方案发生变化');
   assert.notEqual(first, computePlanFingerprint(input));
 });

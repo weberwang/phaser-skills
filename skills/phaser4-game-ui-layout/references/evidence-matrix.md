@@ -4,29 +4,22 @@
 
 布局审阅页属于 V2 可读展示产物：必须与冻结参考图、拆解 proposal、布局决策、节点 JSON 和标准布局 PNG 绑定同批真实 SHA；它帮助人工检查关系，但不替代 PNG、F2 机器验收或 V4 运行证据。产物目录、坐标映射、审阅页身份和确认字段详见[离线布局审阅产物](layout-review-artifacts.md)。
 
-冻结视觉目标下，每个 parity case 还必须绑定目标 SHA、当前候选 SHA、scene/state、实际有效 DPR（(0,1.5]）、输入轨迹、动画采样/稳定帧、视觉基线版本、双方证据、预定义容差、例外 ID 和结论。关键对齐同时保存稳定 element/reference ID、双轴关系、目标/运行几何测量以及实际执行且通过的测试 ID。任何身份变化都使旧 case 失效。
+默认 `visual_validation.mode=usability` 使用代表性视口和关键状态的实际证据，核对关键内容可见、可读、可交互。只有 `exact` 才强制完整 parity case、目标/候选精确测量、预定义容差和全视口/全状态矩阵。已提供的案例保留目标 SHA、当前候选 SHA、scene/state、实际 DPR、视觉基线与证据身份，不能用旧结果冒充当前结果；仅重验受影响部分。
 
-effect-image 的 parity case 不能退化为 `structured-layout-and-independent-review`：必须提供完整 viewport reference/candidate、side-by-side、overlay/diff 和全部 coverage region 的 target/candidate fact、delta、tolerance、result、evidence。任何 `unknown`、`unverified`、`missing` 或未解释差异都使 V4/F2 失败。
+effect-image 的 parity case 不能退化为 `structured-layout-and-independent-review`：默认 `usability` 必须提供代表性 viewport reference/candidate、关键 coverage region 的关系事实、可读性和交互证据；`exact` 或明确精确需求时才提供完整 viewport、side-by-side、overlay/diff 及全部 coverage region 的 target/candidate fact、delta、tolerance、result、evidence。关键证据缺失、明显越界/裁切/遮挡或交互失效使 V4/F2 失败；小幅位置和尺寸差异在 `usability` 下不单独阻断。
 
 `specified` 只冻结目标测量与测试合同，不要求尚未产生的运行证据；`verified` 才要求运行测量、实际证据以及非空且全部通过的 parity cases。普通布局为 `not-applicable`，不创建伪造冻结目标。
 
 ## 最小轴
 
-- 合同 `evidence_matrix.required_axes` 至少声明：`breakpoint-neighbors`、`width`、`height`、`orientation`、`text-scale`、`localization`、`safe-area`、`action-state`、`dpr`、`dynamic-values`、`scene-lifecycle`、`overlay-keyboard-scroll`。
-- 每个断点覆盖 `breakpoint - 1`、`breakpoint`、`breakpoint + 1`。
-- 最小、基准、最大宽度；同宽的基准高度和窄高度。
-- 竖屏与横屏。
-- 默认字号与项目支持的最大字号。
-- 默认语言与最长本地化文案。
-- 零安全区与非零安全区。
-- 关键动作默认、按下、禁用、提交中和错误状态。
-- 动态数字最小/最大位数，成员最少/典型/最多，Scene 创建/唤醒/恢复和 resize 后状态。
-- 固定 HUD、弹层、键盘、滚动内容和玩法手势组合。
+默认 `usability` 的最小轴由项目选择代表性覆盖：基准与窄/宽视口、至少一种方向变化、关键字号/文案、零/非零安全区、关键动作状态和宿主生命周期；每项都检查边界、遮挡、可读性、可操作性和关系不变量。
+
+`exact` 或项目明确的全覆盖需求才必须声明并执行完整轴：`breakpoint-neighbors`、`width`、`height`、`orientation`、`text-scale`、`localization`、`safe-area`、`action-state`、`dpr`、`dynamic-values`、`scene-lifecycle`、`overlay-keyboard-scroll`，包括每个断点三点、完整宽高/方向/字号/文案/安全区/状态和组合。
 
 ## 证据类型
 
-- 自动化：纯布局计算和关系不变量测试，断言中心、间距、边界、唯一滚动轴、遮挡和断点结构。
+- 自动化：纯布局计算和关系不变量测试，断言中心、间距、边界、唯一滚动轴、遮挡和断点结构；默认允许合同声明的合理偏差。
 - QA 运行：操作轨迹证明可达、滚动、键盘和触控；记录设备/视口、运行时实际有效 DPR（设备值动态封顶 1.5）、语言、状态和稳定帧。
-- 视觉：记录 ROI、容差、断点前后结构、相对中心、底部距离、层级与遮挡。Golden 只允许在冻结目标视口验证精确视觉。
+- 视觉：记录 ROI、容差、断点前后结构、相对中心、底部距离、层级与遮挡。Golden 只在 `exact` 或明确精确需求下于冻结目标视口验证精确视觉。
 
 组合过大时可按等价类削减，但必须写出削减依据、未覆盖组合和风险。布局计算与 Phaser GameObject 测试不得把绝对屏幕坐标当作所有视口的验收标准。

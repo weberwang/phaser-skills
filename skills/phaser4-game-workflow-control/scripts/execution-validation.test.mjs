@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import test from 'node:test';
-import { assertCompletedUnits, assertUnitReady, completeExecutionUnit, createExecutionState, executionStatePath, scopedDiffFingerprint } from './execution-unit-control.mjs';
+import { assertCompletedUnits, assertUnitReady, completeExecutionUnit, createExecutionState, executionStatePath, scopedDiffFingerprint, loadExecutionState, executionPlanFingerprint } from './execution-unit-control.mjs';
 
 const BASELINE_HASH = `sha256:${'a'.repeat(64)}`;
 
@@ -139,4 +139,30 @@ test('有效的已校验 Result 不因完成证据检查再次触发目录读取
 
   assert.doesNotThrow(() => assertCompletedUnits({ completedUnitIds: ['UNIT-1', 'UNIT-2'] }, fixture.work, fixture.pkg, fixture.repo, fixture.io));
   assert.equal(fixture.directoryReads, 0);
+});
+
+test('其他模块提交不使本单元证据失效，本单元内容改变仍需重验', (t) => {
+  const fixture = makeFixture(t);
+  completeUnits(fixture, ['UNIT-1']);
+  writeFileSync(join(fixture.repo, 'src/module.js'), 'export const moduleValue = 2;\n');
+  execFileSync('git', ['add', 'src/module.js'], { cwd: fixture.repo });
+  execFileSync('git', ['commit', '-qm', '修改另一个模块'], { cwd: fixture.repo });
+  assert.doesNotThrow(() => assertUnitReady(fixture.pkg.executionUnits[1], fixture.work, fixture.pkg, fixture.repo, fixture.io));
+  writeFileSync(join(fixture.repo, 'src/main.js'), 'export const value = 3;\n');
+  assert.throws(() => assertUnitReady(fixture.pkg.executionUnits[1], fixture.work, fixture.pkg, fixture.repo, fixture.io), /路径 diff 指纹已过期.*UNIT-1/);
+});
+
+test('调整未完成单元计划时复用已完成证据，读检查不写状态文件', (t) => {
+  const fixture = makeFixture(t);
+  completeUnits(fixture, ['UNIT-1']);
+  const path = resolve(fixture.repo, executionStatePath(fixture.work));
+  const before = readFileSync(path, 'utf8');
+  fixture.pkg.executionUnits[1].ownedPaths = ['src/module.js', 'src/new-module.js'];
+  fixture.pkg.executionUnits[1].acceptanceCommands = ['node --test module.test.mjs'];
+  const { state } = loadExecutionState(fixture.work, fixture.pkg, fixture.repo, fixture.io);
+  assert.equal(state.units[0].state, 'COMPLETE');
+  assert.equal(state.executionPlanFingerprint, executionPlanFingerprint(fixture.pkg, fixture.io));
+  assert.equal(readFileSync(path, 'utf8'), before);
+  fixture.pkg.executionUnits[0].acceptanceCommands = ['node --test changed.test.mjs'];
+  assert.throws(() => loadExecutionState(fixture.work, fixture.pkg, fixture.repo, fixture.io), /验收命令与单元不一致/);
 });

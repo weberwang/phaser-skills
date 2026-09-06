@@ -15,9 +15,7 @@
     "baselineVersion",
     "baselineHash",
     "objective",
-    "taskAuthorization",
     "inScope",
-    "outOfScope",
     "approvedRequirements",
     "allowedActions",
     "allowedActionLevels",
@@ -201,62 +199,17 @@
       "type": "string",
       "minLength": 1
     },
-    "taskAuthorization": {
-      "type": "object",
-      "required": [
-        "authorizationId",
-        "userOriginalText",
-        "authorizedObjective",
-        "authorizedScope",
-        "authorizedActions",
-        "authorizedActionLevels",
-        "authorizedPaths",
-        "authorizedAt"
-      ],
-      "properties": {
-        "authorizationId": {
-          "type": "string",
-          "minLength": 1
-        },
-        "userOriginalText": {
-          "type": "string",
-          "minLength": 1
-        },
-        "authorizedObjective": {
-          "type": "string",
-          "minLength": 1
-        },
-        "authorizedScope": {
-          "$ref": "#/$defs/strings"
-        },
-        "authorizedActions": {
-          "$ref": "#/$defs/automaticPhaserActions"
-        },
-        "authorizedActionLevels": {
-          "type": "array",
-          "items": {
-            "enum": [
-              "A0",
-              "A1",
-              "A2",
-              "A3"
-            ]
-          }
-        },
-        "authorizedPaths": {
-          "$ref": "#/$defs/strings"
-        },
-        "authorizedAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "visualConfirmationPrerequisiteFiles": {
-          "$ref": "#/$defs/strings"
-        },
-        "visualConfirmationPrerequisiteFilesSha256": {
-          "$ref": "#/$defs/sha256"
-        }
-      }
+    "userOriginalText": {
+      "type": "string",
+      "minLength": 1,
+      "description": "用户原始任务描述；它是工作上下文，不是独立授权凭据。"
+    },
+    "visualConfirmationPrerequisiteFiles": {
+      "$ref": "#/$defs/strings",
+      "description": "V2 人工确认文件的工作项前置引用；仅用于复核文件身份，不代表额外授权。"
+    },
+    "visualConfirmationPrerequisiteFilesSha256": {
+      "$ref": "#/$defs/sha256"
     },
     "inScope": {
       "$ref": "#/$defs/strings"
@@ -523,9 +476,6 @@
         "string",
         "null"
       ]
-    },
-    "diffAuditAuthorizationRecord": {
-      "type": "string"
     },
     "implementationPackageRecord": {
       "type": "string"
@@ -1275,7 +1225,7 @@
       "additionalProperties": false,
       "required": ["classification", "reason", "affectedScope", "fromState", "toState", "returnState", "invalidatedArtifacts", "previousValidationBatchId", "invalidatesDownstream", "recordedAt", "resolvedAt"],
       "properties": {
-        "classification": {"enum": ["upstream-fact-invalidated", "candidate-identity-changed", "authorization-or-scope-changed", "hard-gate-would-be-bypassed"]},
+        "classification": {"enum": ["upstream-fact-invalidated", "scope-changed", "hard-gate-would-be-bypassed"]},
         "reason": {"type": "string", "minLength": 1},
         "affectedScope": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "pattern": "^(?:stage|scene|artifact):[A-Za-z0-9][A-Za-z0-9._/-]*$"}},
         "fromState": {"type": "string", "minLength": 1},

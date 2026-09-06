@@ -84,6 +84,7 @@ function contract() {
   };
   return {
     contract_version: "1.0",
+    visual_validation: { mode: "exact" },
     display_layer_planning: {
       version: "1.0",
       scene_master: { scene_id: "main", state_id: "default", target_sha256: SHA, origin: "provided", viewport: { width: 390, height: 844 }, persistent_layer_ids: ["battle-hud"] },
@@ -138,7 +139,7 @@ function contract() {
 }
 
 function manifest() {
-  return { reference_target: { target_sha256: SHA, scene_ids: ["main"], state_ids: ["default"] }, visual_baseline: { version: "1.0.0" }, coverage_audit: { regions: [{ id: "hud" }, { id: "board" }] }, scene_reconstruction_contract: { predeclared_tolerances: [{ id: "layout-tolerance", rules: { geometry: { value: 2 } } }], coverage_regions: [{ id: "hud", tolerance_reference: "layout-tolerance", approved_exception_ids: [] }, { id: "board", tolerance_reference: "layout-tolerance", approved_exception_ids: [] }] } };
+  return { visual_validation: { mode: "exact" }, reference_target: { target_sha256: SHA, scene_ids: ["main"], state_ids: ["default"] }, visual_baseline: { version: "1.0.0" }, coverage_audit: { regions: [{ id: "hud" }, { id: "board" }] }, scene_reconstruction_contract: { predeclared_tolerances: [{ id: "layout-tolerance", rules: { geometry: { value: 2 } } }], coverage_regions: [{ id: "hud", tolerance_reference: "layout-tolerance", approved_exception_ids: [] }, { id: "board", tolerance_reference: "layout-tolerance", approved_exception_ids: [] }] } };
 }
 
 /** 构造同条件的结构化 fidelity case；差异夹具只替换逐区域目标/候选事实。 */

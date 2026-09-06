@@ -7,7 +7,6 @@
   "required": [
     "workItemId",
     "stageId",
-    "authorizationId",
     "owner",
     "assignedAgent",
     "ownership",
@@ -27,10 +26,6 @@
       "minLength": 1
     },
     "stageId": {
-      "type": "string",
-      "minLength": 1
-    },
-    "authorizationId": {
       "type": "string",
       "minLength": 1
     },

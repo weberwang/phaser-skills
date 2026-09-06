@@ -5,6 +5,7 @@ import {
   createReturnRecord,
   invalidateReturnArtifacts,
   normalizeAffectedScope,
+  parseReturnRequest,
   validateReturnRecord,
   validateReturnResume,
 } from "./return-disposition.mjs";
@@ -24,7 +25,6 @@ function returnWork(overrides = {}) {
     pendingVisualPrerequisiteSnapshot: { candidate: "sha256:old" },
     diffAuditRecord: "evidence/diff-audit.json",
     diffAuditLedgerRecord: "evidence/diff-ledger.json",
-    diffAuditAuthorizationRecord: "evidence/diff-auth.json",
     implementationPackageRecord: "evidence/package.json",
     evidenceRoot: "evidence/WI-RETURN-1",
     visualStage: "V3",
@@ -109,6 +109,15 @@ test("RETURN 到 IMPLEMENTING 保留 V2 视觉证据，不扩大失效范围", (
   assert.equal(record.invalidatedArtifacts.includes("visualStageEvidenceRefs"), false);
   assert.equal(record.invalidatedArtifacts.includes("visualHumanApproval"), false);
   assert.equal(record.invalidatedArtifacts.includes("implementationPackageRecord"), true);
+});
+
+test("普通候选变化不能作为回退理由，设计实变才允许返回受影响阶段", () => {
+  const work = returnWork();
+  const request = { 'return-classification': 'candidate-identity-changed', 'return-reason': '调整按钮边距', 'affected-scope': 'stage:V4' };
+  assert.match(parseReturnRequest(request, work).error, /定向重验/);
+  assert.throws(() => createReturnRecord({ classification: 'candidate-identity-changed', reason: '调整边距', affectedScope: ['stage:V4'] }, work), /classification/);
+  const record = createReturnRecord({ classification: 'upstream-fact-invalidated', reason: '用户变更了已确认的布局结构', affectedScope: ['stage:V2'] }, work);
+  assert.equal(record.returnState, 'REVIEW');
 });
 
 test("RETURN 拒绝把 Execution State 归档到项目外或仓库根", () => {

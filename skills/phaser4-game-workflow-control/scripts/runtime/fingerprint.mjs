@@ -88,7 +88,7 @@ function collectPackageInputFiles(value, output = []) {
 export function collectPlanInputs(repo, work, implementationPackage = null, extraPaths = []) {
   const declared = [
     ...extraPaths,
-    ...(work?.taskAuthorization?.visualConfirmationPrerequisiteFiles ?? []),
+    ...(work?.visualConfirmationPrerequisiteFiles ?? []),
     ...(work?.changeRequestFiles ?? []),
     ...(implementationPackage?.visualManifestFile ? [implementationPackage.visualManifestFile] : []),
     ...collectPackageInputFiles(implementationPackage),
@@ -113,7 +113,7 @@ export function collectPlanInputs(repo, work, implementationPackage = null, extr
   ];
 }
 
-/** 根据基线、授权、当前状态、实施包和关键输入计算稳定计划指纹。 */
+/** 根据基线、工作项范围、当前状态、实施包和关键输入计算稳定计划指纹。 */
 export function computePlanFingerprint({ work, implementationPackage = null, repo = process.cwd(), extraPaths = [] } = {}) {
   const payload = {
     contract: 'workflow-plan/1',
@@ -122,7 +122,29 @@ export function computePlanFingerprint({ work, implementationPackage = null, rep
       version: work?.baselineVersion ?? null,
       hash: work?.baselineHash ?? null,
     },
-    taskAuthorization: work?.taskAuthorization ?? null,
+    // 范围直接属于 Work Item；计划指纹不再依赖可变的独立授权凭据。
+    workScope: {
+      workItemId: work?.workItemId ?? null,
+      projectId: work?.projectId ?? null,
+      moduleIds: work?.moduleIds ?? [],
+      domain: work?.domain ?? null,
+      stageId: work?.stageId ?? null,
+      objective: work?.objective ?? null,
+      inScope: work?.inScope ?? [],
+      outOfScope: work?.outOfScope ?? [],
+      approvedRequirements: work?.approvedRequirements ?? [],
+      allowedActions: work?.allowedActions ?? [],
+      allowedActionLevels: work?.allowedActionLevels ?? [],
+      explicitApprovalActionLevels: work?.explicitApprovalActionLevels ?? [],
+      prohibitedActions: work?.prohibitedActions ?? [],
+      allowedPaths: work?.allowedPaths ?? [],
+      forbiddenPaths: work?.forbiddenPaths ?? [],
+      allowedExternalTargets: work?.allowedExternalTargets ?? [],
+      protectedExternalTargets: work?.protectedExternalTargets ?? [],
+      requiredGates: work?.requiredGates ?? [],
+      visualConfirmationPrerequisiteFiles: work?.visualConfirmationPrerequisiteFiles ?? [],
+      changeRequestFiles: work?.changeRequestFiles ?? [],
+    },
     currentState: work?.globalState ?? null,
     stage: work?.stageId ?? null,
     implementationPackage: implementationPackage ?? null,

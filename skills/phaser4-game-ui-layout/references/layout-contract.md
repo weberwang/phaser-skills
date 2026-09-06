@@ -1,6 +1,6 @@
 # UI 布局合同
 
-布局合同是某个场景、状态和候选的可验证关系规范。它不是流程状态机，也不能自动批准、自动合并或替代 F0–F4。模板采用 JSON-compatible YAML：文件是合法 YAML 1.2 的 JSON 子集，验证器使用 Node.js `JSON.parse` 解析。
+布局合同是某个场景、状态和候选的可验证关系规范。它不是流程状态机，也不能自动批准、自动合并或替代 F0–F4。视觉验证通过 `visual_validation.mode=usability|exact` 选择严格程度，默认 `usability`；effect-image 不自动启用 `exact`。模板采用 JSON-compatible YAML：文件是合法 YAML 1.2 的 JSON 子集，验证器使用 Node.js `JSON.parse` 解析。
 
 ## 合同身份与范围
 
@@ -59,7 +59,7 @@ schema 1.1.0 根对象包含 `fidelity`、`frozen_visual_target`、`layout_nodes
 
 ## 断点与结构
 
-普通静态布局允许 `breakpoints: []`；一旦声明断点，每个断点必须有非空 `when` 触发条件和 `structure_changes`。条件键和值、结构变化项必须是非空字符串或有效数值。条件可以基于宽度、高度、宽高比、方向、安全区或内容容量。必须明确变化的区域/列/导航/操作区，以及仍保持的关系。每个已声明断点必须进入证据矩阵的临界三点：`breakpoint - 1`、`breakpoint`、`breakpoint + 1`。
+普通静态布局允许 `breakpoints: []`；一旦声明断点，每个断点必须有非空 `when` 触发条件和 `structure_changes`。条件键和值、结构变化项必须是非空字符串或有效数值。条件可以基于宽度、高度、宽高比、方向、安全区或内容容量。必须明确变化的区域/列/导航/操作区，以及仍保持的关系。默认 `usability` 验证基准和代表性断点；只有 `exact` 或项目明确要求时才为每个断点执行临界三点 `breakpoint - 1`、`breakpoint`、`breakpoint + 1`。
 
 ## 安全区、滚动与覆盖
 
@@ -79,11 +79,11 @@ schema 1.1.0 根对象包含 `fidelity`、`frozen_visual_target`、`layout_nodes
 
 ## 不变量与证据
 
-`invariants` 的每一项都包含稳定 ID、非空描述/表达式、非空且全部有效的适用区域、非负容差和 `evidence.automation`/`evidence.visual` 字符串项。关系表达优先描述相对中心、边界距离、间距、遮挡和断点结构，而非一个孤立屏幕坐标。`evidence_matrix` 必须绑定同一候选、合同版本、动态封顶 1.5 的 DPR 策略和冻结视口条件，并覆盖断点邻值、宽高、方向、字号、本地化、安全区、动作态、DPR、动态值、Scene 生命周期和覆盖层/键盘/滚动组合；Golden 只在冻结目标视口验证精确视觉，普通测试验证关系不变量。
+`invariants` 的每一项都包含稳定 ID、非空描述/表达式、非空且全部有效的适用区域、非负容差和 `evidence.automation`/`evidence.visual` 字符串项。关系表达优先描述相对中心、边界距离、间距、遮挡和断点结构，而非一个孤立屏幕坐标。`evidence_matrix` 必须绑定同一候选、合同版本、动态封顶 1.5 的 DPR 策略和已执行的视口条件；默认 `usability` 覆盖基准及代表性窄/宽、方向和关键状态，验证关系不变量与可用性。只有 `exact` 或项目明确要求时才覆盖断点邻值、宽高、方向、字号、本地化、安全区、动作态、DPR、动态值、Scene 生命周期和覆盖层/键盘/滚动的完整组合，并启用 Golden 精确视觉。
 
-`critical_alignments` 用于冻结目标中的关键 UI/HUD：每项必须通过 `layout_node_id` 绑定一个布局节点，并保持 `element_id` 等于该节点的 `region_id`。其 `reference_id` 可以指向稳定 region、`viewport` 或具体 `layout_node_id`；若指向绑定多个节点的 region，必须改成具体节点 ID。specified 要求唯一 ID、稳定 element/reference、双轴关系、与布局节点 `target_bounds` 一致的正尺寸目标测量、`planned_test_id`、目标证据、双方 SHA 和项目预声明容差；目标几何漂移时必须退回拆解阶段。verified 还要求 `actual_test_id`（且等于 planned ID）、正尺寸 `runtime_measurement`（也可用语义等价的 `actual_bounds`）、四轴 `delta`、运行证据和 `test_status=passed`，并校验 delta 等于运行 bounds 减去目标 bounds。不得全局硬编码 1 logical px；容差由项目在合同中按关系或证据类型预声明。
+`critical_alignments` 用于冻结目标中的关键 UI/HUD：通过 `layout_node_id` 绑定布局节点，`element_id` 等于对应 `region_id`。`reference_id` 可指向稳定 region、`viewport` 或具体节点；多节点 region 必须指定具体节点。两种模式均保留唯一 ID、双轴关系、目标证据、双方身份和测试计划；verified 需要真实运行测量、运行证据与通过结果。默认 `usability` 不强制目标精确测量、四轴 delta 或预声明容差，允许合理的位置和尺寸差异；若提供测量字段，其结构必须有效。只有 `exact` 才强制目标几何、四轴 delta、精确差值一致性和项目容差。目标或布局结构实质变化才重新确认，普通运行态微调原地验证。
 
-`parity_cases` 不可变绑定 scene/state、viewport、实际有效 DPR（(0,1.5]）、语言、随机种子、输入轨迹、稳定帧/动画采样、合同/基线版本、双方证据、容差、例外 ID 与结论。目标或候选 SHA 不匹配时旧证据不得复用。
+`parity_cases` 不可变绑定 scene/state、已执行 viewport、实际有效 DPR（(0,1.5]）、语言、随机种子、输入轨迹、稳定帧/动画采样、合同/基线版本、双方证据、容差、例外 ID 与结论。默认 `usability` 只需代表性案例；`exact` 或明确全覆盖需求才要求完整视口/状态组合。目标或上游候选 SHA 不匹配时对应旧证据不得复用。
 
 specified 可只做结构检查；verified 必须追加 `--check-files --project-root .`，验证冻结原图存在且 SHA 匹配，并拒绝缺失或逃逸项目根目录的目标、运行及 parity 证据路径。
 # 效果图还原布局绑定
@@ -92,4 +92,4 @@ specified 可只做结构检查；verified 必须追加 `--check-files --project
 
 V2→V3 合同回对必须校验该绑定；`legacy_layout_reused`、`uses_generic_layout` 或 target SHA 不一致均退回 `V1/PROPOSAL`，不能沿用旧响应式骨架。
 
-目标 viewport 用于精确还原，其他 viewport 只验证关系不变量。布局区域仍须与正式 Scene 结构绑定；整屏截图不能作为交互 Scene、隐藏覆盖层或绝对叠图不能作为布局实现。
+目标 viewport 在 `usability` 下用于确认整体关系、可读性和可操作性，其他代表性 viewport 验证关系不变量；只有 `exact` 或明确精确需求时才要求目标 viewport 的严格还原。布局区域仍须与正式 Scene 结构绑定；整屏截图不能作为交互 Scene、隐藏覆盖层或绝对叠图不能作为布局实现。

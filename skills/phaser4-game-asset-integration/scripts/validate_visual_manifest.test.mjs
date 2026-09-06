@@ -6,6 +6,7 @@ import { deflateSync } from "node:zlib";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import { registerVisualManifestUsabilityCases } from "./visual-manifest-usability-cases.mjs";
 import { technicalRegionSnapshot } from "./generate_effect_image_annotation.mjs";
 import { checkManifestFiles as runManifestFileCheck, computeRegionDefinitionSha256, main, readPngDimensions, validateManifest } from "./validate_visual_manifest.mjs";
 import { annotationProductionContract, decodePngRgba } from "./effect_image_raster.mjs";
@@ -17,7 +18,6 @@ import { CORE_TEMPLATES, OPTIONAL_TEMPLATES } from "../../phaser4-game-orchestra
 
 const EMPTY_DOCUMENT_FINGERPRINT = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 const STRUCTURAL_FILE_GATE_OPTIONS = { checkFiles: true, projectRoot: "fixture-project" };
-const FIXTURE_TASK_AUTHORIZATION_ID = "task-auth-1";
 /** 为测试清单构造完整的“状态先行、单部件单图”合同。 */
 function visualComponentContract(componentId, assetId, sourceFile = assetId === "hero-idle" ? "art/hero.png" : `art/${assetId}.png`, runtimeFile = assetId === "hero-idle" ? "public/assets/hero.png" : `public/assets/${assetId}.png`, referenceTargetSha = EMPTY_DOCUMENT_FINGERPRINT) {
   const regionBounds = assetId === "hero-idle" ? { x: 10, y: 20, width: 64, height: 96 } : { x: 0, y: 0, width: 64, height: 64 };
@@ -97,6 +97,7 @@ function validManifest() {
   const heroPngSha = sha256Bytes(minimalPng(64, 96));
   const manifest = {
     schema_version: "1.5",
+    visual_validation: { mode: "exact" },
     visual_contract_version: "1.0",
     visualStage: "V4",
     visualStageState: "v4-runtime-integration-candidate",
@@ -420,7 +421,7 @@ function canonicalSha(value, excludedField) {
   return sha256Bytes(Buffer.from(canonicalJson(payload), "utf8"));
 }
 
-/** 计算 taskAuthorization 冻结的前置文件列表身份。 */
+/** 计算工作项直接绑定的确认前置文件列表身份。 */
 function prerequisiteListSha(files) {
   const normalized = [...new Set((Array.isArray(files) ? files : []).map((item) => String(item).replaceAll("\\", "/")))].sort();
   return sha256Bytes(Buffer.from(canonicalJson(normalized), "utf8"));
@@ -515,7 +516,7 @@ async function writeConfirmationFixtureFiles(root, manifest, annotationBytes = n
     await mkdir(dirname(decisionPath), { recursive: true });
     await writeFile(decisionPath, decisionBytes);
     const decisionSha = sha256Bytes(decisionBytes);
-    const receipt = { message_id: `message-${confirmation.confirmation_id}`, thread_id: "thread-visual-1", author_role: "user", user_message_sha256: confirmation.user_message_sha256, decision_record_sha256: decisionSha, accepted_at: first.confirmation.accepted_at, work_item_id: manifest.workItemId, candidate_version: manifest.candidateVersion, candidate_sha256: manifest.candidate_identity.sha256, target_sha256: manifest.reference_target.target_sha256, scene_id: first.scene_id, state_id: first.state_id, task_authorization_id: FIXTURE_TASK_AUTHORIZATION_ID, resolution_id: `resolution-${confirmation.confirmation_id}`, resolution_status: "resolved", resolved_from: "USER_INPUT_REQUIRED", user_statement: userText };
+    const receipt = { message_id: `message-${confirmation.confirmation_id}`, thread_id: "thread-visual-1", author_role: "user", user_message_sha256: confirmation.user_message_sha256, decision_record_sha256: decisionSha, accepted_at: first.confirmation.accepted_at, work_item_id: manifest.workItemId, candidate_version: manifest.candidateVersion, candidate_sha256: manifest.candidate_identity.sha256, target_sha256: manifest.reference_target.target_sha256, scene_id: first.scene_id, state_id: first.state_id, resolution_id: `resolution-${confirmation.confirmation_id}`, resolution_status: "resolved", resolved_from: "USER_INPUT_REQUIRED", user_statement: userText };
     const receiptBytes = Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`);
     const receiptPath = join(root, confirmation.user_decision_receipt_file);
     await mkdir(dirname(receiptPath), { recursive: true });
@@ -545,7 +546,7 @@ async function writeConfirmationFixtureFiles(root, manifest, annotationBytes = n
       decision_record_sha256: decisionSha,
     };
     entry.entry_sha256 = canonicalSha(entry, "entry_sha256");
-    const ledger = { schema: "user-resolution-ledger/1.0", ledger_id: `ledger-${suffix}`, ledger_sha256: "", work_item_id: manifest.workItemId, task_authorization_id: FIXTURE_TASK_AUTHORIZATION_ID, entries: [entry] };
+    const ledger = { schema: "user-resolution-ledger/1.0", ledger_id: `ledger-${suffix}`, ledger_sha256: "", work_item_id: manifest.workItemId, entries: [entry] };
     ledger.ledger_sha256 = canonicalSha(ledger, "ledger_sha256");
     const ledgerPath = join(root, `.phaser-workflow/user-resolutions/${suffix}-ledger.json`);
     await mkdir(dirname(ledgerPath), { recursive: true });
@@ -614,7 +615,7 @@ async function loadFixtureAuthority(root, manifest) {
   const work = {
     workItemId: manifest.workItemId,
     baselineHash,
-    taskAuthorization: { authorizationId: FIXTURE_TASK_AUTHORIZATION_ID, visualConfirmationPrerequisiteFiles: normalizedPrerequisites, visualConfirmationPrerequisiteFilesSha256: prerequisiteListSha(normalizedPrerequisites) },
+    visualConfirmationPrerequisiteFiles: normalizedPrerequisites, visualConfirmationPrerequisiteFilesSha256: prerequisiteListSha(normalizedPrerequisites),
     visualConfirmationAuthorityRefs: refs,
   };
   const loaded = loadVisualConfirmationAuthority(work, { projectRoot: root, manifest, checkFiles: true });
@@ -637,7 +638,7 @@ function refreshRegionDerivedContracts(manifest, region) {
   if (unit) unit.atomic_image_requirements = region.atomic_image_requirements;
 }
 
-test("有效清单通过", () => assert.deepEqual(validateManifest(validManifest(), STRUCTURAL_FILE_GATE_OPTIONS), []));
+registerVisualManifestUsabilityCases({ validManifest, validateManifest, options: STRUCTURAL_FILE_GATE_OPTIONS });
 test("普通 visual manifest fidelity DPR 允许动态有效值并拒绝非法声明", () => {
   for (const dpr of [0.5, 1, 1.25, 1.5]) { const manifest = validManifest(); manifest.fidelity_cases[0].dpr = dpr; assert.deepEqual(validateManifest(manifest, STRUCTURAL_FILE_GATE_OPTIONS), [], `fidelity dpr=${dpr}`); }
   for (const dpr of [0, -1, 1.5001, 2, 3, "1.5", NaN, Infinity]) { const manifest = validManifest(); manifest.fidelity_cases[0].dpr = dpr; assert(validateManifest(manifest, STRUCTURAL_FILE_GATE_OPTIONS).some((item) => item.includes("正有限数字且不超过 1.5")), `fidelity dpr=${dpr}`); }

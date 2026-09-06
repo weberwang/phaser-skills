@@ -25,7 +25,7 @@ function makeFixture() {
     workItemId: 'WI-1',
     stageId: 'G1',
     baselineHash: 'sha256:baseline',
-    taskAuthorization: { authorizationId: 'AUTH-1', authorizedPaths: ['src'] },
+    allowedPaths: ['src'],
   };
   const pkg = {
     packageId: 'PKG-1',
@@ -39,7 +39,6 @@ function makeFixture() {
     assignedAgent: 'worker-1',
     ownership: ['src'],
     allowedPaths: ['src'],
-    authorizationId: 'AUTH-1',
   };
   return { calls, context, work, pkg, delegation };
 }
@@ -57,12 +56,12 @@ test('ValidationContext 对完整相同输入复用包、authority 和 manifest 
   assert.equal(fixture.calls.authority, 1);
 });
 
-test('Work Item、范围授权、Implementation Package 或委派变化都会生成新校验身份', () => {
+test('Work Item 范围、Implementation Package 或委派变化都会生成新校验身份', () => {
   const fixture = makeFixture();
   fixture.context.validateImplementationPackage(fixture.pkg, fixture.work, [fixture.delegation]);
   const baselineCalls = fixture.calls.package;
 
-  const changedWork = { ...fixture.work, taskAuthorization: { ...fixture.work.taskAuthorization, authorizedPaths: ['src/changed'] } };
+  const changedWork = { ...fixture.work, allowedPaths: ['src/changed'] };
   fixture.context.validateImplementationPackage(fixture.pkg, changedWork, [fixture.delegation]);
   assert.equal(fixture.calls.package, baselineCalls + 1);
 
@@ -70,7 +69,7 @@ test('Work Item、范围授权、Implementation Package 或委派变化都会生
   fixture.context.validateImplementationPackage(changedPackage, fixture.work, [fixture.delegation]);
   assert.equal(fixture.calls.package, baselineCalls + 2);
 
-  const changedDelegation = { ...fixture.delegation, allowedPaths: ['src/other'], authorizationId: 'AUTH-2' };
+  const changedDelegation = { ...fixture.delegation, allowedPaths: ['src/other'] };
   fixture.context.validateImplementationPackage(fixture.pkg, fixture.work, [changedDelegation]);
   assert.equal(fixture.calls.package, baselineCalls + 3);
   assert.equal(fixture.calls.authority, 4);

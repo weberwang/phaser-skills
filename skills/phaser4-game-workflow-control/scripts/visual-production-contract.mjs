@@ -24,6 +24,7 @@ import { validateImageGenerationSizeContract } from "./visual-generation-size-co
 import { validateVisualPostApprovalReviewFields } from "./visual-human-review-contract.mjs";
 import { isEffectImageGeneration, validateEffectImagePromptContract } from "./effect-image-prompt-contract.mjs"; import { validateTransparentBackgroundContract, validateTransparentExpectedAssetContract } from "./visual-transparent-background-contract.mjs"; import { validateImageNormalizationContract } from "./visual-image-normalization-contract.mjs";
 import { deriveVisualReturnStage, deriveVisualRootCause, isPlainObject as isObject, isSha256, nonEmptyString, sha256Bytes, VISUAL_DELIVERY_KINDS as DELIVERY_KINDS, VISUAL_PRODUCTION_METHODS as PRODUCTION_METHODS, VISUAL_PRODUCTION_ORIGINS as PRODUCTION_ORIGINS, VISUAL_ROOT_CAUSES, VISUAL_SUBSTITUTION_POLICIES as SUBSTITUTION_POLICIES } from "./visual-contract-core.mjs";
+import { resolveVisualValidationMode, validateVisualValidationPolicy } from "./visual-validation-policy.mjs";
 export { atomicImageRequirementsEqual, canonicalStateId, deriveAtomicImageRequirements, hasRuntimeImplementationField, normalizeAtomicImageRequirements, normalizeProjectRelativePath, validateComponentAuditEvidence, validateVisualComponentContract, normalizeComponentExpectedAsset, visualComponentContractDifferences } from "./visual-component-contract.mjs";
 export { FIXED_VISUAL_IMAGE_METHODS, PROGRAM_VISUAL_METHODS, manualDecompositionRegions, requiresManualVisualDecomposition, validateFixedVisualProductionMethod, validateVisualDecompositionConfirmationBinding, validateVisualDecompositionConfirmationRecord, validateVisualDecompositionConfirmations, validateVisualProductionUnitConfirmation } from "./visual-decomposition-confirmation.mjs";
 export { REUSE_SCHEMA, validateProductionMethodChangeRequest, validateReuseProductionGate, validateVisualConfirmationGate } from "./visual-confirmation-reuse-gates.mjs";
@@ -34,6 +35,8 @@ export { CANONICAL_GLOBAL_VISUAL_CONSISTENCY_PROMPT, GLOBAL_VISUAL_BASELINE_DOCU
 /** 视觉生产合同允许的固定来源。来源不决定生产方法。 */
 export { validateSceneAssetUsageContract, validateSceneCombinationPreacceptance, validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "./scene-reconstruction-contract.mjs";
 export { PRODUCTION_ORIGINS };
+/** 视觉验收模式和几何偏差策略由所有 manifest/V4 入口共享。 */
+export { isExactVisualValidation, resolveVisualValidationMode, validateVisualValidationPolicy } from "./visual-validation-policy.mjs";
 /** 视觉生产合同允许的显式生产方式。新增方式必须先更新合同和验收器。 */
 export { PRODUCTION_METHODS };
 /** 交付类型决定实际消费的文件或运行时输出形式。 */
@@ -681,6 +684,8 @@ export function validateProductionAuditShape(manifest, options = {}) {
 /** 校验 V4 运行态硬门，要求审计、F2 机器事实、重放、freshness 和实际消费全部存在。 */
 export function validateV4ProductionGate(manifest, options = {}) {
   const errors = [];
+  const visualValidationMode = resolveVisualValidationMode(options, manifest, manifest?.scene_reconstruction_contract);
+  validateVisualValidationPolicy(errors, "visual_validation", options, manifest, manifest?.scene_reconstruction_contract);
   errors.push(...validateVisualConfirmationGate(manifest, { ...options, stage: "V4", requireManualConfirmation: true }));
   const gate = manifest?.visual_production_gate ?? manifest?.v4_production_gate ?? manifest?.production_v4_gate;
   const context = { stage: "V4", annotation_number: "*", region_id: "*", expectedMethod: "production-contract", observedMethod: "missing" };
@@ -709,7 +714,7 @@ export function validateV4ProductionGate(manifest, options = {}) {
     }
   });
   if (options.requireSceneReconstruction === true) {
-    errors.push(...validateSceneReconstructionGate(manifest, { stage: "V4" }));
+    errors.push(...validateSceneReconstructionGate(manifest, { stage: "V4", visual_validation: { mode: visualValidationMode } }));
   }
   const runtimeConsumption = gate.runtime_consumption;
   if (!isObject(runtimeConsumption) || !["passed", "consumed", "PASS"].includes(String(runtimeConsumption.status).toLowerCase())) error("V4 缺少带身份绑定的运行时实际消费 evidence", "runtime_consumption");

@@ -73,7 +73,7 @@ function makeCliFixture() {
   const ledgerPath = join(root, 'approvals', 'ledger.json');
   const work = {
     workItemId: 'WI-VISUAL', projectId: 'P-VISUAL', moduleIds: ['scene'], domain: 'visual', stageId: 'main', globalState: 'PASSED', baselineId: head, baselineVersion: '1', baselineHash: SHA,
-    objective: '将正式视觉候选接入 Main Scene', taskAuthorization: { authorizationId: 'TASK-WI-VISUAL', userOriginalText: '完成视觉生产集成', authorizedObjective: '完成视觉生产集成', authorizedScope: ['scene'], authorizedActions: ['phaser-inspect', 'phaser-spec-candidate', 'phaser-prototype', 'phaser-code-change'], authorizedActionLevels: ['A0', 'A1', 'A2', 'A3'], authorizedPaths: ['src'], authorizedAt: '2026-08-20T00:00:00.000Z' },
+    objective: '将正式视觉候选接入 Main Scene',
     inScope: ['scene'], outOfScope: ['release'], approvedRequirements: ['REQ-VISUAL'], allowedActions: ['phaser-inspect', 'phaser-spec-candidate', 'phaser-prototype', 'phaser-code-change', 'phaser-integration'], allowedActionLevels: ['A0', 'A1', 'A2', 'A3'], explicitApprovalActionLevels: ['A4', 'A5', 'A6'], prohibitedActions: [], allowedPaths: ['src'], forbiddenPaths: ['.git'], allowedExternalTargets: [], protectedExternalTargets: [], requiredGates: ['F0', 'F1', 'F2', 'F3'], approvalRecord: null,
     assignedAgent: 'implementer', delegatedAgents: [], expectedOutputs: ['src/main.js'], validationPlan: ['node --test'], exitCriteria: ['视觉证据复核'], nextGate: 'F4', rollbackPolicy: '不自动回滚共享工作区', evidenceRoot: '.workflow-control/evidence/WI-VISUAL',
     pendingApprovalId: 'PENDING-OLD', pendingApprovalObject: '旧候选', pendingApprovalStage: 'main', pendingApprovalActionLevel: 'A4', pendingApprovalGate: 'F4', pendingApprovalState: 'PASSED', pendingApprovalContext: 'phaser-integration', pendingApprovalActionType: 'phaser-integration', pendingApprovalImpactSummary: ['验证候选'], pendingApprovalFileScope: ['src'], pendingApprovalServices: [], pendingApprovalAllowServiceStart: false, pendingApprovalAllowDelete: false, pendingApprovalExternalWrite: false, pendingApprovalDestructive: false, pendingApprovalPhysicalDevice: false, pendingApprovalRelease: false, pendingApprovalExternalTargets: [], pendingApprovalPreparedAt: '2026-08-20T00:00:00.000Z', pendingApprovalPresentedId: null, pendingApprovalPresentedAt: null,
@@ -206,13 +206,14 @@ test('当前没有控制目录或真实视觉证据时不能生成 Main Scene A4
   assert.equal(result.ok, false); assert(result.missingEvidence.length > 0); assert.equal(readFileSync(join(root, 'evidence/V2.json'), 'utf8').length > 0, true);
 });
 
-test('CLI：route/preflight/prepare/handoff/approve 共享硬门，stale pending 不写 Ledger', () => {
+test('CLI：普通集成不需批准，破坏性集成的 stale pending 不写 Ledger', () => {
   const fixture = makeCliFixture();
   const beforeWork = readFileSync(fixture.workPath, 'utf8');
   const beforeLedger = readFileSync(fixture.ledgerPath, 'utf8');
   const route = runCli(fixture, 'route', ['--work-item', fixture.workPath, '--ledger', fixture.ledgerPath]);
   assert.equal(route.status, 0, route.stderr);
-  assert.equal(JSON.parse(route.stdout).authorizationBasis, 'EXPLICIT_APPROVAL');
+  assert.equal(JSON.parse(route.stdout).authorizationBasis, 'TASK_SCOPE');
+  assert.equal(JSON.parse(route.stdout).explicitApprovalRequired, false);
 
   const preflight = runCli(fixture, 'preflight', ['--work-item', fixture.workPath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src']);
   assert.notEqual(preflight.status, 0);
@@ -236,7 +237,7 @@ test('CLI：route/preflight/prepare/handoff/approve 共享硬门，stale pending
       assert.equal(JSON.parse(blockedRead.stderr).errorCode, 'VISUAL_PREREQUISITES_MISSING');
     }
   }
-  const prepareArgs = ['--work-item', fixture.workPath, '--ledger', fixture.ledgerPath, '--pending-id', 'PENDING-V4', '--object', 'replace Main Scene visual entry', '--stage', 'main', '--action-type', 'phaser-integration', '--action-level', 'A4', '--gate', 'F4', '--context', 'phaser-integration', '--path', 'src', '--impact', '替换正式视觉入口'];
+  const prepareArgs = ['--work-item', fixture.workPath, '--ledger', fixture.ledgerPath, '--pending-id', 'PENDING-V4', '--object', 'replace Main Scene visual entry', '--stage', 'main', '--action-type', 'phaser-integration', '--action-level', 'A4', '--gate', 'F4', '--context', 'phaser-integration', '--path', 'src', '--destructive', '--impact', '破坏性替换正式视觉入口'];
   const blockedPrepare = runCli(fixture, 'prepare-approval', prepareArgs);
   assert.notEqual(blockedPrepare.status, 0);
   const blockedError = JSON.parse(blockedPrepare.stderr);
@@ -286,14 +287,14 @@ test('CLI：RETURN 必须声明必要分类并持久化最小影响范围', () =
   const accepted = runCli(fixture, 'transition', [
     '--work-item', fixture.workPath,
     '--to', 'RETURN',
-    '--return-classification', 'candidate-identity-changed',
+    '--return-classification', 'upstream-fact-invalidated',
     '--return-reason', 'V2 冻结候选身份已变化',
     '--affected-scope', 'stage:V2,scene:scene-main',
   ]);
   assert.equal(accepted.status, 0, accepted.stderr);
   const work = JSON.parse(readFileSync(fixture.workPath, 'utf8'));
   assert.equal(work.globalState, 'RETURN');
-  assert.equal(work.returnRecord.classification, 'candidate-identity-changed');
+  assert.equal(work.returnRecord.classification, 'upstream-fact-invalidated');
   assert.deepEqual(work.returnRecord.affectedScope, ['stage:V2', 'scene:scene-main']);
 
   const status = runCli(fixture, 'status', ['--work-item', fixture.workPath, '--json']);

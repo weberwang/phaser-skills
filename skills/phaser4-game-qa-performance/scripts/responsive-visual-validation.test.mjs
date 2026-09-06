@@ -28,6 +28,7 @@ const hook = {
 function contract(overrides = {}) {
   return {
     ...structuredClone(uiTemplate),
+    visual_validation: { mode: "exact" },
     contract_version: identity.layout_contract_version,
     scope: { ...structuredClone(uiTemplate.scope), scenes: ["main"], bindings: { ...structuredClone(uiTemplate.scope.bindings), code_candidate: identity.candidate_sha256, visual_baseline: identity.visual_baseline_version } },
     viewport: { mode: "full-viewport", strategy: "RESIZE", allowWhitespace: false, backgroundCoverageTarget: 1, ...overrides.viewport },

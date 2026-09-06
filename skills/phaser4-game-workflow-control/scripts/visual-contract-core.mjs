@@ -134,7 +134,7 @@ export const VISUAL_REMEDIATION_LABEL = Object.freeze({
 export const VISUAL_REMEDIATION_NEXT_ACTION = Object.freeze({
   repair: "原地修复当前记录、字段、路径或可补证据后，重新运行当前门；沿工作流继续推进，不回退阶段",
   revalidate: "候选与上游冻结身份未变（V2 拆解方案身份保持不变），仅重验当前门并生成新的机器证据；沿工作流继续推进，不回退阶段",
-  return: "上游方案、拆解方案、基线、授权范围或冻结候选身份已失效；记录必要回退理由和受影响范围，再回退到最早受影响阶段",
+  return: "上游方案、拆解方案、基线、任务范围或冻结候选身份已失效；记录必要回退理由和受影响范围，再回退到最早受影响阶段",
 });
 
 /** 发生这些冻结身份变化时，视觉门必须升级为 RETURN。 */

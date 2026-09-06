@@ -1,6 +1,6 @@
 # Phaser 4 游戏协作 Skills
 
-面向 Phaser 4、TypeScript、Vite 与 Capacitor 的游戏协作包。项目使用一个全局控制面统一管理任务授权、风险门、实施证据和状态迁移；领域 Skill 只能在授权范围内工作并回到控制面。
+面向 Phaser 4、TypeScript、Vite 与 Capacitor 的游戏协作包。项目使用一个全局控制面统一管理任务范围、风险门、实施证据和状态迁移；领域 Skill 可在当前用户任务内迭代并回到控制面。
 
 ## 安装
 
@@ -40,7 +40,7 @@ $head = (git rev-parse HEAD).Trim()
 node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs init --repo $repo --work-item-id WI-1 --project-id my-phaser-game --module-id core --domain code --stage-id G0 --baseline-id $head --baseline-version 1 --baseline-hash $head --objective "建立当前功能的 Phaser 工作流记录" --user-text "请建立当前功能的 Phaser 工作流记录并限制在 core 模块" --object "core Phaser 功能" --allowed-path src
 ```
 
-初始化会生成 `$repo\.workflow-control\work-items\WI-1.json` 和 `$repo\.workflow-control\approvals\ledger.json`；也可以把同样字段写入 JSON 后通过 `init --record <bootstrap.json>` 传入。然后只使用三个稳定入口：
+初始化会生成 `$repo\.workflow-control\work-items\WI-1.json`；涉及 A4-A6 的具体操作时才按需使用 `$repo\.workflow-control\approvals\ledger.json`。也可以把同样字段写入 JSON 后通过 `init --record <bootstrap.json>` 传入。然后只使用三个稳定入口：
 
 ```powershell
 node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs run --repo . --work-item <work-item> [--input <file> ...]
@@ -52,10 +52,12 @@ node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs
 
 ## 控制面边界
 
-- `$phaser4-game-workflow-control` 独占全局状态、风险门、任务授权、状态迁移和证据一致性。
-- A0-A3 依据任务授权；A4-A6 的具体集成、外部写入、真机、破坏性操作和发布必须逐对象建立 pending 并获得显式批准。控制面只校验和记录，不代执行这些动作。
+- `$phaser4-game-workflow-control` 独占全局状态、风险门、任务范围、状态迁移和证据一致性。普通 A0-A3 工作直接依据当前用户任务，不创建独立授权记录，也不设置 F0 授权有效硬门。
+- 任务内可以调整实现方案、文件路径、资源清单和测试范围；同步更新 Work Item/实施包并重验受影响部分即可。无外部副作用的本地 A4 集成可按任务执行；涉及外部写入、付费、真机、破坏性或外部删除、发布的 A4-A6 操作仍必须逐对象建立 pending 并获得显式批准。控制面只校验和记录，不代执行这些动作。
 - V0→V1→V2→V3→V4 的视觉硬门、全局静态基线、场景拆解与布局确认、高保真前置继续使用带路径与 SHA 的不可变证据；缺失或失效时 fail closed。阶段与字段以控制面文档和 Schema 为准。
 - 共享工作区不自动回滚、不覆盖他人修改；启动本地验证服务前先查找同项目健康实例并复用。
+
+视觉和测试默认以可用性为准：位置、尺寸、边距、换行允许合理偏差，只拦截越界、裁切、遮挡、不可读和交互失效。像素级容差、全视口/全状态矩阵只在任务明确要求或项目合同明确指定时启用；V2 拆解确认、布局确认、独立资源产物和关键功能证据仍然保留。
 
 详细状态、门、Schema 和返工语义见 [`phaser4-game-workflow-control`](skills/phaser4-game-workflow-control/SKILL.md) 及其 [`control-model.md`](skills/phaser4-game-workflow-control/references/control-model.md)、[`state-gates.md`](skills/phaser4-game-workflow-control/references/state-gates.md)、[`schemas.md`](skills/phaser4-game-workflow-control/references/schemas.md)。
 
@@ -87,7 +89,7 @@ node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs
 | `prepare-approval` / `handoff` / `approve` | 仅处理 A4-A6 的精确操作审批 |
 | `lint` | 仓库级 Skill、Schema 和链接静态检查 |
 
-底层命令不会改变任务授权、A4-A6 批准、视觉硬门或 fail-closed 约束。
+底层命令不会改变任务范围、A4-A6 批准、视觉硬门或 fail-closed 约束。缺少非关键元数据时优先提醒并自动补齐；只有身份、所有权、关键产物或安全边界无法判断时才阻断。
 
 ## 测试入口
 
@@ -98,6 +100,6 @@ npm run test:full
 npm test
 ```
 
-`test:quick` 覆盖稳定输出与指纹，`test:workflow` 覆盖控制面和视觉工作流，`test:full`/`test` 保留全量回归。测试等级仍按 T0（仅静态检查）、T1（定向验证）、T2（受影响模块）、T3（完整验证）由人工选择；工作流入口不会自动运行测试。
+`test:quick` 覆盖稳定输出与指纹，`test:workflow` 覆盖控制面和视觉工作流，`test:full`/`test` 保留全量回归。工作流先按风险推荐 T0（仅静态检查）、T1（定向验证）、T2（受影响模块）或 T3（完整验证），说明理由、覆盖和命令后自动执行适用等级；不等待人工选择。T3 仍不包含隐式真机、外部写入或发布。
 
 这些 Node 测试入口统一使用隔离运行器：每次运行的临时目录会在正常结束、失败、超时或可处理信号后回收。默认总超时为 10 分钟，可通过 `PHASER_TEST_TIMEOUT_MS`（毫秒）覆盖；超时返回 `124`。运行器只终止本次创建的测试进程树，不会停止已有 Vite 或外部服务，也不会删除显式项目路径下的证据输出。

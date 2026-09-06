@@ -9,11 +9,10 @@
 import { existsSync, mkdirSync, realpathSync, renameSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-/** RETURN 只能表达真正改变上游事实或硬门的四类原因。 */
+/** 普通代码候选变化只重验当前范围；只有设计、目标范围或关键前置改变才回退。 */
 export const RETURN_CLASSIFICATIONS = Object.freeze([
   'upstream-fact-invalidated',
-  'candidate-identity-changed',
-  'authorization-or-scope-changed',
+  'scope-changed',
   'hard-gate-would-be-bypassed',
 ]);
 
@@ -52,7 +51,7 @@ function validDateTime(value) {
 
 /** 阶段范围到恢复状态的确定性映射。 */
 const STAGE_SCOPE_STATE = Object.freeze({
-  INTAKE: 'BASELINE', BASELINE: 'BASELINE', AUTHORIZATION: 'BASELINE', SCOPE: 'BASELINE', GLOBAL: 'BASELINE', V0: 'BASELINE',
+  INTAKE: 'BASELINE', BASELINE: 'BASELINE', SCOPE: 'BASELINE', GLOBAL: 'BASELINE', V0: 'BASELINE',
   V1: 'PROPOSAL', PROPOSAL: 'PROPOSAL',
   V2: 'REVIEW', REVIEW: 'REVIEW',
   V3: 'IMPLEMENTING', V4: 'IMPLEMENTING', IMPLEMENTING: 'IMPLEMENTING', VALIDATING: 'IMPLEMENTING', PASSED: 'IMPLEMENTING', INTEGRATING: 'IMPLEMENTING', RELEASE_APPROVAL_REQUIRED: 'IMPLEMENTING', RELEASING: 'IMPLEMENTING', COMPLETE: 'IMPLEMENTING',
@@ -60,7 +59,7 @@ const STAGE_SCOPE_STATE = Object.freeze({
 
 /** 已知工件名称到最早恢复状态的映射；未知工件仍需依赖分类或显式 stage 范围。 */
 const ARTIFACT_SCOPE_STATE = Object.freeze({
-  authorization: 'BASELINE', scope: 'BASELINE', baseline: 'BASELINE', taskauthorization: 'BASELINE', 'visual-baseline': 'BASELINE',
+  scope: 'BASELINE', baseline: 'BASELINE', 'visual-baseline': 'BASELINE',
   v1: 'PROPOSAL', proposal: 'PROPOSAL', candidate: 'REVIEW', 'visual-candidate': 'REVIEW', v2: 'REVIEW', approvalrecord: 'REVIEW', visualdecompositionconfirmation: 'REVIEW',
   implementationpackagerecord: 'IMPLEMENTING', implementationpackage: 'IMPLEMENTING', executionstate: 'IMPLEMENTING', diffauditrecord: 'IMPLEMENTING', diffaudit: 'IMPLEMENTING', evidence: 'IMPLEMENTING', validationbatchid: 'IMPLEMENTING',
 });
@@ -108,8 +107,7 @@ export function deriveReturnState({ classification, affectedScope = [], fromStat
       if (state) candidates.push(state);
     }
   }
-  if (classification === 'authorization-or-scope-changed') candidates.push('BASELINE');
-  if (classification === 'candidate-identity-changed') candidates.push('REVIEW');
+  if (classification === 'scope-changed') candidates.push('BASELINE');
   if (!candidates.length && fromState && RETURN_STATE_RANK[fromState] !== undefined) candidates.push(fromState);
   if (!candidates.length) candidates.push('REVIEW');
   return candidates.sort((left, right) => RETURN_STATE_RANK[left] - RETURN_STATE_RANK[right])[0];
@@ -136,7 +134,7 @@ export function parseReturnRequest(args = {}, work = {}) {
   const classification = typeof rawClassification === 'string' ? rawClassification.trim().toLowerCase() : '';
   const reason = typeof args['return-reason'] === 'string' ? args['return-reason'].trim() : '';
   const scopeResult = normalizeAffectedScope(readList(args['affected-scope'] ?? args.scope));
-  if (!RETURN_CLASSIFICATIONS.includes(classification)) return { error: 'RETURN 只能用于必要回退；必须声明有效 --return-classification（upstream-fact-invalidated、candidate-identity-changed、authorization-or-scope-changed 或 hard-gate-would-be-bypassed）' };
+  if (!RETURN_CLASSIFICATIONS.includes(classification)) return { error: 'RETURN 只能用于必要回退；必须声明有效 --return-classification（upstream-fact-invalidated、scope-changed 或 hard-gate-would-be-bypassed）；普通候选修改请原地修复并定向重验' };
   if (!reason) return { error: 'RETURN 必须声明非空 --return-reason，说明继续推进会绕过硬门或使上游冻结事实失效' };
   if (scopeResult.error) return { error: `RETURN 的 --affected-scope 无效：${scopeResult.error}` };
   const fromState = work.globalState;
@@ -207,7 +205,6 @@ export function invalidateReturnArtifacts(work, returnRecord, options = {}) {
   delete work.pendingVisualPrerequisiteSnapshot;
   delete work.diffAuditRecord;
   delete work.diffAuditLedgerRecord;
-  delete work.diffAuditAuthorizationRecord;
   if (invalidated.has('implementationPackageRecord')) delete work.implementationPackageRecord;
   if (invalidated.has('visualStageEvidenceRefs')) {
     delete work.visualStageEvidenceRefs;
@@ -264,7 +261,7 @@ export function validateReturnResume(work, target, options = {}) {
   if (work.pendingApprovalStatus !== 'invalid') return 'RETURN 恢复前 pendingApprovalStatus 必须为 invalid';
   if (work.pendingApprovalPresentedId !== null || work.pendingApprovalPresentedAt !== null) return 'RETURN 恢复前必须清空 pending approval 展示信息';
   if (work.pendingVisualPrerequisiteSnapshot !== undefined) return 'RETURN 恢复前必须清空 pendingVisualPrerequisiteSnapshot';
-  if (work.diffAuditRecord !== undefined || work.diffAuditLedgerRecord !== undefined || work.diffAuditAuthorizationRecord !== undefined) return 'RETURN 恢复前必须清空 Diff Audit 引用';
+  if (work.diffAuditRecord !== undefined || work.diffAuditLedgerRecord !== undefined) return 'RETURN 恢复前必须清空 Diff Audit 引用';
   if (work.returnRecord.invalidatedArtifacts.includes('implementationPackageRecord') && work.implementationPackageRecord !== undefined) return 'RETURN 恢复前必须清空 Implementation Package 引用';
   if (work.returnRecord.previousValidationBatchId !== null && work.validationBatchId === work.returnRecord.previousValidationBatchId) return 'RETURN 恢复前必须轮换 validationBatchId';
   if (work.returnRecord.invalidatedArtifacts.includes('executionState') && options.projectRoot && work.evidenceRoot) {
