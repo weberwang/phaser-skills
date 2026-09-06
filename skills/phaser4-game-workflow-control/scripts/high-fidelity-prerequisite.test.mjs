@@ -93,6 +93,15 @@ function writeGlobalBaselineSelectionEvidence(fixture, overrides = {}) {
   return { ...baselineFiles, selection, selectionFile: baselineFiles.selection, candidateEntries: candidates };
 }
 
+/** 构造声明视觉资产依赖的基础包，用于覆盖全局基线门而不引入完整视觉清单。 */
+function makeVisualFoundationPackage(overrides = {}) {
+  return {
+    executionUnits: [{ unitType: 'SHARED' }, { unitType: 'MODULE' }],
+    visualManifestFile: 'docs/visual-assets.json',
+    ...overrides,
+  };
+}
+
 /** 重写选择证据并同步 Work Item 引用，便于定向覆盖结构错误分支。 */
 function refreshGlobalBaselineSelectionReference(fixture, selection) {
   writeFileSync(join(fixture.repo, 'docs', 'global-baseline-selection.json'), `${JSON.stringify(selection, null, 2)}\n`, 'utf8');
@@ -155,20 +164,42 @@ test('独立 taskId/sourceWorkItemId 不能伪造场景 V2 前置', () => {
   rmSync(fixture.repo, { recursive: true, force: true });
 });
 
-test('三张候选经唯一人工确认后 foundation-only 包可在 V2/V3 前规划和执行', () => {
+test('无选图的纯基础包可在 V2/V3 前规划和执行', () => {
   const fixture = makeFixture();
   const packageValue = { executionUnits: [{ unitType: 'SHARED' }, { unitType: 'MODULE' }] };
-  fixture.work.visualStage = 'V1'; fixture.work.visualStageState = 'global-static-baseline-frozen'; fixture.work.globalStaticBaselineState = 'global-static-baseline-frozen';
+  fixture.work.visualStage = 'V1'; fixture.work.visualStageState = 'in-progress';
+  // 纯基础包不消费视觉合同或正式资产，因此不要求全局三候选和冻结状态。
+  assert.doesNotThrow(() => assertFormalImplementationAfterV2(fixture.work, packageValue, fixture.repo, fixture.io));
+  assert.doesNotThrow(() => assertFormalExecutionAfterV3(fixture.work, packageValue, fixture.repo, fixture.io));
+  rmSync(fixture.repo, { recursive: true, force: true });
+});
+
+test('含视觉产物的基础包仍需全局冻结与选择引用', () => {
+  const fixture = makeFixture();
+  const packageValue = makeVisualFoundationPackage();
+  fixture.work.visualStage = 'V1'; fixture.work.visualStageState = 'in-progress';
+  assert.throws(() => assertFormalImplementationAfterV2(fixture.work, packageValue, fixture.repo, fixture.io), /globalStaticBaselineState|基础实施包|3 张候选图/);
   writeGlobalBaselineSelectionEvidence(fixture);
   assert.doesNotThrow(() => assertFormalImplementationAfterV2(fixture.work, packageValue, fixture.repo, fixture.io));
   assert.doesNotThrow(() => assertFormalExecutionAfterV3(fixture.work, packageValue, fixture.repo, fixture.io));
   rmSync(fixture.repo, { recursive: true, force: true });
 });
 
+test('基础包声明正式视觉行为时回到 V2/V3 门，不得借单元类型绕过', () => {
+  const fixture = makeFixture();
+  const packageValue = { executionUnits: [{ unitType: 'SHARED' }, { unitType: 'MODULE' }] };
+  fixture.work.visualIntegration = { registersFormalScene: true };
+  fixture.work.visualStage = 'V2'; fixture.work.visualStageState = 'v2-production-planning-complete';
+  // 正式入口行为不消费全局选图门；它必须先满足场景 V2，执行时再满足 V3。
+  assert.doesNotThrow(() => assertFormalImplementationAfterV2(fixture.work, packageValue, fixture.repo, fixture.io));
+  assert.throws(() => assertFormalExecutionAfterV3(fixture.work, packageValue, fixture.repo, fixture.io), /V3 正式资源/);
+  rmSync(fixture.repo, { recursive: true, force: true });
+});
+
 test('生产者冻结的全局基线根证据可被多个消费者 Work Item 通过 path+sha 复用', () => {
   const fixture = makeFixture();
   const files = writeGlobalBaselineSelectionEvidence(fixture, { producerWorkItemId: 'WI-GLOBAL' });
-  const packageValue = { executionUnits: [{ unitType: 'SHARED' }] };
+  const packageValue = makeVisualFoundationPackage({ executionUnits: [{ unitType: 'SHARED' }] });
   const sharedReference = { path: 'docs/global-baseline-selection.json', sha256: hashFile(files.selectionFile) };
 
   for (const consumerWorkItemId of ['WI-SCENE-A', 'WI-SCENE-B']) {
@@ -231,7 +262,7 @@ test('全局基线根证据或候选生成记录生产者不一致时拒绝', ()
 
 test('foundation-only 包仅伪造冻结状态或缺少三候选人工证据时拒绝', () => {
   const fixture = makeFixture();
-  const packageValue = { executionUnits: [{ unitType: 'SHARED' }, { unitType: 'MODULE' }] };
+  const packageValue = makeVisualFoundationPackage();
   fixture.work.visualStage = 'V1'; fixture.work.visualStageState = 'global-static-baseline-frozen';
   assert.throws(() => assertFormalImplementationAfterV2(fixture.work, packageValue, fixture.repo, fixture.io), /globalStaticBaselineState|基础实施包|3 张候选图/);
   assert.throws(() => assertFormalExecutionAfterV3(fixture.work, packageValue, fixture.repo, fixture.io), /globalStaticBaselineState|基础实施包|3 张候选图/);
@@ -256,7 +287,7 @@ test('全局基线候选不是恰好三张时拒绝 foundation-only 门', () => 
     const baseline = writeGlobalBaselineSelectionEvidence(fixture).selection;
     baseline.candidates = count === 2 ? baseline.candidates.slice(0, 2) : [...baseline.candidates, { ...baseline.candidates[0], candidateId: 'GLOBAL-CANDIDATE-D' }];
     refreshGlobalBaselineSelectionReference(fixture, baseline);
-    const packageValue = { executionUnits: [{ unitType: 'SHARED' }] };
+    const packageValue = makeVisualFoundationPackage({ executionUnits: [{ unitType: 'SHARED' }] });
     assert.throws(() => assertFormalImplementationAfterV2(fixture.work, packageValue, fixture.repo, fixture.io), /恰好包含 3 张|3 张候选图/);
     rmSync(fixture.repo, { recursive: true, force: true });
   }
@@ -270,7 +301,7 @@ test('全局基线候选 ID、图片或生成记录重复时拒绝', () => {
       ? baseline.candidates[0].candidateId
       : baseline.candidates[0][duplicateField];
     refreshGlobalBaselineSelectionReference(fixture, baseline);
-    assert.throws(() => assertFormalImplementationAfterV2(fixture.work, { executionUnits: [{ unitType: 'SHARED' }] }, fixture.repo, fixture.io), /必须唯一|不同的候选效果图|不同的生成记录/);
+    assert.throws(() => assertFormalImplementationAfterV2(fixture.work, makeVisualFoundationPackage({ executionUnits: [{ unitType: 'SHARED' }] }), fixture.repo, fixture.io), /必须唯一|不同的候选效果图|不同的生成记录/);
     rmSync(fixture.repo, { recursive: true, force: true });
   }
 });
@@ -282,7 +313,7 @@ test('全局基线没有唯一人工确认或使用 AUTO/pending 时拒绝', () 
     files.selection.humanSelection.status = status;
     files.selection.humanSelection.reviewMode = status === 'PENDING' ? 'SINGLE_HUMAN' : 'AUTO';
     refreshGlobalBaselineSelectionReference(fixture, files.selection);
-    const packageValue = { executionUnits: [{ unitType: 'MODULE' }] };
+    const packageValue = makeVisualFoundationPackage({ executionUnits: [{ unitType: 'MODULE' }] });
     assert.throws(() => assertFormalImplementationAfterV2(fixture.work, packageValue, fixture.repo, fixture.io), /SINGLE_HUMAN|CONFIRMED|AUTO|pending/);
     rmSync(fixture.repo, { recursive: true, force: true });
   }
@@ -293,7 +324,7 @@ test('全局基线所选候选不在三张候选图中时拒绝', () => {
   const files = writeGlobalBaselineSelectionEvidence(fixture);
   files.selection.humanSelection.selectedCandidateId = 'GLOBAL-CANDIDATE-MISSING';
   refreshGlobalBaselineSelectionReference(fixture, files.selection);
-  assert.throws(() => assertFormalImplementationAfterV2(fixture.work, { executionUnits: [{ unitType: 'SHARED' }] }, fixture.repo, fixture.io), /selectedCandidateId|三张候选图|人工确认/);
+  assert.throws(() => assertFormalImplementationAfterV2(fixture.work, makeVisualFoundationPackage({ executionUnits: [{ unitType: 'SHARED' }] }), fixture.repo, fixture.io), /selectedCandidateId|三张候选图|人工确认/);
   rmSync(fixture.repo, { recursive: true, force: true });
 });
 
@@ -307,7 +338,7 @@ test('全局基线候选图、人工决定和冻结正文任一 SHA 漂移时拒
     const fixture = makeFixture();
     const files = writeGlobalBaselineSelectionEvidence(fixture);
     drift(files);
-    assert.throws(() => assertFormalImplementationAfterV2(fixture.work, { executionUnits: [{ unitType: 'SHARED' }] }, fixture.repo, fixture.io), /SHA-256 已漂移|SHA\/风格指纹已漂移|不是有效 JSON/);
+    assert.throws(() => assertFormalImplementationAfterV2(fixture.work, makeVisualFoundationPackage({ executionUnits: [{ unitType: 'SHARED' }] }), fixture.repo, fixture.io), /SHA-256 已漂移|SHA\/风格指纹已漂移|不是有效 JSON/);
     rmSync(fixture.repo, { recursive: true, force: true });
   }
 });
@@ -326,7 +357,7 @@ test('全局基线候选扩展名伪装为 PNG 时拒绝', () => {
   files.selection.baseline.selectedCandidate.sha256 = fakeSha;
   refreshGlobalBaselineSelectionReference(fixture, files.selection);
   assert.throws(
-    () => assertFormalImplementationAfterV2(fixture.work, { executionUnits: [{ unitType: 'SHARED' }] }, fixture.repo, fixture.io),
+    () => assertFormalImplementationAfterV2(fixture.work, makeVisualFoundationPackage({ executionUnits: [{ unitType: 'SHARED' }] }), fixture.repo, fixture.io),
     /真实 PNG\/JPEG 图片文件|图片扩展名/,
   );
   rmSync(fixture.repo, { recursive: true, force: true });

@@ -27,6 +27,8 @@ description: Phaser 4 游戏领域编排角色；在全局控制面已建立 Wor
 
 效果图还原、显示层和正式 Scene 接入仍属于当前场景 Work Item；按 [`visual-quality-gate.md`](references/visual-quality-gate.md) 提交场景主图、宿主上下文、组件/状态、布局合同和运行态证据。所有显示层统一为[宿主子任务](../phaser4-game-workflow-control/references/control-model.md#显示层子任务与宿主继续推进)，未就绪先登记 `deferred_layers`，不抢占宿主主线；各任务满足自身前置并按依赖并行推进，最终 V4 联合验收要求全部关闭，常驻层仍保留主图归属。全局基线不能代替场景方向证据。
 
+场景 V2 的布局交付必须同时提供标准布局 PNG、`layout-nodes.json`、`layout-decision.json`、自包含 `review.html` 和 `generation-result.json`，并在独立布局确认及场景根计划中绑定同批参考、拆解、决策、节点、PNG 和审阅页 SHA。编排只引用[离线布局审阅产物](../phaser4-game-ui-layout/references/layout-review-artifacts.md)的通用规则，不为场景手写审阅页；页面候选状态不等于人工确认。
+
 ## 状态与返工
 
 本领域不直接迁移全局状态。证据失败优先原地 `repair`，候选身份未变时 `revalidate`，只有上游事实、授权范围、候选身份或硬门真实失效时才按最小范围 `return`；已确认事实不重复搜索或推翻。

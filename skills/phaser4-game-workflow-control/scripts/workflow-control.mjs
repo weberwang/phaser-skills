@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import process from 'node:process';
-import { assertCompletedUnits, assertExecutionWorkflowComplete, assertImplementationPackagePlanningPrerequisites, assertUnitReady, executionStateSummary, initializeExecutionState, loadExecutionState, refreshV2ToV3Contract, validateAndCompleteExecutionUnit, validateV2ToV3ContractShape } from './execution-unit-control.mjs';
+import { assertCompletedUnits, assertExecutionWorkflowComplete, assertImplementationPackagePlanningPrerequisites, assertSceneWorkItemComplete, assertUnitReady, executionStateSummary, initializeExecutionState, loadExecutionState, updateExecutionStateStage, validateAndCompleteExecutionUnit } from './execution-unit-control.mjs';
 import { validateParallelBatch } from './parallel-batch-control.mjs';
 import { validateDelegationBinding, validateExecutionPlan } from './parallel-plan.mjs';
 import { repositoryLint } from './repository-lint.mjs';
@@ -22,6 +22,7 @@ import { createValidationContext } from './runtime/validation-context.mjs';
 import { schemaEnum, schemaRequired } from './runtime/schema-contract.mjs';
 import { approvalMatchesPending, approvalMatchesQuery, approvalSnapshotFromWork } from './runtime/approval-contract.mjs';
 import { validateActionState, validateChangeRequests as validateChangeRequestRules } from './runtime/workflow-state-contract.mjs';
+import { prepareImplementationPackageActivation, prepareSceneStageTransition } from './scene-stage-transition.mjs';
 const STATES = schemaEnum('work-item.schema.json', ['properties', 'globalState']);
 const LEVELS = schemaEnum('work-item.schema.json', ['properties', 'pendingApprovalActionLevel']);
 const GATES = schemaEnum('work-item.schema.json', ['properties', 'nextGate']);
@@ -36,7 +37,7 @@ const PHASER_ACTION_LEVEL = new Map([
 const PHASER_ACTIONS = new Set(PHASER_ACTION_TYPES);
 const AUTOMATIC_PHASER_ACTIONS = new Set([...PHASER_ACTION_LEVEL].filter(([, level]) => ['A0', 'A1', 'A2', 'A3'].includes(level)).map(([action]) => action));
 const TRANSITIONS = {
-  INTAKE: ['BASELINE', 'BLOCKED'], BASELINE: ['PROPOSAL', 'BLOCKED'], PROPOSAL: ['REVIEW', 'RETURN', 'BLOCKED'], REVIEW: ['VALIDATING', 'IMPLEMENTING', 'RETURN', 'BLOCKED'], IMPLEMENTING: ['VALIDATING', 'RETURN', 'BLOCKED'], VALIDATING: ['PASSED', 'RETURN', 'BLOCKED'], PASSED: ['INTEGRATING', 'COMPLETE', 'RETURN', 'BLOCKED'], INTEGRATING: ['COMPLETE', 'RELEASE_APPROVAL_REQUIRED', 'RETURN', 'BLOCKED'], RELEASE_APPROVAL_REQUIRED: ['RELEASING', 'RETURN', 'BLOCKED'], RELEASING: ['COMPLETE', 'BLOCKED'], COMPLETE: [], RETURN: ['BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING', 'BLOCKED'], BLOCKED: ['BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING']
+  INTAKE: ['BASELINE', 'BLOCKED'], BASELINE: ['PROPOSAL', 'BLOCKED'], PROPOSAL: ['REVIEW', 'RETURN', 'BLOCKED'], REVIEW: ['VALIDATING', 'IMPLEMENTING', 'RETURN', 'BLOCKED'], IMPLEMENTING: ['VALIDATING', 'RETURN', 'BLOCKED'], VALIDATING: ['PASSED', 'RETURN', 'BLOCKED'], PASSED: ['INTEGRATING', 'COMPLETE', 'REVIEW', 'RETURN', 'BLOCKED'], INTEGRATING: ['COMPLETE', 'RELEASE_APPROVAL_REQUIRED', 'RETURN', 'BLOCKED'], RELEASE_APPROVAL_REQUIRED: ['RELEASING', 'RETURN', 'BLOCKED'], RELEASING: ['COMPLETE', 'BLOCKED'], COMPLETE: [], RETURN: ['BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING', 'BLOCKED'], BLOCKED: ['BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING']
 };
 const SHORT_APPROVAL = /^(批准|同意|可以|继续|就这个|选\s*[a-zA-Z]|按流程推进|你看着办|做完它|批准然后按(?:照)?工作流推进)[。！!\s]*$/i;
 const AFFIRMATIVE_APPROVAL = /^(批准|同意|确认|接受|通过)(?:$|[\s，,：:。！!].*)/;
@@ -120,7 +121,6 @@ function validateWorkItem(work) {
   if (work.pendingApprovalActionLevel === 'A5' && (!work.pendingApprovalExternalWrite || !work.pendingApprovalExternalTargets.length)) fail('A5 Phaser pending 必须冻结外部写入与精确游戏目标');
   if (work.pendingApprovalActionLevel === 'A6' && !(work.pendingApprovalExternalWrite || work.pendingApprovalPhysicalDevice || work.pendingApprovalRelease || work.pendingApprovalDestructive)) fail('A6 Phaser pending 必须冻结高风险副作用');
   if (work.requiredGates.some((gate) => !GATES.includes(gate))) fail('Work Item.requiredGates 含未知 F 门');
-  try { validateV2ToV3ContractShape(work.v2ToV3Contract); } catch (error) { fail(error.message); }
   if (work.legacyReadOnly) fail('旧记录只能只读迁移，不能驱动新任务');
   if (!work.workItemId || !work.pendingApprovalId || !work.pendingApprovalObject || !work.pendingApprovalActionType || !work.validationBatchId) fail('Work Item 关键标识不能为空');
   return work;
@@ -489,13 +489,6 @@ function unitCheck(args) {
     process.stdout.write(JSON.stringify({ ok: true, command: 'unit-check', unitId: unit.unitId, resultId: result.resultId, executionState: executionStateSummary(work, updated.state) }, null, 2));
   } catch (error) { fail(error.message); }
 }
-/** 通过正式命令复核 V2→V3 合同证据，并持久化解除已有 BLOCKED 门。 */
-function refreshV2V3(args) {
-  const repo = resolve(String(args.repo ?? process.cwd())); const validationContext = commandValidationContext(repo);
-  const work = validateWorkItem(validationContext.readJson(args['work-item'], 'Work Item')); requireResolvedUserInput(work); validateActionState(work, 'A3', {}, fail);
-  const pkg = validationContext.validateImplementationPackage(validationContext.readJson(args['implementation-package'], 'Implementation Package'), work);
-  try { const updated = refreshV2ToV3Contract(work, pkg, repo, unitIo(repo)); process.stdout.write(JSON.stringify({ ok: true, command: 'refresh-v2-v3', executionState: executionStateSummary(work, updated.state) }, null, 2)); } catch (error) { fail(error.message); }
-}
 /** 原子校验同一并行组的完整 A3 委派批次。 */
 function parallelCheck(args) {
   const repo = resolve(String(args.repo ?? process.cwd()));
@@ -736,9 +729,21 @@ function transition(args) {
   const validationContext = args.validationContext ?? commandValidationContext(repo);
   const workPath = resolve(String(args['work-item']));
   // 在事务提交前使用副本，避免校验失败时污染命令级缓存中的已提交 Work Item。
-  const work = structuredClone(validationContext.validateWorkItem(workPath));
+  const workIdentity = captureJsonIdentity(workPath);
+  let work = structuredClone(validationContext.validateWorkItem(workPath));
+  const stateIdentity = captureJsonIdentity(resolve(repo, work.evidenceRoot, 'execution-state.json'));
+  const stateWrites = [];
+  // 先收集阶段状态和归档，全部守卫通过后与工作项一起提交，失败时不留下半切换状态。
+  const stageIo = { ...unitIo(repo), writeJson: (path, value) => stateWrites.push({ path, value, expected: resolve(path) === stateIdentity.path ? stateIdentity : captureJsonIdentity(path) }) };
   const target = String(args.to ?? '');
-  if (!(TRANSITIONS[work.globalState] ?? []).includes(target)) fail(`禁止状态迁移：${work.globalState} → ${target}`);
+  const hasVisualStageInput = args['visual-stage'] !== undefined || args['visual-stage-state'] !== undefined;
+  const stageEntryAllowed = hasVisualStageInput && ((target === 'REVIEW' && ['REVIEW', 'PASSED'].includes(work.globalState)) || (target === 'IMPLEMENTING' && ['IMPLEMENTING', 'PASSED'].includes(work.globalState)));
+  if (!(TRANSITIONS[work.globalState] ?? []).includes(target) && !stageEntryAllowed) fail(`禁止状态迁移：${work.globalState} → ${target}`);
+  let stageTransitionPlan = null;
+  if (args['visual-stage'] !== undefined || args['visual-stage-state'] !== undefined) {
+    stageTransitionPlan = prepareSceneStageTransition({ work, target, args, repo, validationContext, unitIo: (currentRepo) => unitIo(currentRepo), validateWorkItem });
+    work = stageTransitionPlan.nextWork;
+  }
   const resumingReturn = work.globalState === 'RETURN' && target !== 'RETURN';
   const returnRequest = target === 'RETURN' ? parseReturnRequest(args, work) : null;
   if (returnRequest?.error) fail(returnRequest.error);
@@ -755,7 +760,7 @@ function transition(args) {
     work.returnRecord.resolvedAt = new Date().toISOString();
   }
   if (!returnRequest && !resumingReturn) requireResolvedUserInput(work);
-  if (!returnRequest && !resumingReturn) {
+  if (!returnRequest && !resumingReturn && !stageTransitionPlan) {
     const packagePath = args['implementation-package'] ?? (['A3', 'A4'].includes(work.pendingApprovalActionLevel) ? work.implementationPackageRecord : null);
     const implementationPackage = packagePath ? validationContext.validateImplementationPackage(validationContext.readJson(packagePath, 'Implementation Package'), work) : null;
     visualStageGate(work, {
@@ -772,11 +777,23 @@ function transition(args) {
     if (!['A2', 'A3'].includes(level)) fail('进入 IMPLEMENTING 仅允许 A2/A3');
     if (isVisualProductionWork(work) && String(work.stageId).toUpperCase() === 'V3' && level === 'A2') fail('V3 拆解分析进入 IMPLEMENTING 前必须完成并人工接受 visual-decomposition-confirmation/1.0');
     if (level === 'A3') {
-      const packagePath = args['implementation-package'] ?? work.implementationPackageRecord; const pkg = validationContext.validateImplementationPackage(validationContext.readJson(packagePath, 'Implementation Package'), work);
-      // 实施阶段一旦开启就冻结状态文件；后续所有委派、验收和证据门都必须消费这份记录。
-      initializeExecutionState(work, pkg, repo, unitIo(repo));
-      work.implementationPackageRecord = normalizeRepoPath(repo, packagePath);
+      const packagePath = args['implementation-package'] ?? work.implementationPackageRecord;
+      const pkg = validationContext.validateImplementationPackage(validationContext.readJson(packagePath, 'Implementation Package'), work);
+      if (!stageTransitionPlan?.reuseExecutionState) {
+        const packageSwitch = pkg.executionUnits.some((unit) => ['SCENE', 'DISPLAY_LAYER'].includes(unit.unitType)) && work.implementationPackageRecord && resolve(repo, packagePath) !== resolve(repo, work.implementationPackageRecord)
+          ? prepareImplementationPackageActivation({ work, pkg, packagePath, repo, validationContext, unitIo: (currentRepo) => unitIo(currentRepo), validateWorkItem })
+          : { nextWork: work, package: pkg, previousWork: null, previousPackage: null, replaceExisting: false };
+        work = packageSwitch.nextWork;
+        // 正式包身份变化时，旧序列必须先闭环并归档；普通重复进入仍严格复核现有状态。
+        initializeExecutionState(work, packageSwitch.package ?? pkg, repo, stageIo, { replaceExisting: Boolean(packageSwitch.replaceExisting), previousWork: packageSwitch.previousWork, previousPackage: packageSwitch.previousPackage });
+        work.implementationPackageRecord = normalizeRepoPath(repo, packagePath);
+      }
     }
+  }
+  if (stageTransitionPlan?.updateExecutionState) {
+    // 先验证最终 Work Item 副本，再更新状态文件，避免阶段元数据单边切换。
+    validateWorkItem({ ...work, globalState: target });
+    updateExecutionStateStage(stageTransitionPlan.previousWork, work, stageTransitionPlan.previousPackage, repo, stageIo);
   }
   if (target === 'VALIDATING') {
     verifyDiffAudit(work, repo, work.diffAuditRecord, validationContext);
@@ -801,6 +818,9 @@ function transition(args) {
     const evidence = evidenceCheck(args, true, validationContext);
     if (work.expectedOutputs.some((item) => !evidence.completedOutputs.includes(item)) || work.exitCriteria.some((item) => !evidence.satisfiedExitCriteria.includes(item))) fail('COMPLETE 前 expectedOutputs/exitCriteria 未全部绑定完成证据');
     const audit = verifyDiffAudit(work, repo, work.diffAuditRecord, validationContext);
+    const packagePath = work.implementationPackageRecord ?? args['implementation-package'];
+    const pkg = packagePath ? validationContext.validateImplementationPackage(validationContext.readJson(resolve(repo, packagePath), 'Implementation Package'), work) : null;
+    try { assertSceneWorkItemComplete(work, pkg, repo, evidence); } catch (error) { fail(error.message); }
     if (['A4', 'A5', 'A6'].includes(audit.actionLevel)) {
       const requiredLevel = work.releaseWorkItem ? 'A6' : 'A4';
       const currentApproval = validationContext.readLedger(args.ledger, { required: true }).approvals.find((item) => item.approvalId === work.approvalRecord && !item.invalidatedAt && item.promptContextId === work.pendingApprovalId && item.pendingState === work.pendingApprovalState && item.pendingContext === work.pendingApprovalContext);
@@ -813,7 +833,8 @@ function transition(args) {
     if (!GATES.includes(String(args['next-gate']))) fail('--next-gate 必须为 F0-F4');
     work.nextGate = String(args['next-gate']);
   }
-  writeJson(workPath, work);
+  if (stateWrites.length) writeJsonTransaction([...stateWrites, { path: workPath, value: work, expected: workIdentity }], resolve(repo, '.workflow-control', 'transactions', `transition-${hashText(workPath).slice(7)}.json`));
+  else writeJson(workPath, work);
   validationContext.replaceJson(workPath, work, { validated: true });
   if (args.silent !== true) process.stdout.write(JSON.stringify({ ok: true, command: 'transition', workItemId: work.workItemId, globalState: target, return: returnRequest, returnRecord: work.returnRecord ?? null }, null, 2));
 }
@@ -921,9 +942,10 @@ function lint(args) {
   process.stdout.write(JSON.stringify({ ok: true, command: 'lint', checked }, null, 2));
 }
 
-const HELP_COMMANDS = ['run', 'check', 'status', 'init', 'route', 'advance', 'prepare-approval', 'handoff', 'preflight', 'approve', 'delegate-check', 'parallel-check', 'unit-check', 'refresh-v2-v3', 'diff-audit', 'evidence-check', 'transition', 'lint'];
+const HELP_COMMANDS = ['run', 'check', 'status', 'init', 'route', 'advance', 'prepare-approval', 'handoff', 'preflight', 'approve', 'delegate-check', 'parallel-check', 'unit-check', 'diff-audit', 'evidence-check', 'transition', 'lint'];
 const COMMAND_HELP = {
-  run: '用法：node <skill-dir>/scripts/workflow-control.mjs run --repo <目录> --work-item <文件> [--input <文件>]... [--json]\n必填：--repo、--work-item；只推进一个无风险控制面状态。',
+  transition: '用法：node <skill-dir>/scripts/workflow-control.mjs transition --repo <目录> --work-item <文件> --to <状态> [--visual-stage V3|V4] [--visual-stage-state <状态>]\nV2→V3 进入 REVIEW；V3→V4 进入 IMPLEMENTING 并复用已完成的正式包。阶段通过须绑定真实证据。',
+  run: '用法：node <skill-dir>/scripts/workflow-control.mjs run --repo <目录> --work-item <文件> [--input <文件>]... [--json]\n必填：--repo、--work-item；连续推进已满足条件的 A0-A3 控制面状态，进入 IMPLEMENTING 或遇到门禁即停止。',
   check: '用法：node <skill-dir>/scripts/workflow-control.mjs check --repo <目录> --work-item <文件> [--implementation-package <文件>] [--evidence <文件>] [--input <文件>]... [--json]\n必填：--repo、--work-item；只读校验，不写入工件。',
   status: '用法：node <skill-dir>/scripts/workflow-control.mjs status --repo <目录> --work-item <文件> [--input <文件>]... [--json]\n必填：--repo、--work-item；输出最小状态、阻断原因和下一动作。',
   init: '用法：node <skill-dir>/scripts/workflow-control.mjs init --repo <目录> --work-item-id <id> --project-id <id> --module-id <module> --domain <domain> --stage-id <stage> --baseline-id <git-id> --baseline-version <version> --baseline-hash <git-id|sha256:...> --objective "<目标>" --user-text "<用户原文>" --object "<对象>" --allowed-path <path>...\n必填：以上 Bootstrap Record 字段；--module-id、--allowed-path 可重复。也可用 --record <bootstrap.json>。',
@@ -940,12 +962,12 @@ const stableCommands = createStableCommands({
   visualConfirmationAuthority,
   validateVisualStagePrerequisites, structuredVisualStageFailure, evidenceCheck,
   readLedger, deriveRoute, effectiveApproval, computePlanFingerprint, executionStateSummary,
-  loadExecutionState, unitIo, assertExecutionWorkflowComplete, transition,
+  loadExecutionState, unitIo, assertExecutionWorkflowComplete, assertSceneWorkItemComplete, transition,
 });
 const [rawCommand, ...rest] = process.argv.slice(2);
 const command = rawCommand === '--help' || rawCommand === '-h' ? 'help' : rawCommand;
 const args = parseArgs(rest);
-const commands = { ...stableCommands, init, route, advance, 'prepare-approval': prepareApproval, handoff, preflight, approve, 'delegate-check': delegateCheck, 'parallel-check': parallelCheck, 'unit-check': unitCheck, 'refresh-v2-v3': refreshV2V3, 'diff-audit': diffAudit, 'evidence-check': evidenceCheck, transition, lint };
+const commands = { ...stableCommands, init, route, advance, 'prepare-approval': prepareApproval, handoff, preflight, approve, 'delegate-check': delegateCheck, 'parallel-check': parallelCheck, 'unit-check': unitCheck, 'diff-audit': diffAudit, 'evidence-check': evidenceCheck, transition, lint };
 try {
   if (!command || command === 'help') help(args._?.[0] ?? null);
   else if (args.help === true) help(command);

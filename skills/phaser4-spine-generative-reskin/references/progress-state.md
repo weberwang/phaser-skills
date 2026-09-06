@@ -5,7 +5,7 @@
 - `atlas.path/sha256/pages[]`：源 Atlas 与每个源 Page 的路径、SHA-256、声明尺寸、原始字段和 `output_name`。
 - `skeletons[]`：一个或多个 `{path, sha256}`，初始化时必须存在。
 - `target_runtime`、`skeleton_audit`、`source_audit`、`skeleton_upgrade`：版本、结构统计、attachment path 映射、Mesh 指纹、升级候选与未知变更。
-- `asset_input`、`control_binding`：原版目录/独立导出或 Cocos 容器来源，以及 Work Item、production contract、唯一 V2 approval 的路径和 SHA 绑定。
+- `asset_input`、`control_binding`：原版目录/独立导出或 Cocos 容器来源，以及 Work Item、production contract、适用 V2 方案证据的路径和 SHA 绑定。
 - `visual_contract`：角色、方向、六项统一色板、材质语言、光向、`strict_alpha` 和冻结时间。
 - `batches[]`：精确 Region 顺序、mode、alpha lock、revision、审阅板哈希、候选 fingerprint、V4 `spine_batch_acceptance` 和 `ACCEPTED+locked` 状态。
 - `style_references[]`：`{path, sha256}`；不存在或漂移会阻止重建。

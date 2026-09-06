@@ -52,11 +52,11 @@ V0-V4、G0-G3 与领域阶段是 `stageId`，不是另一套状态机。只有�
 
 ## 全局视觉冻结与实施顺序
 
-先建立全局基线 brief，生成恰好三张同条件候选效果图并同屏交给人工，人工选择确认一张后以 `globalVisualBaselineSelectionRef` 正式冻结 `visual_baseline`，再以独立 foundation-only 包完成 `SHARED` 最小项目骨架和 `MODULE` 场景无关基础模块。基础实施完成后按各场景 Work Item 进入 V1；每个 V1 内生成或接收并冻结当前场景的 scene master/reference target、必需 transient display-layer 宿主上下文图、`scene_reconstruction_contract` 和初步还原草案，集合按 scene/state 分项而非一张合并图；随后该场景才在 V2 完成拆解图确认与生产方案。
+任务授权和工程基线完成后，纯工程 foundation-only 包可先完成 `SHARED` 最小项目骨架和 `MODULE` 场景无关基础模块；只有具有视觉合同或资产生产依赖的基础包才需先建立全局基线 brief，生成恰好三张同条件候选效果图并同屏交给人工，人工选择确认一张后以 `globalVisualBaselineSelectionRef` 正式冻结 `visual_baseline`。基础实施完成后按各场景 Work Item 进入 V1；每个 V1 内生成或接收并冻结当前场景的 scene master/reference target、必需 transient display-layer 宿主上下文图、`scene_reconstruction_contract` 和初步还原草案，集合按 scene/state 分项而非一张合并图；随后该场景才在 V2 完成拆解图确认与生产方案。
 
-foundation-only 包必须同时通过 `globalVisualBaselineSelectionRef` 的三候选/唯一人工确认/真实 SHA 文件门和 `globalStaticBaselineState=global-static-baseline-frozen`，缺失任一项时 fail closed；混入 SCENE/DISPLAY_LAYER/INTEGRATION 的包仍以 V2 `v2-production-planning-complete` 为规划边界，并以 V3 正式资源与同屏组合预验收为执行边界。全局选择是独立硬门，不能替代逐场景 V2。参考模式的 `effect-image` 仍在同一 Work Item 内完成 V1→V4。
+具有视觉依赖的 foundation-only 包必须同时通过 `globalVisualBaselineSelectionRef` 的三候选/唯一人工确认/真实 SHA 文件门和 `globalStaticBaselineState=global-static-baseline-frozen`，缺失任一项时 fail closed；纯工程包只需任务授权、工程基线、冻结实施包和工程证据，不等待全局选图；一旦基础包声明正式入口或可见资源消费等视觉行为，即回到正式 V2/V3 门。混入 SCENE/DISPLAY_LAYER/INTEGRATION 的包仍以 V2 `v2-production-planning-complete` 为规划边界，并以 V3 正式资源与同屏组合预验收为执行边界。全局选择是独立硬门，不能替代逐场景 V2。参考模式的 `effect-image` 仍在同一 Work Item 内完成 V1→V4。
 
-正式代码的 `executionUnits` 唯一顺序为 `SHARED`→`MODULE`→按场景连续的 `SCENE`+紧邻从属 `DISPLAY_LAYER`→`INTEGRATION`/联合验收；模块才可按互斥所有权并行，显示层不得在所有场景之后另设尾部阶段，实际场景顺序由计划制定者冻结。代码面在每个 SCENE/DISPLAY_LAYER 单元准备、委派、READY 和激活前读取当前 Work Item 的 V2 拆解方案和 V3 资源组合验收证据；全局冻结、手写布尔/PASS、数组前序均不构成该证据。
+正式代码的 `executionUnits` 唯一顺序为 `SHARED`→`MODULE`→按场景连续的 `SCENE`+紧邻从属 `DISPLAY_LAYER`→`INTEGRATION`/联合验收；MODULE/SCENE/DISPLAY_LAYER 可按互斥所有权并行，SHARED/INTEGRATION 保持串行，显示层不得在所有场景之后另设尾部阶段，实际场景顺序由计划制定者冻结。代码面在每个 SCENE/DISPLAY_LAYER 单元准备、委派、READY 和激活前读取当前 Work Item 的 V2 拆解方案和 V3 资源组合验收证据；全局冻结、手写布尔/PASS、数组前序均不构成该证据。
 
 ## 高保真前置
 
@@ -64,7 +64,7 @@ foundation-only 包必须同时通过 `globalVisualBaselineSelectionRef` 的三�
 
 SCENE 与 DISPLAY_LAYER 使用同一 `evidenceFile`，candidate/diff/target 与 scene/layer/host 身份必须一致。缺字段、格式、路径、越界、缺文件或可补的 SHA 绑定错误先 `repair` 并重验当前门；候选与上游冻结身份未变但机器证据过期/失败时为 `revalidate`。只有 target/candidate/diff/baseline、授权或冻结 V2 身份真实变化才 `return` 到最早受影响阶段。
 
-V2 单元序列完成后，状态输出固定的下一任务为 `V3-FORMAL-ACCEPTANCE`，门为 `V2_TO_V3_CONTRACT`。只有 Work Item 唯一 `v2ToV3Contract` 对象同时绑定 `status=PASS`、`contractId`、evidenceRoot 内的 `evidenceFile` 和复算一致的 `evidenceSha256`，合同回对记录才能将该任务标为 `IN_PROGRESS`；否则任务保持 `BLOCKED`，不得推进 V3。
+V2→V3 是同一场景 Work Item 的内部阶段推进。V2 拆解与布局确认、V3 正式资源和宿主同屏组合证据、V4 运行态证据分别写入同一 `workItemId` 的不可变阶段引用；V3/V4 实施包进入 `IMPLEMENTING` 前必须消费当前 Work Item 的 V2/V3 证据。阶段实施序列完成只表示当前包完成，只有当前 Work Item 的 V4 运行态联合验收证据闭合后才允许场景 `COMPLETE`。
 
 ## 强制停止门
 

@@ -8,12 +8,12 @@
 | --- | --- | --- | --- |
 | `requirements-scope` | 需求与范围 | Work Item 摘要、用户目标、范围、基线和验收清单 | `INTAKE` |
 | `global-baseline` | 全局基线 | GDD、TDD、全局视觉基线、授权范围和全局选择证据 | `G0`、`BASELINE`、`PROPOSAL`、`REVIEW` |
-| `foundation-engineering` | 基础工程 | foundation-only 实施包、`SHARED`/`MODULE` 基础代码和验证证据 | 仅含 `SHARED`/`MODULE` 的实施包 |
+| `foundation-engineering` | 基础工程 | foundation-only 实施包、`SHARED`/`MODULE` 基础代码和验证证据 | 仅含 `SHARED`/`MODULE` 的实施包；纯工程包可在全局选图前实施，视觉依赖包仍受全局基线门约束 |
 | `scene-production` | 逐场景生产 | 场景规格、V2 拆解方案、V3 正式资源、正式实现和 V4 运行验收证据 | `V0`-`V4`，或包含 `SCENE`/`DISPLAY_LAYER` 的场景实施包 |
 | `global-integration-validation` | 全局集成验证 | 跨场景集成候选、导航/存档/音频/性能/响应式回归和联合证据 | `G2`、`INTEGRATING`，或纯 `INTEGRATION` 实施包 |
 | `release` | 发布 | 独立发布 Work Item、可复现发布包、平台/合规/回滚资料和精确审批回执 | `G3`、`RELEASE_APPROVAL_REQUIRED`、`RELEASING` 或发布 Work Item |
 
-判断有冲突时按“发布 → 集成 → foundation-only → 场景 → 需求/基线”的固定顺序检查；包内单元类型跨越不相容阶段、视觉阶段声明冲突或无法识别时返回 `unknown`，同时保留内部 `stage`，不伪造进度。
+判断有冲突时按“发布 → 集成 → foundation-only → 场景 → 需求/基线”的固定顺序检查；包内单元类型跨越不相容阶段、视觉阶段声明冲突或无法识别时返回 `unknown`，同时保留内部 `stage`，不伪造进度。foundation-only 仅按单元类型识别范围，是否等待全局选图由包内视觉合同/资产生产字段和正式视觉行为决定。
 
 ## 四步单场景视图
 
@@ -24,11 +24,21 @@
 | `production-ready` | 资源与组合验收 | `V3` | 正式资源、正式布局、组件状态和宿主同屏组合预验收 |
 | `formal-implementation-runtime-validation` | 正式实现与运行验收 | `V4` | 正式 `SCENE`/`DISPLAY_LAYER` 实现、运行轨迹、视觉/功能联合验收、响应式和性能证据 |
 
-V3 的正式资源验收通过后，只有在包含 `SCENE`/`DISPLAY_LAYER` 的场景包进入 `IMPLEMENTING`、`VALIDATING`、`PASSED` 或 `COMPLETE` 时，展示才从“资源与组合验收”切换为“正式实现与运行验收”；V3 未完成、仍处于审查或缺少场景包时继续显示“资源与组合验收”。这只是消费真实控制字段的展示规则，不提前放宽正式代码或 V4 门。
+V2→V3、V3→V4 都在同一场景 Work Item 内通过显式阶段入口推进。V3 入口默认写入 `in-progress`，V3 资源与宿主同屏组合证据闭合后再提交 V3 完成状态；V4 入口同样默认写入 `in-progress`，运行态证据闭合后才可提交 V4 完成状态。V3 的正式资源验收通过后，只有在包含 `SCENE`/`DISPLAY_LAYER` 的场景包进入 `IMPLEMENTING`、`VALIDATING`、`PASSED` 或 `COMPLETE` 时，展示才从“资源与组合验收”切换为“正式实现与运行验收”；V3 未完成、仍处于审查或缺少场景包时继续显示“资源与组合验收”。这只是消费真实控制字段的展示规则，不提前放宽正式代码或 V4 门。
+
+例如，V2 完成后可在同一 Work Item 上执行：
+
+```powershell
+node <skill-dir>/scripts/workflow-control.mjs transition --work-item <work-item> --to REVIEW --visual-stage V3
+```
+
+V3 证据闭合后，沿既有 `REVIEW → IMPLEMENTING → VALIDATING → PASSED` 入口激活正式包；正式代码序列完成后，再执行 `--to IMPLEMENTING --visual-stage V4` 进入运行验收。V4 运行证据闭合后，在同一 `IMPLEMENTING` 状态显式提交 `--visual-stage-state v4-runtime-integration-candidate`，再记录新的候选审计并进入 `VALIDATING → PASSED → COMPLETE`。旧阶段状态会被校验并保留审计记录，当前阶段重新绑定自己的候选审计和验证批次。
 
 没有可识别的 `V0`-`V4` 声明时，场景阶段仍可显示为“逐场景生产”，但 `sceneStepId` 和 `sceneStepLabel` 必须为 `null`；这表示缺少可投影的场景步骤，不表示任何视觉门已通过。
 
 ## CLI 输出
+
+`run` 连续推进已满足条件的安全内部状态，每步重新校验并在 `changed` 中记录实际迁移。进入 `IMPLEMENTING`、缺少包/审计/证据、遇到用户决定或操作批准时停止；它不执行实施或测试，也不选择视觉阶段或 `RETURN`。视觉阶段仍使用上述显式 `transition` 入口，底层 `advance` 保持单步诊断语义。
 
 `run`、`check`、`status` 的 JSON 顶层字段保持 `status`、`stage`、`changed`、`blocking`、`next`、`metadata` 不变。`stage` 继续使用内部 `${stageId}/${globalState}`；`metadata.workflowView` 只增加稳定的 `phaseId`、`phaseLabel`、`sceneStepId`、`sceneStepLabel` 四个展示字段。
 

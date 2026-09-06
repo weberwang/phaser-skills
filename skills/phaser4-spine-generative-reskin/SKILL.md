@@ -13,7 +13,7 @@ description: 对 Phaser 4 Spine 资产执行可审计的 schema v3 换皮、Skel
 node <skill-dir>/scripts/spine_reskin_progress.mjs --help
 ```
 
-正式原版目录可用 `inspect --asset-dir <原版资源目录>` 或 `init --asset-dir <原版资源目录>`；独立 Skeleton/Atlas/Page 会直接审计，Cocos `sp.SkeletonData` 的 `_atlasText`/`_skeletonJson` 会先导出到独立规范化候选目录，绝不改写源目录。`init` 必须同时传入控制面 manifest，绑定 Work Item、production contract 和唯一 V2 `visual_human_approval` 证据。
+正式原版目录可用 `inspect --asset-dir <原版资源目录>` 或 `init --asset-dir <原版资源目录>`；独立 Skeleton/Atlas/Page 会直接审计，Cocos `sp.SkeletonData` 的 `_atlasText`/`_skeletonJson` 会先导出到独立规范化候选目录，绝不改写源目录。`init` 必须同时传入控制面 manifest，绑定 Work Item、production contract 和适用的 V2 方案证据。
 
 进度清单必须是 schema v3。所有会修改清单的命令使用跨进程锁和原子写入；禁止手动编辑状态伪造完成。详细规则见：
 
@@ -43,6 +43,6 @@ pending → generating → generated → validating → packing → packed → r
 
 正式 Cell 必须是实际 PNG、含 Alpha、尺寸等于正向 Atlas Region；`alpha_lock=true` 时 Alpha 掩码像素级一致，Mesh 永远锁 Alpha。`constrained-redraw` 只有显式 `alpha_lock=false` 才允许使用。
 
-## 全局视觉审批边界
+## 全局视觉与批次确认边界
 
-全局工作流只保留唯一 V2 `visual_human_approval`。Spine 换皮中的方案提议、审查或审阅、任务授权与批次锁定都必须在既有 Work Item 范围内完成；本 Skill 只修改自身候选工件，不自行扩展任务授权或创建全局审批。需要改变范围、视觉方向或接入主游戏时，必须回到 `phaser4-game-workflow-control` 控制面，提交给该控制面重新审查和授权。Spine 批次确认属于 V4 局部生产锁定回执，不进入 Approval Ledger，也不冒充第二次视觉方向审批。全局语义见 `phaser4-game-workflow-control` 的状态与门文档。
+全局视觉阶段、状态和确认规则以 `phaser4-game-workflow-control` 的[控制模型](../phaser4-game-workflow-control/references/control-model.md)、[状态与门](../phaser4-game-workflow-control/references/state-gates.md)及 Schema 为准。Spine 换皮中的方案提议、审查或审阅、任务授权与批次锁定都必须在既有 Work Item 范围内完成；本 Skill 只修改自身候选工件，不自行扩展任务授权或创建全局审批。需要改变范围、视觉方向或接入主游戏时，必须回到控制面重新审查和授权。Spine 批次确认属于 V4 局部生产锁定回执，不进入 Approval Ledger，也不改变场景 V2 的拆解与布局确认。

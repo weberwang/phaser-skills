@@ -1,5 +1,6 @@
 import { closeSync, openSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { assertFormalExecutionAfterV3, assertHighFidelityPrerequisite, assertHighFidelityPrerequisites, isFoundationOnlyPackage } from './high-fidelity-prerequisite.mjs';
+import { assertFormalExecutionAfterV3, assertHighFidelityPrerequisite, assertHighFidelityPrerequisites } from './high-fidelity-prerequisite.mjs';
+import { loadImmutableVisualStageReference, validateVisualStagePrerequisites } from './visual-stage-prerequisites.mjs';
 import { writeJson } from './runtime/io.mjs';
 import { schemaEnum, schemaFields, schemaNode } from './runtime/schema-contract.mjs';
 
@@ -76,20 +77,6 @@ export function validateUnitResult(result, resultPath, work, pkg, unit, repo, io
   return result;
 }
 
-/** 查找并复核单元当前有效的 PASS Result。 */
-export function findValidUnitResult(work, pkg, unit, repo, io) {
-  const root = io.resolve(repo, work.evidenceRoot, 'units');
-  if (!io.existsSync(root)) return null;
-  for (const name of io.readdirSync(root).filter((item) => item.endsWith('.json')).sort()) {
-    const path = io.resolve(root, name);
-    let result;
-    try { result = JSON.parse(io.readFileSync(path, 'utf8')); } catch { continue; }
-    if (result.unitId !== unit.unitId || result.packageId !== pkg.packageId) continue;
-    try { return validateUnitResult(result, path, work, pkg, unit, repo, io); } catch { continue; }
-  }
-  return null;
-}
-
 /** 按 executionUnits 的预设位置计算目标单元需要等待的前序单元。 */
 function precedingUnitsForReady(unit, pkg) {
   const units = pkg.executionUnits;
@@ -99,6 +86,17 @@ function precedingUnitsForReady(unit, pkg) {
   const groupStart = units.findIndex((item) => item.parallelMode === 'PARALLEL' && item.parallelGroup === unit.parallelGroup);
   if (groupStart < 0) throw new Error(`并行单元未找到预设顺序阶段：${unit.unitId}`);
   return units.slice(0, groupStart);
+}
+
+/** 在已完整校验的 Execution State 上复核 READY 和预设顺序前序，不触碰外部证据文件。 */
+function assertUnitReadyFromState(unit, pkg, state) {
+  const current = state.units.find((item) => item.unitId === unit.unitId);
+  if (!current || current.state !== 'IN_PROGRESS') throw new Error(`实施单元尚未 READY，当前状态不是 IN_PROGRESS：${unit.unitId}`);
+  for (const preceding of precedingUnitsForReady(unit, pkg)) {
+    const precedingState = state.units.find((item) => item.unitId === preceding.unitId);
+    if (!precedingState || precedingState.state !== 'COMPLETE') throw new Error(`实施单元尚未 READY，缺少预设顺序前序证据：${unit.unitId} <- ${preceding.unitId}`);
+  }
+  return current;
 }
 
 /** 只保留会影响执行顺序的计划字段，防止无关描述变化伪造或重排状态。 */
@@ -124,6 +122,12 @@ export function executionPlanFingerprint(pkg, io) {
 /** 返回唯一的执行状态路径；调用者不能通过参数把状态移到 evidenceRoot 之外。 */
 export function executionStatePath(work) {
   return `${String(work.evidenceRoot).replace(/\/$/, '')}/execution-state.json`;
+}
+
+/** 返回阶段切换时保存旧执行状态的归档路径；归档只读保留，不参与当前放行。 */
+export function executionStateArchivePath(work, packageId) {
+  if (!packageId) throw new Error('Execution State 归档必须绑定旧 Implementation Package');
+  return `${String(work.evidenceRoot).replace(/\/$/, '')}/execution-states/${encodeURIComponent(String(packageId))}.json`;
 }
 
 /**
@@ -181,27 +185,8 @@ function acquireExecutionStateLock(statePath) {
   throw new Error(`Execution State 锁获取超时：${lockPath}`);
 }
 
-/** 校验 Work Item 可选的 V2→V3 合同声明；内容证据仍在推进时复算。 */
-export function validateV2ToV3ContractShape(contract) {
-  if (contract === undefined) return;
-  if (!contract || typeof contract !== 'object' || Array.isArray(contract) || Object.keys(contract).some((key) => !['status', 'contractId', 'evidenceFile', 'evidenceSha256'].includes(key)) || !['PASS', 'BLOCKED', 'PENDING'].includes(contract.status) || typeof contract.contractId !== 'string' || !contract.contractId || typeof contract.evidenceFile !== 'string' || !contract.evidenceFile || !/^sha256:[a-f0-9]{64}$/.test(contract.evidenceSha256 ?? '')) throw new Error('Work Item.v2ToV3Contract V2→V3 合同状态或证据绑定无效');
-}
-
-/** 复核唯一 V2→V3 合同回对记录，并绑定证据文件内容哈希后才允许推进。 */
-function v2ToV3ContractPassed(work, repo, io) {
-  const contract = work.v2ToV3Contract;
-  if (!contract || typeof contract !== 'object' || Array.isArray(contract) || contract.status !== 'PASS' || !contract.contractId || !contract.evidenceFile || !/^sha256:[a-f0-9]{64}$/.test(contract.evidenceSha256 ?? '')) return false;
-  if (!repo || !io || typeof io.normalizeRepoPath !== 'function' || typeof io.resolve !== 'function' || typeof io.existsSync !== 'function' || typeof io.fileHash !== 'function') return false;
-  const evidenceRoot = String(work.evidenceRoot).replace(/\/$/, '');
-  const evidencePath = io.normalizeRepoPath(repo, contract.evidenceFile);
-  if (!(evidencePath === evidenceRoot || evidencePath.startsWith(`${evidenceRoot}/`))) return false;
-  const target = io.resolve(repo, evidencePath);
-  // V2→V3 不是 Work Item 手写开关，必须复算 evidenceFile 的当前字节哈希。
-  return io.existsSync(target) && io.fileHash(target) === contract.evidenceSha256;
-}
-
 /** 根据执行单元状态计算下一任务；数组位置是唯一权威，不重新推导依赖图。 */
-function deriveNextTask(units, work, repo, io, pkg = null) {
+function deriveNextTask(units) {
   const active = units.filter((unit) => unit.state === 'IN_PROGRESS');
   if (active.length) {
     const firstActiveIndex = units.findIndex((unit) => unit.state === 'IN_PROGRESS');
@@ -220,11 +205,6 @@ function deriveNextTask(units, work, repo, io, pkg = null) {
       : { kind: 'SERIAL_UNIT', taskId: active[0].unitId, state: 'IN_PROGRESS', unitIds: [active[0].unitId], parallelGroup: null, gate: 'UNIT_CHECK', gateStatus: 'NOT_REQUIRED', reason: '按 executionUnits 预设顺序执行当前串行单元' };
   }
   if (units.every((unit) => unit.state === 'COMPLETE')) {
-    // 基础实施包在全局基线后即可闭环，不能因当前工作项恰好处于 V2 再误触发场景 V2→V3 合同。
-    if (!isFoundationOnlyPackage(pkg) && String(work.visualStage ?? '').toUpperCase() === 'V2') {
-      const passed = String(work.visualStageState ?? '') === 'v2-production-planning-complete' && v2ToV3ContractPassed(work, repo, io);
-      return { kind: 'V3_FORMAL_ACCEPTANCE', taskId: 'V3-FORMAL-ACCEPTANCE', state: passed ? 'IN_PROGRESS' : 'BLOCKED', unitIds: [], parallelGroup: null, gate: 'V2_TO_V3_CONTRACT', gateStatus: passed ? 'PASS' : 'BLOCKED', reason: passed ? 'V2 拆解方案已确认且合同回对门通过，下一任务为 V3 资源与组合预验收' : 'V2 拆解方案未通过合同回对门，禁止推进 V3 资源与组合预验收' };
-    }
     return { kind: 'WORKFLOW_COMPLETE', taskId: null, state: 'COMPLETE', unitIds: [], parallelGroup: null, gate: null, gateStatus: 'NOT_REQUIRED', reason: '全部 executionUnits 已完成，且没有下一任务' };
   }
   const firstPending = units.find((unit) => unit.state === 'PENDING');
@@ -258,7 +238,7 @@ export function createExecutionState(work, pkg, io, now = new Date().toISOString
     units,
     unitSequenceState: 'IN_PROGRESS',
     workflowState: 'IN_PROGRESS',
-    nextTask: deriveNextTask(units, work, null, io, pkg),
+    nextTask: deriveNextTask(units),
     updatedAt: now,
     lastTransition: { type: 'INITIALIZE', unitId: null, resultId: null },
   };
@@ -314,14 +294,13 @@ export function validateExecutionState(state, statePath, work, pkg, repo, io) {
   const allComplete = state.units.every((unit) => unit.state === 'COMPLETE');
   const expectedUnitSequenceState = allComplete ? 'COMPLETE' : 'IN_PROGRESS';
   if (state.unitSequenceState !== expectedUnitSequenceState) throw new Error('Execution State.unitSequenceState 与单元状态不一致');
-  const expectedTask = deriveNextTask(state.units, work, repo, io, pkg);
+  const expectedTask = deriveNextTask(state.units);
   const taskMissing = NEXT_TASK_FIELDS.filter((field) => state.nextTask?.[field] === undefined);
   const taskExtra = state.nextTask && typeof state.nextTask === 'object' ? Object.keys(state.nextTask).filter((field) => !NEXT_TASK_FIELDS.includes(field)) : [];
   if (taskMissing.length || taskExtra.length || !NEXT_TASK_KINDS.has(state.nextTask?.kind) || !NEXT_TASK_STATES.has(state.nextTask?.state) || !NEXT_TASK_GATE_STATUSES.has(state.nextTask?.gateStatus) || !Array.isArray(state.nextTask?.unitIds)) throw new Error('Execution State.nextTask 字段或枚举无效');
   if (state.nextTask.unitIds.some((unitId) => !expectedIds.includes(unitId)) || new Set(state.nextTask.unitIds).size !== state.nextTask.unitIds.length) throw new Error('Execution State.nextTask.unitIds 未绑定当前 executionUnits');
-  if (state.nextTask.kind === 'V3_FORMAL_ACCEPTANCE' && (state.nextTask.taskId !== 'V3-FORMAL-ACCEPTANCE' || state.nextTask.gate !== 'V2_TO_V3_CONTRACT')) throw new Error('V2→V3 下一任务合同字段无效');
   if (state.nextTask.kind === 'WORKFLOW_COMPLETE' && (state.nextTask.taskId !== null || state.nextTask.unitIds.length || state.nextTask.state !== 'COMPLETE')) throw new Error('工作流完成状态不得携带下一单元');
-  if (JSON.stringify(state.nextTask) !== JSON.stringify(expectedTask)) throw new Error('Execution State.nextTask 与当前单元状态或 V2→V3 门不一致');
+  if (JSON.stringify(state.nextTask) !== JSON.stringify(expectedTask)) throw new Error('Execution State.nextTask 与当前单元状态不一致');
   const expectedWorkflowState = expectedTask.kind === 'WORKFLOW_COMPLETE' ? 'COMPLETE' : expectedTask.state === 'BLOCKED' ? 'BLOCKED' : 'IN_PROGRESS';
   if (state.workflowState !== expectedWorkflowState || !WORKFLOW_STATES.has(state.workflowState)) throw new Error('Execution State.workflowState 与下一任务不一致');
   const transitionMissing = LAST_TRANSITION_FIELDS.filter((field) => state.lastTransition?.[field] === undefined);
@@ -339,39 +318,33 @@ export function loadExecutionState(work, pkg, repo, io) {
   return { state: validateExecutionState(state, statePath, work, pkg, repo, io), statePath };
 }
 
-/** 在进入 IMPLEMENTING 时创建初始状态；已有状态必须精确复核，禁止覆盖旧状态。 */
-export function initializeExecutionState(work, pkg, repo, io) {
+/** 在进入 IMPLEMENTING 时创建当前阶段状态；同一包已有状态必须精确复核，禁止重复初始化。 */
+export function initializeExecutionState(work, pkg, repo, io, options = {}) {
   const statePath = io.resolve(repo, executionStatePath(work));
-  if (io.existsSync(statePath)) return loadExecutionState(work, pkg, repo, io);
-  const state = createExecutionState(work, pkg, io);
-  writeJson(statePath, state);
-  return { state: validateExecutionState(state, statePath, work, pkg, repo, io), statePath };
-}
-
-/**
- * 在合同补齐后显式刷新 V2→V3 门；读取失败或证据无效时保持原 BLOCKED 状态。
- */
-export function refreshV2ToV3Contract(work, pkg, repo, io) {
-  if (work.globalState !== 'IMPLEMENTING') throw new Error(`V2→V3 合同刷新仅允许 IMPLEMENTING 状态，当前为 ${work.globalState}`);
-  // 无效合同在加锁前直接拒绝，减少失败调用对状态文件的竞争；持锁后仍会再次复核当前字节。
-  if (!v2ToV3ContractPassed(work, repo, io)) throw new Error('V2→V3 合同证据缺失、路径越出 evidenceRoot 或 SHA-256 不匹配，仍保持 BLOCKED');
-  const statePath = io.resolve(repo, executionStatePath(work));
-  const releaseLock = acquireExecutionStateLock(statePath);
-  try {
-    let rawState;
-    try { rawState = JSON.parse(io.readFileSync(statePath, 'utf8')); } catch { throw new Error('Execution State 文件不是有效 JSON'); }
-    // 先按“合同仍未通过”的旧门复核完整状态，防止刷新命令把手改的 COMPLETE 状态直接解锁。
-    const blockedWork = { ...work, v2ToV3Contract: undefined };
-    const blockedState = validateExecutionState(rawState, statePath, blockedWork, pkg, repo, io);
-    if (blockedState.nextTask.kind !== 'V3_FORMAL_ACCEPTANCE' || blockedState.nextTask.state !== 'BLOCKED' || blockedState.nextTask.gateStatus !== 'BLOCKED' || blockedState.workflowState !== 'BLOCKED') throw new Error('Execution State 当前不是待刷新 V2→V3 BLOCKED 门');
-    if (!v2ToV3ContractPassed(work, repo, io)) throw new Error('V2→V3 合同证据缺失、路径越出 evidenceRoot 或 SHA-256 不匹配，仍保持 BLOCKED');
-    const state = { ...rawState, nextTask: deriveNextTask(rawState.units, work, repo, io, pkg), workflowState: 'IN_PROGRESS', updatedAt: new Date().toISOString(), lastTransition: { type: 'V2_TO_V3_CONTRACT_REFRESH', unitId: null, resultId: null } };
-    validateExecutionState(state, statePath, work, pkg, repo, io);
-    writeJson(statePath, state);
-    return { state, statePath };
-  } finally {
-    releaseLock();
+  if (io.existsSync(statePath) && !options.replaceExisting) return loadExecutionState(work, pkg, repo, io);
+  let previous = null;
+  if (io.existsSync(statePath)) {
+    try { previous = JSON.parse(io.readFileSync(statePath, 'utf8')); } catch { throw new Error('已有 Execution State 文件不是有效 JSON，拒绝覆盖并要求先修复'); }
+    if (previous.packageId === pkg.packageId) return loadExecutionState(work, pkg, repo, io);
+    if (!options.previousWork || !options.previousPackage) throw new Error('阶段切换必须提供旧阶段 Work Item 与 Implementation Package 以复核 Execution State');
+    // 旧阶段必须按其原绑定包重新校验每个 Result，不能只相信状态文件中的 COMPLETE 标记。
+    const previousLoaded = loadExecutionState(options.previousWork, options.previousPackage, repo, io);
+    previous = previousLoaded.state;
+    if (previous.unitSequenceState !== 'COMPLETE' || previous.workflowState !== 'COMPLETE') throw new Error('旧实施序列未完成，不能替换当前阶段实施包');
+    if (previous.packageId !== options.previousPackage.packageId || previous.workItemId !== work.workItemId || previous.baselineHash !== work.baselineHash) throw new Error('旧阶段 Execution State 未绑定当前 Work Item 或冻结实施包');
   }
+  const state = createExecutionState(work, pkg, io);
+  // 先完整校验新阶段状态，再归档旧状态和替换当前指针；新包失败时当前状态保持原样。
+  const validated = validateExecutionState(state, statePath, work, pkg, repo, io);
+  if (previous) {
+    const archivePath = io.resolve(repo, executionStateArchivePath(work, previous.packageId));
+    if (io.existsSync(archivePath)) throw new Error(`旧 Implementation Package 的 Execution State 归档已存在，拒绝覆盖：${executionStateArchivePath(work, previous.packageId)}`);
+    // 阶段切换保留旧状态作为只读审计历史，新阶段只消费下面重新生成的状态文件。
+    if (typeof io.writeJson !== 'function') throw new Error('阶段切换缺少 Execution State 归档写入能力');
+    io.writeJson(archivePath, previous);
+  }
+  (io.writeJson ?? writeJson)(statePath, state);
+  return { state: validated, statePath };
 }
 
 /** unit-check 通过后的唯一状态迁移：当前单元 COMPLETE，并按预设顺序激活下一单元/并行组。 */
@@ -384,9 +357,7 @@ export function completeExecutionUnit(work, pkg, unit, result, resultPath, repo,
     const loaded = loadExecutionState(work, pkg, repo, io);
     const state = loaded.state;
     validateUnitResult(result, resultPath, work, pkg, unit, repo, io);
-    assertUnitReady(unit, work, pkg, repo, io);
-    const item = state.units.find((entry) => entry.unitId === unit.unitId);
-    if (!item || item.state !== 'IN_PROGRESS') throw new Error(`实施单元当前不是 IN_PROGRESS，不能完成：${unit.unitId}`);
+    const item = assertUnitReadyFromState(unit, pkg, state);
     const normalizedResultPath = io.normalizeRepoPath(repo, resultPath);
     if (normalizedResultPath === executionStatePath(work)) throw new Error('Unit Result 不能覆盖 Execution State');
     item.state = 'COMPLETE'; item.resultId = result.resultId; item.resultPath = normalizedResultPath; item.resultFingerprint = io.hashText(stableJson(result)); item.completedAt = result.completedAt;
@@ -406,7 +377,7 @@ export function completeExecutionUnit(work, pkg, unit, result, resultPath, repo,
     }
     const allComplete = state.units.every((entry) => entry.state === 'COMPLETE');
     state.unitSequenceState = allComplete ? 'COMPLETE' : 'IN_PROGRESS';
-    state.nextTask = deriveNextTask(state.units, work, repo, io, pkg);
+    state.nextTask = deriveNextTask(state.units);
     state.workflowState = state.nextTask.kind === 'WORKFLOW_COMPLETE' ? 'COMPLETE' : state.nextTask.state === 'BLOCKED' ? 'BLOCKED' : 'IN_PROGRESS';
     state.updatedAt = new Date().toISOString();
     state.lastTransition = { type: state.workflowState === 'COMPLETE' ? 'WORKFLOW_COMPLETE' : 'UNIT_COMPLETE', unitId: unit.unitId, resultId: result.resultId };
@@ -418,9 +389,8 @@ export function completeExecutionUnit(work, pkg, unit, result, resultPath, repo,
   }
 }
 
-/** 校验当前 Result 和 READY 状态后执行唯一完成迁移，供 CLI 避免拆散硬门顺序。 */
+/** 在持锁完成迁移中校验当前 Result 和 READY 状态，供 CLI 保持单一硬门入口。 */
 export function validateAndCompleteExecutionUnit(result, resultPath, work, pkg, unit, repo, io) {
-  validateUnitResult(result, resultPath, work, pkg, unit, repo, io);
   return completeExecutionUnit(work, pkg, unit, result, resultPath, repo, io);
 }
 
@@ -429,50 +399,53 @@ export function executionStateSummary(work, state) {
   return { stateId: state.stateId, path: executionStatePath(work), workflowState: state.workflowState, unitSequenceState: state.unitSequenceState, completedUnitIds: state.units.filter((item) => item.state === 'COMPLETE').map((item) => item.unitId), currentUnitIds: state.units.filter((item) => item.state === 'IN_PROGRESS').map((item) => item.unitId), nextTask: state.nextTask };
 }
 
-/**
- * 判断当前 A3 工作项是否已经完成自己的实施序列。
- * V2 合同 PASS 后 V3 规划是下一阶段的显式交接任务，但不应阻断当前 V2 工作项进入验证和闭环。
- */
-function executionSequenceCanCloseCurrentWorkItem(state) {
-  if (state.unitSequenceState !== 'COMPLETE') return false;
-  if (state.workflowState === 'COMPLETE' && state.nextTask.kind === 'WORKFLOW_COMPLETE') return true;
-  return state.workflowState === 'IN_PROGRESS'
-    && state.nextTask.kind === 'V3_FORMAL_ACCEPTANCE'
-    && state.nextTask.state === 'IN_PROGRESS'
-    && state.nextTask.gate === 'V2_TO_V3_CONTRACT'
-    && state.nextTask.gateStatus === 'PASS';
-}
-
-/** 要求当前状态已完成本工作项实施序列；V2 合同通过的 V3 交接可进入 VALIDATING。 */
+/** 要求当前实施包的执行序列完成；这只代表阶段实施完成，不代表场景 Work Item 已完成。 */
 export function assertExecutionWorkflowComplete(work, pkg, repo, io) {
   const { state } = loadExecutionState(work, pkg, repo, io);
-  if (!executionSequenceCanCloseCurrentWorkItem(state)) throw new Error(`Execution State 尚未完成当前工作项，当前下一任务：${state.nextTask.taskId ?? state.nextTask.kind}`);
+  if (state.workflowState !== 'COMPLETE' || state.unitSequenceState !== 'COMPLETE' || state.nextTask.kind !== 'WORKFLOW_COMPLETE') throw new Error(`Execution State 尚未完成当前阶段实施序列，当前下一任务：${state.nextTask.taskId ?? state.nextTask.kind}`);
   return state;
+}
+
+/** 更新同一 Work Item 阶段入口对应的状态元数据，保留已完成单元结果并重新校验绑定。 */
+export function updateExecutionStateStage(work, nextWork, pkg, repo, io) {
+  const loaded = loadExecutionState(work, pkg, repo, io);
+  const state = { ...loaded.state, stageId: nextWork.stageId, visualStage: nextWork.visualStage ?? null, visualStageState: nextWork.visualStageState ?? null, updatedAt: new Date().toISOString(), lastTransition: { type: 'STAGE_ADVANCE', unitId: null, resultId: null } };
+  const validated = validateExecutionState(state, loaded.statePath, nextWork, pkg, repo, io);
+  (io.writeJson ?? writeJson)(loaded.statePath, validated);
+  return { state: validated, statePath: loaded.statePath };
+}
+
+/** 校验场景 Work Item 的最终 V4 证据，避免把正式代码序列完成误报为场景完成。 */
+export function assertSceneWorkItemComplete(work, pkg, repo, evidence = null) {
+  const hasSceneUnit = pkg?.executionUnits?.some((unit) => ['SCENE', 'DISPLAY_LAYER'].includes(unit.unitType));
+  // 设计阶段尚无正式代码包，仍属于场景生命周期，不能在 V2/V3 提前关闭工作项。
+  if (!hasSceneUnit && !['V2', 'V3', 'V4'].includes(work.visualStage)) return true;
+  if (String(work.visualStage ?? '').toUpperCase() !== 'V4' || work.visualStageState !== 'v4-runtime-integration-candidate') throw new Error('场景 Work Item 只有 V4 运行态联合验收完成后才能 COMPLETE；当前正式代码序列已完成但场景仍未完成');
+  const visualResult = validateVisualStagePrerequisites({ ...work, visualIntegration: { ...(work.visualIntegration ?? {}), declaresVisualComplete: true } }, { projectRoot: repo, implementationPackage: pkg, evidence });
+  if (!visualResult.ok) throw new Error(`场景 Work Item V4 运行态联合验收未闭合：${visualResult.errors?.[0]?.message ?? visualResult.missingEvidence?.[0] ?? '缺少完整视觉阶段证据'}`);
+  const reference = work.visualStageEvidenceRefs?.V4;
+  const loaded = loadImmutableVisualStageReference(reference, 'V4 runtime candidate', { projectRoot: repo });
+  const value = loaded?.value;
+  const status = String(value?.status ?? value?.verdict ?? value?.result ?? '').trim().toUpperCase();
+  if (!value || value.evidenceType !== 'v4-runtime-integration-candidate' || status !== 'PASS' || value.workItemId !== work.workItemId) throw new Error('场景 Work Item COMPLETE 缺少当前 Work Item 的 V4 runtime integration candidate 证据');
+  if (evidence && (value.diffFingerprint ?? value.diff_fingerprint) !== evidence.diffFingerprint) throw new Error('V4 运行态证据与当前候选 Evidence Manifest diff 身份不一致');
+  return true;
 }
 
 /** 只按预设数组位置和当前有效 PASS Result 判定 READY，不推导依赖图。 */
 export function assertUnitReady(unit, work, pkg, repo, io) {
   if (work.globalState !== 'IMPLEMENTING') throw new Error(`A3 unit-check 仅允许 IMPLEMENTING 状态，当前为 ${work.globalState}`);
-  assertFormalExecutionAfterV3(work, pkg, repo, io);
   const { state } = loadExecutionState(work, pkg, repo, io);
-  const current = state.units.find((item) => item.unitId === unit.unitId);
-  if (!current || current.state !== 'IN_PROGRESS') throw new Error(`实施单元尚未 READY，当前状态不是 IN_PROGRESS：${unit.unitId}`);
+  assertUnitReadyFromState(unit, pkg, state);
   if (unit.unitType === 'SCENE' || unit.unitType === 'DISPLAY_LAYER') assertHighFidelityPrerequisite(unit, work, pkg, repo, io);
-  for (const preceding of precedingUnitsForReady(unit, pkg)) {
-    const precedingState = state.units.find((item) => item.unitId === preceding.unitId);
-    if (!precedingState || precedingState.state !== 'COMPLETE' || !findValidUnitResult(work, pkg, preceding, repo, io)) throw new Error(`实施单元尚未 READY，缺少预设顺序前序证据：${unit.unitId} <- ${preceding.unitId}`);
-  }
 }
 
 /** 复核全局证据声明的完成单元全部具有当前有效 Result。 */
 export function assertCompletedUnits(evidence, work, pkg, repo, io) {
-  const state = assertExecutionWorkflowComplete(work, pkg, repo, io);
+  assertExecutionWorkflowComplete(work, pkg, repo, io);
   const expected = pkg.executionUnits.map((unit) => unit.unitId).sort();
   const actual = [...evidence.completedUnitIds].sort();
   if (JSON.stringify(expected) !== JSON.stringify(actual)) throw new Error('Evidence.completedUnitIds 未覆盖全部 executionUnits');
-  for (const unit of pkg.executionUnits) {
-    const stateUnit = state.units.find((item) => item.unitId === unit.unitId);
-    if (!stateUnit || stateUnit.state !== 'COMPLETE' || !findValidUnitResult(work, pkg, unit, repo, io)) throw new Error(`Evidence.completedUnitIds 缺少当前有效 Unit Result：${unit.unitId}`);
-  }
+  // loadExecutionState 已逐项复核 COMPLETE Result，这里只比对声明集合，避免再次扫描 units 目录。
 }
 

@@ -1,6 +1,6 @@
 import { isAbsolute, relative } from 'node:path';
 import { assertGlobalVisualBaselineSelection } from './global-visual-baseline-contract.mjs';
-import { loadImmutableVisualStageReference } from './visual-stage-prerequisites.mjs';
+import { classifyVisibleVisualProductionIntegration, loadImmutableVisualStageReference } from './visual-stage-prerequisites.mjs';
 
 const SCENE_UNIT_TYPES = new Set(['SCENE', 'DISPLAY_LAYER']);
 const FOUNDATION_UNIT_TYPES = new Set(['SHARED', 'MODULE']);
@@ -25,6 +25,11 @@ const EVIDENCE_SCHEMA = 'phaser4-scene-v2-reconstruction-plan/1.0';
 const SHA256 = /^sha256:[a-f0-9]{64}$/;
 const VISUAL_STAGES = ['V0', 'V1', 'V2', 'V3', 'V4'];
 const V3_ACCEPTANCE_EVIDENCE_TYPE = 'v3-formal-acceptance';
+const PACKAGE_VISUAL_FIELDS = Object.freeze([
+  'visualContractVersion', 'candidateVersion', 'visualManifestFile', 'visualManifestSha256',
+  'visualDecompositionConfirmations', 'current_stage',
+  'currentStage', 'scene_reconstruction_contract', 'sceneReconstructionContract', 'visualProductionUnits',
+]);
 
 /** 判断值是否为不带数组的普通对象。 */
 function isRecord(value) {
@@ -85,12 +90,31 @@ export function isFoundationOnlyPackage(pkg) {
   return Array.isArray(units) && units.length > 0 && units.every((unit) => FOUNDATION_UNIT_TYPES.has(unit?.unitType));
 }
 
-/** 校验基础实施包依赖的三候选人工确认基线；缺失或文件漂移时保持 fail closed。 */
+/** 判断实施包是否声明视觉合同、资产生产或场景视觉阶段字段。 */
+function hasPackageVisualDependency(pkg) {
+  return PACKAGE_VISUAL_FIELDS.some((field) => pkg?.[field] !== undefined);
+}
+
+/** 判断 Work Item 或包是否声明正式可见视觉行为；灰盒声明不能降级正式门。 */
+function hasFormalVisualBehavior(work, pkg) {
+  const subjects = [work, pkg].filter(isRecord);
+  // 正式入口、可见资源消费等行为统一由共享分类器判定，避免在此复制别名或引入旧包兼容路径。
+  return subjects.some((subject) => classifyVisibleVisualProductionIntegration(subject).isVisibleVisualProductionIntegration);
+}
+
+/** 判断 foundation-only 包应走全局基线门、正式视觉门还是直接进入基础工程。 */
+function foundationGateMode(work, pkg) {
+  if (!isFoundationOnlyPackage(pkg)) return 'formal';
+  if (hasFormalVisualBehavior(work, pkg)) return 'formal';
+  return hasPackageVisualDependency(pkg) ? 'global-baseline' : 'none';
+}
+
+/** 校验视觉依赖基础实施包的三候选人工确认基线；缺失或文件漂移时保持 fail closed。 */
 function assertFoundationBaselineFrozen(work, repo, io) {
   if (work?.globalStaticBaselineState !== 'global-static-baseline-frozen') {
-    throw prerequisiteError(null, '基础实施包只能在完成 3 张候选图 + 人工确认并写入 globalStaticBaselineState=global-static-baseline-frozen 后创建或执行；当前全局静态 visual_baseline 尚未冻结');
+    throw prerequisiteError(null, '具有视觉依赖的基础包只能在完成 3 张候选图 + 人工确认并写入 globalStaticBaselineState=global-static-baseline-frozen 后创建或执行；当前全局静态 visual_baseline 尚未冻结');
   }
-  if (!repo || !io) throw prerequisiteError(null, '基础实施包缺少三张候选图、人工确认及冻结文件的不可变读取能力');
+  if (!repo || !io) throw prerequisiteError(null, '具有视觉依赖的基础包缺少三张候选图、人工确认及冻结文件的不可变读取能力');
   try {
     assertGlobalVisualBaselineSelection(work, repo, io);
   } catch (error) {
@@ -101,7 +125,9 @@ function assertFoundationBaselineFrozen(work, repo, io) {
 
 /** 判断实施包规划是否已经越过当前场景 Work Item 的 V2 视觉验收边界。 */
 export function assertFormalImplementationAfterV2(work, pkg, repo, io) {
-  if (isFoundationOnlyPackage(pkg)) return assertFoundationBaselineFrozen(work, repo, io);
+  const foundationMode = foundationGateMode(work, pkg);
+  if (foundationMode === 'none') return true;
+  if (foundationMode === 'global-baseline') return assertFoundationBaselineFrozen(work, repo, io);
   const formalUnits = (pkg?.executionUnits ?? []).filter((unit) => FORMAL_UNIT_TYPES.has(unit?.unitType));
   if (!formalUnits.length) return true;
   const stage = String(work?.visualStage ?? '').trim().toUpperCase();
@@ -116,7 +142,9 @@ export function assertFormalImplementationAfterV2(work, pkg, repo, io) {
  * V2 允许创建和校验实施包；只有执行状态、委派和 READY 才能调用本门。
  */
 export function assertFormalExecutionAfterV3(work, pkg, repo, io) {
-  if (isFoundationOnlyPackage(pkg)) return assertFoundationBaselineFrozen(work, repo, io);
+  const foundationMode = foundationGateMode(work, pkg);
+  if (foundationMode === 'none') return true;
+  if (foundationMode === 'global-baseline') return assertFoundationBaselineFrozen(work, repo, io);
   const formalUnits = (pkg?.executionUnits ?? []).filter((unit) => FORMAL_UNIT_TYPES.has(unit?.unitType));
   if (!formalUnits.length) return true;
   const stage = String(work?.visualStage ?? '').trim().toUpperCase();

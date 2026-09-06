@@ -62,6 +62,11 @@ export function computeLayoutContractSha256(document) {
       layout_annotation_layout: document.layout_annotation.layout_annotation_layout ?? null,
       layout_annotation_metadata_sha256: document.layout_annotation.layout_annotation_metadata_sha256 ?? null,
       layout_annotation_identity_sha256: document.layout_annotation.layout_annotation_identity_sha256 ?? null,
+      layout_review_file: document.layout_annotation.layout_review_file ?? null,
+      layout_review_sha256: document.layout_annotation.layout_review_sha256 ?? null,
+      layout_review_identity_sha256: document.layout_annotation.layout_review_identity_sha256 ?? null,
+      layout_nodes_file: document.layout_annotation.layout_nodes_file ?? null,
+      layout_nodes_sha256: document.layout_annotation.layout_nodes_sha256 ?? null,
       decomposition_confirmation_id: document.layout_annotation.decomposition_confirmation_id ?? null,
       decomposition_confirmation_sha256: document.layout_annotation.decomposition_confirmation_sha256 ?? null,
       proposal_sha256: document.layout_annotation.proposal_sha256 ?? null,
@@ -372,9 +377,9 @@ function validateLayoutAnnotationBinding(document, binding, layoutNodes, errors)
   if (!isEffectImageContract(document)) return;
   const annotation = document.layout_annotation;
   if (!isObject(annotation)) { errors.push("effect-image 必须声明 layout_annotation；布局标注只能后置于拆解确认"); return; }
-  const required = ["layout_annotation_file", "layout_annotation_sha256", "layout_annotation_width", "layout_annotation_height", "layout_annotation_schema", "layout_annotation_layout", "layout_annotation_metadata_sha256", "layout_annotation_identity_sha256", "decomposition_confirmation_id", "decomposition_confirmation_sha256", "proposal_sha256", "layout_decision_file", "layout_decision_sha256", "layout_decision_id", "target_sha256", "scene_id", "state_id"];
+  const required = ["layout_annotation_file", "layout_annotation_sha256", "layout_annotation_width", "layout_annotation_height", "layout_annotation_schema", "layout_annotation_layout", "layout_annotation_metadata_sha256", "layout_annotation_identity_sha256", "layout_review_file", "layout_review_sha256", "layout_review_identity_sha256", "layout_nodes_file", "layout_nodes_sha256", "decomposition_confirmation_id", "decomposition_confirmation_sha256", "proposal_sha256", "layout_decision_file", "layout_decision_sha256", "layout_decision_id", "target_sha256", "scene_id", "state_id"];
   for (const field of required) if (!(field in annotation)) errors.push(`layout_annotation.${field} 必须存在`);
-  for (const field of ["layout_annotation_sha256", "layout_annotation_metadata_sha256", "layout_annotation_identity_sha256", "decomposition_confirmation_sha256", "proposal_sha256", "layout_decision_sha256", "target_sha256"]) if (field in annotation && (!isString(annotation[field]) || !SHA_PATTERN.test(annotation[field]))) errors.push(`layout_annotation.${field} 必须是合法 sha256`);
+  for (const field of ["layout_annotation_sha256", "layout_annotation_metadata_sha256", "layout_annotation_identity_sha256", "layout_review_sha256", "layout_review_identity_sha256", "layout_nodes_sha256", "decomposition_confirmation_sha256", "proposal_sha256", "layout_decision_sha256", "target_sha256"]) if (field in annotation && (!isString(annotation[field]) || !SHA_PATTERN.test(annotation[field]))) errors.push(`layout_annotation.${field} 必须是合法 sha256`);
   if (annotation.layout_annotation_schema !== "layout-annotation/png/1") errors.push("layout_annotation.layout_annotation_schema 必须为 layout-annotation/png/1");
   if (annotation.layout_annotation_layout !== "image-plus-right-panel") errors.push("layout_annotation.layout_annotation_layout 必须为 image-plus-right-panel");
   for (const field of ["layout_annotation_width", "layout_annotation_height"]) if (!Number.isInteger(annotation[field]) || annotation[field] <= 0) errors.push(`layout_annotation.${field} 必须是正整数`);

@@ -15,11 +15,12 @@
 | `docs/project-profile.yaml` | 项目身份、渠道和约束 |
 | `docs/GDD.md` | 已批准需求、完整功能/场景清单、范围、玩法、验收与端到端追踪 |
 | `docs/visual-baseline.md` | 不可变冻结全局视觉规则正文；完整文件 SHA-256 形成风格指纹 |
-| `docs/visual-design.md` | 可追加的方向探索、基线索引与 V2b/V3/V4 阶段证据，不参与风格指纹 |
+| `docs/visual-design.md` | 可追加的方向探索、基线索引与 V2/V3/V4 阶段证据，不参与风格指纹 |
 | `docs/TDD.md` | 模块、公共基础、场景依赖/实施序列、分项完成事实、能力、平台和服务边界 |
 | `docs/balance.md` | 数值模型与验证 |
 | `docs/asset-license-register.md` | 资源/音频来源、授权与发布资格 |
 | `docs/visual-assets.json` | 含场景或 shared 归属的视觉资源机器清单，不驱动全局状态 |
+| 场景 V2 布局候选目录 | 同批 `layout.png`、`layout-nodes.json`、`layout-decision.json`、离线 `review.html`、`generation-result.json` 及真实 SHA；审阅页规则见[离线布局审阅产物](../../phaser4-game-ui-layout/references/layout-review-artifacts.md) |
 | `docs/qa-plan.md` | 测试策略，不得自填通过状态 |
 | `docs/platform-matrix.md` | 分层平台证据；不自动触发真机 |
 | `docs/release-checklist.md` | 独立发布工作项的候选清单，不是发布授权 |

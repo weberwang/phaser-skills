@@ -1,6 +1,6 @@
 # 全局视觉控制约束
 
-为每个项目维护单一、版本化的全局视觉基线。基线必须先经过 brief → 恰好三张同条件候选效果图 → 同屏人工选择确认一张的流程，候选文件只允许真实 PNG/JPEG（文件门检查图片魔数），完成不可变 `globalVisualBaselineSelectionRef` 后才进入 `global-static-baseline-frozen` 状态。`docs/global-visual-baseline-selection.json` 是唯一选择根证据模板；`docs/visual-baseline.md` 只保存不可变冻结规则正文，`docs/visual-design.md` 保存可追加的方向探索、版本索引及 V2b/V3/V4 证据，`docs/visual-assets.json` 只保存机器绑定与选择证据索引；选择根证据单独保存，不在其中内嵌第二份根对象。
+为每个项目维护单一、版本化的全局视觉基线。候选选择、冻结状态和跨 Work Item 引用以[控制模型](../../phaser4-game-workflow-control/references/control-model.md)及对应 Schema 为准；本文件只补充全局视觉基线的锚点、风格和生成记录要求。`docs/global-visual-baseline-selection.json` 是唯一选择根证据模板；`docs/visual-baseline.md` 只保存不可变冻结规则正文，`docs/visual-design.md` 保存可追加的方向探索、版本索引及 V2/V3/V4 证据，`docs/visual-assets.json` 只保存机器绑定与选择证据索引；选择根证据单独保存，不在其中内嵌第二份根对象。
 
 ## 生产者与消费者绑定
 
@@ -16,7 +16,7 @@
 - 分系统锚点：角色、场景、UI、图标、动画、VFX、字体等系统各自的代表画面；
 - 基线文档、锚点证据、适用范围、允许变量和已知边界。
 
-基线 ID 表达视觉系统身份，版本表达已批准规则集合，风格指纹只计算 `docs/visual-baseline.md` 完整文件字节。不得把摘要或 V2b/V3/V4 留痕写回被哈希正文；阶段证据追加到 `visual-design.md`。规则变化生成新版本和新哈希，使全部受影响决定与证据失效并重验。`--check-files` 重新计算冻结正文 SHA-256。
+基线 ID 表达视觉系统身份，版本表达已批准规则集合，风格指纹只计算 `docs/visual-baseline.md` 完整文件字节。不得把摘要或 V2/V3/V4 留痕写回被哈希正文；阶段证据追加到 `visual-design.md`。规则变化生成新版本和新哈希，使全部受影响决定与证据失效并重验。`--check-files` 重新计算冻结正文 SHA-256。
 
 ## 三候选生成与人工冻结门
 
@@ -33,7 +33,7 @@
 
 ## 全局视觉冻结表
 
-全局规则在 G0/V0 的 brief 与三候选人工选择门中建立，并在确认后正式冻结；之后每个场景的 V1/V2a 只冻结该场景的方向和候选，不得把场景 V2a 当作全局基线选择。每项写明不变量、量化范围、允许变量、禁止项和证据：
+全局规则在 G0/V0 的 brief 与三候选人工选择门中建立，并在确认后正式冻结；之后每个场景的 V1/V2 只冻结该场景的目标和方案，不得把场景 V2 当作全局基线选择。每项写明不变量、量化范围、允许变量、禁止项和证据：
 
 | 系统 | 必须冻结的内容 |
 | --- | --- |
@@ -137,4 +137,4 @@ V4 为每个生产包提交多资源联系表，并至少生成一张同屏组�
 
 原子资产仍以完整冻结效果图作为主参考，全局锚点只作为额外强制 style references。文件门会复算基线正文、锚点、冻结目标、输出和一致性证据的真实 SHA，旧记录不能跨身份复用；记录或路径问题先原地修复，候选未变的证据更新只重验当前门，冻结身份真实漂移时才返回最早受影响阶段。
 
-生成式单图在绑定全局基线后仍按“生成原图 →（透明路线一次背景移除）→ Sharp 尺寸归一化 → V4/final/runtime”交付；首次输出比例不符时最多重生一次，第二次仍不符时，若已冻结裁切焦点和安全事实，则使用 `crop-and-resize-to-contract` 并绑定两次真实原始 ImageGen attempt、SHA、尺寸、focus 和 `crop_rect`，否则先由生产流程对不透明生成结果生成式延展到目标比例，再执行一次背景移除（如为透明路线）和普通归一化。透明路线的两次 attempt 仍是去背前的不透明原始输出，受控裁切可在唯一一次背景移除后的同尺寸含 Alpha 输入上执行。该分流适用于所有 ImageGen 图片；`padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘、以及裁切冻结 `reference_target`。归一化后的 PNG/JPEG 才是最终输出（`alpha=true` 只能是 PNG，`alpha=false` 可是 JPEG），透明目标前后都要保留 Alpha，并以 `normalization_record` 绑定当前输入、尺寸、路径、SHA 和工具版本。
+生成式单图在绑定全局基线后仍按“生成原图 →（透明路线一次背景移除）→ Sharp 尺寸归一化 → V3/final/runtime”交付；首次输出比例不符时最多重生一次，第二次仍不符时，若已冻结裁切焦点和安全事实，则使用 `crop-and-resize-to-contract` 并绑定两次真实原始 ImageGen attempt、SHA、尺寸、focus 和 `crop_rect`，否则先由生产流程对不透明生成结果生成式延展到目标比例，再执行一次背景移除（如为透明路线）和普通归一化。透明路线的两次 attempt 仍是去背前的不透明原始输出，受控裁切可在唯一一次背景移除后的同尺寸含 Alpha 输入上执行。该分流适用于所有 ImageGen 图片；`padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘、以及裁切冻结 `reference_target`。归一化后的 PNG/JPEG 才是最终输出（`alpha=true` 只能是 PNG，`alpha=false` 可是 JPEG），透明目标前后都要保留 Alpha，并以 `normalization_record` 绑定当前输入、尺寸、路径、SHA 和工具版本。

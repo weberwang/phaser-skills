@@ -20,11 +20,11 @@ UI 设计与实现优先用符合全局视觉基线且含义清晰、熟悉的�
 ## 核心流程
 
 1. 读取项目的 GDD/TDD、当前候选、总控审核漏斗和适用视觉阶段；确定稳定 UI ID、坐标空间、参照物、状态与平台输入。
-2. 复制 schema 1.1.0 [合同模板](assets/ui-layout-contract-template.yaml)。普通布局使用 `not-applicable` 并保持 `layout_nodes: []`；冻结视觉目标先用 `frozen-target/specified`。V2 先生成拆解图、技术 JSON 和 `decomposition_elements`，人工修改并确认；确认后由智能视觉判断生成逐元素 `left/center/right × top/center/bottom` 决策，再生成独立布局标注图并人工确认。随后登记由确认元素和视觉决策共同推导的非空 `layout_nodes` 与关键对齐合同。
+2. 复制 schema 1.1.0 [合同模板](assets/ui-layout-contract-template.yaml)。普通布局使用 `not-applicable` 并保持 `layout_nodes: []`；冻结视觉目标先用 `frozen-target/specified`。V2 先生成拆解图、技术 JSON 和 `decomposition_elements`，人工修改并确认；确认后由智能视觉判断生成逐元素 `left/center/right × top/center/bottom` 决策，再由同一入口同步生成布局 PNG、`layout-nodes.json`、`layout-decision.json`、离线 `review.html` 和 `generation-result.json`。随后登记由确认元素和视觉决策共同推导的非空 `layout_nodes` 与关键对齐合同。
 3. 用 [Phaser 适配器](references/phaser-adapter.md) 设计唯一布局入口：把视口、安全区、方向、内容尺寸和状态作为输入，分离资源 origin、布局停靠点和动画偏移，保证重排幂等。
 4. specified 阶段运行结构检查 `node scripts/validate_ui_layout_contract.mjs <contract>`；verified 正式验收必须运行 `node scripts/validate_ui_layout_contract.mjs <contract> --check-files --project-root .`，复算冻结原图 SHA 并检查目标/运行/parity 证据文件。
 5. 按 [证据矩阵](references/evidence-matrix.md) 生成同一目标 SHA 与代码候选 SHA 的边界、方向、字号、语言、安全区、动态状态和窄高度证据；关键 UI/HUD 记录稳定 element/reference ID、双轴关系、目标/运行测量、实际测试 ID/状态、视觉证据和项目定义容差。
-6. 按 [工作流门禁](references/workflow-gates.md) 接入 V0–V5、F0–F4 和 G0–G3；布局结构或参照关系变化退回 V1，F3 只接受绑定当前候选的工程证据。
+6. 按 [工作流门禁](references/workflow-gates.md) 接入 V0–V4、F0–F4 和 G0–G3；布局结构或参照关系变化退回 V1，F3 只接受绑定当前候选的工程证据。
 
 ## effect-image 场景绑定
 
@@ -36,12 +36,13 @@ V2 的布局决策顺序固定为“自动生成拆解图/技术 JSON → 人工
 
 ## 资源导航
 
-场景规划涉及 HUD、modal、popup、drawer 或 toast 时，必须同步在场景 `display_layer_planning` 中记录宿主场景、生命周期、输入阻断、层级、遮罩、焦点恢复和响应式事实。scene master 只承载常驻层；瞬态层按状态使用带宿主场景上下文的效果图，V4/V5 回到宿主场景同屏验证打开→交互→关闭后的底层布局恢复。V2 `COMPLETE/frozen` 前仅允许隔离灰盒或无正式业务逻辑视觉样片；V4 正式资源与组合预验收通过后，正式功能代码才可启动。每个 SCENE/DISPLAY_LAYER 代码单元开始前，控制面还必须读取当前场景 Work Item 的 `highFidelityPrerequisite` V2 结果引用；显示层证据必须同时绑定 scene/layer/host，不能用全局冻结或内联 PASS 代替。
+场景规划涉及 HUD、modal、popup、drawer 或 toast 时，必须在场景 `display_layer_planning` 中记录宿主场景、生命周期、输入阻断、层级、遮罩、焦点恢复和响应式事实。scene master 只承载常驻层；瞬态层按状态使用带宿主场景上下文的效果图，V4 回到宿主场景同屏验证打开→交互→关闭后的底层布局恢复。V2 `COMPLETE/frozen` 前仅允许隔离灰盒或无正式业务逻辑视觉样片；V3 正式资源与组合预验收通过后，正式功能代码才可启动。每个 SCENE/DISPLAY_LAYER 代码单元开始前，控制面还必须读取当前场景 Work Item 的 `highFidelityPrerequisite` V2 结果引用；显示层证据必须同时绑定 scene/layer/host，不能用全局冻结或内联 PASS 代替。
 
 - 需要字段、关系表达或不变量写法时，读取 [references/layout-contract.md](references/layout-contract.md)。
 - 需要 Phaser Scale、Camera、Container、DOM Overlay、resize 或重排边界时，读取 [references/phaser-adapter.md](references/phaser-adapter.md)。
 - 需要 V/F/G 门禁、退回和候选绑定规则时，读取 [references/workflow-gates.md](references/workflow-gates.md)。
 - 需要组合测试、等价类削减或冻结 Golden 条件时，读取 [references/evidence-matrix.md](references/evidence-matrix.md)。
+- 需要布局审阅页、同批产物、坐标映射、SHA 绑定或离线安全边界时，读取 [references/layout-review-artifacts.md](references/layout-review-artifacts.md)。
 - 合同验证器只接受 JSON-compatible YAML（合法 YAML 1.2 的 JSON 子集），详见合同参考；直接使用 Node.js `JSON.parse`。
 
 ## 所有权与输出

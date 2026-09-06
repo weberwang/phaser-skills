@@ -20,7 +20,7 @@ effect-image ImageGen 的完整提示词与实际参考输入合同统一见[Eff
 
 所有任务执行适用 V1/V2 确定性机器检查。已有明确需求或冻结基线且候选不改变冻结视觉事实时可记录 `AUTO`；修复、提升游戏感或工程适配只要产生可见变化，就按差异列出影响和候选方案，请求一次精确选择并记录 `USER_DECISION` 与已批准例外。后续绑定当前决策记录。
 
-资源生产服从项目顺序：建立全局基线 brief → 生成恰好三张同条件候选效果图 → 同屏交给人工 → 人工选择确认一张 → 以 `globalVisualBaselineSelectionRef` 正式冻结全局静态 `visual_baseline` → foundation-only 实现 `SHARED` 最小项目骨架与 `MODULE` 场景无关基础模块 → 场景 Work Item 的任务授权/范围与功能规格 → V1 生成或接收并冻结当前场景的 scene master/reference target、宿主上下文效果图、视觉合同和初步还原草案 → V2 输出拆解图、技术 JSON、合同回对、coverage、component×state 和生产方案，并通过拆解图确认 → V3 正式视觉资源与宿主场景同屏组合预验收 → 正式 `SCENE`/`DISPLAY_LAYER` 功能代码实现 → V4 运行态视觉接入与联合验收 → 跨场景 `INTEGRATION`/联合验收 → A4 正式入口。人工选择前不得写入 `global-static-baseline-frozen`；三候选人工选择是独立硬门，不能替代逐场景 V2 拆解方案确认。基础阶段允许配置、状态、输入、平台、资源基础设施和测试支撑，禁止具体场景玩法、UI/布局、正式可见资产消费和正式 Scene 接入；foundation-only 包必须同时带完整验证的 `globalVisualBaselineSelectionRef` 和 `globalStaticBaselineState=global-static-baseline-frozen`，混入场景/集成单元仍触发 V2/V3 门。全局基线只负责静态风格一致性，全局场景集合只作规划/聚合事实；参考还原仍只是当前场景 Work Item 内的可选模式。
+全局基线、foundation-only 边界、场景阶段顺序和集成入口以[控制模型](../../phaser4-game-workflow-control/references/control-model.md)与[状态、阶段与停止门](../../phaser4-game-workflow-control/references/state-gates.md)为准。本管线只补充资源领域的 V0 分流、V2 生产合同、V3 资源/组合验收和 V4 运行态证据；参考还原仍属于当前场景 Work Item。
 
 F2 必须由确定性机器验证执行，并绑定当前 baseline/diff 身份。V1/V2 只保留机器事实、拆解图和技术 JSON；V1/V2 使用 `AUTO` 或 `USER_DECISION` 记录，只覆盖所列对象且不写 Approval Ledger；F4 只处理当前 V4 候选集成或独立发布 Work Item 的具体操作。
 
@@ -48,7 +48,7 @@ F2 必须由确定性机器验证执行，并绑定当前 baseline/diff 身份�
 
 ## V2 拆解确认与生产方案
 
-当前场景 Work Item 的 V1 冻结目标和初步还原草案有效后进入 V2。V2 不再制作独立 Phaser 候选或要求真人方向审批，而是把 V1 的视觉事实细化为可确认、可执行的还原方案，并按两个串行硬门完成：阶段 A 先冻结拆解图、技术 JSON、按序 `decomposition_elements`、component×state 和资源生产事实；阶段 B 仅在拆解确认后补充父子关系、停靠/对齐关系、布局测量、显示层关系和布局容差，冻结后置布局标注图。
+当前场景 Work Item 的 V1 冻结目标和初步还原草案有效后进入 V2。V2 把 V1 的视觉事实细化为可确认、可执行的还原方案，并按两个串行硬门完成：阶段 A 先冻结拆解图、技术 JSON、按序 `decomposition_elements`、component×state 和资源生产事实；阶段 B 仅在拆解确认后补充父子关系、停靠/对齐关系、布局测量、显示层关系和布局容差，冻结后置布局标注图。
 
 V2 布局必须后置于拆解确认：阶段 A 先由冻结原图、区域和组件事实生成拆解图及技术 JSON，并明确按人工确认顺序排列的 `decomposition_elements`；允许人工修改并确认最终拆解。只有 `visual-decomposition-confirmation/1.0` 通过后，智能布局才可结合原图构图、视觉重心和元素语义，为每个确认元素按原顺序生成唯一的 `left/center/right × top/center/bottom` 对齐决策；几何测量不得替代该视觉判断。布局入口只消费该决策与 `proposal.decomposition_elements`，按原顺序推导后置布局节点并生成独立布局标注图，不能读取预存 `layout_nodes`，也不生成新的视觉参考图或多个布局候选。布局决策和布局图都允许人工修改，重新生成后再以 `layout-annotation-confirmation/1.0` 绑定最终图、决策文件及全部上游身份。
 
@@ -72,6 +72,8 @@ ImageGen 的源文件、运行时文件和实际输出仅允许 `image/png` 或 
 
 ImageGen 单图必须按“生成原图 →（透明路线一次背景移除）→ 尺寸归一化 → V3/final/runtime”执行。归一化由 Sharp 完成并产生 `normalization_record`；透明路线的 `normalization_record.source_file` 必须绑定背景移除输出，最终 `actual_output` 只能指向归一化后的 PNG/JPEG（`alpha=true` 只能是 PNG，`alpha=false` 可是 JPEG）。首次输出比例不符时最多重生一次；第二次仍不符时，若已冻结裁切焦点和安全事实，使用 `crop-and-resize-to-contract` 并记录两次真实原始 ImageGen attempt、SHA、尺寸、focus 和最大目标比例 `crop_rect`，否则由生产流程先对不透明生成结果生成式延展到目标比例，再执行一次背景移除（如为透明路线）和普通归一化。透明路线的两次 attempt 仍指向去背前的不透明原始输出，受控裁切可在唯一一次背景移除后的同尺寸含 Alpha 输入上执行。该分流适用于所有 ImageGen 图片，`expected_assets.width/height` 最终必须精确匹配，`padding_policy=none`，禁止非等比拉伸、裁剪冻结 `reference_target`、补边、contain、复制边缘或静默变形。尺寸已满足时也要记录 `operation=not-required`；透明素材前后都必须保留 Alpha。归一化记录缺失、失败、尺寸、路径或 SHA 不一致均阻断 V3。
 
+V2 阶段 B 的唯一生成入口还必须在 PNG 输出目录同步写入 `layout-nodes.json`、`layout-decision.json`、自包含 `review.html` 和 `generation-result.json`。审阅页直接消费本批冻结参考图/节点数据，使用同一坐标映射展示当前与父节点关系；候选状态、离线约束、名称回退、真实文件 SHA 及独立布局确认的完整字段见[离线布局审阅产物](../../phaser4-game-ui-layout/references/layout-review-artifacts.md)。这些产物属于可读审阅和可追溯交付，不能替代标准 PNG、F2 机器门或 V4 证据。
+
 ## V3 正式资源生产与资源级验收
 
 1. 按冻结场景顺序和 V2 清单生产运行时文件，不静默覆盖已验收版本；同步登记来源、生成记录和授权。
@@ -93,7 +95,7 @@ V3 以文件、性能、加载、响应式、`production_contract_audit` 和一�
 4. 清除低保真纹理、占位纹理键、临时路径、fallback、代码分支和运行时引用；保留调试工具必须与正式运行隔离。
 5. 所有路径在 V4 后由 F3 绑定当前候选工程证据；只有实际 A4-A6 集成/发布操作在 F4 请求精确操作批准。资源执行和候选未变的机器证据偏差在当前门 `repair`/`revalidate`；只有生产设计、冻结基线、拆解方案或结构真实变化时才 `return` 到 V1/V2/V3 中最早受影响阶段，并使对应下游决策、操作批准与证据失效。
 6. 忠实还原在冻结目标视口/状态以同条件完整 viewport 为主证据，逐项验证忠实度矩阵；ROI、叠加和像素差仅作补充，动画/VFX 不得只看像素差。其他视口按布局合同验证视觉意图与关系不变量。未解释或超容差差异、缺同条件双方证据、缺已批准例外或仅有主观结论均不得通过。
-7. V4 硬门必须同时绑定 V2、`visualProductionUnits` 实施包、V3 production contract audit、F2 `validationMode=MACHINE` 机器验证事实、F3 runtime replay、非空 freshness-bound fidelity cases、运行时实际消费和无未批准替换；任一项缺失或候选/区域身份漂移都不得声明完成。V2 拆解图确认通过后不再产生任何旧式视觉方向审批工件。
+7. V4 硬门必须同时绑定 V2、`visualProductionUnits` 实施包、V3 production contract audit、F2 `validationMode=MACHINE` 机器验证事实、F3 runtime replay、非空 freshness-bound fidelity cases、运行时实际消费和无未批准替换；任一项缺失或候选/区域身份漂移都不得声明完成。V2 两次确认完成后不再新增方向确认工件。
 
 ## 完成条件
 
@@ -101,7 +103,7 @@ V3 以文件、性能、加载、响应式、`production_contract_audit` 和一�
 
 ### 拆解图确认（视觉硬门）
 
-V2 完成拆解图、技术 JSON、component×state、生产合同和合同回对后，通过 `visual-decomposition-confirmation/1.0` 冻结还原方案。确认记录以 `confirmation_mode=manual`、`status=accepted` 绑定 annotation/proposal/decision SHA、target SHA、candidate SHA、diff fingerprint、baseline SHA、全部编号和用户原文；这些 V2 方案身份变化才需要重新确认拆解图。V3/V4 的 fixed asset、component×state、同屏组合、full viewport/overlay/diff、逐区域 fidelity 与 F2 检查继续由绑定当前身份的确定性机器证据交叉推导，不要求旧式真人方向审批或逐项重复人工审阅。后续生产候选的正常演进不会单独触发人工审批，但任何机器证据缺失、过期或不一致仍不得通过。
+V2 完成拆解图、技术 JSON、component×state、生产合同和合同回对后，通过 `visual-decomposition-confirmation/1.0` 冻结还原方案；随后完成独立布局确认。确认记录以 `confirmation_mode=manual`、`status=accepted` 绑定 annotation/proposal/decision SHA、target SHA、candidate SHA、diff fingerprint、baseline SHA、全部编号和用户原文；这些 V2 方案身份变化才需要重新确认。V3/V4 的 fixed asset、component×state、同屏组合、full viewport/overlay/diff、逐区域 fidelity 与 F2 检查继续由绑定当前身份的确定性机器证据交叉推导，不新增方向确认或重复人工审阅。后续生产候选的正常演进不会单独触发人工决定，但任何机器证据缺失、过期或不一致仍不得通过。
 
 ### 原子视觉拆解补充
 
@@ -129,4 +131,4 @@ V3 除逐资产生产合同外必须完成同屏组合预验收，使用正式 S
 
 ### 全局视觉一致性输入
 
-在任何场景效果图或正式资源生成调用前，必须先完成全局 brief 的三张候选、同屏人工选择和唯一 `SINGLE_HUMAN`/`CONFIRMED` 决定，再冻结全局 `visual_baseline`（`global-static-baseline-frozen`、`docs/visual-baseline.md`、身份字段、风格指纹和全部锚点）。该基线同时作用于 scene master/reference target、显示层上下文图和原子 ImageGen 资产；原子资产必须保留完整冻结效果图主参考，再把所有全局锚点作为额外 style references。generated 记录必须留下实际完整提示词、canonical 一致性段、禁止风格迁移策略、输出 SHA 和一致性证据；provided 只登记外部来源。文件门复算这些文件身份，基线或锚点变化会让旧证据失效。
+在任何场景效果图或正式资源生成调用前，必须引用已冻结的全局 `visual_baseline`；全局候选、人工选择、冻结状态及跨 Work Item 文件门以[全局视觉控制](global-visual-control.md)和控制面 Schema 为准。该基线同时作用于 scene master/reference target、显示层上下文图和原子 ImageGen 资产；原子资产必须保留完整冻结效果图主参考，再把全局锚点作为额外 style references。generated 记录必须留下实际完整提示词、canonical 一致性段、禁止风格迁移策略、输出 SHA 和一致性证据；provided 只登记外部来源。文件门复算这些文件身份，基线或锚点变化会使旧证据失效。

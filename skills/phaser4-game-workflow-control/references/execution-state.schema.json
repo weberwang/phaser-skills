@@ -48,7 +48,7 @@
       "additionalProperties": false,
       "required": ["kind", "taskId", "state", "unitIds", "parallelGroup", "gate", "gateStatus", "reason"],
       "properties": {
-        "kind": {"enum": ["SERIAL_UNIT", "PARALLEL_GROUP", "V3_FORMAL_ACCEPTANCE", "WORKFLOW_COMPLETE"]},
+        "kind": {"enum": ["SERIAL_UNIT", "PARALLEL_GROUP", "WORKFLOW_COMPLETE"]},
         "taskId": {"type": ["string", "null"]},
         "state": {"enum": ["IN_PROGRESS", "BLOCKED", "COMPLETE"]},
         "unitIds": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
@@ -63,7 +63,7 @@
       "additionalProperties": false,
       "required": ["type", "unitId", "resultId"],
       "properties": {
-        "type": {"enum": ["INITIALIZE", "UNIT_COMPLETE", "WORKFLOW_COMPLETE", "V2_TO_V3_CONTRACT_REFRESH"]},
+        "type": {"enum": ["INITIALIZE", "UNIT_COMPLETE", "WORKFLOW_COMPLETE", "STAGE_ADVANCE"]},
         "unitId": {"type": ["string", "null"]},
         "resultId": {"type": ["string", "null"]}
       }

@@ -4,20 +4,46 @@ import { resultRecord, writeResult } from './output.mjs';
 import { createValidationContext } from './validation-context.mjs';
 import { projectWorkflowView, workflowViewMetadata } from './workflow-view.mjs';
 
+const MAX_SAFE_RUN_STEPS = 16;
+const VISUAL_STAGE_NEXT = Object.freeze({ V2: 'V3', V3: 'V4' });
+const SAFE_RUN_TARGETS = new Set(['BASELINE', 'PROPOSAL', 'REVIEW', 'IMPLEMENTING', 'VALIDATING', 'PASSED', 'COMPLETE']);
+
 /** 创建 run/check/status 三个代理入口，所有依赖通过注入复用既有硬门。 */
 export function createStableCommands(deps) {
   const inspect = (args, command, validationContext = null) => inspectWorkflow(args, command, deps, validationContext);
 
   /** 只读取并推导当前任务，不执行业务、测试、发布或外部动作。 */
   function run(args) {
-    const before = inspect(args, 'run');
-    const target = safeTransitionTarget(before, deps);
-    if (!target) return emitInspection(before, args);
-    // transition 只写控制面状态；silent 防止底层 JSON 与紧凑结果重复输出。
-    // 迁移底层仍按进程目录解析路径，必须传入 inspect 已规范化的参数，避免跨 cwd 写错 Work Item。
-    deps.transition({ ...before.args, to: target, silent: true, object: before.work.pendingApprovalObject, 'action-type': before.work.pendingApprovalActionType, 'external-target': before.work.pendingApprovalExternalTargets, validationContext: before.validationContext });
-    const after = inspect(args, 'run', before.validationContext);
-    return emitInspection(after, args, [`${before.work.globalState} → ${target}`]);
+    let inspection = inspect(args, 'run');
+    const changed = [];
+    const visited = new Set();
+    let steps = 0;
+    if (hasVisualStageArgs(args)) {
+      return emitRunStop(inspection, args, changed, '视觉阶段迁移必须使用 transition 的显式阶段参数', '使用 transition 显式指定相邻视觉阶段后再运行 check', 'VISUAL_STAGE_EXPLICIT_REQUIRED');
+    }
+    while (steps < MAX_SAFE_RUN_STEPS) {
+      const stateKey = runStateKey(inspection);
+      if (visited.has(stateKey)) {
+        return emitRunStop(inspection, args, changed, 'run 检测到重复控制面状态，已停止自动推进以避免循环', '检查当前 Work Item 与状态迁移结果', 'SAFE_RUN_LOOP_DETECTED');
+      }
+      visited.add(stateKey);
+      const target = safeTransitionTarget(inspection, deps);
+      if (!target) return emitInspection(inspection, args, changed);
+      // transition 只写控制面状态；silent 防止底层 JSON 与紧凑结果重复输出。
+      // 迁移底层仍按进程目录解析路径，必须传入 inspect 已规范化的参数，避免跨 cwd 写错 Work Item。
+      const from = inspection.work.globalState;
+      deps.transition({ ...inspection.args, to: target, silent: true, object: inspection.work.pendingApprovalObject, 'action-type': inspection.work.pendingApprovalActionType, 'external-target': inspection.work.pendingApprovalExternalTargets, validationContext: inspection.validationContext });
+      steps += 1;
+      // 每次成功迁移都丢弃旧缓存；阶段、包和执行状态必须由新的校验上下文重新读取。
+      inspection = inspect(args, 'run', createValidationContext(inspection.repo, deps));
+      if (inspection.work.globalState !== target) {
+        return emitRunStop(inspection, args, changed, `run 迁移后状态未达到目标：期望 ${target}，实际 ${inspection.work.globalState}`, '检查当前 Work Item 与状态迁移结果', 'SAFE_RUN_STATE_MISMATCH');
+      }
+      changed.push(`${from} → ${target}`);
+      // IMPLEMENTING 是需要真实实施工作的停点；只有 run 开始时已处于该状态才允许继续检查后续证据门。
+      if (target === 'IMPLEMENTING') return emitInspection(inspection, args, changed);
+    }
+    return emitRunStop(inspection, args, changed, `run 自动推进已达到 ${MAX_SAFE_RUN_STEPS} 步上限，已停止继续迁移`, '检查当前 Work Item 与状态迁移结果', 'SAFE_RUN_STEP_LIMIT');
   }
 
   /** 只读检查工作项、实施包、执行状态、视觉门和下一动作。 */
@@ -31,6 +57,33 @@ export function createStableCommands(deps) {
   }
 
   return { run, check, status };
+}
+
+/** 生成稳定的当前状态键，既可识别迁移回环，也不会把时间字段带入循环检测。 */
+function runStateKey(inspection) {
+  const work = inspection.work;
+  return [
+    work.workItemId,
+    work.globalState,
+    work.stageId,
+    work.visualStage ?? '',
+    work.visualStageState ?? '',
+    work.validationBatchId ?? '',
+    inspection.planFingerprint ?? '',
+  ].join('|');
+}
+
+/** 判断调用方是否把视觉阶段迁移参数带入 run；阶段选择必须保留在显式 transition。 */
+function hasVisualStageArgs(args) {
+  return args?.['visual-stage'] !== undefined || args?.['visual-stage-state'] !== undefined;
+}
+
+/** 输出 run 的保护性停止结果；循环或步数异常不能伪装成普通 READY。 */
+function emitRunStop(inspection, args, changed, message, next, errorCode) {
+  return emitInspection({
+    ...inspection,
+    blockers: [...inspection.blockers, { message, next, disposition: 'repair', errorCode }],
+  }, args, changed);
 }
 
 /** 将稳定入口的所有文件参数统一解析到 --repo，绝对路径保持不变。 */
@@ -130,6 +183,10 @@ function inspectWorkflow(rawArgs, command, deps, contextOverride = null) {
     blockers.push(toBlocker(error, '路线推导失败'));
   }
   if (route?.blockers?.length) blockers.push({ message: route.blockers[0], next: null, disposition: null });
+  if (!blockers.length && work.globalState === 'PASSED' && evidence && ['A1', 'A2', 'A3'].includes(work.pendingApprovalActionLevel)) {
+    const completionBlocker = sceneCompletionBlocker({ work, implementationPackage, evidence, repo }, deps);
+    if (completionBlocker) blockers.push(completionBlocker);
+  }
 
   const planFingerprint = deps.computePlanFingerprint({
     work,
@@ -173,17 +230,40 @@ function nextAction(inspection) {
   if (work.globalState === 'VALIDATING' && !evidence) return '提交当前候选验证证据';
   if (work.globalState === 'PASSED' && ['A1', 'A2', 'A3'].includes(work.pendingApprovalActionLevel) && !evidence) return '提交当前候选验证证据完成闭环';
   if (work.globalState === 'PASSED') return '准备正式集成审批';
-  if (inspection.route?.nextLegalState && inspection.route.nextLegalState !== 'RETURN') return '推进一个安全状态步骤';
+  if (inspection.route?.nextLegalState && inspection.route.nextLegalState !== 'RETURN') return '运行 run 推进已满足条件的安全状态';
   return '等待当前阶段门条件满足';
 }
 
-/** 只允许无审批、无外部动作、非 RETURN 的单步状态迁移。 */
+/** 在稳定入口中复用场景完成硬门，并把 V2/V3 的同 Work Item 阶段出口转成阻断提示。 */
+function sceneCompletionBlocker({ work, implementationPackage, evidence, repo }, deps) {
+  const visualStage = String(work.visualStage ?? work.stageId ?? '').trim().toUpperCase();
+  let guardError = null;
+  if (typeof deps.assertSceneWorkItemComplete === 'function') {
+    try {
+      deps.assertSceneWorkItemComplete(work, implementationPackage, repo, evidence);
+    } catch (error) {
+      guardError = error;
+    }
+  }
+  const nextStage = VISUAL_STAGE_NEXT[visualStage];
+  if (nextStage) {
+    return {
+      message: guardError?.message ?? `场景 ${visualStage} 当前阶段已通过，不能直接 COMPLETE`,
+      next: `在同一 Work Item 中显式迁移到 ${nextStage} 后再继续`,
+      disposition: guardError ? 'repair' : null,
+      errorCode: guardError?.errorCode ?? 'SCENE_NEXT_VISUAL_STAGE_REQUIRED',
+    };
+  }
+  return guardError ? toBlocker(guardError, '场景 Work Item 完成门未满足') : null;
+}
+
+/** 为 run 的每一步只允许无审批、无外部动作、非 RETURN 的安全状态迁移。 */
 function safeTransitionTarget(inspection, deps) {
   const { work, route, implementationPackage, executionState, evidence } = inspection;
   const level = work.pendingApprovalActionLevel;
   if (inspection.blockers.length || work.globalState === 'RETURN' || route?.userInputRequired || route?.explicitApprovalRequired) return null;
   if (['A4', 'A5', 'A6'].includes(level)) return null;
-  if (['INTAKE', 'BASELINE', 'PROPOSAL'].includes(work.globalState)) return route?.nextLegalState && route.nextLegalState !== 'RETURN' ? route.nextLegalState : null;
+  if (['INTAKE', 'BASELINE', 'PROPOSAL'].includes(work.globalState)) return SAFE_RUN_TARGETS.has(route?.nextLegalState) ? route.nextLegalState : null;
   if (work.globalState === 'REVIEW') {
     if (level === 'A1' && work.diffAuditRecord) return 'VALIDATING';
     if (level === 'A2') return 'IMPLEMENTING';

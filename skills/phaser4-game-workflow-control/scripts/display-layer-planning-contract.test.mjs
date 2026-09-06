@@ -199,11 +199,15 @@ function highFidelityFixture(unitType, displayLayerIds) {
   for (const path of Object.values(files)) writeFileSync(path, `${path}\n`, "utf8");
   // 生成高保真证据引用时统一使用仓库相对路径和当前字节哈希。
   const relativeArtifact = (path) => ({ file: path.slice(repo.length + 1).replaceAll("\\", "/"), sha256: hashFile(path), sceneId: "main" });
-  // 为显示层上下文证据补齐宿主和显示层身份，保持与前置合同的严格字段一致。
+  // 上下文条目与宿主图片是两层合同；保持嵌套结构才能让测试命中唯一匹配上下文门。
   const contextArtifact = (displayLayerId) => ({
-    ...relativeArtifact(files.sceneMaster),
     displayLayerId,
     hostSceneId: "main",
+    hostContextImage: {
+      ...relativeArtifact(files.sceneMaster),
+      displayLayerId,
+      hostSceneId: "main",
+    },
   });
   const evidence = {
     schemaVersion: "phaser4-scene-v2-reconstruction-plan/1.0",

@@ -1,5 +1,15 @@
 import { resolve } from 'node:path';
 
+/** 生成可复算的完整输入身份，嵌套对象按键排序但保留数组顺序。 */
+function stableIdentity(value) {
+  if (value === undefined) return 'undefined';
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return `[${value.map(stableIdentity).join(',')}]`;
+  if (typeof value === 'object') return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableIdentity(value[key])}`).join(',')}}`;
+  if (typeof value === 'number' && Number.isNaN(value)) return 'number:NaN';
+  return `${typeof value}:${JSON.stringify(value)}`;
+}
+
 /**
  * 单次控制命令的只读校验上下文。
  * 同一命令内共享 JSON、Implementation Package、manifest、authority 和已校验 Work Item，
@@ -39,6 +49,7 @@ export class ValidationContext {
     const target = this.resolvePath(path);
     this.cache.set(`json:${target}`, value);
     this.cache.delete(`work:${target}`);
+    this.clearDerivedValidationCaches();
     if (validated) this.cache.set(`work:${target}`, value);
     return value;
   }
@@ -47,6 +58,12 @@ export class ValidationContext {
   invalidate(path) {
     const target = this.resolvePath(path);
     for (const key of this.cache.keys()) if (key.endsWith(`:${target}`) || key.includes(`:${target}:`)) this.cache.delete(key);
+    this.clearDerivedValidationCaches();
+  }
+
+  /** 清除依赖 Work Item、Implementation Package 或 manifest 的派生结果，避免写入后误用旧校验。 */
+  clearDerivedValidationCaches() {
+    for (const key of this.cache.keys()) if (key.startsWith('manifest:') || key.startsWith('authority:') || key.startsWith('package:')) this.cache.delete(key);
   }
 
   /** 读取当前命令的审批账本；未提供账本时只返回稳定的空账本。 */
@@ -72,15 +89,8 @@ export class ValidationContext {
   /** 缓存当前 Work Item、实施包及其拆解委派对应的 immutable authority。 */
   authorityFor(pkg, work, delegations = [], manifestSnapshot = this.loadVisualManifestSnapshot(pkg)) {
     if (!this.deps.visualConfirmationAuthority || !pkg || !work) return null;
-    const identity = JSON.stringify({
-      workItemId: work.workItemId,
-      baselineHash: work.baselineHash,
-      stageId: work.stageId,
-      visualConfirmationAuthorityRefs: work.visualConfirmationAuthorityRefs ?? null,
-      packageId: pkg.packageId,
-      manifestSha256: pkg.visualManifestSha256 ?? null,
-      delegations: delegations.map((item) => `${item?.workItemId ?? ''}:${item?.assignedAgent ?? ''}:${JSON.stringify(item?.ownership ?? [])}`).sort(),
-    });
+    // authority 会读取完整合同内容；只拼接少量 ID 会在范围、授权或包字段变化时误命中旧结论。
+    const identity = stableIdentity({ repo: this.repo, work, pkg, delegations, manifestSnapshot });
     const key = `authority:${identity}`;
     if (!this.cache.has(key)) {
       this.cache.set(key, this.deps.visualConfirmationAuthority(work, manifestSnapshot?.manifest ?? null, {
@@ -95,14 +105,8 @@ export class ValidationContext {
 
   /** 校验并缓存实施包；manifest 和 authority 都从同一上下文派生，避免重复合同遍历。 */
   validateImplementationPackage(pkg, work, delegations = []) {
-    const packageKey = `package:${JSON.stringify({
-      packageId: pkg?.packageId ?? '<unknown>',
-      workItemId: work?.workItemId ?? '<unknown>',
-      stageId: work?.stageId ?? '',
-      baselineHash: pkg?.baselineHash ?? '',
-      manifestSha256: pkg?.visualManifestSha256 ?? '',
-      delegations: delegations.map((item) => item?.assignedAgent ?? '').sort(),
-    })}`;
+    // 包校验依赖完整 Work Item、包和委派内容，任何授权、范围或执行计划变化都必须重验。
+    const packageKey = `package:${stableIdentity({ repo: this.repo, work, pkg, delegations })}`;
     if (!this.cache.has(packageKey)) {
       const manifestSnapshot = this.loadVisualManifestSnapshot(pkg);
       const authority = this.authorityFor(pkg, work, delegations, manifestSnapshot);

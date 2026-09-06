@@ -142,7 +142,7 @@ function makeApproval(work, overrides = {}) {
 }
 
 /** 创建完整控制工件夹具。 */
-function setup(workOverrides = {}, approvals = []) {
+function setup(workOverrides = {}, approvals = [], packageFactory = makePackage) {
   const { repo, head } = makeRepo();
   const root = join(repo, '.workflow-control');
   const workPath = join(root, 'work-items', 'WI-1.json');
@@ -150,10 +150,10 @@ function setup(workOverrides = {}, approvals = []) {
   const packagePath = join(root, 'implementation-package.json');
   mkdirSync(join(root, 'evidence', 'WI-1'), { recursive: true });
   const workValue = makeWork(head, workOverrides);
-  const packageValue = makePackage();
+  const packageValue = packageFactory();
   const visualEvidenceSha = hashFile(join(repo, 'docs', 'high-fidelity-scene.json')); const v3EvidenceSha = hashFile(join(repo, 'docs', 'v3-acceptance.json')); const v4EvidenceSha = hashFile(join(repo, 'docs', 'v4-runtime-candidate.json'));
   workValue.visualStageEvidenceRefs.V2.sha256 = visualEvidenceSha; workValue.visualStageEvidenceRefs.V3.sha256 = v3EvidenceSha; workValue.visualStageEvidenceRefs.V4.sha256 = v4EvidenceSha;
-  packageValue.executionUnits.find((unit) => unit.unitId === 'SCENE-1').highFidelityPrerequisite.evidenceSha256 = visualEvidenceSha;
+  const sceneUnit = packageValue.executionUnits.find((unit) => unit.unitId === 'SCENE-1'); if (sceneUnit?.highFidelityPrerequisite) sceneUnit.highFidelityPrerequisite.evidenceSha256 = visualEvidenceSha;
   writeJson(workPath, { ...workValue, ...workOverrides });
   writeJson(ledgerPath, { schemaVersion: '1.0', approvals });
   writeJson(packagePath, packageValue);
@@ -267,7 +267,7 @@ function makeEvidence(fixture, audit) {
   writeFileSync(output, 'tests passed\n');
   const rel = '.workflow-control/evidence/WI-1/test-output.txt';
   const common = { status: 'PASS', baselineHash: HASH, diffFingerprint: audit.diffFingerprint };
-  return { evidenceId: 'EV-1', batchId: 'BATCH-1', workItemId: 'WI-1', baselineHash: HASH, codeFingerprint: `git:${fixture.head}`, diffFingerprint: audit.diffFingerprint, recordedAt: new Date(Date.parse(audit.recordedAt) + 1000).toISOString(), commands: [{ command: 'node --test', exitCode: 0, outputFile: rel, outputHash: hashFile(output) }], environment: { node: process.version }, dataSources: ['git diff'], files: [rel], fileHashes: { [rel]: hashFile(output) }, gateResults: { F0: { ...common, authorizationId: 'TASK-WI-1' }, F1: { ...common }, F2: { ...common, reviewer: 'independent-reviewer', reviewMode: 'INDEPENDENT' }, F3: { ...common, evidenceId: 'EV-1' } }, verdict: 'PASS', uncoveredItems: [], completedOutputs: ['src/main.js'], completedUnitIds: ['SHARED-1', 'MODULE-1', 'SCENE-1'], satisfiedExitCriteria: ['tests pass'] };
+  return { evidenceId: 'EV-1', batchId: 'BATCH-1', workItemId: 'WI-1', baselineHash: HASH, codeFingerprint: `git:${fixture.head}`, diffFingerprint: audit.diffFingerprint, recordedAt: new Date(Date.parse(audit.recordedAt) + 1000).toISOString(), commands: [{ command: 'node --test', exitCode: 0, outputFile: rel, outputHash: hashFile(output) }], environment: { node: process.version }, dataSources: ['git diff'], files: [rel], fileHashes: { [rel]: hashFile(output) }, gateResults: { F0: { ...common, authorizationId: 'TASK-WI-1' }, F1: { ...common }, F2: { ...common, reviewer: 'independent-reviewer', reviewMode: 'INDEPENDENT' }, F3: { ...common, evidenceId: 'EV-1' } }, verdict: 'PASS', uncoveredItems: [], completedOutputs: ['src/main.js'], completedUnitIds: JSON.parse(readFileSync(fixture.packagePath, 'utf8')).executionUnits.map((unit) => unit.unitId), satisfiedExitCriteria: ['tests pass'] };
 }
 
 test('基础实施包：仅伪造冻结状态而缺少三候选人工证据时 fail closed', () => {
@@ -325,7 +325,7 @@ test('A3：有效实施包和任务授权无需 Approval Ledger', () => {
 });
 
 test('A3：F0-F3 通过后 PASSED 可直接 COMPLETE', () => {
-  const f = setup();
+  const f = setup({ visualStage: 'V0', visualStageState: 'not-started' }, [], makeFoundationPackage);
   const { audit } = auditA3(f);
   const evidencePath = join(f.root, 'evidence', 'WI-1', 'evidence.json');
   writeJson(evidencePath, makeEvidence(f, audit));
@@ -337,7 +337,7 @@ test('A3：F0-F3 通过后 PASSED 可直接 COMPLETE', () => {
 });
 
 test('A1：从 REVIEW 连续推进不经过审批状态且不需要 Ledger', () => {
-  const f = setup({ globalState: 'REVIEW', pendingApprovalActionLevel: 'A1', pendingApprovalActionType: 'phaser-spec-candidate', pendingApprovalFileScope: ['docs'] });
+  const f = setup({ globalState: 'REVIEW', visualStage: 'V0', visualStageState: 'not-started', pendingApprovalActionLevel: 'A1', pendingApprovalActionType: 'phaser-spec-candidate', pendingApprovalFileScope: ['docs'] }, [], makeFoundationPackage);
   const record = join(f.root, 'evidence', 'WI-1', 'a1-audit.json');
   const audited = run('diff-audit', ['--work-item', f.workPath, '--baseline', f.head, '--baseline-hash', HASH, '--action-level', 'A1', '--action-type', 'phaser-spec-candidate', '--artifact', 'docs/spec.md', '--record', record], f.repo);
   assert.equal(audited.status, 0, audited.stderr);
@@ -840,10 +840,10 @@ test('并行批次不可变：委派内容、哈希、派生数组和历史批�
 });
 
 test('单元证据严格映射：files 重复或 fileHashes 多余均拒绝', () => {
-  const f = setup(); writeUnitResults(f); const resultPath = join(f.root, 'evidence', 'WI-1', 'units', 'SHARED-1.json');
+  const f = setup(); writeUnitResults(f, {}, { completeState: false }); const resultPath = join(f.root, 'evidence', 'WI-1', 'units', 'SHARED-1.json');
   let result = JSON.parse(readFileSync(resultPath, 'utf8')); result.files.push(result.files[0]); writeJson(resultPath, result);
   rejects(run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', resultPath], f.repo), /files 不得重复/);
-  writeUnitResults(f); result = JSON.parse(readFileSync(resultPath, 'utf8')); result.fileHashes['.workflow-control/evidence/WI-1/units/extra.txt'] = `sha256:${'c'.repeat(64)}`; writeJson(resultPath, result);
+  writeUnitResults(f, {}, { completeState: false }); result = JSON.parse(readFileSync(resultPath, 'utf8')); result.fileHashes['.workflow-control/evidence/WI-1/units/extra.txt'] = `sha256:${'c'.repeat(64)}`; writeJson(resultPath, result);
   rejects(run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', resultPath], f.repo), /fileHashes 必须与 files 精确一致/);
 });
 

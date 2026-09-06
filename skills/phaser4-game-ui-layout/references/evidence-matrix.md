@@ -2,9 +2,11 @@
 
 所有快照、运行轨迹和关系测试必须绑定同一代码候选 SHA/候选 ID、合同版本、视口配置、语言、状态、随机种子和稳定帧。缺证据时报告“未验证”，不以用户确认或旧候选替代。
 
+布局审阅页属于 V2 可读展示产物：必须与冻结参考图、拆解 proposal、布局决策、节点 JSON 和标准布局 PNG 绑定同批真实 SHA；它帮助人工检查关系，但不替代 PNG、F2 机器验收或 V4 运行证据。产物目录、坐标映射、审阅页身份和确认字段详见[离线布局审阅产物](layout-review-artifacts.md)。
+
 冻结视觉目标下，每个 parity case 还必须绑定目标 SHA、当前候选 SHA、scene/state、实际有效 DPR（(0,1.5]）、输入轨迹、动画采样/稳定帧、视觉基线版本、双方证据、预定义容差、例外 ID 和结论。关键对齐同时保存稳定 element/reference ID、双轴关系、目标/运行几何测量以及实际执行且通过的测试 ID。任何身份变化都使旧 case 失效。
 
-effect-image 的 parity case 不能退化为 `structured-layout-and-independent-review`：必须提供完整 viewport reference/candidate、side-by-side、overlay/diff 和全部 coverage region 的 target/candidate fact、delta、tolerance、result、evidence。任何 `unknown`、`unverified`、`missing` 或未解释差异都使 V5/F2 失败。
+effect-image 的 parity case 不能退化为 `structured-layout-and-independent-review`：必须提供完整 viewport reference/candidate、side-by-side、overlay/diff 和全部 coverage region 的 target/candidate fact、delta、tolerance、result、evidence。任何 `unknown`、`unverified`、`missing` 或未解释差异都使 V4/F2 失败。
 
 `specified` 只冻结目标测量与测试合同，不要求尚未产生的运行证据；`verified` 才要求运行测量、实际证据以及非空且全部通过的 parity cases。普通布局为 `not-applicable`，不创建伪造冻结目标。
 

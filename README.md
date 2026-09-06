@@ -30,7 +30,7 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 需求与范围 → 全局基线 → 基础工程 → 逐场景生产 → 全局集成验证 → 发布
 ```
 
-单场景视觉任务在“逐场景生产”内按“场景定义 → 方向确认 → 生产就绪 → 正式实现与运行验收”推进。该视图只简化展示；全局状态、G0-G3、V0-V5、A0-A6、F0-F4 和证据硬门继续由控制面维护。
+单场景视觉任务在“逐场景生产”内按“场景定义 → 拆解确认 → 资源与组合验收 → 正式实现与运行验收”推进。该视图只简化展示；全局状态、G0-G3、V0-V4、A0-A6、F0-F4 和证据硬门继续由控制面维护，详见[控制模型](skills/phaser4-game-workflow-control/references/control-model.md)与[状态、阶段与停止门](skills/phaser4-game-workflow-control/references/state-gates.md)。
 
 先在目标 Phaser 项目根目录初始化一个 Work Item。下面的 PowerShell 示例会以当前 Git HEAD 作为不可变基线，可直接复制执行：
 
@@ -48,13 +48,13 @@ node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs
 node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs status --repo . --work-item <work-item> [--input <file> ...]
 ```
 
-`run` 只读取、校验、推导路线，并在无风险时最多推进一个控制面状态；它不运行业务代码、测试、服务、外部动作或发布，也不会自动选择 `RETURN`。`check` 完全只读。三个入口可重复传入 `--input <file>` 绑定显式关键输入，默认文本优先显示六阶段/四步视图；JSON 仍输出稳定的 `status/stage/changed/blocking/next/metadata`，并在 `metadata.workflowView` 提供展示映射、`metadata.planFingerprint` 返回不含时间戳的确定性计划指纹。
+`run` 只读取、校验、推导路线，并连续推进已满足条件的安全控制面状态，进入实施或遇到缺证据、用户决定时停止；它不运行业务代码、测试、服务、外部动作或发布，也不会自动选择 `RETURN`。`check` 完全只读。三个入口可重复传入 `--input <file>` 绑定显式关键输入，默认文本优先显示六阶段/四步视图；JSON 仍输出稳定的 `status/stage/changed/blocking/next/metadata`，并在 `metadata.workflowView` 提供展示映射、`metadata.planFingerprint` 返回不含时间戳的确定性计划指纹。
 
 ## 控制面边界
 
 - `$phaser4-game-workflow-control` 独占全局状态、风险门、任务授权、状态迁移和证据一致性。
 - A0-A3 依据任务授权；A4-A6 的具体集成、外部写入、真机、破坏性操作和发布必须逐对象建立 pending 并获得显式批准。控制面只校验和记录，不代执行这些动作。
-- V0→V1→V2→V3→V4→V5 的视觉硬门、全局静态基线、场景方向和高保真前置继续使用带路径与 SHA 的不可变证据；缺失或失效时 fail closed。
+- V0→V1→V2→V3→V4 的视觉硬门、全局静态基线、场景拆解与布局确认、高保真前置继续使用带路径与 SHA 的不可变证据；缺失或失效时 fail closed。阶段与字段以控制面文档和 Schema 为准。
 - 共享工作区不自动回滚、不覆盖他人修改；启动本地验证服务前先查找同项目健康实例并复用。
 
 详细状态、门、Schema 和返工语义见 [`phaser4-game-workflow-control`](skills/phaser4-game-workflow-control/SKILL.md) 及其 [`control-model.md`](skills/phaser4-game-workflow-control/references/control-model.md)、[`state-gates.md`](skills/phaser4-game-workflow-control/references/state-gates.md)、[`schemas.md`](skills/phaser4-game-workflow-control/references/schemas.md)。

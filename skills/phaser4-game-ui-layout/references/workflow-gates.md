@@ -10,12 +10,12 @@
 - F3：实际运行合同验证器、类型检查、测试、构建与响应式测量，并生成绑定当前 diff 的 Evidence Manifest。
 - F4：只批准当前布局候选集成；不能批准视觉资源、玩法代码、外部或发布动作。
 
-effect-image 例外：V1–V3 必须先验证 `scene_reconstruction_contract`、必填 `display_layer_planning` 和 target-bound layout binding；scene master 只包含基础场景与常驻 HUD，瞬态层必须按 required state 提供宿主场景上下文效果图。V4 必须有正式 Scene 同屏组合预验收；V5/F2 必须消费逐区域 fidelity matrix，并重放显示层打开→交互→关闭/恢复轨迹。旧通用布局或“资源 loaded/used”工程证据只能作为子门，不能单独产生视觉 PASS 或 COMPLETE。
+effect-image 例外：V1–V3 必须先验证 `scene_reconstruction_contract`、必填 `display_layer_planning` 和 target-bound layout binding；scene master 只包含基础场景与常驻 HUD，瞬态层必须按 required state 提供宿主场景上下文效果图。V3 必须有正式 Scene 同屏组合预验收，V4/F2 必须消费逐区域 fidelity matrix，并重放显示层打开→交互→关闭/恢复轨迹。旧通用布局或“资源 loaded/used”工程证据只能作为子门，不能单独产生视觉 PASS 或 COMPLETE。
 
 ## 阶段映射
 
-- V1/V2 处于 `PROPOSAL`、`REVIEW`；V2 固定先生成并人工确认拆解图和技术 JSON，再由智能视觉判断生成逐元素双轴对齐决策，最后消费已确认元素与该决策生成独立布局标注图。布局决策或布局图人工修改后必须重新生成并通过独立 `layout-annotation-confirmation/1.0`；缺失视觉决策时不得按距离兜底。
-- V3/V4/V5 处于 `IMPLEMENTING`、`VALIDATING`、`PASSED`、`INTEGRATING`。
+- V1/V2 处于 `PROPOSAL`、`REVIEW`；V2 固定先生成并人工确认拆解图和技术 JSON，再由智能视觉判断生成逐元素双轴对齐决策，最后消费已确认元素与该决策在同一候选目录生成布局标注 PNG、节点 JSON、决策 JSON、离线 `review.html` 和生成结果。布局决策或任一布局产物人工修改后必须重新生成并通过独立 `layout-annotation-confirmation/1.0`；缺失视觉决策时不得按距离兜底。审阅页合同见[离线布局审阅产物](layout-review-artifacts.md)。
+- V3/V4 处于 `IMPLEMENTING`、`VALIDATING`、`PASSED`、`INTEGRATING`。
 - G0-G3 保留为 `stageId`，不能改变全局状态。
 
 合同验证通过不能覆盖 F0 路径越界或 F1 规格漂移。合同、候选、基线、视口输入或代码/diff 指纹变化后，旧证据失效。

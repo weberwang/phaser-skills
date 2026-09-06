@@ -2,7 +2,7 @@
 
 版本：2026-09-05（显示层子任务修订）。依据：当前仓库文档、控制脚本、校验契约及已明确的用户要求；本次增加“所有显示层先记录为子任务，宿主继续推进、子任务按依赖并行准备”。
 
-本文用于迁移流程与业务规则，不表示 App 已实现下述能力，也不授权测试、发布或其他外部操作。
+本文用于迁移流程与业务规则，不表示 App 已实现下述能力，也不授权测试、发布或其他外部操作。全局状态、风险处置、视觉阶段硬门和字段定义以[控制模型](../skills/phaser4-game-workflow-control/references/control-model.md)、[状态、阶段与停止门](../skills/phaser4-game-workflow-control/references/state-gates.md)及对应 Schema 为唯一来源；本文只记录 App 所需的业务投影和领域流程。
 
 ## 1. 阅读约定与不可变原则
 
@@ -25,29 +25,14 @@
 5. 左/中/右、上/中/下主要由原图构图、视觉重心与元素语义判断；几何测量服务工程参数和验证，不能替代视觉判断。
 6. 布局图是在原图上框出父子容器；同层级同色；空容器也框出；右侧说明父容器与子组件的相对位置。
 7. 拆解图与布局图是两张独立 PNG，分别允许人工修改、分别确认。布局确认不能替代拆解确认。
-8. 修改上游身份后，受影响的下游方案、确认和证据失效；不得偷偷沿用旧确认。
+8. 布局入口在 `--output` 所在候选目录同步生成 `layout.png`、`layout-nodes.json`、`layout-decision.json`、离线 `review.html` 和 `generation-result.json`；审阅页直接消费同批冻结参考图与节点 JSON，不能只提供长图。
+9. 修改上游身份后，受影响的下游方案、确认和证据失效；不得偷偷沿用旧确认。
 
 ## 2. 总体流程与四个不同维度
 
 ### 2.1 项目业务主线
 
-```text
-需求与范围
-  → 全局视觉 brief → 恰好三张同条件候选 → 人工选定一张 → 全局基线冻结
-  → 场景无关基础工程
-  → 按授权范围逐场景生产
-      V0 分流
-      V1 场景规格、主参考图、本次完整显示层上下文与合同冻结
-         └ 未就绪显示层：登记子任务 → 由指定责任方按依赖并行推进
-      V2 状态分析 → 原子拆解 → 拆解图 → 人工修改确认
-         → 唯一布局推导 → 布局图 → 人工修改确认 → 生产计划冻结
-      V3 正式资源生产 → 资源级验收 → 宿主同屏组合预验收
-      正式 SCENE / DISPLAY_LAYER 功能实现
-      V4 所有弹窗待办闭合后，运行态接入、交互重放、视觉/功能/响应式联合验收
-  → 全部授权场景完成 → 跨场景集成与完整验证
-  → 精确 A4 批准 → 正式入口集成
-  → 如需发布：独立发布 Work Item → 对应批准 → 构建/外部配置/发布 → 留存结果
-```
+项目展示主线沿用[简化工作流视图](../skills/phaser4-game-workflow-control/references/simplified-workflow.md)；App 只投影需求、基线、基础工程、逐场景生产、集成验证和发布六个阶段。逐场景的业务产物按 V0→V4 组织：V1 冻结场景目标，V2 依次完成拆解与布局确认，V3 完成正式资源及宿主同屏组合预验收，正式实现后由 V4 完成运行态联合验收。
 
 旁路：任何节点都可能等待用户输入、修复、重新验证，或在冻结事实真正失效时返回最早受影响节点。不能一律从头再来。
 
@@ -76,41 +61,11 @@
 
 ### 2.4 Work Item 控制状态
 
-以下迁移来自当前控制脚本；实际还受动作级别、阶段和证据守卫限制，并非列出就可任意跳转。
-
-| 当前状态 | 允许的下一状态 |
-| --- | --- |
-| INTAKE | BASELINE、BLOCKED |
-| BASELINE | PROPOSAL、BLOCKED |
-| PROPOSAL | REVIEW、RETURN、BLOCKED |
-| REVIEW | VALIDATING、IMPLEMENTING、RETURN、BLOCKED |
-| IMPLEMENTING | VALIDATING、RETURN、BLOCKED |
-| VALIDATING | PASSED、RETURN、BLOCKED |
-| PASSED | INTEGRATING、COMPLETE、RETURN、BLOCKED |
-| INTEGRATING | COMPLETE、RELEASE_APPROVAL_REQUIRED、RETURN、BLOCKED |
-| RELEASE_APPROVAL_REQUIRED | RELEASING、RETURN、BLOCKED |
-| RELEASING | COMPLETE、BLOCKED |
-| COMPLETE | 无 |
-| RETURN | BASELINE、PROPOSAL、REVIEW、IMPLEMENTING、BLOCKED |
-| BLOCKED | BASELINE、PROPOSAL、REVIEW、IMPLEMENTING |
-
-`USER_INPUT_REQUIRED` 是阻塞类型，不是 `globalState`。A1 可以 REVIEW→VALIDATING，不必虚构代码实施；发布状态要求独立 release Work Item。恢复不能绕过当前守卫直接跳回任意旧状态。
+状态迁移、阻塞类型和恢复边界由[状态、阶段与停止门](../skills/phaser4-game-workflow-control/references/state-gates.md)与控制脚本维护。App 只展示控制面返回的当前状态和下一动作，不复制允许迁移表，也不把 `USER_INPUT_REQUIRED` 映射成新的全局状态。
 
 ### 2.5 每个工作项都要执行的控制步骤
 
-业务节点与控制步骤交织运行，不能把“审计/验证”误解成项目最后才做一次。
-
-| 控制步骤 | 必做事项 | 退出事实 |
-| --- | --- | --- |
-| 基线捕获 | 读取范围、原有代码/规格/资源，记录不可变 baseline 身份与现有改动 | 可判断本工作项实际差异 |
-| 候选与计划 | 定义目标、模块 API/状态边界、文件所有权、预期新增/删除、命令和退出条件 | implementation package 与当前候选/差异绑定 |
-| 评审与冻结 | 执行适用 F0/F1、领域检查；实质取舍取得用户决定 | 当前计划可实施，不存在未解的决定性问题 |
-| 派发与执行 | 先检查委派/并行前置，再按冻结顺序派发；只在 IMPLEMENTING 初始化执行状态 | 当前单元真实产物与结果可核对 |
-| 差异审计 | 对真实代码/资源变化与计划、所有权做比对 | 当前 diff audit，有偏差则先处理 |
-| 选择与运行验证 | 推荐等级/命令，获得用户选择，运行适用检查 | 当前 batch 的实际证据与未覆盖项明确 |
-| 门检查与交接 | 校验身份、新鲜度、适用 F 门和退出条件；必要操作另取 F4 | PASSED、合法交接/集成或 COMPLETE |
-
-只有控制面可以改变 globalState 或写操作审批账本；领域执行者提交产物与事实，不自行宣布门通过。以上每一步失败都进入第 8 节的处理，而不是直接跳到下一业务节点。
+控制步骤、证据身份和失败处置由[控制模型](../skills/phaser4-game-workflow-control/references/control-model.md)统一定义。App 需要为每个 Work Item 展示当前候选、实施包、差异审计、验证批次、未覆盖项和下一动作；只有控制面可以改变 `globalState` 或写操作审批账本，领域执行者提交产物与事实。
 
 ## 3. 节点详细规格
 
@@ -166,17 +121,17 @@
 
 ### N07 冻结基础工程实施包
 
-- 输入：全局基线、架构规格、当前代码基线。
+- 输入：架构规格、当前代码基线和工程基线；具有视觉合同或资产生产依赖的基础包另需全局基线选择引用。
 - 执行：只规划 SHARED / MODULE 的最小骨架、配置、状态、输入、平台、资源基础设施与测试支撑；建立文件与状态所有权、顺序、命令和退出条件。
 - 产物：foundation-only implementation package、executionUnits、fileOwnership、候选/差异身份。
 - 人工点：如架构边界有实质取舍先确认；不得提前申请无对应候选的集成批准。
-- 放行：基线选择与冻结状态完整；无具体场景玩法、UI/布局、正式可见资源消费、正式 Scene 接入。失败：越界部分移入场景工作。
+- 放行：纯工程包具备任务授权、工程基线、冻结实施包和工程证据即可放行；具有视觉依赖的基础包还须通过全局基线选择与冻结状态；无具体场景玩法、UI/布局、正式可见资源消费、正式 Scene 接入。失败：越界部分移入场景工作。
 
 ### N08 实施并验证基础工程
 
 - 输入：N07 冻结实施包和 A3 授权。
 - 执行：进入 IMPLEMENTING 后初始化执行状态，按单元顺序实施；只在授权测试等级内验证，记录实际文件差异与命令证据。
-- 产物：基础工程候选、单元结果、diff audit、适用 F0–F3 证据及交接。
+- 产物：基础工程候选、单元结果、diff audit、适用 F0–F3 证据及当前阶段引用。
 - 人工点：先推荐测试等级/理由/命令，再等待明确选择；不得自动启动真机。
 - 放行：所有当前单元通过，工程范围合规。失败：当前单元修复重验；基础接口改变触发受影响规格和计划重审。
 
@@ -262,15 +217,15 @@
 - 输入：N17 决策、父子容器、确认元素和原图。
 - 执行：在原图框出父子容器，同层级同色，包含空容器。按确认元素原序分配唯一短编号，图上框和右侧说明同号对应，并注明父编号；密集编号避让，必要时加引线，不改变元素位置、尺寸或顺序。
 - 说明：每个父容器、空容器与子组件都单独列出相对上级的水平左/中/右、垂直上/中/下停靠，以及自身/父级锚点、双轴偏移；根标明无上级。技术 ID 与四边距离只作辅助，长说明换行并扩展画布，不得被截断。
-- 产物：独立 layout annotation PNG、布局提案/决策及绑定身份；拆解图继续单独保留。
+- 产物：同一候选目录中的 `layout.png`、`layout-nodes.json`、`layout-decision.json`、自包含 `review.html`、`generation-result.json` 及绑定身份；拆解图继续单独保留。
 - 人工点：展示图、层级树、元素关系供修改；不能只展示抽象树而不展示原图标注。
-- 放行：节点与拆解元素对应完整、空容器未漏、层级/颜色/说明一致；逐框核对唯一编号、父编号和自身停靠方案，检查实际文字与编号可见、无裁切，不能只信元数据完整标记。失败：修复关系或渲染后重新展示。
+- 放行：节点与拆解元素对应完整、空容器未漏、层级/颜色/说明一致；逐框核对唯一编号、父编号和自身停靠方案，检查实际文字与编号可见、无裁切，审阅页保持原图比例并与 PNG/节点共用坐标映射；不能只信元数据完整标记。失败：修复关系或渲染后重新展示。
 
 ### N19 人工修改并确认布局
 
-- 输入：N18 布局图与全部上游身份。
+- 输入：N18 五份同批布局产物与全部上游身份。
 - 执行：应用用户修改、重生成图、再次展示最终版本；记录精确确认。
-- 产物：layout-annotation-confirmation/1.0，绑定最终图、决策文件及上游拆解和参考身份。
+- 产物：layout-annotation-confirmation/1.0，绑定最终图、审阅页、节点文件、决策文件及上游拆解和参考身份的真实 SHA/identity。
 - 人工点：布局单独确认；不得复用拆解确认、全局三候选选择或笼统“继续”。
 - 放行：最终布局图与决策一致且确认有效。失败：留布局阶段；改了拆解则必须先重新完成拆解确认。
 
@@ -278,26 +233,26 @@
 
 - 输入：两个有效确认、V1 合同、状态/组件/资源/布局事实。
 - 执行：逐 scene/state 回对完整画布与 region，核对 coverage、生产路线、所有权、输出路径、资源尺寸和复用身份；形成统一 scene V2 plan 与实施包生产单元。
-- 产物：phaser4-scene-v2-reconstruction-plan/1.0、visual-assets.json（当前 schema 1.5）、visualProductionUnits、布局合同、v2-production-planning-complete。
+- 产物：phaser4-scene-v2-reconstruction-plan/1.0、visual-assets.json（当前 schema 1.5）、visualProductionUnits、布局合同、同批布局五份产物及其 SHA、v2-production-planning-complete。
 - 人工点：生产规格/预算实质变化才需对应新决策；字段修复不滥用新审批。
 - 放行：覆盖率 1、无未覆盖区域、全画布摘要和证据有效；不能用小区域伪装全覆盖，也不能延期主参考中已有的可见内容。effect-image 使用 effect-image/v2-ready；普通资产 not-applicable。SCENE 与已就绪 DISPLAY_LAYER 引用同一场景计划并绑定准确 scene/host/layer；待办留在其引用的场景合同，不塞入缺图的 displayLayerContexts 或可执行单元。
 - 失败：缺方案按最小影响范围补方案；文件/映射问题 repair；冻结事实变化才 return。真实文件验证通过后方能派生位图。
 
-### N21 V2 完成与 V3 交接
+### N21 V2 完成并进入 V3
 
 - 输入：N20 方案和当前 Work Item 证据。
-- 执行：核对 V3-FORMAL-ACCEPTANCE 交接内容、下一责任方、冻结产物和依赖；完成当前工作项适用验证与关闭动作。
-- 产物：可消费的 V3 handoff、冻结方案引用、前后 Work Item 关联。
-- 人工点：不把交接当新视觉方向审批，也不让下游重新挑布局。
-- 放行：交接方案可复核，V2 当前工作项可按 VALIDATING→PASSED→COMPLETE 结束；V3 消费者保留上游身份。
-- 失败：方案或证据缺失就阻断交接。注意：源文档同时存在“同一 Work Item 全程”与“V3 后续 Work Item”表述，App 建模处理见第 10 节。
+- 执行：在同一场景 Work Item 内通过控制面阶段入口校验 V2 的拆解确认、布局确认、冻结产物和依赖，并将当前阶段引用交给 V3。
+- 产物：同一 Work Item 下可消费的 V2 阶段引用、冻结方案引用和当前候选身份。
+- 人工点：不把阶段入口当新视觉方向决定，也不让下游重新挑拆解或布局。
+- 放行：同一 Work Item 的 V2 证据可复核，V3 入口满足当前控制面门；不创建新的消费者 Work Item。
+- 失败：方案或证据缺失就阻断当前阶段，并按控制面规则 repair、revalidate 或 return。
 
 ### N22 V3 生产正式视觉资源
 
 - 输入：冻结 V2 清单、生产合同、全局锚点、参考图及授权范围。
 - 执行：资源责任方按场景顺序和 component×required state 生产/复用正式文件；保持来源和运行时输出分离，不静默覆盖 accepted 版本；同步登记权属和生成记录。
 - 产物：源文件/生成记录、正式运行时文件、每资源状态、MIME/尺寸/alpha/SHA、授权记录。
-- 人工点：外部付费/权利/预算等未授权行为先请求；不为正常生产重复做旧式视觉方向审批。
+- 人工点：外部付费/权利/预算等未授权行为先请求；正常生产沿用已确认的 V2 方案。
 - 放行：逐资源实际方法和交付形式满足冻结合同；复用必须绑定不可变 asset-reuse-snapshot/1.0 及源/兼容证据身份。
 - 失败：资源问题留 V3 修复；不得用 SVG、Graphics、程序绘图或参考图裁切替代明确要求 ImageGen 的资源。
 
@@ -392,7 +347,7 @@
 ### N33 完成开发工作项与交付
 
 - 输入：适用开发/集成证据与所有退出条件。
-- 执行：记录完成范围、产物、验证等级及结果、未执行项、剩余风险与交接；只关闭真正完成的 Work Item。
+- 执行：记录完成范围、产物、验证等级及结果、未执行项、剩余风险与交付引用；只关闭真正完成的 Work Item。
 - 产物：COMPLETE、交付摘要、可追溯产物引用。
 - 人工点：开发完成不等于发布获准；提交/推送等普通仓库操作仍按用户请求处理。
 - 放行：无必需未完成工作。失败：保留真实阻塞状态，不为了结束对话强行 COMPLETE。
@@ -507,14 +462,14 @@ V1–V3 接受合法待办；V4 拒绝非空待办。完成弹窗前置后将同
 | 实体 | 必须保留的信息/关系 |
 | --- | --- |
 | 项目 | 仓库身份、授权场景集合、平台范围、当前全局基线引用 |
-| Work Item | ID、类型/范围、globalState、动作级别、基线/候选/diff/batch、授权、交接与变更关系 |
+| Work Item | ID、类型/范围、globalState、动作级别、基线/候选/diff/batch、授权、阶段引用与变更关系 |
 | 任务授权 | 用户原文、作用域、允许动作、有效绑定；不代替 A4–A6 批准 |
 | 全局视觉基线 | 三候选、唯一人工选择、生产者工作项、冻结正文、SHA、版本、风格指纹、锚点 |
 | 场景/显示层 | sceneId、layerId、hostSceneId、类型/持久性、状态、交互/响应式/共存关系 |
 | 显示层待办 | deferred_layers 的 ID/宿主/类型/负责人/原因；与完整 inventory 互斥；不伪造参考图、目标 SHA 或完成状态 |
 | 参考目标 | 原文件、来源权属、SHA、版本、scene/state、viewport/DPR、宿主/层绑定 |
 | 拆解方案 | 状态分析、component/state/placements、按序元素、region、生产合同、技术 JSON、图与 SHA |
-| 布局方案 | 上游确认引用、按序映射、双轴对齐、父子容器（含空容器）、测量参数、图与 SHA |
+| 布局方案 | 上游确认引用、按序映射、双轴对齐、父子容器（含空容器）、测量参数、`layout.png`/`layout-nodes.json`/`layout-decision.json`/`review.html`/`generation-result.json` 与真实 SHA |
 | 人工决策/确认 | 具体类型、展示版本、用户原文/消息身份、结论、对象及全套 SHA、时间、失效关系 |
 | 用户解析账本 | 控制面根据真实用户消息生成的 user-resolution/receipt/entry 关联及身份；实现者不可自行写入 |
 | 资源与生产单元 | ID/纹理键、场景或共享归属、component×state、路径、方法/输出/生成记录/授权、状态、SHA |
@@ -553,21 +508,7 @@ V1–V3 接受合法待办；V4 拒绝非空待办。完成弹窗前置后将同
 
 ### 7.1 动作级别与门
 
-| 级别 | 含义 | 授权边界 |
-| --- | --- | --- |
-| A0 | 检查/分析 | 不实施生产改动 |
-| A1 | 规格/候选方案 | 不默认授权正式生产实现 |
-| A2 | 隔离原型 | 限原型范围 |
-| A3 | 正式生产代码、QA 构建等 | taskAuthorization 可覆盖；测试仍按用户选择 |
-| A4 | 正式集成、迁移、正式入口、删除旧实现等 | 精确操作批准 |
-| A5 | 外部构建上传、后端/渠道配置等 | 精确操作批准，声明外部动作 |
-| A6 | 真机、商店提交、发布、线上回滚等 | 精确操作批准，绝不自动执行 |
-
-F0=授权/流程，F1=规格，F2=领域质量，F3=工程运行证据，F4=具体高影响操作。
-
-这些风险门不是五次顺序人工审批；视觉 F2 使用确定性 MACHINE 证据，不能自动推导为所有领域免独立审查。通用证据契约中 A3–A6 的 F2 独立性要求仍需遵守，A1/A2 可允许 SELF。
-
-G0=项目准备，G1=全部授权功能实施，G2=完整候选验证/集成，G3=发布；不能把 G2 用来补漏 G1。
+动作等级、F0-F4、G0-G3 及其授权边界以[控制模型](../skills/phaser4-game-workflow-control/references/control-model.md)、[状态、阶段与停止门](../skills/phaser4-game-workflow-control/references/state-gates.md)和对应 Schema 为准。App 只保存和展示控制面返回的门结果，不复制等级枚举、风险解释或迁移顺序；测试授权、设计决定和 A4-A6 操作批准继续保持独立记录。
 
 ### 7.2 测试等级与 App 行为
 
@@ -584,24 +525,9 @@ G0=项目准备，G1=全部授权功能实施，G2=完整候选验证/集成，G
 
 ## 8. 失败、回退与恢复
 
-| 情况 | 处置 | 不应做的事 |
-| --- | --- | --- |
-| 文件/字段/绑定/输出与冻结方案不符 | repair，保留仍有效的冻结事实 | 为字段错重新请用户选择视觉方向 |
-| 同一目标/候选/差异/基线的证据缺失、旧或失败 | revalidate 当前门 | 复用过期日志、直接 PASS |
-| 冻结范围/参考/拆解/布局/生产规格真实失效 | 显式 return 到最早受影响阶段 | 任意重启全部项目或偷偷改上游 |
-| 用户取舍缺失 | USER_INPUT_REQUIRED 阻塞并列缺失问题 | 把沉默、代理推断记成用户批准 |
-| 显示层子任务未就绪 | 显式登记 deferred_layers；宿主满足自身前置可继续，子任务并行推进 | 自动抢占主线、误报子任务已完成或抹掉主图可见事实；最终 V4 不得带待办通过 |
-| 外部依赖/权限/操作失败 | BLOCKED 或当前执行失败，留真实状态 | 假造完成或自动扩大外部操作 |
+失败处置、证据失效传播和最小回退范围以[控制模型](../skills/phaser4-game-workflow-control/references/control-model.md)与[状态、阶段与停止门](../skills/phaser4-game-workflow-control/references/state-gates.md)为准。App 只展示控制面返回的 `repair`、`revalidate`、`return`、`BLOCKED` 或 `USER_INPUT_REQUIRED` 及其 `affectedScope`，不得复制另一套风险分类。
 
-return 必须记录最小 `stage:` / `scene:` / `artifact:` 范围、invalidatedArtifacts、previousValidationBatchId、recordedAt/resolvedAt；清理受影响待批准项、视觉快照、差异审计，按影响使实施包/执行状态失效并更换验证批次，保留历史审计。
-
-典型失效传播：
-
-- 全局基线变更 → 受影响场景参考、V2、资源一致性和后续证据重新评估。
-- 拆解元素或其身份变更 → 旧拆解确认及依赖它的布局/生产计划不能继续使用。
-- 仅布局关系变更且拆解不变 → 重生成布局图并重新布局确认；不无故重做拆解。
-- 正常生产候选推进且冻结设计未变 → 刷新当前工程证据，不自动重复设计确认。
-- 代码/差异变化 → 旧候选工程证据和精确操作批准按绑定失效，不能只修改状态字段绕过。
+场景业务只保留以下投影：拆解元素身份变化使布局和生产方案重新确认；仅布局关系变化重生成布局并重新确认；候选身份未变的机器证据问题重验当前门；显示层待办保留在场景合同中并阻断最终 V4。所有历史版本和失效关系仍需可追溯。
 
 ## 9. App 实现建议：页面、调度与可靠性
 
@@ -614,7 +540,7 @@ return 必须记录最小 `stage:` / `scene:` / `artifact:` 范围、invalidated
 3. 全局候选选择：固定三图同屏，唯一选择，展示版本与确认回执。
 4. 场景/显示层工作台：宿主主图、完整 inventory 与待办分区、负责人/原因、状态上下文图、关系与证据；待办可派发但不自动抢占宿主主线。
 5. 拆解编辑确认：原图 PNG、按序元素、状态/组件/生产分类；修改后重生成再确认。
-6. 布局编辑确认：原图父子框、层级树、双轴居中选项、右侧关系说明；禁止隐式重排。
+6. 布局编辑确认：离线两栏审阅页与标准 PNG、原图父子框、层级树、双轴居中选项、右侧关系说明；五份同批产物和真实 SHA 可核对，禁止隐式重排。
 7. 生产与资源验收：component×state 清单、生成/去背/归一化、来源权属、审计和消费证据。
 8. 实施调度：冻结顺序、依赖/并行组、文件/状态所有权、屏障、每单元结果。
 9. 验证中心：等级选择、命令计划、当前候选/批次、日志、失败/未执行及证据新鲜度。
@@ -637,27 +563,14 @@ return 必须记录最小 `stage:` / `scene:` / `artifact:` 范围、invalidated
 - 外部调用超时先查回执/状态，再决定重试；未知结果不能盲目重放发布等非幂等动作。
 - 产物不可变版本化；失败记录不覆盖成功历史；回退建立失效关系而非删除审计历史。
 - 调度器只能释放已满足依赖和授权的任务，不能替用户确认图、选择测试等级或批准发布。
-- 若封装现有 CLI，保留 status/stage/changed/blocking/next/metadata、workflowView、planFingerprint；`check` 只读，`run` 只推进一次安全控制动作，不会自动替你运行测试、业务实施、服务或外部动作。
+- 若封装现有 CLI，保留 status/stage/changed/blocking/next/metadata、workflowView、planFingerprint；`check` 只读，`run` 连续推进已满足条件的安全控制状态，进入实施或遇到缺证据、用户决定时停止，不会自动替你运行测试、业务实施、服务或外部动作。
 - 建议事件包括：任务创建/授权、基线冻结、方案更新、确认接受/失效、执行启动/完成/失败、证据提交、守卫通过/拒绝、回退、操作批准/执行、工作项完成。事件名自定，不冒充现有枚举。
 
-## 10. 源规则冲突与迁移取舍
+## 10. 规则来源
 
-| 冲突/易误读点 | 迁移采用的规则 | 说明 |
-| --- | --- | --- |
-| 旧 production/architecture/QA 文案出现 V5、V1→V5 | 只用当前 V0–V4 | 当前视觉阶段契约不支持 V5；旧称运行验收归入 V4 |
-| 旧文案“拆解布局同步”“先冻结布局节点” | 拆解确认后才推导布局，布局另确认 | 遵循最新用户要求及已更新布局契约 |
-| 旧文案“V2 唯一人工确认” | V2 两个串行确认：拆解、布局 | 全局三候选选择仍是更早独立硬门 |
-| “优化布局/多个候选”式理解 | 保序保图，推导唯一布局 | 不重新生成参考、不重新排列确认元素 |
-| 文案“模块才可并行” | SHARED/INTEGRATION 串行；MODULE/SCENE/DISPLAY_LAYER 依计划可并行 | 按当前 parallel-plan 实际支持范围；不能忽略依赖 |
-| 口头“弹窗全部独立”或“不能独立验收” | 独立实现与证据可行，但必须宿主组合验收 | 不重复全局基线；不得用孤立图替代上下文 |
-| V3 与 V4 的重放要求混淆 | V3 同屏组合预验收；V4 四步运行重放 | 按显示层校验合同 |
-| 显示层缺图都阻断宿主、自动转去补图 | 所有显示层统一为子任务，未就绪先显式登记待办；宿主满足自身前置继续，子任务可并行准备 | 本轮新要求；保留常驻层主图归属，待办最终阻断 V4；不是完全独立工作项身份或免前置 |
-| “整个场景同一 Work Item”与“V2 完成、V3 后续 Work Item”并存 | 场景生命周期作为聚合根；执行工作项可分阶段交接，V2→V3 保留显式 handoff | 这是化解冲突的 App 建议；不要声称当前所有脚本已统一。上线前需统一产品选定策略与相应契约 |
-| 单数/复数拆解确认字段的旧说明 | 按各具体 schema；实施包采用 visualDecompositionConfirmations[] | 不做历史兼容双读，也不机械改其他上下文 |
-| 旧 v3-ready 或完成话术 | 使用当前实际清单/阶段字段：effect-image/v2-ready、v4-complete 等 | 视觉清单状态与 Work Item COMPLETE 不混淆 |
-| 资源“生成完/loaded/used”即完成 | 资源合同、组合、fidelity、运行重放、消费和当前证据均需闭合 | missing=0 只是工程子门 |
+迁移 App 的状态、风险、阶段硬门、确认身份、并行边界和证据字段只从[控制模型](../skills/phaser4-game-workflow-control/references/control-model.md)、[状态、阶段与停止门](../skills/phaser4-game-workflow-control/references/state-gates.md)及对应 Schema 读取。领域合同仅补充资源、布局、玩法、QA 等本领域事实；App 不再维护第二套全局规则，也不通过兼容字段或旧流程名称推断当前状态。
 
-优先级：本轮明确用户要求 → 当前有效控制/校验契约 → 与其一致的流程文档。遇到控制契约内部真冲突，标出并统一策略后落地，不能仅靠前端隐藏。
+本规格的场景业务约束保持明确：V2 先完成拆解确认，再完成布局确认；V3 完成正式资源与宿主同屏组合预验收；V4 完成运行态联合验收。场景生命周期和各阶段引用始终绑定同一场景 Work Item。
 
 ## 11. 迁移验收清单
 
@@ -666,7 +579,7 @@ return 必须记录最小 `stage:` / `scene:` / `artifact:` 范围、invalidated
 - [ ] 所有显示层可记录子任务及负责人/原因；不抢占宿主主线；HUD 待办仍 persistent 且保留主图归属。
 - [ ] 待办不进入缺前置的可执行单元；弹窗就绪后受控更新计划，最终 V4 待办非空拒绝通过。
 - [ ] 全局恰好三候选同屏，真实人工唯一选择后才能冻结。
-- [ ] 基础工程不提前消费正式场景资源或接入正式 Scene。
+- [ ] 纯工程基础包可在全局选图前实施；具有视觉依赖的基础包通过全局基线门，所有基础工程不提前消费正式场景资源或接入正式 Scene。
 - [ ] V0 正式参考图适用性不依赖新增资产数量。
 - [ ] V1 参考、宿主上下文、状态、响应式、预算、容差与权属完整。
 - [ ] 状态分析先于 component inventory；重复实例与唯一资产区分。
@@ -674,7 +587,8 @@ return 必须记录最小 `stage:` / `scene:` / `artifact:` 范围、invalidated
 - [ ] 未确认拆解时布局入口不可执行；禁止旧 layout_nodes 绕过。
 - [ ] 布局保持原元素顺序、位置尺寸和构图，双轴支持 center。
 - [ ] 布局 PNG 有父子框、同层同色、空容器和右侧关系说明。
-- [ ] 布局有独立修改/确认；不产生新参考或多方案选择。
+- [ ] 布局候选目录同步有 `layout-nodes.json`、`layout-decision.json`、`review.html`、`generation-result.json`；审阅页离线两栏、同坐标映射、中文名称和候选状态完整。
+- [ ] 布局有独立修改/确认；确认、decision、receipt 绑定审阅页/节点/PNG/决策及上游真实 SHA，不产生新参考或多方案选择。
 - [ ] 全画布 coverage 完整，production units 与区域/部件/状态一一对应。
 - [ ] ImageGen 独立位图、尺寸、透明一次去背、归一化、记录和 SHA 可验证。
 - [ ] 复用资源绑定不可变来源；accepted 文件不静默覆盖。
@@ -689,7 +603,7 @@ return 必须记录最小 `stage:` / `scene:` / `artifact:` 范围、invalidated
 - [ ] repair/revalidate/return 有明确区分、最小影响范围和审计历史。
 - [ ] 发布独立工作项，准备/上传/提交/上线状态真实区分。
 - [ ] 图片优化等显式调用分支不被插为默认节点。
-- [ ] 第 10 节冲突已在 App 契约、调度和界面中统一，不保留双套旧流程。
+- [ ] App 契约、调度和界面均引用控制面唯一规则，不保留第二套全局流程。
 
 ## 12. 依据索引
 
@@ -707,8 +621,9 @@ return 必须记录最小 `stage:` / `scene:` / `artifact:` 范围、invalidated
 - [视觉生产管线](../skills/phaser4-game-asset-integration/references/visual-production-pipeline.md)：V0–V4、component×state、生成/去背/归一化及验收。
 - [视觉还原合同](../skills/phaser4-game-asset-integration/references/visual-reconstruction.md)：冻结目标、coverage、忠实度与例外。
 - [UI 布局合同](../skills/phaser4-game-ui-layout/references/layout-contract.md)：布局关系、视口与响应式。
+- [离线布局审阅产物](../skills/phaser4-game-ui-layout/references/layout-review-artifacts.md)：通用 `review.html`、同批五份产物、坐标映射、SHA 绑定与候选确认边界。
 - [总编排](../skills/phaser4-game-orchestrator/SKILL.md)、[制作](../skills/phaser4-game-production/SKILL.md)、[架构](../skills/phaser4-game-architecture/SKILL.md)、[玩法](../skills/phaser4-gameplay-development/SKILL.md)：跨领域职责与交付。
 - [音频](../skills/phaser4-game-audio/SKILL.md)、[数值](../skills/phaser4-game-balance/SKILL.md)、[QA](../skills/phaser4-game-qa-performance/SKILL.md)、[发布](../skills/phaser4-game-release/SKILL.md)：适用领域产物与验收。
-- [图片优化](../skills/phaser4-game-image-optimization/SKILL.md)、[Spine 局部生产](../skills/phaser4-spine-generative-reskin/SKILL.md)：按需分支。领域文件中的旧 V5 等措辞按第 10 节处理。
+- [图片优化](../skills/phaser4-game-image-optimization/SKILL.md)、[Spine 局部生产](../skills/phaser4-spine-generative-reskin/SKILL.md)：按需分支，仍须引用控制面当前阶段与门定义。
 
 交付边界：本文是流程迁移规格，不表示 App 已实现。显示层待办修订涉及共享门禁、JSON schema 与测试用例；实际验证结果以对应工作项报告为准。后续实现 App 应按改动范围另行推荐并选择测试等级，本文不授权测试、服务启动或发布。

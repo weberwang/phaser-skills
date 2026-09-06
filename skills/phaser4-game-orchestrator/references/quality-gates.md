@@ -4,8 +4,8 @@ G0-G3 是领域 `stageId`，由全局控制面映射到唯一 `globalState`，�
 
 | 门 | 出口 | 全局状态范围 |
 | --- | --- | --- |
- | G0 | 建立全局基线 brief，生成三张同条件候选效果图，同屏交给人工选择确认一张；随后以不可变证据冻结全局 `visual_baseline`、授权范围和证据追踪；仅实质取舍精确确认 | `BASELINE` 至实施就绪 |
-| G1 | 完成全局三候选人工冻结后，先用 foundation-only 包实现 `SHARED` 最小项目骨架和 `MODULE` 场景无关基础模块；每个场景随后只有一条 Work Item 生命周期：V1 生成或接收并冻结 scene master/reference target、宿主上下文效果图、规格、视觉合同和初步还原草案 → 当前 Work Item 的 V2 拆解图确认、技术 JSON、coverage 与生产方案 → V3 正式视觉资源及宿主场景同屏组合预验收 → 正式 `SCENE`/`DISPLAY_LAYER` 功能代码实现 → V4 运行态视觉接入与功能/视觉联合复验；全部 gameplay/supporting 场景及其从属显示层关闭后才完成跨场景 `INTEGRATION`。foundation-only 必须同时通过 `globalVisualBaselineSelectionRef` 和 `globalStaticBaselineState=global-static-baseline-frozen`，缺失任一项时 fail closed；该全局人工选择是独立硬门，不能替代逐场景 V2 拆解确认。包含场景或集成单元的包仍以 V2 `v2-production-planning-complete` 为规划门、V3 为执行门。参考还原仅作为当前场景 Work Item 的可选视觉模式，全局静态基线只负责风格一致性 | `IMPLEMENTING` 至 `PASSED` |
+ | G0 | 建立全局基线、授权范围和证据追踪；具体候选与冻结门按控制面执行 | `BASELINE` 至实施就绪 |
+| G1 | 完成 foundation-only 基础能力，并在每个场景 Work Item 内按 V1→V4 关闭功能、资源、显示层和运行态证据；全部场景闭环后再进入 `INTEGRATION` | `IMPLEMENTING` 至 `PASSED` |
 | G2 | 对 G1 完整候选执行全场景集成、预算、响应式、性能、存档/恢复、正式资源完整性和全功能回归 | `VALIDATING` 至 `INTEGRATING` |
 | G3 | 独立发布 Work Item 聚合逐渠道候选、合规、风险和回滚；等待 A5/A6 精确审批 | `RELEASE_APPROVAL_REQUIRED` 至 `COMPLETE` |
 
