@@ -23,7 +23,7 @@ V2 拆解先遵守[功能语义分组约束](../phaser4-game-ui-layout/reference
 
 effect-image ImageGen 的完整提示词模板、asset_prompt 事实继承规则、透明生产要求和 generation_record 结构化字段统一见[《Effect-image ImageGen 忠实还原提示词合同》](references/effect-image-prompt-contract.md)。透明 alpha 单图只允许背景移除生产：先生成非透明、轮廓清晰、与主体高对比、便于去背的纯色背景，再绑定恰好一条成功的 `background_removal_attempts`。本 Skill 只保留路由和硬不变量，不在此复制模板。
 
-V3 需要使用正式 Scene 结构的同屏组合预验收；V4 需要结构化 fidelity case、逐区域测量与差异证据、确定性机器 F2、F3 runtime replay 和正式 Scene 消费证据。资源 loaded/used、missing=0、resize 稳定只属于工程子门，不能单独驱动 COMPLETE。
+V3 将当前已确认生产范围的全部待生成图片汇总为一个批量任务，一次编排提交，禁止逐张创建任务或等待上一张验收后才生成下一张；每个 component × required state 仍输出独立位图，详见[图片批量生成](references/visual-production-pipeline.md#图片批量生成)。V3 需要使用正式 Scene 结构的同屏组合预验收；V4 需要结构化 fidelity case、逐区域测量与差异证据、确定性机器 F2、F3 runtime replay 和正式 Scene 消费证据。资源 loaded/used、missing=0、resize 稳定只属于工程子门，不能单独驱动 COMPLETE。
 
 1. 读取项目配置、GDD、visual-design、TDD、控制面和资源登记；执行 [V0-V4 视觉生产管线](references/visual-production-pipeline.md)。
 2. V0 先判断任务属于原子资源、组件/资源集，还是场景/整套 UI/视觉系统/重做；参考还原是否适用只由当前场景 Work Item 的正式运行视觉目标声明决定，不由新资源或 ImageGen 需求决定。原子资源只有在结构、布局、交互和视口行为不变，且已有适用视觉契约、`AUTO` 或 `USER_DECISION` 记录、视觉可交付结论与预算基线时才能跳过 V1/V2。

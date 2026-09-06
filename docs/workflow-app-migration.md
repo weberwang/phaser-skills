@@ -251,7 +251,7 @@
 ### N22 V3 生产正式视觉资源
 
 - 输入：冻结 V2 清单、生产合同、全局锚点、参考图及授权范围。
-- 执行：资源责任方按场景顺序和 component×required state 生产/复用正式文件；保持来源和运行时输出分离，不静默覆盖 accepted 版本；同步登记权属和生成记录。
+- 执行：资源责任方按场景顺序，将当前已确认 V3 范围内全部待生成 component×required state 去重汇总为一个批量任务，一次编排提交，不逐张创建或串行等待生成任务；复用项单独按冻结合同接入。批内交付及失败项修复遵守[图片批量生成](../skills/phaser4-game-asset-integration/references/visual-production-pipeline.md#图片批量生成)。保持来源和运行时输出分离，不静默覆盖 accepted 版本；同步登记权属和生成记录。
 - 产物：源文件/生成记录、正式运行时文件、每资源状态、MIME/尺寸/alpha/SHA、授权记录。
 - 人工点：外部付费/权利/预算等未授权行为先请求；正常生产沿用已确认的 V2 方案。
 - 放行：逐资源实际方法和交付形式满足冻结合同；复用必须绑定不可变 asset-reuse-snapshot/1.0 及源/兼容证据身份。
@@ -260,7 +260,7 @@
 ### N23 ImageGen 与尺寸/透明度处理分支
 
 - 输入：N22 中明确 image_generation_required=true 的 expected_assets。
-- 执行：每个唯一 component×required state 独立位图，individual、atlas_allowed=false；记录完整提示词、全局一致性段、主参考、额外锚点、模型/版本、种子、参数与真实输出。
+- 执行：全部图片在 N22 的同一批任务内生成，每个唯一 component×required state 交付独立位图，individual、atlas_allowed=false；批量提交不得变成组合图或图集。每项记录完整提示词、全局一致性段、主参考、额外锚点、模型/版本、种子、参数与真实输出。
 - 产物：原始生成图、处理记录、normalization_record、最终 PNG/JPEG；透明资源只允许 PNG。
 - 人工点：禁止无限重试或暗改规格；无法按已冻条件处理时报告所需决策。
 - 放行：宽高分别为 ceil(最大 placement 对应尺寸 × intended_scale_range.max × 1.5) 的精确最小值，max_dpr=1.5、padding_policy=none。非 ImageGen 图集必须显式允许且逐部件状态有切片合同。

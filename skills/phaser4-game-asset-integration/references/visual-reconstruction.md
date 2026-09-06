@@ -42,7 +42,7 @@ V2 布局标注在拆解确认之后串行产出：阶段 A 先生成按人工�
 
 V3 消费 V2 已确认的拆解图、技术 JSON、coverage、布局合同和生产计划，生产正式视觉资源，并完成正式布局与宿主场景同屏组合预验收。正式资源必须保留来源、授权、机器清单、生成记录、运行时文件、组件状态和冻结目标绑定。
 
-ImageGen 区域按 V2 `component_inventory` 逐 component × required state 生产 individual 位图，`atlas_allowed=false`。宽高由逻辑像素 `ceil(max placement width/height × intended_scale_range.max × 1.5)` 决定，`max_dpr=1.5`，`padding_policy=none`。透明资产必须先生成非透明高对比纯色背景，再执行一次背景移除，并记录完整背景移除与归一化证据。
+ImageGen 区域按 V2 `component_inventory` 收齐全部待生成 component × required state，作为[一个批量生成任务](visual-production-pipeline.md#图片批量生成)一次提交；每项交付 individual 位图，`atlas_allowed=false`，不能将独立文件要求解释为逐张调度。宽高由逻辑像素 `ceil(max placement width/height × intended_scale_range.max × 1.5)` 决定，`max_dpr=1.5`，`padding_policy=none`。透明资产必须先生成非透明高对比纯色背景，再执行一次背景移除，并记录完整背景移除与归一化证据。
 
 V3 `combination_preacceptance` 必须使用正式 Scene 同结构、正式资源和正式布局计算，禁止整屏截图、隐藏覆盖层或绝对叠图。显示层必须绑定 `displayLayerId` 与 `hostSceneId`，并用宿主场景上下文图验证同屏关系。
 
