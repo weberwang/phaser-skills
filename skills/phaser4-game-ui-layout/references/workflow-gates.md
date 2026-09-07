@@ -8,7 +8,7 @@
 - F1：核对布局实现与已批准需求、布局合同、V 阶段及 Implementation Package 一致。
 - F2：独立验证坐标空间、参照关系、尺寸、断点、安全区、滚动、文案和视觉层级质量。
 - F3：实际运行合同验证器、类型检查、测试、构建与响应式测量，并生成绑定当前 diff 的 Evidence Manifest。
-- F4：只批准当前布局候选集成；不能批准视觉资源、玩法代码、外部或发布动作。
+- F4：无副作用的本地布局集成不进入额外批准门。涉及控制面列明的受保护副作用时，由控制面处理精确批准；布局技能仅提交候选与证据。`AUTO` 不替代视觉人工确认，统一遵循[控制面不可绕过约束](../../phaser4-game-workflow-control/SKILL.md#不可绕过约束)。
 
 effect-image 例外：V1–V3 必须先验证 `scene_reconstruction_contract`、必填 `display_layer_planning` 和 target-bound layout binding；scene master 只包含基础场景与常驻 HUD，瞬态层必须按 required state 提供宿主场景上下文效果图。V3 必须有正式 Scene 同屏组合预验收，V4/F2 必须消费与 `visual_validation.mode` 匹配的 fidelity 证据，并重放显示层打开→交互→关闭/恢复轨迹。默认 `usability` 检查关系、可读性和交互，不因小幅位置/尺寸差异失败；只有 `exact` 或明确精确需求时才要求逐区域严格 delta。旧通用布局或“资源 loaded/used”工程证据只能作为子门，不能单独产生视觉 PASS 或 COMPLETE。
 
