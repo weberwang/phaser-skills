@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * ImageGen 单图最小尺寸合同。
+ * 图像生成 单图最小尺寸合同。
  *
  * 该模块只计算机器可确定的输出尺寸，不承载人工审阅字段；视觉方向
  * 只由 V2 唯一拆解确认冻结，V3/V4 继续执行机器证据门。尺寸按逻辑像素、最大运行缩放和
@@ -54,7 +54,7 @@ function sizeError(context, message, details = {}) {
   const actual = details.actual === undefined ? "?" : JSON.stringify(details.actual);
   const missing = details.missing ? ` 缺失=${details.missing}` : "";
   const returnStage = details.returnStage ?? (stage === "V1" || stage === "V2" ? "V1/PROPOSAL" : stage === "V4" ? "VALIDATING" : stage);
-  return `[${stage}] annotation_number=${annotation} region_id=${region} component_id=${component} state_id=${state} asset_id=${asset} expected_method=imagegen observed_method=${context.observedMethod ?? "imagegen"} 根因=${details.rootCause ?? "ImageGen 单图尺寸合同问题"} expected=${expected} actual=${actual}${missing} ${message} 应退回阶段=${returnStage}`;
+  return `[${stage}] annotation_number=${annotation} region_id=${region} component_id=${component} state_id=${state} asset_id=${asset} expected_method=image-generation observed_method=${context.observedMethod ?? "image-generation"} 根因=${details.rootCause ?? "图像生成 单图尺寸合同问题"} expected=${expected} actual=${actual}${missing} ${message} 应退回阶段=${returnStage}`;
 }
 
 /** 判断正数有限数，拒绝 NaN、Infinity 和隐式字符串。 */
@@ -102,18 +102,18 @@ export function calculateComponentDisplaySize(region, componentId, context = {},
   return { errors, displaySize: { width, height }, inventory };
 }
 
-/** 校验单个 ImageGen expected asset 的精确最小尺寸和无留白政策。 */
+/** 校验单个 图像生成 expected asset 的精确最小尺寸和无留白政策。 */
 export function validateImageGenerationSizeContract(asset, contract, context = {}, options = {}) {
   const method = contract?.production_method ?? contract?.productionMethod;
   const required = contract?.image_generation_required ?? contract?.imageGenerationRequired;
-  if (method !== "imagegen" && required !== true) return [];
+  if (method !== "image-generation" && required !== true) return [];
   const expectedAsset = options.expectedAsset ?? contract?.expected_assets?.[0] ?? contract?.expectedAssets?.[0] ?? {};
   const region = context.region ?? options.region ?? contract?.region;
   const usage = resolveSceneAssetUsage(region, options.unit, options);
   const componentId = expectedAsset.component_id ?? expectedAsset.componentId ?? context.component_id ?? context.componentId;
   const stateId = expectedAsset.state_id ?? expectedAsset.stateId ?? context.state_id ?? context.stateId;
   const assetId = expectedAsset.asset_id ?? expectedAsset.assetId ?? context.asset_id ?? context.assetId;
-  const local = { ...context, component_id: componentId, state_id: stateId, asset_id: assetId, observedMethod: "imagegen" };
+  const local = { ...context, component_id: componentId, state_id: stateId, asset_id: assetId, observedMethod: "image-generation" };
   const errors = [];
 
   const displaySizeValue = field(usage, "target_display_size", "targetDisplaySize");
@@ -127,7 +127,7 @@ export function validateImageGenerationSizeContract(asset, contract, context = {
   const maxDpr = field(usage, "max_dpr", "maxDpr");
   if (!isMaxDpr(maxDpr)) errors.push(sizeError(local, maxDprError("max_dpr", maxDpr), { missing: "scene_asset_usage.max_dpr", expected: MAX_DPR }));
   const paddingPolicy = field(usage, "padding_policy", "paddingPolicy");
-  if (paddingPolicy !== "none") errors.push(sizeError(local, "ImageGen individual 必须使用 padding_policy=none，禁止画布额外留白", { expected: "none", actual: paddingPolicy, missing: "scene_asset_usage.padding_policy" }));
+  if (paddingPolicy !== "none") errors.push(sizeError(local, "图像生成 individual 必须使用 padding_policy=none，禁止画布额外留白", { expected: "none", actual: paddingPolicy, missing: "scene_asset_usage.padding_policy" }));
 
   const display = calculateComponentDisplaySize(region ?? options.region, componentId, local, options);
   errors.push(...display.errors);
@@ -145,7 +145,7 @@ export function validateImageGenerationSizeContract(asset, contract, context = {
   }
   const metadata = resolveOutputMetadata(asset ?? {});
   if (asset && (metadata.width !== minimum.width || metadata.height !== minimum.height)) {
-    errors.push(sizeError(local, "ImageGen 实际输出尺寸必须精确等于最小尺寸", { expected: minimum, actual: { width: metadata.width, height: metadata.height } }));
+    errors.push(sizeError(local, "图像生成 实际输出尺寸必须精确等于最小尺寸", { expected: minimum, actual: { width: metadata.width, height: metadata.height } }));
   }
   if (options.actualAsset) {
     const actual = resolveOutputMetadata(options.actualAsset);
@@ -164,7 +164,7 @@ function sceneUsageForRegion(manifest, region, unit) {
   return { region: { ...region, ...(reconstructionRegion ?? {}) }, unit, sceneAssetUsage: unit?.scene_asset_usage ?? unit?.sceneAssetUsage };
 }
 
-/** 对完整 visual manifest 执行 V3 expected、V4 actual 的 ImageGen 尺寸门。 */
+/** 对完整 visual manifest 执行 V3 expected、V4 actual 的 图像生成 尺寸门。 */
 export function validateImageGenerationSizeManifest(manifest, options = {}) {
   const errors = [];
   const regions = Array.isArray(manifest?.coverage_audit?.regions) ? manifest.coverage_audit.regions : [];
@@ -178,7 +178,7 @@ export function validateImageGenerationSizeManifest(manifest, options = {}) {
       ?? regionContract?.production_method ?? regionContract?.productionMethod;
     const required = region.image_generation_required ?? region.imageGenerationRequired
       ?? regionContract?.image_generation_required ?? regionContract?.imageGenerationRequired;
-    if (method !== "imagegen" && required !== true) continue;
+    if (method !== "image-generation" && required !== true) continue;
     const unit = units.find((item) => (item?.annotation_number ?? item?.annotationNumber) === (region.annotation_number ?? region.annotationNumber)
       && (item?.region_id ?? item?.regionId) === (region.id ?? region.region_id ?? region.regionId));
     const expectedAssets = Array.isArray(region.expected_assets)

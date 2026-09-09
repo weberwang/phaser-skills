@@ -37,7 +37,7 @@ function decompositionRegion(overrides = {}) {
     state_id: "default",
     owner_type: "fixed-production-visual",
     production_origin: "bitmap-decomposition",
-    production_method: "imagegen",
+    production_method: "image-generation",
     delivery_kind: "raster-image",
     image_generation_required: true,
     bounds: { x: 0, y: 0, width: 2, height: 1 },

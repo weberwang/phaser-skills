@@ -1,4 +1,4 @@
-# Effect-image ImageGen 忠实还原提示词合同
+# Effect-image 生成式位图忠实还原提示词合同
 
 本文件是 `effect-image` 模式的唯一提示词模板与机器合同来源。它定义“非像素复制的高保真忠实重建”，即允许重新绘制全部像素，但不得重新设计任何可观察视觉事实。工作流路由见 [`visual-reconstruction.md`](visual-reconstruction.md)、[`asset-production-routes.md`](asset-production-routes.md) 和 [`visual-production-pipeline.md`](visual-production-pipeline.md)；代码门禁由 [`effect-image-prompt-contract.mjs`](../../phaser4-game-workflow-control/scripts/effect-image-prompt-contract.mjs) 执行。
 
@@ -18,13 +18,13 @@
 输出单个独立位图资产。按当前 expected_assets 的背景生产合同生成背景。主体必须完整落入指定画布。不得生成组合图、atlas、sprite sheet、展示板、说明文字、无关 UI、数字、标签、水印或其他组件。
 ```
 
-当当前 `expected_assets` 的 `alpha=true` 时，实际发送的完整提示词必须追加以下背景移除生产段：
+当当前 `expected_assets` 的 `alpha=true` 时，实际发送的完整提示词必须追加以下透明生产段：
 
 ```text
-透明目标要求：生成非透明、轮廓清晰、与主体高对比、便于去背的纯色背景；禁止直接输出透明 Alpha。随后仅执行一次受控背景移除，产出含真实 Alpha 的 PNG。
+透明目标要求：输出单个独立位图资产，最终交付真实 Alpha 透明的 PNG；生成器可直接输出透明 PNG，或在原图不透明时按需执行背景移除。不得用可见背景像素或预览棋盘格冒充透明。
 ```
 
-这表示 ImageGen 先交付非透明原图；生成记录必须声明 `source_background_mode=opaque`、`final_background_mode=transparent`、`transparency_strategy=background-removal`，并提供 `raw_source_file`、`source_file`（背景移除输出）和 `source_has_alpha=true`。`background_removal_attempts` 必须恰好一条，记录 `operation=background-removal`、`status=completed`、源/输出路径、完成时间、源/输出 Alpha 和可审计 evidence；`normalization_record.source_file` 必须绑定该输出。失败时阻断并原地修复 V3/V4，候选身份未变时只重验当前门，禁止无限重试或自动多次去背；最终 PNG 由 V4 文件解码复核真实 Alpha。
+生成记录必须记录系统实际选择的 `generator` 与 `generator_version`；`generator` 必须记录实际调用的工具，未暴露的版本、模型参数或种子记录 `not-provided`，不得编造。直接透明路线声明 `transparency_strategy=direct-alpha`，并绑定原图/输出 Alpha；需要去背景时声明 `transparency_strategy=background-removal`，提供 `raw_source_file`、背景处理后的 `source_file` 和两侧 Alpha。背景处理使用公共 `remove-background-local.mjs` 或适配复杂背景的分割工具；`background_removal_attempts` 按实际尝试追加，记录 `operation`、`status`、源/输出路径、完成时间、源/输出 Alpha、失败原因和可审计 evidence。失败历史必须保留，重试由任务配置设定上限，不能无限重试或自动新增外部调用授权；`normalization_record.source_file` 必须绑定当前透明输入。最终 PNG 由 V4 文件解码复核真实 Alpha。
 
 `background_mode`、`direct_generation_attempt` 和旧的策略值均不属于本合同；`postprocess` 必须是字符串数组，背景移除操作以结构化 `background_removal_attempts` 为权威记录。
 
@@ -59,7 +59,7 @@
 
 ## 结构化生成记录
 
-仅对 `effect-image` 的 ImageGen 强制：
+仅对 `effect-image` 的生成式位图强制：
 
 ```json
 {
@@ -71,11 +71,11 @@
 
 `generation_record.reference_inputs` 必须包含 `reference_target.original_file` 指向的完整冻结效果图；`style_reference_inputs` 只能补充，不能替代它。`source_file`、`runtime_file`、`output_file` 和实际输出路径/文件身份不得等于冻结图。`crop_reference=true`、`reference_crop=true`、裁切/抠图参考图或复用参考像素作为输出都必须失败。
 
-记录必须保存实际发送的完整提示词（`full_prompt` 或 `actual_prompt`）和真实 `reference_inputs`，不能在生成后拼一份未实际使用的文本。完整提示词至少可复核地包含 canonical 全局段、当前 region 事实资产段、状态段和 canonical 负向段；透明 `alpha=true` 资产还必须包含背景移除生产段；并绑定当前 `target_sha256`、`region_id`、候选 `candidate_sha256`/`diff_fingerprint`、候选版本与实际 `record_id`。
+记录必须保存实际发送的完整提示词（`full_prompt` 或 `actual_prompt`）和真实 `reference_inputs`，不能在生成后拼一份未实际使用的文本。完整提示词至少可复核地包含 canonical 全局段、当前 region 事实资产段、状态段和 canonical 负向段；透明 `alpha=true` 资产还必须包含透明生产段；并绑定当前 `target_sha256`、`region_id`、候选 `candidate_sha256`/`diff_fingerprint`、候选版本与实际 `record_id`。`generator`/`generator_version` 必须记录系统按提示词、参考输入、材质、透明需求和可用能力实际选择的工具身份；未暴露时写 `not-provided`。
 
-普通非 `effect-image` ImageGen 不要求以上三个重建字段，也不要求冻结效果图作为参考输入；其现有通用 ImageGen 合同保持不变。
+普通非 `effect-image` 生成式位图不要求以上三个重建字段，也不要求冻结效果图作为参考输入；仍须记录实际生成器、版本、提示词、输入、输出和后处理。
 
-透明单图原图只是中间产物。生产顺序必须是“生成非透明原图 →（必要时在去背前生成式延展）→ 一次背景移除 → 尺寸归一化 → V4/final/runtime”；归一化使用 Sharp，写入 `normalization_record`，并把 `normalization_record.source_file` 绑定到背景移除输出、最终 `actual_output` 绑定到归一化后的 PNG。所有 ImageGen 图片首次输出比例不符时最多重生一次；第二次仍不符时，若冻结裁切焦点和安全事实允许，使用 `crop-and-resize-to-contract`，记录 `aspect_ratio_correction` 中两次真实原始 ImageGen attempt、SHA、尺寸、focus 和最大目标比例 `crop_rect`；透明路线的两条 attempt 仍是去背前的不透明输出，受控裁切可在唯一一次背景移除后的同尺寸含 Alpha 输入上执行。若裁切会损伤主体、文字、透明轮廓或关键构图，则先由生产流程对不透明生成结果生成式延展到目标比例，再执行一次背景移除和普通归一化。`padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘或裁切冻结 `reference_target`；透明目标归一化前后都必须保留 Alpha。
+透明单图必须按“生成原图 → 按实际 Alpha 决定是否执行背景处理 → 尺寸归一化 → V4/final/runtime”执行；direct-alpha 路线直接以原图作为透明输入，background-removal 路线以脚本或分割工具输出作为透明输入。归一化使用 Sharp，写入 `normalization_record`，并把 `normalization_record.source_file` 绑定当前透明输入，最终 `actual_output` 绑定归一化后的 PNG。生成失败或背景处理失败时保留历史尝试和失败原因，按任务配置的有限上限重试；不因重试自动新增外部调用授权。所有生成式位图首次输出比例不符时最多重生一次；第二次仍不符时，若冻结裁切焦点和安全事实允许，使用 `crop-and-resize-to-contract`，记录 `aspect_ratio_correction` 中两次真实原始生成 attempt、SHA、尺寸、focus 和最大目标比例 `crop_rect`；若裁切会损伤主体、文字、透明轮廓或关键构图，则先由生产流程对原图生成式延展到目标比例，再按实际 Alpha 决定背景处理和普通归一化。`padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘或裁切冻结 `reference_target`；透明目标归一化前后都必须保留 Alpha。
 
 ## 全局视觉基线绑定
 

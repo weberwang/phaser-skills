@@ -181,7 +181,7 @@
       "state_id": {"type": "string", "minLength": 1},
       "owner_type": {"enum": ["fixed-production-visual", "runtime-data", "runtime-rendered"]},
         "production_origin": {"enum": ["bitmap-decomposition", "independent-production"]},
-        "production_method": {"enum": ["imagegen", "authored-raster", "authored-svg", "phaser-graphics", "runtime-program", "reuse"]},
+        "production_method": {"enum": ["image-generation", "authored-raster", "authored-svg", "phaser-graphics", "runtime-program", "reuse"]},
         "production_label": {"type": "string", "minLength": 1},
         "delivery_kind": {"enum": ["raster-image", "vector-image", "runtime-drawing", "runtime-program", "existing-asset"]},
         "image_generation_required": {"type": "boolean"},
@@ -213,10 +213,10 @@
           "then": {
             "required": ["state_analysis", "component_inventory", "expected_assets", "atomic_image_requirements", "interaction_hotspots"],
             "properties": {
-              "production_method": {"enum": ["imagegen", "authored-raster", "reuse"]},
+              "production_method": {"enum": ["image-generation", "authored-raster", "reuse"]},
               "delivery_kind": {"enum": ["raster-image", "existing-asset"]},
               "expected_assets": {"minItems": 1, "items": {"properties": {"source_file": {"pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "runtime_file": {"pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "mime_type": {"enum": ["image/png", "image/jpeg"]}}}},
-              "atomic_image_requirements": {"items": {"properties": {"production_method": {"enum": ["imagegen", "authored-raster", "reuse"]}, "delivery_kind": {"enum": ["raster-image", "existing-asset"]}}}}
+              "atomic_image_requirements": {"items": {"properties": {"production_method": {"enum": ["image-generation", "authored-raster", "reuse"]}, "delivery_kind": {"enum": ["raster-image", "existing-asset"]}}}}
             }
           }
         },
@@ -247,7 +247,7 @@
           "then": {
             "required": ["production_method", "delivery_kind", "generation_record_required", "substitution_policy", "component_inventory", "scene_asset_usage"],
             "properties": {
-              "production_method": {"const": "imagegen"},
+              "production_method": {"const": "image-generation"},
               "delivery_kind": {"const": "raster-image"},
               "generation_record_required": {"const": true},
               "substitution_policy": {"const": "user-change-request-only"},
@@ -258,7 +258,7 @@
           }
         },
         {
-          "if": {"required": ["production_method"], "properties": {"production_method": {"const": "imagegen"}}},
+          "if": {"required": ["production_method"], "properties": {"production_method": {"const": "image-generation"}}},
           "then": {
             "required": ["component_inventory", "scene_asset_usage"],
             "not": {"required": ["runtime_implementation"]},
@@ -318,7 +318,7 @@
           "then": {
             "required": ["decomposition_confirmation_id", "decomposition_confirmation_sha256"],
             "properties": {
-              "production_method": {"enum": ["imagegen", "authored-raster", "reuse"]},
+              "production_method": {"enum": ["image-generation", "authored-raster", "reuse"]},
               "delivery_kind": {"enum": ["raster-image", "existing-asset"]}
             }
           }
@@ -577,23 +577,25 @@
       "type": "object",
       "required": ["operation", "status", "source_file", "output_file", "source_has_alpha", "output_has_alpha", "completed_at", "evidence"],
       "properties": {
-        "operation": {"const": "background-removal"}, "status": {"const": "completed"},
+        "operation": {"const": "background-removal"}, "status": {"enum": ["failed", "completed"]},
         "source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
         "output_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
-        "source_has_alpha": {"const": false}, "output_has_alpha": {"const": true},
+        "source_has_alpha": {"type": "boolean"}, "output_has_alpha": {"type": "boolean"},
         "completed_at": {"type": "string", "format": "date-time"}, "evidence": {"$ref": "#/$defs/evidenceValue"}
       },
+      "allOf": [{"if": {"properties": {"status": {"const": "completed"}}}, "then": {"properties": {"output_has_alpha": {"const": true}}}}],
       "additionalProperties": true
     },
     "transparentBackgroundProductionRecord": {
       "type": "object",
-      "required": ["source_background_mode", "final_background_mode", "transparency_strategy", "raw_source_file", "raw_source_has_alpha", "source_file", "source_has_alpha", "background_removal_attempts"],
+      "required": ["source_background_mode", "final_background_mode", "transparency_strategy", "raw_source_file", "raw_source_has_alpha", "source_file", "source_has_alpha"],
       "properties": {
-        "source_background_mode": {"const": "opaque"}, "final_background_mode": {"const": "transparent"}, "transparency_strategy": {"const": "background-removal"},
-        "raw_source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "raw_source_has_alpha": {"const": false},
-        "source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "source_has_alpha": {"const": true},
-        "background_removal_attempts": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"$ref": "#/$defs/transparentBackgroundRemovalAttempt"}}
+        "source_background_mode": {"enum": ["opaque", "transparent"]}, "final_background_mode": {"const": "transparent"}, "transparency_strategy": {"enum": ["direct-alpha", "background-removal"]},
+        "raw_source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "raw_source_has_alpha": {"type": "boolean"},
+        "source_file": {"type": "string", "pattern": "\\.[Pp][Nn][Gg]$"}, "source_has_alpha": {"const": true},
+        "background_removal_max_attempts": {"type": "integer", "minimum": 1}, "background_removal_attempts": {"type": "array", "minItems": 0, "items": {"$ref": "#/$defs/transparentBackgroundRemovalAttempt"}}
       },
+      "allOf": [{"if": {"properties": {"transparency_strategy": {"const": "direct-alpha"}}}, "then": {"properties": {"source_background_mode": {"const": "transparent"}, "raw_source_has_alpha": {"const": true}, "source_has_alpha": {"const": true}, "background_removal_attempts": {"maxItems": 0}}}}, {"if": {"properties": {"transparency_strategy": {"const": "background-removal"}}}, "then": {"required": ["background_removal_attempts"], "properties": {"background_removal_attempts": {"minItems": 1}}}}],
       "not": {"anyOf": [{"required": ["background_mode"]}, {"required": ["direct_generation_attempt"]}, {"required": ["directGenerationAttempt"]}]},
       "additionalProperties": true
     },
@@ -684,14 +686,14 @@
         "reuse_suitability": {"type": "object", "required": ["eligible", "exact_asset_identity", "evidence"], "properties": {"eligible": {"type": "boolean"}, "exact_asset_identity": {"oneOf": [{"const": "not-applicable"}, {"type": "object", "minProperties": 1, "properties": {"asset_id": {"type": "string", "minLength": 1}, "source_asset_id": {"type": "string", "minLength": 1}, "source_sha256": {"type": "string", "minLength": 1}, "source_manifest_sha256": {"type": "string", "minLength": 1}, "target_sha256": {"type": "string", "minLength": 1}, "candidate_sha256": {"type": "string", "minLength": 1}, "comparison_id": {"type": "string", "minLength": 1}}, "anyOf": [{"required": ["asset_id"]}, {"required": ["source_asset_id"]}, {"required": ["source_sha256"]}, {"required": ["source_manifest_sha256"]}, {"required": ["target_sha256"]}, {"required": ["candidate_sha256"]}, {"required": ["comparison_id"]}], "additionalProperties": true}]}, "evidence": {"$ref": "#/$defs/evidenceValue"}}, "additionalProperties": true},
         "final_owner": {"enum": ["fixed-production-visual", "runtime-data", "runtime-rendered", "runtime-program"]},
         "implementation_plan_mode": {"enum": ["generate-now", "reuse-existing", "runtime-program", "asset-and-scene"]},
-        "production_method": {"enum": ["imagegen", "authored-raster", "reuse", "phaser-graphics", "runtime-program"]},
+        "production_method": {"enum": ["image-generation", "authored-raster", "reuse", "phaser-graphics", "runtime-program"]},
         "delivery_kind": {"enum": ["raster-image", "existing-asset", "runtime-drawing", "runtime-program"]},
         "is_full_screen_capture": {"const": false},
         "text_decomposition_ref": {"type": "string", "minLength": 1},
-        "composite_parts": {"type": "array", "minItems": 2, "items": {"type": "object", "required": ["part_id", "part_role", "selected_route", "final_owner", "production_method", "delivery_kind", "evidence"], "properties": {"part_id": {"type": "string", "minLength": 1}, "part_role": {"enum": ["appearance", "behavior", "text", "effect"]}, "selected_route": {"enum": ["image-asset", "phaser-native", "composite"]}, "final_owner": {"enum": ["fixed-production-visual", "runtime-data", "runtime-rendered", "runtime-program"]}, "production_method": {"enum": ["imagegen", "authored-raster", "reuse", "phaser-graphics", "runtime-program"]}, "delivery_kind": {"enum": ["raster-image", "existing-asset", "runtime-drawing", "runtime-program"]}, "evidence": {"$ref": "#/$defs/evidenceValue"}}, "additionalProperties": true}}
+         "composite_parts": {"type": "array", "minItems": 2, "items": {"type": "object", "required": ["part_id", "part_role", "selected_route", "final_owner", "production_method", "delivery_kind", "evidence"], "properties": {"part_id": {"type": "string", "minLength": 1}, "part_role": {"enum": ["appearance", "behavior", "text", "effect"]}, "selected_route": {"enum": ["image-asset", "phaser-native", "composite"]}, "final_owner": {"enum": ["fixed-production-visual", "runtime-data", "runtime-rendered", "runtime-program"]}, "production_method": {"enum": ["image-generation", "authored-raster", "reuse", "phaser-graphics", "runtime-program"]}, "delivery_kind": {"enum": ["raster-image", "existing-asset", "runtime-drawing", "runtime-program"]}, "evidence": {"$ref": "#/$defs/evidenceValue"}}, "additionalProperties": true}}
       },
       "allOf": [
-        {"if": {"properties": {"selected_route": {"const": "image-asset"}}}, "then": {"properties": {"asset_first_decision": {"const": "asset-first"}, "final_owner": {"const": "fixed-production-visual"}, "production_method": {"enum": ["imagegen", "authored-raster", "reuse"]}, "delivery_kind": {"enum": ["raster-image", "existing-asset"]}}}},
+         {"if": {"properties": {"selected_route": {"const": "image-asset"}}}, "then": {"properties": {"asset_first_decision": {"const": "asset-first"}, "final_owner": {"const": "fixed-production-visual"}, "production_method": {"enum": ["image-generation", "authored-raster", "reuse"]}, "delivery_kind": {"enum": ["raster-image", "existing-asset"]}}}},
         {"if": {"properties": {"selected_route": {"const": "phaser-native"}}}, "then": {"properties": {"asset_first_decision": {"const": "native-allowed"}, "final_owner": {"enum": ["runtime-data", "runtime-rendered", "runtime-program"]}, "production_method": {"enum": ["phaser-graphics", "runtime-program"]}, "delivery_kind": {"enum": ["runtime-drawing", "runtime-program"]}, "native_suitability": {"properties": {"eligible": {"const": true}}}}}},
         {"if": {"properties": {"selected_route": {"const": "composite"}}}, "then": {"required": ["composite_parts"], "properties": {"asset_first_decision": {"const": "composite-required"}, "implementation_plan_mode": {"const": "asset-and-scene"}}}},
         {"if": {"properties": {"production_method": {"const": "reuse"}}}, "then": {"properties": {"implementation_plan_mode": {"const": "reuse-existing"}, "reuse_suitability": {"properties": {"eligible": {"const": true}}}}}},
@@ -919,8 +921,8 @@
       "properties": {
         "target_display_size": {"type": "object", "required": ["width", "height"], "properties": {"width": {"type": "number", "exclusiveMinimum": 0}, "height": {"type": "number", "exclusiveMinimum": 0}}},
         "intended_scale_range": {"type": "object", "required": ["min", "max"], "properties": {"min": {"type": "number", "exclusiveMinimum": 0}, "max": {"type": "number", "exclusiveMinimum": 0}}},
-        "max_dpr": {"const": 1.5, "description": "最大生产 DPR 固定为 1.5；ImageGen 单图尺寸计算使用最大生产 DPR 1.5，运行时实际 DPR 动态封顶。"},
-        "padding_policy": {"type": "string", "description": "ImageGen individual 必须为 none；非 ImageGen 可不声明该字段。"},
+         "max_dpr": {"const": 1.5, "description": "最大生产 DPR 固定为 1.5；图像生成单图尺寸计算使用最大生产 DPR 1.5，运行时实际 DPR 动态封顶。"},
+         "padding_policy": {"type": "string", "description": "图像生成 individual 必须为 none；非图像生成可不声明该字段。"},
         "origin": {"type": "object"},
         "anchor": {"type": ["string", "object"], "minLength": 1},
         "nine_slice": {"type": ["string", "object"]},
@@ -1121,7 +1123,7 @@
         "atomic_visual_key": {"type": "string", "minLength": 1},
         "component_id": {"type": "string", "minLength": 1},
         "state_id": {"type": "string", "minLength": 1},
-        "production_method": {"enum": ["imagegen", "authored-raster", "authored-svg", "phaser-graphics", "runtime-program", "reuse"]},
+        "production_method": {"enum": ["image-generation", "authored-raster", "authored-svg", "phaser-graphics", "runtime-program", "reuse"]},
         "delivery_kind": {"enum": ["raster-image", "vector-image", "runtime-drawing", "runtime-program", "existing-asset"]},
         "asset_id": {"type": "string", "minLength": 1},
         "source_file": {"type": "string", "minLength": 1},

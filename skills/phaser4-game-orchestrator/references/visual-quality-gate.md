@@ -24,7 +24,7 @@
 
 场景内显示层沿用同一条 V0-V4 链。主效果图只冻结基础场景与 persistent/HUD，transient 层按必需状态分别提供绑定宿主场景、遮罩/层级和当前状态的 contextual effect image。V2 确认显示层拆解方案，V3/V4 回到宿主场景同屏组合并提交打开→交互→关闭/恢复轨迹。
 
-ImageGen 生产合同贯穿 V2-V4：`independent-production` 与 `generate-now` 不推断图片生成；每个区域必须完成 `state_analysis`，并让 `expected_assets` 逐唯一 `component_id × required state_id` 对应独立位图。V3 必须审计 `production_contract_audit` 及逐部件 `component_usages`，V4 再绑定 F3 runtime replay、非空 freshness-bound fidelity cases、实际消费及无未批准替换。
+生成式位图生产合同贯穿 V2-V4：`independent-production` 与 `generate-now` 不推断具体生成器；每个区域必须完成 `state_analysis`，并让 `expected_assets` 逐唯一 `component_id × required state_id` 对应独立位图。V3 必须审计 `production_contract_audit` 及逐部件 `component_usages`，V4 再绑定 F3 runtime replay、非空 freshness-bound fidelity cases、实际消费及无未批准替换。
 
 每个 V2 布局候选目录必须包含同批标准 PNG、节点 JSON、决策 JSON、离线 `review.html` 和生成结果 JSON；页面按确认元素顺序展示真实参考图及同坐标父子高亮，但只属于候选审阅，不写入确认或业务状态。独立布局 confirmation、decision 和 receipt 必须绑定 `layout_review_file`/SHA/identity、`layout_nodes_file`/SHA 以及原有布局和上游身份字段。具体模板和文件门见[离线布局审阅产物](../../phaser4-game-ui-layout/references/layout-review-artifacts.md)。
 

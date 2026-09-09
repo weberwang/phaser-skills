@@ -531,7 +531,7 @@ export function validateFixedVisualProductionMethod(region, context = {}) {
   }
   if (ownerType !== "fixed-production-visual") return errors;
   // fixed-production-visual 永远是图片组件；delivery_kind 自报为 runtime-drawing 也不能绕过方法硬门。
-  if (!FIXED_VISUAL_IMAGE_METHODS.has(method)) error("fixed-production-visual 只能使用 imagegen/authored-raster/reuse，禁止程序绘制、SVG 或缺失方法", { observedMethod: method });
+  if (!FIXED_VISUAL_IMAGE_METHODS.has(method)) error("fixed-production-visual 只能使用 image-generation/authored-raster/reuse，禁止程序绘制、SVG 或缺失方法", { observedMethod: method });
   for (const component of components) {
     const componentMethod = component?.production_method ?? component?.productionMethod ?? component?.method;
     const componentDelivery = String(component?.delivery_kind ?? component?.deliveryKind ?? "").toLowerCase();

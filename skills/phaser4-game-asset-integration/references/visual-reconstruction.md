@@ -4,7 +4,7 @@
 
 参考截图、效果图、录屏、运行项目和源码是输入，不是通过结论。参考还原属于 V0 的完整路径并执行 V1-V4；功能契约仍优先定义玩法行为，但当 Work Item 明确以指定效果图或参考截图为还原目标时，必须启用“忠实还原模式”。该模式默认使用 `visual_validation.mode=usability`，不因 effect-image 自动启用 `exact`；只有用户明确要求像素级还原时才选择 `exact`。
 
-effect-image ImageGen 的 canonical 提示词模板、asset_prompt 事实继承和生成记录绑定见[《Effect-image ImageGen 忠实还原提示词合同》](effect-image-prompt-contract.md)；本文只规定场景还原路由与视觉事实门。
+effect-image 生成式位图的 canonical 提示词模板、asset_prompt 事实继承和生成记录绑定见[《Effect-image 生成式位图忠实还原提示词合同》](effect-image-prompt-contract.md)；本文只规定场景还原路由与视觉事实门。
 
 ## 忠实还原模式
 
@@ -42,7 +42,7 @@ V2 布局标注在拆解确认之后串行产出：阶段 A 先生成按人工�
 
 V3 消费 V2 已确认的拆解图、技术 JSON、coverage、布局合同和生产计划，生产正式视觉资源，并完成正式布局与宿主场景同屏组合预验收。正式资源必须保留来源、适用的版权/许可信息、机器清单、生成记录、运行时文件、组件状态和冻结目标绑定。
 
-ImageGen 区域按 V2 `component_inventory` 收齐全部待生成 component × required state，作为[一个批量生成任务](visual-production-pipeline.md#图片批量生成)一次提交；每项交付 individual 位图，`atlas_allowed=false`，不能将独立文件要求解释为逐张调度。宽高由逻辑像素 `ceil(max placement width/height × intended_scale_range.max × 1.5)` 决定，`max_dpr=1.5`，`padding_policy=none`。透明资产必须先生成非透明高对比纯色背景，再执行一次背景移除，并记录完整背景移除与归一化证据。
+生成式位图区域按 V2 `component_inventory` 收齐全部待生成 component × required state，作为[一个批量生成任务](visual-production-pipeline.md#图片批量生成)一次提交；每项交付 individual 位图，`atlas_allowed=false`，不能将独立文件要求解释为逐张调度。宽高由逻辑像素 `ceil(max placement width/height × intended_scale_range.max × 1.5)` 决定，`max_dpr=1.5`，`padding_policy=none`。系统根据提示词、参考输入、主体材质、透明需求和可用能力选择实际生成工具，并在记录中写入工具/版本；透明资产生成原图后按实际 Alpha 决定直接保留或执行公共脚本/分割去背景，记录完整透明处理与归一化证据。
 
 V3 `combination_preacceptance` 必须使用正式 Scene 同结构、正式资源和正式布局计算，禁止整屏截图、隐藏覆盖层或绝对叠图。显示层必须绑定 `displayLayerId` 与 `hostSceneId`，并用宿主场景上下文图验证同屏关系。
 
@@ -77,6 +77,6 @@ V4 按 `visual_validation.mode` 运行证据验证视觉与功能联合结果。
 
 ## 全局基线引用
 
-场景效果图和 ImageGen 资源必须引用已冻结的全局视觉基线；候选生成、人工选择、冻结状态、锚点继承和文件门以[全局视觉控制](global-visual-control.md)及控制面 Schema 为准。场景自身从 V1 开始，按本文件的 V2 两次确认、V3 组合预验收和 V4 运行态联合验收推进。
+场景效果图和生成式位图资源必须引用已冻结的全局视觉基线；候选生成、人工选择、冻结状态、锚点继承和文件门以[全局视觉控制](global-visual-control.md)及控制面 Schema 为准。场景自身从 V1 开始，按本文件的 V2 两次确认、V3 组合预验收和 V4 运行态联合验收推进。
 
 生成记录必须明确 `origin=generated|provided`；只有 generated 强制绑定基线四元组、全部 `style_reference_inputs`、canonical 全局一致性段、`style_drift_policy=forbid`、实际完整提示词、输出 SHA 与一致性证据。provided 图不得伪造生成记录。记录或路径问题先原地修复，候选未变的提示词/输出证据更新重验当前门；基线、锚点、target SHA 或冻结生成合同真实变化时才令旧记录失效，并按合同返回最早受影响阶段。

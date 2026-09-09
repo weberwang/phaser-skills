@@ -406,7 +406,7 @@ function validateAssetMappings(region, context, errors, stateInfo, inventoryInfo
     if (isHitAreaKind(asset.asset_kind)) assetFail("交互热区不能计入视觉资产");
     if (stateId && requirementFor.get(stateId) === "not-applicable") assetFail("not-applicable 状态不得交付视觉资产");
     if (asset.mime_type !== undefined && (!nonEmptyString(asset.mime_type) || !/^[^/\s]+\/[^/\s]+$/.test(asset.mime_type))) assetFail("mime_type 格式无效", { missing: `expected_assets[${index}].mime_type` });
-    if (canonical.production_method === "imagegen" || canonical.image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(rawAsset ?? asset, { requiredMime: true, requiredFileFields: ["source_file", "runtime_file"], fileFields: ["source_file", "runtime_file"] })) assetFail(`${violation.field} ${violation.message}`, { missing: `expected_assets[${index}].${violation.field}` });
+    if (canonical.production_method === "image-generation" || canonical.image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(rawAsset ?? asset, { requiredMime: true, requiredFileFields: ["source_file", "runtime_file"], fileFields: ["source_file", "runtime_file"] })) assetFail(`${violation.field} ${violation.message}`, { missing: `expected_assets[${index}].${violation.field}` });
     for (const field of ["width", "height"]) if (asset[field] !== undefined && (!Number.isInteger(asset[field]) || asset[field] <= 0)) assetFail(`${field} 必须为正整数`, { missing: `expected_assets[${index}].${field}` });
     if (asset.alpha !== undefined && typeof asset.alpha !== "boolean") assetFail("alpha 必须为布尔值", { missing: `expected_assets[${index}].alpha` });
     if (asset.sha256 !== undefined && !/^sha256:[a-f0-9]{64}$/.test(asset.sha256)) assetFail("sha256 格式无效", { missing: `expected_assets[${index}].sha256` });
@@ -600,8 +600,8 @@ export function validateVisualComponentContract(region, context = {}, options = 
   validateHotspots(region, context, errors, inventoryInfo);
   const productionMethod = canonical.production_method;
   const deliveryKind = canonical.delivery_kind;
-  if (canonical.image_generation_required === true && (inventoryInfo.inventory.delivery_mode !== "individual" || inventoryInfo.inventory.atlas_allowed !== false)) errors.push(componentError(context, "ImageGen 只能使用 individual 且 atlas_allowed=false，禁止组图/atlas", { missing: "component_inventory.delivery_mode=individual" }));
-  if (canonical.image_generation_required === true && Array.isArray(canonical.expected_assets) && canonical.expected_assets.some((asset) => normalizeComponentExpectedAsset(asset).atlas_slice)) errors.push(componentError(context, "ImageGen expected_assets 不得携带 atlas_slice，禁止用图集替代独立位图"));
+  if (canonical.image_generation_required === true && (inventoryInfo.inventory.delivery_mode !== "individual" || inventoryInfo.inventory.atlas_allowed !== false)) errors.push(componentError(context, "图像生成 只能使用 individual 且 atlas_allowed=false，禁止组图/atlas", { missing: "component_inventory.delivery_mode=individual" }));
+  if (canonical.image_generation_required === true && Array.isArray(canonical.expected_assets) && canonical.expected_assets.some((asset) => normalizeComponentExpectedAsset(asset).atlas_slice)) errors.push(componentError(context, "图像生成 expected_assets 不得携带 atlas_slice，禁止用图集替代独立位图"));
   if (["phaser-graphics", "runtime-program"].includes(productionMethod)) {
     const implementation = canonical.runtime_implementation;
     if (!isObject(implementation)) errors.push(componentError(context, `${productionMethod} 必须声明 runtime_implementation`, { missing: "runtime_implementation" }));
@@ -618,7 +618,7 @@ export function validateVisualComponentContract(region, context = {}, options = 
       }
     }
     if (Array.isArray(canonical.expected_assets) && canonical.expected_assets.some((asset) => { const item = normalizeComponentExpectedAsset(asset); return nonEmptyString(item.source_file) || nonEmptyString(item.runtime_file); })) errors.push(componentError(context, `${productionMethod} 不得伪造 source_file/runtime_file 图片输出`));
-  } else if (["imagegen", "authored-raster", "authored-svg", "reuse"].includes(productionMethod)) {
+  } else if (["image-generation", "authored-raster", "authored-svg", "reuse"].includes(productionMethod)) {
     if (hasRuntimeImplementationField(region)) errors.push(componentError(context, `${productionMethod} 文件交付不得携带 runtime_implementation`, { missing: "runtime_implementation" }));
     const expected = Array.isArray(canonical.expected_assets) ? canonical.expected_assets.map(normalizeComponentExpectedAsset) : [];
     if (expected.some((asset) => !nonEmptyString(asset.source_file) || !nonEmptyString(asset.runtime_file))) errors.push(componentError(context, "文件交付合同必须登记 source_file 与 runtime_file", { missing: "expected_assets.source_file/runtime_file" }));
@@ -628,7 +628,7 @@ export function validateVisualComponentContract(region, context = {}, options = 
   }
   if (options.requireImageAssets && canonical.image_generation_required === true && inventoryInfo.inventory.delivery_mode === "individual") {
     const expected = Array.isArray(canonical.expected_assets) ? canonical.expected_assets.map(normalizeComponentExpectedAsset) : [];
-    if (expected.some((asset) => !nonEmptyString(asset.source_file) || !nonEmptyString(asset.runtime_file))) errors.push(componentError(context, "ImageGen 原子资产必须登记 source_file 与 runtime_file", { missing: "expected_assets.source_file/runtime_file" }));
+    if (expected.some((asset) => !nonEmptyString(asset.source_file) || !nonEmptyString(asset.runtime_file))) errors.push(componentError(context, "图像生成 原子资产必须登记 source_file 与 runtime_file", { missing: "expected_assets.source_file/runtime_file" }));
   }
   return errors;
 }
@@ -668,7 +668,7 @@ export function validateComponentAuditEvidence(region, auditUnit, context = {}, 
     const local = { ...context, component_id: asset.component_id || "?", state_id: asset.canonical_state_id || "?", asset_id: asset.asset_id || item?.id || "?" };
     // V4 只复核实际文件、组件状态和运行时哈希；拆解确认已在 V2 唯一收敛，
     // 不再要求每个 actual asset 复制 human_review。
-    if (canonical.production_method === "imagegen" || canonical.image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(item, { requiredMime: true, fileFields: ["file", "path", "runtime_file", "output_file"] })) errors.push(componentError(local, `actual_assets[${index}].${violation.field} ${violation.message}`));
+    if (canonical.production_method === "image-generation" || canonical.image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(item, { requiredMime: true, fileFields: ["file", "path", "runtime_file", "output_file"] })) errors.push(componentError(local, `actual_assets[${index}].${violation.field} ${violation.message}`));
     if (!nonEmptyString(asset.component_id) || !nonEmptyString(asset.state_id)) errors.push(componentError(local, `actual_assets[${index}] 必须绑定 component_id/state_id，不能只登记区域组图`, { missing: `actual_assets[${index}].component_id/state_id` }));
     const key = `${asset.component_id}\0${asset.canonical_state_id}`;
     actualPairs.set(key, (actualPairs.get(key) ?? 0) + 1);
@@ -713,7 +713,7 @@ export function validateComponentAuditEvidence(region, auditUnit, context = {}, 
       const componentId = usage?.component_id ?? usage?.componentId ?? "";
       const stateId = canonicalStateId(usage?.state_id ?? usage?.stateId);
       const local = { ...context, component_id: componentId || "?", state_id: stateId || "?" };
-      if (canonical.production_method === "imagegen" || canonical.image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(usage, { fileFields: ["runtime_file"] })) errors.push(componentError(local, `runtime_consumption.component_usages[${index}].${violation.field} ${violation.message}`));
+      if (canonical.production_method === "image-generation" || canonical.image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(usage, { fileFields: ["runtime_file"] })) errors.push(componentError(local, `runtime_consumption.component_usages[${index}].${violation.field} ${violation.message}`));
       if (usage?.status !== "passed" && usage?.status !== "consumed") errors.push(componentError(local, `runtime_consumption.component_usages[${index}] status 必须为 passed/consumed`));
       const key = `${componentId}\0${stateId}`;
       const expectedAsset = expectedByPair.get(key);

@@ -9,7 +9,7 @@ const BASE_USAGE = {
   padding_policy: "none",
 };
 
-/** 构造单个 ImageGen 原子部件的最小场景合同。 */
+/** 构造单个 图像生成 原子部件的最小场景合同。 */
 function region(overrides = {}) {
   const component = {
     component_id: "hero",
@@ -25,7 +25,7 @@ function region(overrides = {}) {
     annotation_number: 7,
     id: "region-hero",
     owner_type: "fixed-production-visual",
-    production_method: "imagegen",
+    production_method: "image-generation",
     image_generation_required: true,
     scene_asset_usage: structuredClone(BASE_USAGE),
     component_inventory: { granularity: "single-component", component_count: 1, visible_instance_count: 1, delivery_mode: "individual", atlas_allowed: false, created_at: "2026-08-19T00:00:00Z", components: [component] },
@@ -34,7 +34,7 @@ function region(overrides = {}) {
   };
 }
 
-/** 构造带声明尺寸的 ImageGen 输出元数据。 */
+/** 构造带声明尺寸的 图像生成 输出元数据。 */
 function output(width = 68, height = 45) { return { width, height, mime_type: "image/png", alpha: true, sha256: `sha256:${"a".repeat(64)}` }; }
 
 /** 运行单资产尺寸合同，统一传入当前 expected asset 和区域上下文。 */
@@ -103,7 +103,7 @@ test("placement bounds 缺失失败", () => {
   assert(errors.some((item) => item.includes("placement[0] bounds") && item.includes("region_id=region-hero")));
 });
 
-test("非 ImageGen 方法不受尺寸门影响", () => {
+test("非 图像生成 方法不受尺寸门影响", () => {
   const current = region({ production_method: "authored-raster", image_generation_required: false, scene_asset_usage: {} });
   assert.deepEqual(check(current, { width: 1, height: 1 }, current), []);
 });

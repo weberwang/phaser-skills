@@ -56,7 +56,7 @@ Work Item 保存用户原始请求、目标、当前范围、实施计划、路�
 
 `route` 依据确定性规则输出 INSPECTION(A0) 至 RELEASE(A6)：Phaser A0-A3 以当前任务范围为依据，未决用户选择额外标记 `USER_INPUT_REQUIRED`，只有涉及副作用的 Phaser A4-A6 标记 `EXPLICIT_APPROVAL`。普通 A3 和无副作用本地 A4 保持真实 diff、独立 F2 和必要 F0-F3 证据；外部写入、付费、真机、破坏性或外部删除和发布操作保持精确批准硬门。
 
-视觉生产合同属于 V2-V4 的领域证据，不改变 F0-F4 唯一语义。`visual-assets` 中必须显式区分 `production_origin`、`production_method`、`delivery_kind`、`image_generation_required`、`generation_record_required`、`substitution_policy` 和 `expected_assets`；`independent-production`、`generate-now` 与视觉相似度都不能推断 ImageGen 或替代生产合同。需要 ImageGen 时，V3/F2/V4 必须继续验证独立位图、生成记录、运行时消费和无替换证据。
+视觉生产合同属于 V2-V4 的领域证据，不改变 F0-F4 唯一语义。`visual-assets` 中必须显式区分 `production_origin`、`production_method`、`delivery_kind`、`image_generation_required`、`generation_record_required`、`substitution_policy` 和 `expected_assets`；`independent-production`、`generate-now` 与视觉相似度都不能推断具体生成器或替代生产合同。使用 `production_method=image-generation` 时，V3/F2/V4 必须继续验证独立位图、实际生成器/版本、生成记录、运行时消费和无替换证据。
 
 视觉验收通过 `visual_validation.mode` 区分 `usability` 与 `exact`，默认使用 `usability`。普通候选允许位置、尺寸、边距、换行和少量几何差异，只要没有越界、裁切、关键遮挡、不可读或交互失效；effect-image 也不自动切换到 `exact`。只有用户明确要求像素级还原或项目合同明确指定时才使用 `exact`，并启用严格容差、全视口/全状态矩阵和完整差异证据。V2 拆解、布局父子关系、顺序和内部几何一致性仍需保持。
 

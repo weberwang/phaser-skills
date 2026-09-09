@@ -81,16 +81,16 @@ function cropNormalizationRecord(overrides = {}) {
   });
 }
 
-/** 构造与裁切记录尺寸相符的 ImageGen 合同夹具。 */
+/** 构造与裁切记录尺寸相符的 图像生成 合同夹具。 */
 function cropFixture(overrides = {}) {
   const record = cropNormalizationRecord();
   const expectedAsset = { asset_id: "hero", source_file: record.source_file, runtime_file: record.output_file, mime_type: "image/png", width: 1920, height: 1080, alpha: true };
   const asset = { source_file: record.source_file, output_file: record.output_file, runtime_outputs: [record.output_file], mime_type: "image/png", width: 1920, height: 1080, alpha: true, sha256: OUTPUT_SHA, normalization_record: record };
   const generation = { source_file: record.source_file, output_file: record.output_file, normalization_record: record };
-  return { expectedAsset, asset, generation, contract: { production_method: "imagegen", image_generation_required: true }, metadata: { mime_type: "image/png", file: record.output_file, width: 1920, height: 1080, alpha: true, sha256: OUTPUT_SHA }, ...overrides };
+  return { expectedAsset, asset, generation, contract: { production_method: "image-generation", image_generation_required: true }, metadata: { mime_type: "image/png", file: record.output_file, width: 1920, height: 1080, alpha: true, sha256: OUTPUT_SHA }, ...overrides };
 }
 
-/** 构造一条同时绑定原图、最终输出和生成记录的 ImageGen 夹具。 */
+/** 构造一条同时绑定原图、最终输出和生成记录的 图像生成 夹具。 */
 function normalizedFixture(overrides = {}) {
   const expectedAsset = {
     asset_id: "hero",
@@ -118,7 +118,7 @@ function normalizedFixture(overrides = {}) {
     normalization_record: normalizationRecord(),
     ...overrides,
   };
-  return { expectedAsset, asset, generation, contract: { production_method: "imagegen", image_generation_required: true }, metadata: { mime_type: "image/png", file: "public/hero.png", width: 200, height: 100, alpha: true, sha256: OUTPUT_SHA } };
+  return { expectedAsset, asset, generation, contract: { production_method: "image-generation", image_generation_required: true }, metadata: { mime_type: "image/png", file: "public/hero.png", width: 200, height: 100, alpha: true, sha256: OUTPUT_SHA } };
 }
 
 /** 生成唯一透明背景移除路线的完整记录，并把归一化源绑定到去背输出。 */
@@ -171,7 +171,7 @@ test("尺寸已正确时记录 not-required 且仍输出 PNG", async () => {
   }
 });
 
-test("不透明 ImageGen 可归一化为 JPEG 并保留确定性尺寸记录", async () => {
+test("不透明 图像生成 可归一化为 JPEG 并保留确定性尺寸记录", async () => {
   const directory = await mkdtemp(join(tmpdir(), "phaser-image-normalization-"));
   try {
     const source = join(directory, "source.png");
@@ -230,7 +230,7 @@ test("1672×941 两次比例失败可按中心焦点裁成 1664×936 并归一�
       expectedAsset: { asset_id: "hero", source_file: source, runtime_file: output, mime_type: "image/png", width: 1920, height: 1080, alpha: true },
       asset: { source_file: source, output_file: output, runtime_outputs: [output], sha256: record.output_sha256, normalization_record: record },
       generation: { source_file: source, output_file: output, normalization_record: record },
-      contract: { production_method: "imagegen", image_generation_required: true },
+      contract: { production_method: "image-generation", image_generation_required: true },
       metadata: { file: output, mime_type: "image/png", width: 1920, height: 1080, alpha: true, sha256: record.output_sha256 },
     }), []);
   } finally {
@@ -255,7 +255,7 @@ test("透明路线以两次原始输出作证据、去背输出作源图并在�
       targetWidth: 1920,
       targetHeight: 1080,
       requireAlpha: true,
-      // attempts 始终记录两次不透明原始 ImageGen 输出；去背后的 source 才是归一化输入。
+      // attempts 始终记录两次不透明原始 图像生成 输出；去背后的 source 才是归一化输入。
       aspect_ratio_correction: { attempts: [await attemptDescriptor(rawAttemptOne, "RAW-ATTEMPT-ONE", "RAW-GEN-ONE", "2026-08-25T00:00:00.000Z"), await attemptDescriptor(rawAttemptTwo, "RAW-ATTEMPT-TWO", "RAW-GEN-TWO", "2026-08-25T00:01:00.000Z")], focus: { x: 0.5, y: 0.5 } },
     });
     const baseGeneration = transparentGeneration();
@@ -278,16 +278,16 @@ test("透明路线以两次原始输出作证据、去背输出作源图并在�
     assert.notEqual(record.aspect_ratio_correction.attempts[1].file, record.source_file);
     assert.equal(record.aspect_ratio_correction.attempts[1].width, record.source_width);
     assert.equal(record.aspect_ratio_correction.attempts[1].height, record.source_height);
-    assert.deepEqual(validateImageNormalizationContract({ expectedAsset, asset, generation, contract: { production_method: "imagegen", image_generation_required: true }, metadata }), []);
-    assert.deepEqual(validateTransparentBackgroundContract({ asset, contract: { production_method: "imagegen", image_generation_required: true }, generation, expectedAsset, metadata }), []);
+    assert.deepEqual(validateImageNormalizationContract({ expectedAsset, asset, generation, contract: { production_method: "image-generation", image_generation_required: true }, metadata }), []);
+    assert.deepEqual(validateTransparentBackgroundContract({ asset, contract: { production_method: "image-generation", image_generation_required: true }, generation, expectedAsset, metadata }), []);
     assert.equal((await sharp(output).metadata()).hasAlpha, true);
 
     const wrongRawGeneration = { ...generation, raw_source_file: source };
-    assert(validateImageNormalizationContract({ expectedAsset, asset, generation: wrongRawGeneration, contract: { production_method: "imagegen", image_generation_required: true }, metadata }).length > 0);
-    assert(validateTransparentBackgroundContract({ asset, contract: { production_method: "imagegen", image_generation_required: true }, generation: wrongRawGeneration, expectedAsset, metadata }).length > 0);
+    assert(validateImageNormalizationContract({ expectedAsset, asset, generation: wrongRawGeneration, contract: { production_method: "image-generation", image_generation_required: true }, metadata }).length > 0);
+    assert(validateTransparentBackgroundContract({ asset, contract: { production_method: "image-generation", image_generation_required: true }, generation: wrongRawGeneration, expectedAsset, metadata }).length > 0);
     const wrongSourceGeneration = { ...generation, source_file: rawAttemptTwo };
-    assert(validateImageNormalizationContract({ expectedAsset, asset, generation: wrongSourceGeneration, contract: { production_method: "imagegen", image_generation_required: true }, metadata }).length > 0);
-    assert(validateTransparentBackgroundContract({ asset, contract: { production_method: "imagegen", image_generation_required: true }, generation: wrongSourceGeneration, expectedAsset, metadata }).length > 0);
+    assert(validateImageNormalizationContract({ expectedAsset, asset, generation: wrongSourceGeneration, contract: { production_method: "image-generation", image_generation_required: true }, metadata }).length > 0);
+    assert(validateTransparentBackgroundContract({ asset, contract: { production_method: "image-generation", image_generation_required: true }, generation: wrongSourceGeneration, expectedAsset, metadata }).length > 0);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -353,7 +353,7 @@ test("背景移除路线在有效归一化后通过", () => {
   assert.deepEqual(validateTransparentBackgroundContract({ asset: fixture.asset, contract: fixture.contract, generation: fixture.generation, expectedAsset: fixture.expectedAsset, metadata: fixture.metadata }), []);
 });
 
-test("alpha=false 的 ImageGen 和普通非 ImageGen 路线不误触透明 Alpha 门", () => {
+test("alpha=false 的 图像生成 和普通非 图像生成 路线不误触透明 Alpha 门", () => {
   const fixture = normalizedFixture();
   fixture.expectedAsset = { ...fixture.expectedAsset, alpha: false };
   fixture.asset = { ...fixture.asset, alpha: false, normalization_record: normalizationRecord({ preserve_alpha: false }) };

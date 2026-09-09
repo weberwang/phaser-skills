@@ -105,7 +105,7 @@ export const VISUAL_PRODUCTION_METHODS = new Set(schemaEnum("implementation-pack
 export const VISUAL_DELIVERY_KINDS = new Set(schemaEnum("implementation-package.schema.json", ["$defs", "visualProductionUnit", "properties", "delivery_kind"]));
 export const VISUAL_SUBSTITUTION_POLICIES = new Set(schemaEnum("implementation-package.schema.json", ["$defs", "visualProductionUnit", "properties", "substitution_policy"]));
 /** 固定视觉图片方法由生产方式词汇表派生，避免各门禁重新声明文字。 */
-export const VISUAL_FIXED_IMAGE_METHODS = new Set(["imagegen", "authored-raster", "reuse"]);
+export const VISUAL_FIXED_IMAGE_METHODS = new Set(["image-generation", "authored-raster", "reuse"]);
 /** 程序视觉方法由生产方式词汇表派生，专供非图片逻辑门禁使用。 */
 export const VISUAL_PROGRAM_METHODS = new Set(["phaser-graphics", "runtime-program"]);
 

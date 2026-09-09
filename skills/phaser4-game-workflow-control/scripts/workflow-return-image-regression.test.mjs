@@ -69,7 +69,7 @@ function cropFixture(attempts) {
     expectedAsset: { asset_id: "hero", source_file: record.source_file, runtime_file: record.output_file, mime_type: "image/png", width: 1920, height: 1080, alpha: true },
     asset,
     generation,
-    contract: { production_method: "imagegen", image_generation_required: true },
+    contract: { production_method: "image-generation", image_generation_required: true },
     metadata: { file: record.output_file, mime_type: "image/png", width: 1920, height: 1080, alpha: true, sha256: record.output_sha256 },
   };
 }

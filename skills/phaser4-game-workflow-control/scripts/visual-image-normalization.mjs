@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * ImageGen 原图尺寸归一化工具。
+ * 图像生成 原图尺寸归一化工具。
  *
  * 原图只是中间产物；本工具使用 Sharp 读取元数据并在比例已满足，或已提供两次
- * 原始 ImageGen 失败证据与焦点的受控裁切后，生成精确尺寸 PNG/JPEG。透明背景移除
+ * 原始 图像生成 失败证据与焦点的受控裁切后，生成精确尺寸 PNG/JPEG。透明背景移除
  * 路线可先把第二次原始输出去背，再把去背结果作为本工具的归一化输入。
  */
 import { createHash } from "node:crypto";
@@ -127,17 +127,17 @@ async function readSourceMetadata(sourceFile) {
   return metadata;
 }
 
-/** 读取真实原始 ImageGen 尝试的完整身份，禁止旧版路径数组或调用方伪造比例修正证据。 */
+/** 读取真实原始 图像生成 尝试的完整身份，禁止旧版路径数组或调用方伪造比例修正证据。 */
 async function readAttempt(attemptInput, index) {
   const input = attemptInput;
-  if (!input || typeof input !== "object" || Array.isArray(input)) throw new ImageNormalizationError(`ImageGen attempt[${index}] 必须是完整对象；旧版路径字符串结构不再接受`);
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new ImageNormalizationError(`图像生成 attempt[${index}] 必须是完整对象；旧版路径字符串结构不再接受`);
   const requiredFields = ["attempt_id", "generation_record_id", "generated_at", "file", "sha256", "width", "height"];
   const missing = requiredFields.filter((field) => input[field] === undefined);
-  if (missing.length) throw new ImageNormalizationError(`ImageGen attempt[${index}] 缺少字段：${missing.join("、")}`);
-  if (typeof input.attempt_id !== "string" || !input.attempt_id.trim() || typeof input.generation_record_id !== "string" || !input.generation_record_id.trim()) throw new ImageNormalizationError(`ImageGen attempt[${index}] 必须包含非空 attempt_id 与 generation_record_id`);
-  if (typeof input.file !== "string" || input.file.trim() === "") throw new ImageNormalizationError(`ImageGen attempt[${index}].file 必须是非空路径`);
-  if (!validDateTime(input.generated_at)) throw new ImageNormalizationError(`ImageGen attempt[${index}].generated_at 必须是 RFC3339 时间`);
-  if (!positiveInteger(input.width) || !positiveInteger(input.height)) throw new ImageNormalizationError(`ImageGen attempt[${index}] 的 width/height 必须是正整数`);
+  if (missing.length) throw new ImageNormalizationError(`图像生成 attempt[${index}] 缺少字段：${missing.join("、")}`);
+  if (typeof input.attempt_id !== "string" || !input.attempt_id.trim() || typeof input.generation_record_id !== "string" || !input.generation_record_id.trim()) throw new ImageNormalizationError(`图像生成 attempt[${index}] 必须包含非空 attempt_id 与 generation_record_id`);
+  if (typeof input.file !== "string" || input.file.trim() === "") throw new ImageNormalizationError(`图像生成 attempt[${index}].file 必须是非空路径`);
+  if (!validDateTime(input.generated_at)) throw new ImageNormalizationError(`图像生成 attempt[${index}].generated_at 必须是 RFC3339 时间`);
+  if (!positiveInteger(input.width) || !positiveInteger(input.height)) throw new ImageNormalizationError(`图像生成 attempt[${index}] 的 width/height 必须是正整数`);
   const metadata = await readSourceMetadata(input.file);
   let sha256;
   try {
@@ -145,9 +145,9 @@ async function readAttempt(attemptInput, index) {
   } catch (error) {
     throw new ImageNormalizationError(`无法读取生成尝试文件：${error.message}`);
   }
-  if (input.sha256 !== sha256) throw new ImageNormalizationError(`ImageGen attempt[${index}] 的 sha256 与实际文件不一致`);
-  if (input.width !== metadata.width) throw new ImageNormalizationError(`ImageGen attempt[${index}] 的 width 与实际文件不一致`);
-  if (input.height !== metadata.height) throw new ImageNormalizationError(`ImageGen attempt[${index}] 的 height 与实际文件不一致`);
+  if (input.sha256 !== sha256) throw new ImageNormalizationError(`图像生成 attempt[${index}] 的 sha256 与实际文件不一致`);
+  if (input.width !== metadata.width) throw new ImageNormalizationError(`图像生成 attempt[${index}] 的 width 与实际文件不一致`);
+  if (input.height !== metadata.height) throw new ImageNormalizationError(`图像生成 attempt[${index}] 的 height 与实际文件不一致`);
   return { attempt_id: input.attempt_id, generation_record_id: input.generation_record_id, generated_at: input.generated_at, file: input.file, sha256, width: metadata.width, height: metadata.height };
 }
 
@@ -158,7 +158,7 @@ function sameResolvedPath(left, right) {
   return process.platform === "win32" ? leftAbsolute.toLowerCase() === rightAbsolute.toLowerCase() : leftAbsolute === rightAbsolute;
 }
 
-/** 收集两次原始 ImageGen 失败尝试和显式焦点；裁切始终作用于当前归一化输入。 */
+/** 收集两次原始 图像生成 失败尝试和显式焦点；裁切始终作用于当前归一化输入。 */
 async function readAspectRatioCorrection(options, sourceMetadata, targetWidth, targetHeight) {
   const correction = options.aspectRatioCorrection ?? options.aspect_ratio_correction;
   const directAttempts = options.attemptFiles ?? options.attempt_files ?? options.attempts ?? options.aspectRatioAttempts ?? options.aspect_ratio_attempts;
@@ -166,18 +166,18 @@ async function readAspectRatioCorrection(options, sourceMetadata, targetWidth, t
   const focus = correction?.focus ?? options.focus ?? options.cropFocus ?? options.crop_focus;
   const focusX = correction?.focusX ?? correction?.focus_x ?? options.focusX ?? options.focus_x ?? options.cropFocusX ?? options.crop_focus_x ?? focus?.x;
   const focusY = correction?.focusY ?? correction?.focus_y ?? options.focusY ?? options.focus_y ?? options.cropFocusY ?? options.crop_focus_y ?? focus?.y;
-  if (!Array.isArray(attempts) || attempts.length !== 2) throw new ImageNormalizationError("比例修正必须显式提供恰好两个 ImageGen 失败 attempt 文件");
+  if (!Array.isArray(attempts) || attempts.length !== 2) throw new ImageNormalizationError("比例修正必须显式提供恰好两个 图像生成 失败 attempt 文件");
   if (!unitInterval(focusX) || !unitInterval(focusY)) throw new ImageNormalizationError("比例修正必须显式提供 0 到 1 之间的 focus.x/focus.y");
   const resolvedAttempts = await Promise.all(attempts.map((attempt, index) => readAttempt(attempt, index)));
-  if (sameResolvedPath(resolvedAttempts[0].file, resolvedAttempts[1].file)) throw new ImageNormalizationError("两次 ImageGen attempt 必须来自两个不同的实际文件");
-  if (resolvedAttempts[0].sha256 === resolvedAttempts[1].sha256) throw new ImageNormalizationError("两次 ImageGen attempt 必须具有不同的实际 SHA-256，复制同一输出不能作为第二次生成");
-  if (new Set(resolvedAttempts.map((attempt) => attempt.attempt_id)).size !== 2) throw new ImageNormalizationError("两次 ImageGen attempt 的 attempt_id 必须唯一");
-  if (new Set(resolvedAttempts.map((attempt) => attempt.generation_record_id)).size !== 2) throw new ImageNormalizationError("两次 ImageGen attempt 的 generation_record_id 必须唯一");
-  if (resolvedAttempts[1].width !== sourceMetadata.width || resolvedAttempts[1].height !== sourceMetadata.height) throw new ImageNormalizationError("第二次 ImageGen attempt 的实际尺寸必须与当前归一化输入一致");
+  if (sameResolvedPath(resolvedAttempts[0].file, resolvedAttempts[1].file)) throw new ImageNormalizationError("两次 图像生成 attempt 必须来自两个不同的实际文件");
+  if (resolvedAttempts[0].sha256 === resolvedAttempts[1].sha256) throw new ImageNormalizationError("两次 图像生成 attempt 必须具有不同的实际 SHA-256，复制同一输出不能作为第二次生成");
+  if (new Set(resolvedAttempts.map((attempt) => attempt.attempt_id)).size !== 2) throw new ImageNormalizationError("两次 图像生成 attempt 的 attempt_id 必须唯一");
+  if (new Set(resolvedAttempts.map((attempt) => attempt.generation_record_id)).size !== 2) throw new ImageNormalizationError("两次 图像生成 attempt 的 generation_record_id 必须唯一");
+  if (resolvedAttempts[1].width !== sourceMetadata.width || resolvedAttempts[1].height !== sourceMetadata.height) throw new ImageNormalizationError("第二次 图像生成 attempt 的实际尺寸必须与当前归一化输入一致");
   const generation = options.generationRecord ?? options.generation_record ?? options.generation;
   const generationSource = generation?.transparency_strategy === "background-removal" || generation?.transparencyStrategy === "background-removal"
     ? generation.raw_source_file ?? generation.rawSourceFile : generation?.source_file ?? generation?.sourceFile;
-  if (generationSource && !sameResolvedPath(resolvedAttempts[1].file, generationSource)) throw new ImageNormalizationError("第二次 ImageGen attempt 必须绑定 generation_record 的 raw/source 文件");
+  if (generationSource && !sameResolvedPath(resolvedAttempts[1].file, generationSource)) throw new ImageNormalizationError("第二次 图像生成 attempt 必须绑定 generation_record 的 raw/source 文件");
   const firstMatchesTargetRatio = sameImageAspectRatio(resolvedAttempts[0].width, resolvedAttempts[0].height, targetWidth, targetHeight);
   const secondMatchesTargetRatio = sameImageAspectRatio(resolvedAttempts[1].width, resolvedAttempts[1].height, targetWidth, targetHeight);
   if (!firstMatchesTargetRatio && !secondMatchesTargetRatio) {

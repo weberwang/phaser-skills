@@ -56,10 +56,10 @@ function validEffectRecord(overrides = {}) {
   const fullPrompt = buildEffectImageFullPrompt({ assetPrompt, statePrompt, expectedAlpha: true });
   return {
     record_id: "GEN-SC-MAIN-HERO-IDLE",
-    generator: "imagegen",
+    generator: "fixture-render-tool",
     generator_version: "4",
     created_at: "2026-08-22T00:00:00Z",
-    command_or_recipe: "imagegen effect-image hero idle",
+    command_or_recipe: "fixture-render-tool effect-image hero idle",
     model: "imagegen-reference-faithful",
     model_version: "4",
     reconstruction_mode: "reference-faithful",
@@ -152,12 +152,12 @@ function validEffectAsset(overrides = {}) {
   };
 }
 
-/** 构造共享 ImageGen V4 门所需的原子资产合同。 */
+/** 构造共享 图像生成 V4 门所需的原子资产合同。 */
 function effectImageAssetContract() {
   return {
     applicability: "effect-image",
     production_origin: "independent-production",
-    production_method: "imagegen",
+    production_method: "image-generation",
     delivery_kind: "raster-image",
     image_generation_required: true,
     generation_record_required: true,
@@ -228,17 +228,23 @@ test("合法 effect-image 忠实还原记录通过", () => {
   assert.deepEqual(validateImageGenerationContract(asset, effectImageAssetContract(), effectImageValidationContext(), effectImageValidationOptions()), []);
 });
 
-test("alpha=true 单图必须声明背景模式并在提示词中要求非透明去背原图", () => {
+test("alpha=true 单图必须声明背景模式并保留透明 PNG 交付要求", () => {
   const record = validEffectRecord({ source_background_mode: undefined, full_prompt: buildEffectImageFullPrompt({ assetPrompt: validEffectRecord().asset_prompt, statePrompt: validEffectRecord().state_prompt, expectedAlpha: false }) });
   const errors = validateImageGenerationContract(validEffectAsset({ generation_record: record }), effectImageAssetContract(), effectImageValidationContext(), effectImageValidationOptions());
   assert(errors.some((item) => item.includes("source_background_mode")), errors.join("\n"));
-  assert(errors.some((item) => item.includes("非透明") || item.includes("透明 Alpha")), errors.join("\n"));
+  assert(errors.some((item) => item.includes("透明 PNG")), errors.join("\n"));
 });
 
-test("alpha=true 单图必须恰好记录一次成功背景移除", () => {
+test("alpha=true 单图允许失败历史后由最终成功背景移除收尾", () => {
   const record = validEffectRecord({ background_removal_attempts: [{ ...validEffectRecord().background_removal_attempts[0], operation: "remove-background" }] });
   const errors = validateImageGenerationContract(validEffectAsset({ generation_record: record }), effectImageAssetContract(), effectImageValidationContext(), effectImageValidationOptions());
   assert(errors.some((item) => item.includes("background_removal_attempts")), errors.join("\n"));
+  const baseAttempt = validEffectRecord().background_removal_attempts[0];
+  const history = [
+    { ...baseAttempt, status: "failed", output_file: "art/generated/sc-main-hero-idle-failed.png", output_has_alpha: false, evidence: { record_id: "BR-SC-MAIN-HERO-IDLE-FAILED", report: "evidence/visual/sc-main-hero-background-removal-failed.json" } },
+    baseAttempt,
+  ];
+  assert.deepEqual(validateImageGenerationContract(validEffectAsset({ generation_record: validEffectRecord({ background_removal_attempts: history }) }), effectImageAssetContract(), effectImageValidationContext(), effectImageValidationOptions()), []);
   assert.deepEqual(validateImageGenerationContract(validEffectAsset({ generation_record: validEffectRecord({ postprocess: [] }) }), effectImageAssetContract(), effectImageValidationContext(), effectImageValidationOptions()), []);
 });
 
@@ -297,7 +303,7 @@ test("source_file 等于冻结效果图时失败", () => {
   assert(errors.some((item) => item.includes("不得等于冻结效果图")));
 });
 
-test("普通非 effect-image ImageGen 不受重建字段影响", () => {
+test("普通非 effect-image 图像生成 不受重建字段影响", () => {
   const asset = {
     source_file: "art/ordinary.png",
     mime_type: "image/png",
@@ -309,10 +315,10 @@ test("普通非 effect-image ImageGen 不受重建字段影响", () => {
     runtime_consumption: { status: "passed", evidence: "evidence/runtime/ordinary.json", evidence_sha256: `sha256:${"a".repeat(64)}`, candidate_sha256: `sha256:${"a".repeat(64)}`, target_sha256: `sha256:${"b".repeat(64)}`, baseline_sha256: `sha256:${"d".repeat(64)}`, diff_fingerprint: "diff-ordinary" },
     generation_record: {
       record_id: "GEN-ORDINARY",
-      generator: "imagegen",
+      generator: "fixture-render-tool",
       generator_version: "1",
       created_at: "2026-08-22T00:00:00Z",
-      command_or_recipe: "imagegen ordinary",
+      command_or_recipe: "fixture-render-tool ordinary",
       global_prompt_prefix: "普通风格提示",
       asset_prompt: "普通装饰图",
       state_prompt: "默认态",
@@ -324,7 +330,7 @@ test("普通非 effect-image ImageGen 不受重建字段影响", () => {
       seed: 1,
     },
   };
-  const contract = { production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true };
+  const contract = { production_origin: "independent-production", production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true };
   assert.deepEqual(validateImageGenerationContract(asset, contract, { annotation_number: 1, region_id: "ordinary" }), []);
 });
 

@@ -157,7 +157,7 @@
 - 输入：N10 规格、全局基线、生成或用户提供的参考图。
 - 执行：生成/接收 scene master/reference target；登记来源权属、版本、SHA、视口、DPR、代表状态、整屏构图、初步拆解及技术冲突。默认 visual_validation.mode=usability；仅明确要求精确还原时设为 exact 并定义精确容差及完整对比条件。
 - 产物：主参考图、scene_reconstruction_contract、初步还原草案、布局/响应式合同。
-- 人工点：影响冻结视觉事实的技术取舍需精确确认；provided 记录真实外部来源，不能伪造 ImageGen 过程。
+- 人工点：影响冻结视觉事实的技术取舍需精确确认；provided 记录真实外部来源，不能伪造生成过程或工具记录。
 - 放行：viewport、Canvas、逻辑坐标、safe area 的关系，缩放/锚点/断点策略，背景覆盖，裁切/留白/拉伸许可，动态文本/显隐/滚动/触控/resize/横屏策略齐全。缺响应式合同阻断 V2。
 - 失败：修复绑定；冲突确需改变目标时先变更冻结参考，不让下游自行改图。
 
@@ -186,7 +186,7 @@
 - 分组：每个元素登记显式 `parent_element_id` 和 `semantic_grouping.kind/rationale`，区分区域、功能组件、组件部件和独立元素。图标、底板和对应文字按共同功能归属组合；侧栏等区域先组织各入口组件，禁止按“全部文字”或最小包含矩形归组。独立标题、装饰和整体品牌美术不强制套容器。字段及边界见[功能语义分组约束](../skills/phaser4-game-ui-layout/references/functional-semantic-grouping.md)。
 - 人工点：这里先提出拆解事实，等待 N16 确认；不预先冻结后置 layout_nodes。
 - 放行：component_count 是唯一部件数，不是可见实例数；重复实例用 placements；热区不计视觉资产。每区域显式声明 production_origin、production_method、delivery_kind、image_generation_required、generation_record_required、substitution_policy、expected_assets。
-- 失败：数量/编号/格式/路径冲突原地修复；不能把一个编号当一张资产，或把“独立生产”自动等同 ImageGen。
+- 失败：数量/编号/格式/路径冲突原地修复；不能把一个编号当一张资产，或把“独立生产”自动等同具体生成器。
 
 ### N15 生成拆解图与技术 JSON
 
@@ -255,16 +255,16 @@
 - 产物：源文件/生成记录、正式运行时文件、每资源状态、MIME/尺寸/alpha/SHA、来源与版权许可信息。
 - 人工点：外部付费/权利/预算等未授权行为先请求；正常生产沿用已确认的 V2 方案。
 - 放行：逐资源实际方法和交付形式满足冻结合同；复用必须绑定不可变 asset-reuse-snapshot/1.0 及源/兼容证据身份。
-- 失败：资源问题留 V3 修复；不得用 SVG、Graphics、程序绘图或参考图裁切替代明确要求 ImageGen 的资源。
+- 失败：资源问题留 V3 修复；不得用 SVG、Graphics、程序绘图或参考图裁切替代合同要求的独立生成式位图资源。
 
-### N23 ImageGen 与尺寸/透明度处理分支
+### N23 生成式位图与尺寸/透明度处理分支
 
 - 输入：N22 中明确 image_generation_required=true 的 expected_assets。
-- 执行：全部图片在 N22 的同一批任务内生成，每个唯一 component×required state 交付独立位图，individual、atlas_allowed=false；批量提交不得变成组合图或图集。每项记录完整提示词、全局一致性段、主参考、额外锚点、模型/版本、种子、参数与真实输出。
+- 执行：全部图片在 N22 的同一批任务内生成，每个唯一 component×required state 交付独立位图，individual、atlas_allowed=false；批量提交不得变成组合图或图集。系统根据提示词、参考输入、主体材质、透明需求和可用能力选择实际生成方案；每项记录完整提示词、全局一致性段、主参考、额外锚点、实际生成器/版本（未暴露时记录 `not-provided`）、种子、参数与真实输出。选择生成能力不自动新增外部调用授权。
 - 产物：原始生成图、处理记录、normalization_record、最终 PNG/JPEG；透明资源只允许 PNG。
 - 人工点：禁止无限重试或暗改规格；无法按已冻条件处理时报告所需决策。
-- 放行：宽高分别为 ceil(最大 placement 对应尺寸 × intended_scale_range.max × 1.5) 的精确最小值，max_dpr=1.5、padding_policy=none。非 ImageGen 图集必须显式允许且逐部件状态有切片合同。
-- 失败/处理：透明图先生成不透明高对比纯色背景，再唯一一次背景移除，之后归一化；不能直接生成透明背景代替。比例不符最多重生一次；仍不符时按已冻结裁切焦点安全条件受控裁切，否则先对不透明结果生成式延展，再去背/归一化。不得拉伸、补边或裁冻结参考图；尺寸已满足也记录 not-required。失败阻断，不自动重复去背。
+- 放行：宽高分别为 ceil(最大 placement 对应尺寸 × intended_scale_range.max × 1.5) 的精确最小值，max_dpr=1.5、padding_policy=none。生成式位图使用 `production_method=image-generation`、`delivery_kind=raster-image`、独立位图及完整生成记录；其他方法的图集必须显式允许且逐部件状态有切片合同。
+- 失败/处理：生成原图后读取实际 Alpha；透明需求可直接保留 Alpha（`transparency_strategy=direct-alpha`），或在无可用 Alpha 时执行 `transparency_strategy=background-removal`。简单纯色背景使用公共 `remove-background-local.mjs`，复杂背景另选分割工具，不能把颜色阈值当通用抠图。处理尝试按实际追加，失败记录原因并保留历史，重试次数由任务配置设定上限；不因重试自动新增外部调用授权。随后统一使用 Sharp 归一化；不得拉伸、补边或裁冻结参考图。比例不符最多重生一次；仍不符时按已冻结裁切焦点安全条件受控裁切，否则先对原图生成式延展，再按实际 Alpha 决定背景处理/归一化；尺寸已满足也记录 not-required。
 
 ### N24 V3 资源级验收与生产合同审计
 
@@ -497,11 +497,11 @@ V1–V3 接受合法待办；V4 拒绝非空待办。完成弹窗前置后将同
 | 字段 | 当前允许值/规则 |
 | --- | --- |
 | 实现分类 | generate-now、reuse-existing、runtime-program |
-| production_method | imagegen、authored-raster、authored-svg、phaser-graphics、runtime-program、reuse |
+| production_method | image-generation、authored-raster、authored-svg、phaser-graphics、runtime-program、reuse |
 | delivery_kind | raster-image、vector-image、runtime-drawing、runtime-program、existing-asset |
-| image_generation_required=true | 必须 imagegen + raster-image，交付独立位图及完整记录，不能用其他枚举替代 |
-| ImageGen 文件 | 源/运行输出 PNG 或 JPEG；透明输出仅 PNG；一般 authored-raster 的格式范围不能套用于 ImageGen |
-| atlas_allowed | ImageGen 固定 false；其他方法按显式合同与完整切片映射判断 |
+| image_generation_required=true | 必须 image-generation + raster-image，交付独立位图及完整记录，不能用其他枚举替代 |
+| 生成式位图文件 | 源/运行输出 PNG 或 JPEG；透明输出仅 PNG；一般 authored-raster 的格式范围不能套用于生成式位图 |
+| atlas_allowed | 生成式位图固定 false；其他方法按显式合同与完整切片映射判断 |
 
 枚举存在不代表任意区域都能选用它；实际方法必须符合该区域冻结的 owner、生产合同和 substitution_policy。界面不能为了方便提供“自动降级为程序绘图”绕过审计。
 
@@ -591,7 +591,7 @@ V1–V3 接受合法待办；V4 拒绝非空待办。完成弹窗前置后将同
 - [ ] 布局候选目录同步有 `layout-nodes.json`、`layout-decision.json`、`review.html`、`generation-result.json`；审阅页离线两栏、同坐标映射、中文名称和候选状态完整。
 - [ ] 布局有独立修改/确认；确认、decision、receipt 绑定审阅页/节点/PNG/决策及上游真实 SHA，不产生新参考或多方案选择。
 - [ ] 全画布 coverage 完整，production units 与区域/部件/状态一一对应。
-- [ ] ImageGen 独立位图、尺寸、透明一次去背、归一化、记录和 SHA 可验证。
+- [ ] 生成式位图独立位图、尺寸、实际生成器/版本、Alpha 策略（direct-alpha 或 background-removal）、按需去背景历史、Sharp 归一化、记录和 SHA 可验证。
 - [ ] 复用资源绑定不可变来源；accepted 文件不静默覆盖。
 - [ ] V3 有资源级合同审计和宿主同屏预验收。
 - [ ] 正式 SCENE/DISPLAY_LAYER 实施受当前 V2/V3 前置约束。

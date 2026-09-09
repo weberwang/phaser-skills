@@ -423,7 +423,7 @@ export function validateManifest(data, options = {}) {
       const mapped = new Set(fixedMappings.get(asset.id) ?? []);
       const declaresReconstruction = "ownership_type" in asset || "coverage_region_ids" in asset;
       if (mapped.size > 0 && asset.ownership_type !== "fixed-production-visual") errors.push(`${label}.ownership_type 必须为 fixed-production-visual`);
-      // bitmap-decomposition 只有在合同显式要求 ImageGen 时才绑定 AI 栅格路线。
+      // bitmap-decomposition 只有在合同显式要求 图像生成 时才绑定 AI 栅格路线。
       const assetContract = strictProductionContract ? resolveProductionContract(asset) : null;
       if (mapped.size > 0 && bitmapAssetIds.has(asset.id) && assetContract?.image_generation_required === true && asset.route !== "ai-composite-raster") errors.push(`${label} 被 bitmap-decomposition 覆盖引用时 route 必须为 ai-composite-raster`);
       if (mapped.size > 0 && (!Array.isArray(asset.coverage_region_ids) || asset.coverage_region_ids.length === 0 || !asset.coverage_region_ids.every(nonEmptyString))) errors.push(`${label}.coverage_region_ids 必须是非空字符串列表`);
@@ -904,7 +904,7 @@ export async function checkManifestFiles(data, projectRoot, options = {}) {
   data.assets.forEach((asset, index) => {
     if (!isObject(asset)) return; const assetPaths = []; const contract = resolveProductionContract(asset);
     if (contract.image_generation_required === true) {
-      errors.push(...validateEvidenceIdentity(asset.runtime_consumption, { stage: "V2", annotation_number: asset.coverage_annotation_number ?? "?", region_id: asset.coverage_region_id ?? asset.id, expectedMethod: "imagegen", observedMethod: contract.production_method ?? "missing" }, manifestEvidenceIdentity(data), { projectRoot }));
+      errors.push(...validateEvidenceIdentity(asset.runtime_consumption, { stage: "V2", annotation_number: asset.coverage_annotation_number ?? "?", region_id: asset.coverage_region_id ?? asset.id, expectedMethod: "image-generation", observedMethod: contract.production_method ?? "missing" }, manifestEvidenceIdentity(data), { projectRoot }));
       if (nonEmptyString(asset.source_file)) assetPaths.push(["production_contract.source_file", asset.source_file]);
       if (Array.isArray(asset.source_files)) for (const value of asset.source_files) if (nonEmptyString(value)) assetPaths.push(["production_contract.source_files", value]);
       if (nonEmptyString(asset.output_file)) assetPaths.push(["production_contract.output_file", asset.output_file]);

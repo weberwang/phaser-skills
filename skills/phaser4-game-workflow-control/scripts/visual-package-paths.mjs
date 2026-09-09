@@ -69,11 +69,11 @@ export function validateUnitPathDeclarations(paths, label, options = {}, report 
   return normalized;
 }
 
-/** 登记跨单元物理路径身份；非 ImageGen 仅允许同 owner 同 share_id 共享，ImageGen 永不共享。 */
+/** 登记跨单元物理路径身份；非 图像生成 仅允许同 owner 同 share_id 共享，图像生成 永不共享。 */
 export function registerCrossUnitPath(registry, path, kind, unit, shareId, report = () => {}) {
   const normalized = normalizeProjectRelativePath(path);
   if (!normalized) return;
-  const isImageGen = unit?.image_generation_required === true || unit?.production_method === "imagegen";
+  const isImageGeneration = unit?.image_generation_required === true || unit?.production_method === "image-generation";
   for (const [previousPath, previous] of registry.entries()) {
     const overlaps = previousPath === normalized || previousPath.startsWith(`${normalized}/`) || normalized.startsWith(`${previousPath}/`);
     if (!overlaps) continue;
@@ -82,9 +82,9 @@ export function registerCrossUnitPath(registry, path, kind, unit, shareId, repor
       if (previousPath === normalized && previous.shareId !== shareId && (previous.shareId || shareId)) report(`${kind} 与同一单元既有声明的 share_id 不一致：${path}`);
       continue;
     }
-    const previousImageGen = previous.imageGenerationRequired === true;
-    const sharedAllowed = !isImageGen && !previousImageGen && shareId && previous.shareId === shareId && previous.owner === unit.owner;
+    const previousImageGeneration = previous.imageGenerationRequired === true;
+    const sharedAllowed = !isImageGeneration && !previousImageGeneration && shareId && previous.shareId === shareId && previous.owner === unit.owner;
     if (!sharedAllowed) report(`${kind} 路径与其他单元冲突：${path}`);
   }
-  if (!registry.has(normalized)) registry.set(normalized, { unitId: unit.unitId, owner: unit.owner, shareId, kind, imageGenerationRequired: isImageGen });
+  if (!registry.has(normalized)) registry.set(normalized, { unitId: unit.unitId, owner: unit.owner, shareId, kind, imageGenerationRequired: isImageGeneration });
 }

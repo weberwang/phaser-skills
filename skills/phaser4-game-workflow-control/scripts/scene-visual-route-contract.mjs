@@ -32,7 +32,7 @@ const NATIVE_OWNERS = new Set([
   SCENE_VISUAL_OWNERS.RUNTIME_RENDERED,
   SCENE_VISUAL_OWNERS.RUNTIME_PROGRAM,
 ]);
-const FIXED_METHODS = new Set(["imagegen", "authored-raster", "reuse"]);
+const FIXED_METHODS = new Set(["image-generation", "authored-raster", "reuse"]);
 const NATIVE_METHODS = new Set(["phaser-graphics", "runtime-program"]);
 const FIXED_DELIVERIES = new Set(["raster-image", "existing-asset"]);
 const NATIVE_DELIVERIES = new Set(["runtime-drawing", "runtime-program"]);
@@ -350,7 +350,7 @@ export function validateSceneVisualRouteAnalysis(region, contract = {}, options 
       observedMethod: method,
     }));
     if (analysis.asset_first_decision !== "asset-first") errors.push(routeError(stage, contract, region, "图片资产路线必须声明 asset-first", { expected: "asset-first", actual: String(analysis.asset_first_decision) }));
-    if (!FIXED_OWNERS.has(owner) || !FIXED_METHODS.has(method) || !FIXED_DELIVERIES.has(delivery)) errors.push(routeError(stage, contract, region, "图片资产路线必须由 fixed-production-visual 和固定图片生产/交付承载", { expected: "fixed-production-visual + imagegen/authored-raster/reuse + raster-image/existing-asset", actual: JSON.stringify({ owner, method, delivery }) }));
+    if (!FIXED_OWNERS.has(owner) || !FIXED_METHODS.has(method) || !FIXED_DELIVERIES.has(delivery)) errors.push(routeError(stage, contract, region, "图片资产路线必须由 fixed-production-visual 和固定图片生产/交付承载", { expected: "fixed-production-visual + image-generation/authored-raster/reuse + raster-image/existing-asset", actual: JSON.stringify({ owner, method, delivery }) }));
     if (method === "reuse" && analysis.reuse_suitability?.eligible !== true) errors.push(routeError(stage, contract, region, "reuse 图片资产必须有精确身份和视觉兼容证据", { expected: "reuse_suitability.eligible=true", actual: String(analysis.reuse_suitability?.eligible ?? "missing") }));
     if (method === "reuse" && analysis.implementation_plan_mode !== "reuse-existing") errors.push(routeError(stage, contract, region, "reuse 图片资产必须绑定 reuse-existing 实施计划", { expected: "reuse-existing", actual: analysis.implementation_plan_mode }));
     if (method !== "reuse" && !new Set(["generate-now", "asset-and-scene"]).has(analysis.implementation_plan_mode)) errors.push(routeError(stage, contract, region, "非复用图片资产必须绑定生成或资产装配计划", { expected: "generate-now|asset-and-scene", actual: analysis.implementation_plan_mode }));

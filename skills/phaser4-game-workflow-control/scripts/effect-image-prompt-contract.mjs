@@ -1,5 +1,5 @@
 /**
- * effect-image ImageGen 的忠实重建提示词合同。
+ * effect-image 图像生成的忠实重建提示词合同。
  *
  * 该模块集中保存唯一的提示词常量、资产提示词构建器和生成记录门禁，
  * 避免 SKILL、清单校验器与实际发送给生成器的文本各自漂移。
@@ -13,7 +13,7 @@ export const EFFECT_IMAGE_RECONSTRUCTION_MODE = "reference-faithful";
 export const EFFECT_IMAGE_REFERENCE_INPUT_MODE = "full-reference-guidance";
 /** 允许重绘像素，但禁止复用参考图像素作为输出。 */
 export const EFFECT_IMAGE_PIXEL_REUSE_POLICY = "forbid-output-reuse";
-/** expected_assets.alpha=true 时必须追加到实际请求中的背景移除生产提示词。 */
+/** expected_assets.alpha=true 时必须追加到实际请求中的透明 PNG 交付要求。 */
 export const EFFECT_IMAGE_BACKGROUND_REMOVAL_PROMPT = TRANSPARENT_BACKGROUND_REMOVAL_PROMPT;
 /** effect-image 必须与全局视觉基线共同发送的 canonical 一致性段。 */
 export const EFFECT_IMAGE_GLOBAL_VISUAL_CONSISTENCY_PROMPT = GLOBAL_VISUAL_CONSISTENCY_PROMPT;
@@ -31,7 +31,7 @@ export const EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX = [
   "",
   "允许重新绘制全部像素，但禁止把参考图裁切、抠图或复制后直接作为交付结果。",
   "",
-  "输出单个独立位图资产。按当前 expected_assets 的背景生产合同生成背景；主体必须完整落入指定画布。不得生成组合图、atlas、sprite sheet、展示板、说明文字、无关 UI、数字、标签、水印或其他组件。",
+  "输出单个独立位图资产。按当前 expected_assets 的透明度生产合同交付背景；主体必须完整落入指定画布。不得生成组合图、atlas、sprite sheet、展示板、说明文字、无关 UI、数字、标签、水印或其他组件。",
 ].join("\n");
 
 /** effect-image 的 canonical negative_prompt；该字段中的禁词不是正向改编指令。 */
@@ -184,9 +184,9 @@ export function buildEffectImageAssetPrompt({ region, sceneReconstructionContrac
   return { prompt: lines.join("\n"), facts, missing, identity, region: resolvedRegion };
 }
 
-/** 组合实际发送给 ImageGen 的完整正向/负向提示词，供生成器与记录共用。 */
+/** 组合实际发送给图像生成器的完整正向/负向提示词，供生成器与记录共用。 */
 export function buildEffectImageFullPrompt({ assetPrompt, statePrompt = "", globalPromptPrefix = EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, globalConsistencyPrompt = GLOBAL_VISUAL_CONSISTENCY_PROMPT, negativePrompt = EFFECT_IMAGE_NEGATIVE_PROMPT, transparentBackground = false, expectedAlpha = false, expectedAsset = null } = {}) {
-  // alpha=true 只有一条背景移除生产路线，避免调用方通过策略参数切换到其它旁路。
+  // alpha=true 只追加最终透明 PNG 交付要求，具体生成器和背景处理路线由系统按提示词选择。
   const transparencyPrompt = transparentBackground === true || expectedAlpha === true || expectedAsset?.alpha === true
     ? EFFECT_IMAGE_BACKGROUND_REMOVAL_PROMPT
     : "";
@@ -283,7 +283,7 @@ function identityValue(identity, names) {
   return undefined;
 }
 
-/** 校验 effect-image ImageGen 的结构化字段、提示词与真实输入绑定。 */
+/** 校验 effect-image 图像生成的结构化字段、提示词与真实输入绑定。 */
 export function validateEffectImagePromptContract(asset, contract, generation, context = {}, options = {}) {
   const errors = [];
   const referenceTarget = context.reference_target ?? context.referenceTarget ?? contract?.reference_target ?? contract?.referenceTarget ?? {};
@@ -351,7 +351,7 @@ export function validateEffectImagePromptContract(asset, contract, generation, c
   return [...new Set(errors)];
 }
 
-/** 判断当前调用是否是 effect-image ImageGen；普通 AI 路线不继承重建三字段。 */
+/** 判断当前调用是否是 effect-image 图像生成；普通 AI 路线不继承重建三字段。 */
 export function isEffectImageGeneration({ asset, contract, context, options } = {}) {
   const values = [options, context, context?.region, context?.effect_image_reconstruction, context?.effectImageReconstruction, contract, contract?.effect_image_reconstruction, contract?.effectImageReconstruction, asset];
   return values.some((value) => isObject(value) && (

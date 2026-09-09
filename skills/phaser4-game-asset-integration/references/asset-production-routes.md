@@ -1,6 +1,6 @@
 # 资产生产路线
 
-`effect-image` 的 AI 合成栅格路线必须遵循[Effect-image ImageGen 忠实还原提示词合同](effect-image-prompt-contract.md)；本文件只负责路线选择、交付形态与阶段分工。资源文件的格式、Alpha、技术尺寸和切片合同仍按资源路线校验；显示层运行态默认使用 `visual_validation.mode=usability`，位置、尺寸、边距和换行允许合理偏差，只有明确 `exact` 需求才启用严格像素/全视口矩阵。
+`effect-image` 的 AI 合成栅格路线必须遵循[Effect-image 生成式位图忠实还原提示词合同](effect-image-prompt-contract.md)；本文件只负责路线选择、交付形态与阶段分工。资源文件的格式、Alpha、技术尺寸和切片合同仍按资源路线校验；显示层运行态默认使用 `visual_validation.mode=usability`，位置、尺寸、边距和换行允许合理偏差，只有明确 `exact` 需求才启用严格像素/全视口矩阵。
 
 V3 为每个资源选择一条主路线，并在机器清单记录场景或 shared 归属、源文件、运行时输出、接入对象/图层、关键验收、预算，以及当前冻结全局视觉基线的 ID、版本、风格指纹和适用锚点。所有路线执行 [全局视觉控制约束](global-visual-control.md)。正式资源必须继承当前有效基线并保留可编辑源文件；纯生成资产必须保留足以重现和审计的生成记录。局部资源不得自行创造新材质、光源、描边、角色比例或图标语法。
 
@@ -14,7 +14,7 @@ V3 为每个资源选择一条主路线，并在机器清单记录场景或 shar
 | VFX/粒子/Shader `vfx-particle-shader` | 粒子配置、shader 源码、噪声/遮罩源图 | 配置、GLSL、纹理 | 动态时序、混合模式、降级、遮挡、色觉差异、设备兼容 | 粒子峰值、过绘、纹理、Draw Call、GPU 时间 |
 | 装饰满幅背景 `decorative-full-bleed` | 分层绘图/3D 工程或可重现生成记录 | PNG/WebP/AVIF 与适配配置 | 屏幕空间、无交互、焦点安全区、裁切/延展、方向切换 | 最大纹理、内存、解码峰值 |
 | 世界/玩法环境 `gameplay-environment` | 分层场景、Tilemap、tileset、模块化关卡源 | 独立地块/对象、地图、碰撞及层级数据 | 玩法空间、遮挡、碰撞、导航、交互、动态可读性 | 可见纹理、对象数、过绘、Draw Call、流式加载 |
-| AI 合成栅格拆分 `ai-composite-raster` | 分层重绘文件，或固定全局提示前缀、资产段、状态段、负向段、模型/版本、参数、种子、参考输入与后处理记录 | 独立透明位图及清单（ImageGen 禁止图集；非 ImageGen 图集须另有显式切片合同） | 基线绑定、锚点、框选编号、边缘补绘、透明度、尺度、可复现性、跨资源一致性与授权 | 生成批次、输出数量、纹理内存、图集 |
+| AI 合成栅格拆分 `ai-composite-raster` | 分层重绘文件，或固定全局提示前缀、资产段、状态段、负向段、实际生成器/版本、参数、种子、参考输入与后处理记录 | 独立透明位图及清单（生成式位图按 `individual` 交付；其他路线图集须另有显式切片合同） | 基线绑定、锚点、框选编号、边缘补绘、透明度、尺度、可复现性、跨资源一致性与授权 | 生成批次、输出数量、纹理内存、图集 |
 
 ## 路线选择规则
 
@@ -24,7 +24,7 @@ V3 为每个资源选择一条主路线，并在机器清单记录场景或 shar
 
 | 来源路线 | 适用范围 | 必须满足的硬门 |
 | --- | --- | --- |
-| `image-asset` | 按钮皮肤、panel/background frame、特色图标、插画、角色、道具、背景、装饰和其他有独特视觉的原子部件 | `fixed-production-visual`；`imagegen`/`authored-raster`/`reuse`；`raster-image`/`existing-asset`。Sprite、NineSlice、atlas slice 仍属于图片资产路线，因为视觉来源是纹理 |
+| `image-asset` | 按钮皮肤、panel/background frame、特色图标、插画、角色、道具、背景、装饰和其他有独特视觉的原子部件 | `fixed-production-visual`；`image-generation`/`authored-raster`/`reuse`；`raster-image`/`existing-asset`。Sprite、NineSlice、atlas slice 仍属于图片资产路线，因为视觉来源是纹理 |
 | `phaser-native` | 纯色块、基础几何、规则线/渐变、遮罩、进度填充、布局/交互结构、动态数据、粒子/Shader/程序特效 | `runtime-data`/`runtime-rendered`/`runtime-program`；`phaser-graphics`/`runtime-program`；必须列出原语和可审计资格证据。独特视觉只有在等价性证据绑定预声明容差或精确例外时才可作原生例外 |
 | `composite` | 同一区域同时含图片外观与运行时行为，或必须继续原子拆分的混合部件 | `composite_parts` 至少拆出 `appearance` 与 `behavior`；外观走 fixed 图片资产，行为走 runtime；不能用一个 runtime owner 吞掉美术外观 |
 
@@ -38,17 +38,25 @@ V3 为每个资源选择一条主路线，并在机器清单记录场景或 shar
 - 场景差异只能使用全局基线声明的允许变量；不得把不同场景做成同一模板或互不相容的美术体系。
 - V4 必须用多资源联系表和同屏截图完成确定性一致性 F2；相同关键词、模型或调色板不能单独证明一致。
 
-## ImageGen 生产合同硬门禁
+## 生成式位图生产合同硬门禁
 
-视觉清单 schema 1.5 的新合同字段必须显式填写：`production_origin`、`production_method`、`delivery_kind`、`image_generation_required`、`generation_record_required`、`substitution_policy` 和 `expected_assets`。`production_method` 仅允许 `imagegen`、`authored-raster`、`authored-svg`、`phaser-graphics`、`runtime-program`、`reuse`；`delivery_kind` 仅允许 `raster-image`、`vector-image`、`runtime-drawing`、`runtime-program`、`existing-asset`。`independent-production` 与 `generate-now` 都不能推断 ImageGen；独立生产不等于图片生成，视觉相似不等于生产合同完成。
+视觉清单 schema 1.5 的新合同字段必须显式填写：`production_origin`、`production_method`、`delivery_kind`、`image_generation_required`、`generation_record_required`、`substitution_policy` 和 `expected_assets`。`production_method` 使用 `image-generation` 表示生成式位图分类，也可使用 `authored-raster`、`authored-svg`、`phaser-graphics`、`runtime-program`、`reuse`；`delivery_kind` 仅允许 `raster-image`、`vector-image`、`runtime-drawing`、`runtime-program`、`existing-asset`。系统根据提示词、参考输入、主体材质、透明需求和可用能力决定是否进入 `image-generation`，`independent-production` 与 `generate-now` 都不能推断具体生成器；独立生产不等于图片生成，视觉相似不等于生产合同完成。
 
-当 `image_generation_required=true` 时，唯一合格组合是 `production_method=imagegen` 与 `delivery_kind=raster-image`。必须保留独立源/运行时位图、ImageGen 生成记录和完整提示词、MIME、宽高、alpha、输出 SHA，以及已被运行时实际消费的证据；单图宽高由验证器按逻辑像素 `ceil(max placement width/height × intended_scale_range.max × 1.5)` 自动计算，`expected_assets.width/height` 和实际输出必须精确等于最小值；`scene_asset_usage.max_dpr` 必须严格为数字 `1.5`，`padding_policy` 不是 `none` 均失败，尺寸计算合同不需要人工审阅。这里的 1.5 是最大生产 DPR；运行时实际 DPR 动态封顶，不改变已经冻结的资产尺寸。`authored-svg`、`phaser-graphics`、CanvasTexture 和 runtime drawing 均不能等价完成。生成记录禁止裁切冻结参考图，参考图只能作为输入约束。
+当 `image_generation_required=true` 时，唯一合格组合是 `production_method=image-generation` 与 `delivery_kind=raster-image`。必须保留独立源/运行时位图、实际生成器与版本、完整提示词、真实参考输入、MIME、宽高、alpha、输出 SHA，以及已被运行时实际消费的证据；`generator` 必须记录实际调用的工具；工具未暴露的版本、模型参数或种子明确记录 `not-provided`，不得编造。单图宽高由验证器按逻辑像素 `ceil(max placement width/height × intended_scale_range.max × 1.5)` 自动计算，`expected_assets.width/height` 和实际输出必须精确等于最小值；`scene_asset_usage.max_dpr` 必须严格为数字 `1.5`，`padding_policy` 不是 `none` 均失败，尺寸计算合同不需要人工审阅。这里的 1.5 是最大生产 DPR；运行时实际 DPR 动态封顶，不改变已经冻结的资产尺寸。`authored-svg`、`phaser-graphics`、CanvasTexture 和 runtime drawing 均不能等价完成。生成记录禁止裁切冻结参考图，参考图只能作为输入约束；选择可用生成能力不自动新增外部调用授权。
 
-当 `expected_assets.alpha=true` 时，ImageGen 唯一生产路线是先生成非透明、轮廓清晰、与主体高对比、便于去背的纯色背景原图，再执行一次背景移除并交付 PNG（`mime_type=image/png`、`.png`）。生成记录必须声明 `source_background_mode=opaque`、`final_background_mode=transparent`、`transparency_strategy=background-removal`，实际提示词必须禁止直接输出透明 Alpha。记录必须提供恰好一条 `background_removal_attempts`，包含 `operation=background-removal`、`status=completed`、源/输出路径、完成时间、Alpha 状态和可审计 `evidence`；旧 `background_mode` 及历史策略字段一律拒绝。背景移除失败时阻断当前 V3/V4 门并就地修复；若候选身份未变则只 `revalidate` 当前门，禁止无限重试或自动多次去背。V4 须解码真实 PNG 并证明存在透明像素，不能只相信声明。
+当 `expected_assets.alpha=true` 时，透明路线可以直接生成含 Alpha 的 PNG，也可以在原图没有可用 Alpha 时执行公共背景处理。生成记录声明 `transparency_strategy=direct-alpha` 或 `transparency_strategy=background-removal`，并分别记录原图实际 Alpha 与最终 Alpha；简单纯色背景使用 `skills/phaser4-game-asset-integration/scripts/remove-background-local.mjs`，复杂背景另选分割工具，不能把颜色阈值当通用抠图。`background_removal_attempts` 按实际尝试追加记录，每项包含 `operation`、`status`、源/输出路径、完成时间、Alpha 状态、可审计 `evidence`，失败必须记录原因；历史失败保留，去背尝试默认最多 3 次，可通过 `generation_record.background_removal_max_attempts` 设置任务上限（正整数），禁止无限重试。已有 Alpha 通道不等于背景已透明；部分透明原图需要继续去底时同样可以采用此路线。透明输出仍必须是 `image/png` 与 `.png`，V4 须解码真实 PNG 并证明存在透明像素，不能只相信声明。
 
-ImageGen 单图的固定生产顺序是“生成原图 →（透明路线一次背景移除）→ 尺寸归一化 → V4/final/runtime”。`raw_source_file` 指 ImageGen 非透明原图，透明路线的 `source_file` 指背景移除后的含 Alpha 中间图；`normalization_record.source_file` 必须绑定当前归一化输入，`runtime_file`、`runtime_outputs` 和 `normalization_record.output_file` 指归一化交付物。归一化必须用项目根依赖 Sharp 生成最终 PNG/JPEG（`alpha=true` 只允许 PNG，`alpha=false` 可使用 JPEG），并写入 `normalization_record`。首次输出比例不符时最多重生一次；第二次仍不符时，若 V1/V3 已冻结裁切焦点和安全事实，可用 `operation=crop-and-resize-to-contract`（CLI 使用 `--attempt-one`、`--attempt-two`、`--focus-x`、`--focus-y` 及每个 attempt 的身份元数据）：CLI/API 必须读取两个真实原始 ImageGen attempt 的 `attempt_id`、`generation_record_id`、`generated_at`、文件、实际宽高与实际 SHA，确认两者都与目标比例不符、路径和 SHA 互不相同；旧的仅路径数组结构拒绝，不要求两次尺寸相同但第二次实际宽高必须等于当前归一化输入。普通路线的第二次 attempt 绑定 `generation_record.source_file`，透明路线绑定 `generation_record.raw_source_file`，而 `normalization_record.source_file` 可以是同尺寸的去背输出。受控裁切按归一化输入的实际尺寸和约分目标比例计算最大整数 `crop_rect`，再等比 resize；若裁切会损伤主体、文字、透明轮廓或关键构图，则先由生产流程对不透明生成结果生成式延展到目标比例，再执行一次背景移除（如为透明路线）和普通归一化。该分流适用于所有 ImageGen 图片，`padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘或裁切冻结 `reference_target`；原图尺寸已经正确时记录 `operation=not-required`。透明路线还必须在归一化前后确认 `hasAlpha=true`。归一化记录缺失、失败、路径/哈希/尺寸不一致先 `repair` 并重验当前门；只有冻结生产规格或上游事实真实变化时才 `return` 到最早受影响阶段。
+公共纯色背景脚本通过参数调用，不为每个任务改写脚本：
 
-拆解粒度补充：先完成状态分析，再建立唯一原子 `component_id/atomic_visual_key`；重复视觉实例通过 `placements` 表达，不重复生成资产。② 的六个顶部按钮分别是六个组件；⑧ 的三个相同底部表面可是一组件三 placements；⑨ 的三个动作图标按实际复用关系登记。ImageGen 对每个唯一 component×required state 只接受独立位图，强制 `delivery_mode=individual` 与 `atlas_allowed=false`，编号组图、横向组图和图集均不等价；atlas 只适用于非 ImageGen 方法的显式切片合同。placement 热区有独立 `hotspot_id`，不计入视觉资产。
+```bash
+node skills/phaser4-game-asset-integration/scripts/remove-background-local.mjs --source input.png --output output.png --background-color '#00aa55' --tolerance 24 --record record.json --preview-dir evidence/preview
+```
+
+已有透明原图只在明确选择 direct-alpha 时使用 `--reuse-alpha`，不要伪造背景移除记录；背景处理完成后将返回报告追加到 `background_removal_attempts`，再把实际输出交给 Sharp 归一化。
+
+生成式位图单图的固定生产顺序是“生成原图 → 按实际 Alpha 决定是否执行背景处理 → 尺寸归一化 → V4/final/runtime”。`raw_source_file` 指实际生成原图；透明路线的 `source_file` 指 direct-alpha 原图或背景处理后的含 Alpha 中间图；`normalization_record.source_file` 必须绑定当前归一化输入，`runtime_file`、`runtime_outputs` 和 `normalization_record.output_file` 指归一化交付物。归一化必须用项目根依赖 Sharp 生成最终 PNG/JPEG（`alpha=true` 只允许 PNG，`alpha=false` 可使用 JPEG），并写入 `normalization_record`。首次输出比例不符时最多重生一次；第二次仍不符时，若 V1/V3 已冻结裁切焦点和安全事实，可用 `operation=crop-and-resize-to-contract`（CLI 使用 `--attempt-one`、`--attempt-two`、`--focus-x`、`--focus-y` 及每个 attempt 的身份元数据）：CLI/API 必须读取两个真实原始生成 attempt 的 `attempt_id`、`generation_record_id`、`generated_at`、文件、实际宽高与实际 SHA，确认两者都与目标比例不符、路径和 SHA 互不相同；旧的仅路径数组结构拒绝，不要求两次尺寸相同但第二次实际宽高必须等于当前归一化输入。普通路线的第二次 attempt 绑定 `generation_record.source_file`，透明路线绑定 `generation_record.raw_source_file`，而 `normalization_record.source_file` 可以是同尺寸的去背景输出。受控裁切按归一化输入的实际尺寸和约分目标比例计算最大整数 `crop_rect`，再等比 resize；若裁切会损伤主体、文字、透明轮廓或关键构图，则先由生产流程对原图生成式延展到目标比例，再按实际 Alpha 决定背景处理和普通归一化。`padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘或裁切冻结 `reference_target`；原图尺寸已经正确时记录 `operation=not-required`。透明路线还必须在归一化前后确认 `hasAlpha=true`。归一化记录缺失、失败、路径/哈希/尺寸不一致先 `repair` 并重验当前门；只有冻结生产规格或上游事实真实变化时才 `return` 到最早受影响阶段。
+
+拆解粒度补充：先完成状态分析，再建立唯一原子 `component_id/atomic_visual_key`；重复视觉实例通过 `placements` 表达，不重复生成资产。② 的六个顶部按钮分别是六个组件；⑧ 的三个相同底部表面可是一组件三 placements；⑨ 的三个动作图标按实际复用关系登记。生成式位图对每个唯一 component×required state 只接受独立位图，强制 `delivery_mode=individual` 与 `atlas_allowed=false`，编号组图、横向组图和图集均不等价；atlas 只适用于其他生产方法的显式切片合同。placement 热区有独立 `hotspot_id`，不计入视觉资产。
 
 V3 按每个 `annotation_number/region_id` 写入上述合同和错误定位；Implementation Package 另写 `visualProductionUnits`，逐一绑定 coverage、所有者、ownedPaths、输出路径和格式。V4 必须提交 `production_contract_audit`，F2 只消费带 `validationMode=MACHINE` 的当前身份机器验证事实；V4 还必须有 V3、实施包、V4、F2 机器验证事实、F3 runtime replay、freshness-bound fidelity cases、运行时消费和无未批准替换。
 
@@ -64,7 +72,7 @@ V3 按每个 `annotation_number/region_id` 写入上述合同和错误定位；I
 
 `reuse-existing` 的 `reuse_source` 是可复核的精确身份，不是路径备注：必须同时记录 `source_asset_id`、`source_manifest`、`source_manifest_sha256`、`source_file`、`source_sha256`、`license_record`、`compatibility_evidence`、`compatibility_evidence_sha256`、`visual_baseline_id/version` 及适用 scene/state。`source_manifest` 必须是独立的不可变 `asset-reuse-snapshot/1.0` JSON 快照，根节点为 `snapshot_schema`、`snapshot_id`、`asset`，禁止指向当前 `docs/visual-assets.json`；`asset` 记录 accepted 资源的基线、许可、scene/shared 归属、适用 scene/state、来源、runtime_outputs、Phaser/玩法/一致性证据，外部 `source_manifest_sha256` 绑定整个快照。`--check-files` 会解析并逐项比对快照、复算源文件和兼容性证据 SHA；缺失、漂移、错误基线/许可/归属或 accepted 证据不全都不得通过。冻结 `reference_target.original_file` 默认必须是完整合法的 8 位非交错 RGB/RGBA PNG，且扫描行完整、IHDR 宽高必须与每个目标画布一致。
 
-固定视觉区域的拆解粒度补充合同：状态分析必须先于组件清单，不能把 `annotation_number` 误当成资产数量。`state_analysis` 需要覆盖 default、selected、active、disabled、pressed、hover、victory、defeat、paused，并对每项写 `required` 或 `not-applicable+reason`。`component_inventory` 的 `component_count` 必须等于可复用部件清单；ImageGen 的 `expected_assets` 必须逐 `component_id × required state_id` 映射。默认 individual 模式禁止一张横向组图满足多个 component；ImageGen 永远禁止 atlas，必须 `delivery_mode=individual` 且 `atlas_allowed=false`；只有 authored-raster/authored-svg/reuse 等非 ImageGen 方法可在显式合同下使用唯一 `atlas_slice` 元数据。交互热区不属于视觉资产。
+固定视觉区域的拆解粒度补充合同：状态分析必须先于组件清单，不能把 `annotation_number` 误当成资产数量。`state_analysis` 需要覆盖 default、selected、active、disabled、pressed、hover、victory、defeat、paused，并对每项写 `required` 或 `not-applicable+reason`。`component_inventory` 的 `component_count` 必须等于可复用部件清单；`image_generation` 的 `expected_assets` 必须逐 `component_id × required state_id` 映射。默认 individual 模式禁止一张横向组图满足多个 component；生成式位图必须 `delivery_mode=individual` 且 `atlas_allowed=false`；其他生产方法只有在显式合同下才能使用唯一 `atlas_slice` 元数据。交互热区不属于视觉资产。
 
 方向或全局规则漂移退 V2；生产规格、基线绑定或生成包缺失退 V3；资源执行偏差退 V4；结构根因退 V1。冻结基线变更后标记失效证据，并重验全部受影响资源与同屏组合。
 

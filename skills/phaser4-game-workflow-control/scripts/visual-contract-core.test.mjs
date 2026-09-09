@@ -46,10 +46,10 @@ test("共享 SHA 与规范化 JSON 对输入顺序保持稳定", () => {
 
 test("视觉生产词汇表由共享核心集中维护", () => {
   assert.deepEqual([...VISUAL_PRODUCTION_ORIGINS], ["bitmap-decomposition", "independent-production"]);
-  assert.deepEqual([...VISUAL_PRODUCTION_METHODS], ["imagegen", "authored-raster", "authored-svg", "phaser-graphics", "runtime-program", "reuse"]);
+  assert.deepEqual([...VISUAL_PRODUCTION_METHODS], ["image-generation", "authored-raster", "authored-svg", "phaser-graphics", "runtime-program", "reuse"]);
   assert.deepEqual([...VISUAL_DELIVERY_KINDS], ["raster-image", "vector-image", "runtime-drawing", "runtime-program", "existing-asset"]);
   assert.deepEqual([...VISUAL_SUBSTITUTION_POLICIES], ["forbid", "user-change-request-only"]);
-  assert.deepEqual([...VISUAL_FIXED_IMAGE_METHODS], ["imagegen", "authored-raster", "reuse"]);
+  assert.deepEqual([...VISUAL_FIXED_IMAGE_METHODS], ["image-generation", "authored-raster", "reuse"]);
   assert.deepEqual([...VISUAL_PROGRAM_METHODS], ["phaser-graphics", "runtime-program"]);
 });
 

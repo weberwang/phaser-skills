@@ -363,10 +363,10 @@ function validateEffectImageCombinationFacts(contract, preacceptance, stage, err
   else if (!passedCombinationFact(redesign) && !(isObject(redesign) && redesign.approved === true && nonEmptyString(redesign.change_request_id ?? redesign.changeRequestId))) errors.push(contractError(stage, contract, preacceptance, "V3 同屏组合存在未经批准的重新设计", { missing: "approved_change_request", returnStage: "V2/V3", rootCause: "执行问题" }));
 
   const coverageRegions = field(contract, "coverage_regions", "coverageRegions", "regions") ?? [];
-  const hasImageGen = Array.isArray(coverageRegions) && coverageRegions.some((region) => field(region, "production_method", "productionMethod") === "imagegen" || field(region, "image_generation_required", "imageGenerationRequired") === true);
+  const hasImageGeneration = Array.isArray(coverageRegions) && coverageRegions.some((region) => field(region, "production_method", "productionMethod") === "image-generation" || field(region, "image_generation_required", "imageGenerationRequired") === true);
   const binding = field(preacceptance, "prompt_contract_binding", "promptContractBinding", "prompt_contract_audit", "promptContractAudit", "generation_record_bindings", "generationRecordBindings");
   const bindings = Array.isArray(binding) ? binding : isObject(binding) ? [binding] : [];
-  if (hasImageGen && bindings.length === 0) errors.push(contractError(stage, contract, preacceptance, "V3 同屏组合缺少提示词合同与实际生成记录绑定", { missing: "prompt_contract_binding", returnStage: "V2/V3", rootCause: "执行问题" }));
+  if (hasImageGeneration && bindings.length === 0) errors.push(contractError(stage, contract, preacceptance, "V3 同屏组合缺少提示词合同与实际生成记录绑定", { missing: "prompt_contract_binding", returnStage: "V2/V3", rootCause: "执行问题" }));
   const knownRegions = new Set(coverageRegions.map((item) => field(item, "region_id", "regionId", "id")).filter(nonEmptyString));
   for (const [index, item] of bindings.entries()) {
     const record = field(item, "generation_record", "generationRecord", "actual_generation_record", "actualGenerationRecord") ?? item;
@@ -411,9 +411,9 @@ export function validateSceneCombinationPreacceptance(contract, stage = "V3", op
   if (isSha256(candidateSha) && field(preacceptance, "candidate_sha256", "candidateSha256") !== candidateSha) errors.push(contractError(stage, contract, preacceptance, "同屏组合预验收 candidate SHA 与当前候选不一致", { expected: candidateSha, actual: field(preacceptance, "candidate_sha256", "candidateSha256"), returnStage: "V2/V3" }));
   if (nonEmptyString(candidateDiff) && field(preacceptance, "diff_fingerprint", "diffFingerprint", "diff_identity", "diffIdentity") !== candidateDiff) errors.push(contractError(stage, contract, preacceptance, "同屏组合预验收 diff identity 与当前候选不一致", { expected: candidateDiff, actual: field(preacceptance, "diff_fingerprint", "diffFingerprint", "diff_identity", "diffIdentity"), returnStage: "V2/V3" }));
   const effectImage = isEffectImageContract(contract, options.manifest, options);
-  const hasImageGen = Array.isArray(field(contract, "coverage_regions", "coverageRegions", "regions"))
-    && field(contract, "coverage_regions", "coverageRegions", "regions").some((region) => field(region, "production_method", "productionMethod") === "imagegen" || field(region, "image_generation_required", "imageGenerationRequired") === true);
-  if (effectImage || hasImageGen) {
+  const hasImageGeneration = Array.isArray(field(contract, "coverage_regions", "coverageRegions", "regions"))
+    && field(contract, "coverage_regions", "coverageRegions", "regions").some((region) => field(region, "production_method", "productionMethod") === "image-generation" || field(region, "image_generation_required", "imageGenerationRequired") === true);
+  if (effectImage || hasImageGeneration) {
     validateEffectImageCombinationFacts(contract, preacceptance, stage, errors, options.manifest);
   }
   if (effectImage) {

@@ -1,5 +1,5 @@
 /**
- * ImageGen 尺寸归一化记录的纯合同校验器。
+ * 图像生成 尺寸归一化记录的纯合同校验器。
  *
  * 运行时转换由 visual-image-normalization.mjs 负责；本模块不加载 Sharp，
  * 这样 V3/V4 合同校验仍可在没有本地原图时审计结构化事实。
@@ -190,7 +190,7 @@ function requireField(record, fieldName, errors) {
   if (field(record, fieldName) === undefined) errors.push(`normalization_record.${fieldName} 缺失`);
 }
 
-/** 判断生成记录是否走唯一允许的透明背景移除路线。 */
+/** 判断当前生成记录是否经过背景移除，以绑定正确的原始生成文件。 */
 function usesBackgroundRemovalRoute(generation = {}) {
   return field(generation, "transparency_strategy", "transparencyStrategy") === "background-removal";
 }
@@ -216,7 +216,7 @@ function validateAspectRatioCorrection(record, expectedWidth, expectedHeight, er
 
   const attempts = correction.attempts;
   if (!Array.isArray(attempts) || attempts.length !== 2) {
-    errors.push("aspect_ratio_correction.attempts 必须恰好包含两次真实 ImageGen attempt");
+    errors.push("aspect_ratio_correction.attempts 必须恰好包含两次真实 图像生成 attempt");
   } else {
     attempts.forEach((attempt, index) => {
       if (!isObject(attempt)) {
@@ -250,19 +250,19 @@ function validateAspectRatioCorrection(record, expectedWidth, expectedHeight, er
     const generationRawSourcePath = comparablePath(field(generation, "raw_source_file", "rawSourceFile"));
     if (usesBackgroundRemovalRoute(generation)) {
       if (!generationRawSourcePath) {
-        errors.push("透明背景移除路线必须提供 generation_record.raw_source_file，供第二次 raw ImageGen attempt 绑定");
+        errors.push("透明背景移除路线必须提供 generation_record.raw_source_file，供第二次 raw 图像生成 attempt 绑定");
       } else if (secondAttemptPath !== generationRawSourcePath) {
-        errors.push("透明背景移除路线的第二次 raw ImageGen attempt 必须绑定 generation_record.raw_source_file");
+        errors.push("透明背景移除路线的第二次 raw 图像生成 attempt 必须绑定 generation_record.raw_source_file");
       }
       // 去背输出是独立的 normalization source；这里仅通过尺寸绑定 raw attempt，不能要求路径或 SHA 相同。
     } else if (generationSourcePath) {
-      if (secondAttemptPath !== generationSourcePath) errors.push("普通 ImageGen 路线的第二次 raw ImageGen attempt 必须绑定 generation_record.source_file");
+      if (secondAttemptPath !== generationSourcePath) errors.push("普通 图像生成 路线的第二次 raw 图像生成 attempt 必须绑定 generation_record.source_file");
       if (generationSourcePath === normalizationSourcePath && isSha256(attempts[1]?.sha256) && attempts[1].sha256 !== record.source_sha256) {
-        errors.push("第二次 raw ImageGen attempt 与 normalization_record.source_file 相同时，SHA-256 必须一致");
+        errors.push("第二次 raw 图像生成 attempt 与 normalization_record.source_file 相同时，SHA-256 必须一致");
       }
     }
-    if (positiveInteger(attempts[1]?.width) && attempts[1].width !== record.source_width) errors.push("第二次 raw ImageGen attempt 的 width 必须与 normalization_record.source_width 一致");
-    if (positiveInteger(attempts[1]?.height) && attempts[1].height !== record.source_height) errors.push("第二次 raw ImageGen attempt 的 height 必须与 normalization_record.source_height 一致");
+    if (positiveInteger(attempts[1]?.width) && attempts[1].width !== record.source_width) errors.push("第二次 raw 图像生成 attempt 的 width 必须与 normalization_record.source_width 一致");
+    if (positiveInteger(attempts[1]?.height) && attempts[1].height !== record.source_height) errors.push("第二次 raw 图像生成 attempt 的 height 必须与 normalization_record.source_height 一致");
     if (options.checkFiles === true && options.projectRoot) {
       attempts.forEach((attempt, index) => {
         if (!isObject(attempt) || !nonEmptyString(attempt.file)) return;
@@ -299,18 +299,18 @@ function validateAspectRatioCorrection(record, expectedWidth, expectedHeight, er
   }
 }
 
-/** 判断合同是否为 ImageGen；普通 authored-raster/reuse 路线不受尺寸归一化门影响。 */
+/** 判断合同是否为 图像生成；普通 authored-raster/reuse 路线不受尺寸归一化门影响。 */
 function isImageGenerationContract(contract = {}) {
-  return contract?.production_method === "imagegen" || contract?.productionMethod === "imagegen"
+  return contract?.production_method === "image-generation" || contract?.productionMethod === "image-generation"
     || contract?.image_generation_required === true || contract?.imageGenerationRequired === true;
 }
 
-/** 校验 ImageGen 最终输出是否绑定到一次成功的 Sharp 尺寸归一化。 */
+/** 校验 图像生成 最终输出是否绑定到一次成功的 Sharp 尺寸归一化。 */
 export function validateImageNormalizationContract({ asset = {}, contract = {}, generation = {}, expectedAsset, metadata = {}, options = {} } = {}) {
   if (!isImageGenerationContract(contract)) return [];
   const hasTargetWidth = expectedAsset?.width !== undefined;
   const hasTargetHeight = expectedAsset?.height !== undefined;
-  // 没有尺寸合同的通用 ImageGen 仍由原有输出门校验；一旦声明任一目标尺寸，就必须完整记录归一化。
+  // 没有尺寸合同的通用 图像生成 仍由原有输出门校验；一旦声明任一目标尺寸，就必须完整记录归一化。
   if (!hasTargetWidth && !hasTargetHeight && options.requireTarget !== true) return [];
   const errors = [];
   const expectedWidth = expectedAsset?.width;
@@ -320,7 +320,7 @@ export function validateImageNormalizationContract({ asset = {}, contract = {}, 
     return errors;
   }
   const records = getImageNormalizationRecords(asset, generation);
-  if (records.length === 0) return ["ImageGen 最终输出缺少 normalization_record，必须先完成尺寸归一化"];
+  if (records.length === 0) return ["图像生成 最终输出缺少 normalization_record，必须先完成尺寸归一化"];
   const record = records[0];
   if (!isObject(record)) return ["normalization_record 必须是对象，不能用字符串或空值代替结构化记录"];
   if (records.length > 1 && records.some((item) => !isObject(item) || !sameNormalizationIdentity(item, record))) errors.push("asset 与 generation_record 的 normalization_record 不一致");

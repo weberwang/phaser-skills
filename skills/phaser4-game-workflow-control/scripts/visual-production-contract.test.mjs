@@ -93,7 +93,7 @@ function multiComponentRegion(count, mode = "individual", expectedAssets = null)
   });
 }
 
-/** 构造不需要 ImageGen 的显式独立生产合同。 */
+/** 构造不需要 图像生成 的显式独立生产合同。 */
 function independentContract(overrides = {}) {
   return {
     production_origin: "independent-production",
@@ -108,7 +108,7 @@ function independentContract(overrides = {}) {
   };
 }
 
-/** 为 ImageGen 夹具生成与源图、运行时输出和最终尺寸一致的归一化记录。 */
+/** 为 图像生成 夹具生成与源图、运行时输出和最终尺寸一致的归一化记录。 */
 function normalizationRecordForAsset({ sourceFile, outputFile, width, height, alpha, sha256, operation = "not-required" } = {}) {
   const identitySha = /^sha256:[a-f0-9]{64}$/.test(String(sha256 ?? "")) ? sha256 : HASH;
   return {
@@ -132,7 +132,7 @@ function normalizationRecordForAsset({ sourceFile, outputFile, width, height, al
   };
 }
 
-/** 构造包含完整输出身份的 ImageGen 资产合同，并同步资产与生成记录的归一化事实。 */
+/** 构造包含完整输出身份的 图像生成 资产合同，并同步资产与生成记录的归一化事实。 */
 function imageGenAsset(overrides = {}) {
   const asset = {
     source_file: "art/hero-cutout.png",
@@ -144,8 +144,8 @@ function imageGenAsset(overrides = {}) {
     runtime_outputs: ["public/assets/hero.png"],
     runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", evidence_sha256: HASH, candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1" },
     generation_record: {
-      record_id: "GEN-1", generator: "imagegen", generator_version: "1", created_at: "2026-08-15T00:00:00Z", command_or_recipe: "imagegen hero",
-      global_prompt_prefix: "固定风格", asset_prompt: "主角", state_prompt: "待机", negative_prompt: "文字", full_prompt: "固定风格\n主角\n待机\n透明目标要求：生成非透明、轮廓清晰、与主体高对比、便于去背的纯色背景；禁止直接输出透明 Alpha。随后仅执行一次受控背景移除，产出含真实 Alpha 的 PNG。", source_background_mode: "opaque", final_background_mode: "transparent", transparency_strategy: "background-removal", model: "imagegen", model_version: "1", seed: 1,
+      record_id: "GEN-1", generator: "image-generation", generator_version: "1", created_at: "2026-08-15T00:00:00Z", command_or_recipe: "imagegen hero",
+      global_prompt_prefix: "固定风格", asset_prompt: "主角", state_prompt: "待机", negative_prompt: "文字", full_prompt: "固定风格\n主角\n待机\n透明目标要求：生成非透明、轮廓清晰、与主体高对比、便于去背的纯色背景；禁止直接输出透明 Alpha。随后仅执行一次受控背景移除，产出含真实 Alpha 的 PNG。", source_background_mode: "opaque", final_background_mode: "transparent", transparency_strategy: "background-removal", model: "image-generation", model_version: "1", seed: 1,
       raw_source_file: "art/hero-raw.png", raw_source_has_alpha: false, source_file: "art/hero-cutout.png", source_has_alpha: true, reference_inputs: ["docs/reference.png"], postprocess: ["background-removal"], background_removal_attempts: [{ operation: "background-removal", status: "completed", source_file: "art/hero-raw.png", output_file: "art/hero-cutout.png", source_has_alpha: false, output_has_alpha: true, completed_at: "2026-08-15T00:00:00Z", evidence: { record_id: "BR-1", report: "evidence/background-removal.json" } }],
     },
     ...overrides,
@@ -173,7 +173,7 @@ function imageGenAsset(overrides = {}) {
   return asset;
 }
 
-/** 固定回归夹具：①–④、⑦–⑨均声明 ImageGen，只有①和⑦交付 PNG。 */
+/** 固定回归夹具：①–④、⑦–⑨均声明 图像生成，只有①和⑦交付 PNG。 */
 const IMAGEGEN_REGRESSION_FIXTURES = [
   { number: "①", annotation_number: 1, delivery_kind: "raster-image", mime_type: "image/png" },
   { number: "②", annotation_number: 2, delivery_kind: "vector-image", mime_type: "image/svg+xml" },
@@ -188,60 +188,84 @@ const IMAGEGEN_REGRESSION_FIXTURES = [
 function v4FixtureManifest(fixture) {
   const componentId = `${fixture.number}-component`;
   const component = componentContract(componentId, fixture.number);
-  const region = refreshAtomicRequirements({ ...component, id: fixture.number, annotation_number: fixture.annotation_number, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", expected_assets: [{ ...component.expected_assets[0], mime_type: fixture.mime_type }], asset_id: fixture.number });
-  const asset = { ...imageGenAsset({ mime_type: fixture.mime_type, source_file: `art/${fixture.number}.png`, runtime_outputs: [`public/${fixture.number}.png`], generation_record: { ...imageGenAsset().generation_record, annotation_number: fixture.annotation_number, region_id: fixture.number, component_id: componentId, state_id: "default", asset_id: fixture.number, source_file: `art/${fixture.number}.png`, runtime_file: `public/${fixture.number}.png` } }), ...component, id: fixture.number, production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", expected_assets: [{ ...component.expected_assets[0], mime_type: fixture.mime_type }] };
+  const region = refreshAtomicRequirements({ ...component, id: fixture.number, annotation_number: fixture.annotation_number, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", expected_assets: [{ ...component.expected_assets[0], mime_type: fixture.mime_type }], asset_id: fixture.number });
+  const asset = { ...imageGenAsset({ mime_type: fixture.mime_type, source_file: `art/${fixture.number}.png`, runtime_outputs: [`public/${fixture.number}.png`], generation_record: { ...imageGenAsset().generation_record, annotation_number: fixture.annotation_number, region_id: fixture.number, component_id: componentId, state_id: "default", asset_id: fixture.number, source_file: `art/${fixture.number}.png`, runtime_file: `public/${fixture.number}.png` } }), ...component, id: fixture.number, production_origin: "independent-production", production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", expected_assets: [{ ...component.expected_assets[0], mime_type: fixture.mime_type }] };
   const identity = { evidence_sha256: HASH, candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1" };
   const actualAsset = { asset_id: fixture.number, asset_scope: "atomic-component", atomic_visual_key: `${componentId}-visual`, file: `public/${fixture.number}.png`, component_id: componentId, state_id: "default", mime_type: fixture.mime_type, width: 64, height: 96, alpha: true, sha256: HASH };
   const placementIds = component.component_inventory.components[0].placements.map((placement) => placement.placement_id);
   const runtimeConsumption = { status: "passed", evidence: "runtime.json", ...identity, component_usages: [{ component_id: componentId, state_id: "default", asset_id: fixture.number, placement_ids: placementIds, runtime_file: `public/${fixture.number}.png`, runtime_sha256: HASH, status: "passed" }] };
-  const audit = { status: "passed", candidate_version: "candidate-1", target_sha256: HASH, audited_at: "2026-08-15T00:00:00Z", units: [{ annotation_number: fixture.annotation_number, region_id: fixture.number, observed_method: "imagegen", observed_delivery_kind: fixture.delivery_kind, status: "passed", expected_assets: region.expected_assets, atomic_image_requirements: region.atomic_image_requirements, interaction_hotspots: [], actual_assets: [actualAsset], runtime_consumption: runtimeConsumption }] };
+  const audit = { status: "passed", candidate_version: "candidate-1", target_sha256: HASH, audited_at: "2026-08-15T00:00:00Z", units: [{ annotation_number: fixture.annotation_number, region_id: fixture.number, observed_method: "image-generation", observed_delivery_kind: fixture.delivery_kind, status: "passed", expected_assets: region.expected_assets, atomic_image_requirements: region.atomic_image_requirements, interaction_hotspots: [], actual_assets: [actualAsset], runtime_consumption: runtimeConsumption }] };
   return { workItemId: "work-item-1", candidateVersion: "candidate-1", candidate_identity: { sha256: HASH, diff_fingerprint: "diff-1" }, visual_baseline: { style_fingerprint: HASH }, reference_target: { target_sha256: HASH }, coverage_audit: { regions: [region] }, assets: [asset], production_contract_audit: audit, visual_production_gate: { status: "passed", v3_status: "passed", implementation_package_status: "passed", v4_status: "passed", f2_status: "passed", f2_machine_validation: { status: "passed", validationMode: "MACHINE", baselineHash: HASH, diffFingerprint: "diff-1" }, f3_status: "passed", runtime_replay: { status: "passed", evidence: "replay.json", ...identity }, fidelity_cases: [{ candidate_sha256: HASH, created_at: "2026-08-15T00:00:00Z", freshness_bound: true, evidence: "fidelity.json", ...identity }], candidate_sha256: HASH, target_sha256: HASH, runtime_consumption: runtimeConsumption, unapproved_substitution: false } };
 }
 
-test("independent-production 显式 graphics 不推断 ImageGen", () => {
+test("independent-production 显式 graphics 不推断 图像生成", () => {
   assert.deepEqual(validateProductionContract(independentContract()), []);
 });
 
-test("generate-now 仍必须显式声明方法，不自动改成 ImageGen", () => {
+test("generate-now 仍必须显式声明方法，不自动改成 图像生成", () => {
   assert.deepEqual(validateProductionContract(independentContract({ implementation_plan: { mode: "generate-now" } })), []);
 });
 
 test("image_generation_required 强制 imagegen 与 raster-image", () => {
   const errors = validateProductionContract(independentContract({ image_generation_required: true, generation_record_required: true, delivery_kind: "vector-image" }), { annotation_number: 1, region_id: "r1" });
-  assert(errors.some((item) => item.includes("expected_method=imagegen")));
+  assert(errors.some((item) => item.includes("expected_method=image-generation")));
   assert(errors.some((item) => item.includes("raster-image")));
 });
 
-test("SVG、Graphics 和 CanvasTexture 不能等价完成 ImageGen", () => {
+test("SVG、Graphics 和 CanvasTexture 不能等价完成 图像生成", () => {
   for (const delivery_kind of ["vector-image", "runtime-drawing", "runtime-program"]) {
     const errors = validateProductionContract(independentContract({ image_generation_required: true, generation_record_required: true, delivery_kind }), { annotation_number: 2, region_id: "r2" });
     assert(errors.length > 0, delivery_kind);
   }
 });
 
-test("ImageGen 缺少生成记录和提示词时拒绝", () => {
-  const contract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true });
+test("图像生成 缺少生成记录和提示词时拒绝", () => {
+  const contract = independentContract({ production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true });
   const errors = validateImageGenerationContract({}, contract, { stage: "V3", annotation_number: 3, region_id: "r3" });
   assert(errors.some((item) => item.includes("generation_record")));
 });
 
-test("ImageGen 必须记录 MIME、尺寸、alpha、SHA 和运行时消费", () => {
-  const contract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true });
+test("图像生成 必须记录 MIME、尺寸、alpha、SHA 和运行时消费", () => {
+  const contract = independentContract({ production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true });
   const errors = validateImageGenerationContract(imageGenAsset({ width: 0, sha256: "bad", runtime_consumption: null, runtime_consumed: true }), contract, { annotation_number: 4, region_id: "r4" });
   assert(errors.some((item) => item.includes("width")));
   assert(errors.some((item) => item.includes("SHA-256")));
   assert(errors.some((item) => item.includes("runtime_consumption")));
 });
 
-test("ImageGen 禁止裁切参考图", () => {
-  const contract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true });
+test("生图分类允许不同实际生成器，但仍要求工具身份和版本", () => {
+  const contract = independentContract({ production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true });
+  for (const generator of ["local-render-model", "provider-image-tool", "imagegen"]) {
+    const asset = imageGenAsset();
+    asset.generation_record.generator = generator;
+    assert.deepEqual(validateImageGenerationContract(asset, contract), []);
+    delete asset.generation_record.generator_version;
+    assert(validateImageGenerationContract(asset, contract).some((error) => error.includes("generator_version")));
+    delete asset.generation_record.generator;
+    assert(validateImageGenerationContract(asset, contract).some((error) => error.includes("generation_record.generator 缺失")));
+  }
+});
+
+test("自主选择的生成器可直接交付透明原图并进入尺寸归一化", () => {
+  const asset = imageGenAsset();
+  const expectedAsset = { asset_id: "hero", source_file: asset.source_file, runtime_file: asset.runtime_outputs[0], width: 64, height: 96, mime_type: "image/png", alpha: true };
+  const contract = independentContract({ production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, expected_assets: [expectedAsset] });
+  // 直接透明路线保留同一个原图身份，不能为了满足去背记录而伪造一次处理。
+  Object.assign(asset.generation_record, { generator: "local-render-model", full_prompt: "生成完整角色，交付透明 PNG", source_background_mode: "transparent", transparency_strategy: "direct-alpha", raw_source_file: asset.source_file, raw_source_has_alpha: true, postprocess: [], background_removal_attempts: [] });
+  assert.deepEqual(validateImageGenerationContract(asset, contract), []);
+  asset.generation_record.raw_source_has_alpha = false;
+  assert(validateImageGenerationContract(asset, contract).some((error) => error.includes("raw_source_has_alpha")));
+});
+
+test("图像生成 禁止裁切参考图", () => {
+  const contract = independentContract({ production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true });
   const asset = imageGenAsset({ generation_record: { ...imageGenAsset().generation_record, crop_reference: true } });
   assert(validateImageGenerationContract(asset, contract, { annotation_number: 5, region_id: "r5" }).some((item) => item.includes("禁止裁切参考图")));
 });
 
-test("ImageGen 只接受 PNG/JPEG，通用 authored-raster 仍不受影响", () => {
+test("图像生成 只接受 PNG/JPEG，通用 authored-raster 仍不受影响", () => {
   const makeContract = (mime, extension) => {
-    const contract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", expected_assets: [{ asset_id: "imagegen-asset", mime_type: mime, source_file: `art/imagegen.${extension}`, runtime_file: `public/imagegen.${extension}` }] });
+    const contract = independentContract({ production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", expected_assets: [{ asset_id: "imagegen-asset", mime_type: mime, source_file: `art/imagegen.${extension}`, runtime_file: `public/imagegen.${extension}` }] });
     delete contract.runtime_implementation;
     return contract;
   };
@@ -254,8 +278,8 @@ test("ImageGen 只接受 PNG/JPEG，通用 authored-raster 仍不受影响", () 
   assert.deepEqual(validateProductionContract(authored), []);
 });
 
-test("ImageGen 输出 MIME/源运行时后缀拒绝 WebP，PNG 和 JPEG 通过", () => {
-  const contract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
+test("图像生成 输出 MIME/源运行时后缀拒绝 WebP，PNG 和 JPEG 通过", () => {
+  const contract = independentContract({ production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
   delete contract.runtime_implementation;
   const webpErrors = validateImageGenerationContract(imageGenAsset({ mime_type: "image/webp", source_file: "art/hero.webp", runtime_outputs: ["public/assets/hero.webp"] }), contract, { annotation_number: 11, region_id: "imagegen-output-webp" });
   assert(webpErrors.some((item) => item.includes("仅允许 image/png 或 image/jpeg") || item.includes("扩展名仅允许")));
@@ -263,18 +287,18 @@ test("ImageGen 输出 MIME/源运行时后缀拒绝 WebP，PNG 和 JPEG 通过",
   assert(!validateImageGenerationContract(jpg, contract, { annotation_number: 12, region_id: "imagegen-output-jpg" }).some((item) => item.includes("仅允许") || item.includes("扩展名仅允许")));
 });
 
-test("expected_assets.alpha=false 不触发透明背景移除合同，普通 JPEG ImageGen 仍可通过", () => {
+test("expected_assets.alpha=false 不触发透明背景移除合同，普通 JPEG 图像生成 仍可通过", () => {
   const expectedAsset = { asset_id: "opaque-image", source_file: "art/opaque.jpg", runtime_file: "public/opaque.jpg", mime_type: "image/jpeg", alpha: false };
-  const contract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", expected_assets: [expectedAsset] });
+  const contract = independentContract({ production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", expected_assets: [expectedAsset] });
   delete contract.runtime_implementation;
   assert.deepEqual(validateProductionContract(contract, { annotation_number: 12, region_id: "opaque-image" }), []);
   const asset = imageGenAsset({ source_file: expectedAsset.source_file, mime_type: expectedAsset.mime_type, alpha: false, runtime_outputs: [expectedAsset.runtime_file], generation_record: { ...imageGenAsset().generation_record, source_file: expectedAsset.source_file, runtime_file: expectedAsset.runtime_file, output_file: expectedAsset.runtime_file } });
   const errors = validateImageGenerationContract(asset, contract, { annotation_number: 12, region_id: "opaque-image" });
-  assert(!errors.some((item) => item.includes("透明 ImageGen")), errors.join("\n"));
+  assert(!errors.some((item) => item.includes("透明 图像生成")), errors.join("\n"));
 });
 
-test("ImageGen 所有多路径入口逐项拒绝非法格式和重复别名", () => {
-  const contract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
+test("图像生成 所有多路径入口逐项拒绝非法格式和重复别名", () => {
+  const contract = independentContract({ production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
   delete contract.runtime_implementation;
   const assetSourceFiles = imageGenAsset({ source_files: ["art/hero.png", "art/hero.webp"] });
   const assetErrors = validateImageGenerationContract(assetSourceFiles, contract, { stage: "V3", annotation_number: 13, region_id: "asset-source-files" });
@@ -282,12 +306,12 @@ test("ImageGen 所有多路径入口逐项拒绝非法格式和重复别名", ()
   const generationSourceFiles = imageGenAsset({ generation_record: { ...imageGenAsset().generation_record, source_files: ["art/hero.png", "art/hero.webp"] } });
   const generationErrors = validateImageGenerationContract(generationSourceFiles, contract, { stage: "V3", annotation_number: 14, region_id: "generation-source-files" });
   assert(generationErrors.some((item) => item.includes("扩展名仅允许") && item.includes("source_files")), generationErrors.join("\n"));
-  const aliasContract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", expected_assets: [{ asset_id: "alias-asset", source_file: "art/alias.png", sourceFile: "art/alias.webp", runtime_file: "public/alias.png", mime_type: "image/png" }] });
+  const aliasContract = independentContract({ production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", expected_assets: [{ asset_id: "alias-asset", source_file: "art/alias.png", sourceFile: "art/alias.webp", runtime_file: "public/alias.png", mime_type: "image/png" }] });
   delete aliasContract.runtime_implementation;
   const aliasErrors = validateProductionContract(aliasContract, { stage: "V3", annotation_number: 15, region_id: "expected-asset-alias" });
   assert(aliasErrors.some((item) => item.includes("别名") || item.includes("snake_case")), aliasErrors.join("\n"));
 
-  const packageRegion = refreshAtomicRequirements({ ...multiComponentRegion(1), id: "package-imagegen-alias", annotation_number: 16, production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
+  const packageRegion = refreshAtomicRequirements({ ...multiComponentRegion(1), id: "package-imagegen-alias", annotation_number: 16, production_origin: "independent-production", production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
   packageRegion.expected_assets[0] = { ...packageRegion.expected_assets[0], source_files: ["art/component-1.png", "art/component-1.webp"], mime_type: "image/png" };
   refreshAtomicRequirements(packageRegion);
   const packageUnit = { ...structuredClone(packageRegion), unitId: "PACKAGE-IMAGEGEN-ALIAS", region_id: packageRegion.id, owner: "implementer", ownedPaths: ["art"], outputPaths: ["public"], format: "png" };
@@ -295,8 +319,8 @@ test("ImageGen 所有多路径入口逐项拒绝非法格式和重复别名", ()
   assert(packageErrors.some((item) => item.includes("source_files") && item.includes("扩展名仅允许")), packageErrors.join("\n"));
 });
 
-test("ImageGen source_files/sourceFiles 逐项检查，纯 PNG/JPG/JPEG 通过而混入非法格式失败", () => {
-  const contract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
+test("图像生成 source_files/sourceFiles 逐项检查，纯 PNG/JPG/JPEG 通过而混入非法格式失败", () => {
+  const contract = independentContract({ production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
   delete contract.runtime_implementation;
   for (const field of ["source_files", "sourceFiles"]) {
     const valid = imageGenAsset({ [field]: ["art/one.png", "art/two.jpg", "art/three.jpeg"] });
@@ -317,8 +341,8 @@ test("ImageGen source_files/sourceFiles 逐项检查，纯 PNG/JPG/JPEG 通过�
   assert(conflictErrors.some((item) => item.includes("source_files/sourceFiles") && item.includes("冲突")), conflictErrors.join("\n"));
 });
 
-test("ImageGen 不得被 output/output_metadata 的合法顶层 MIME 掩盖", () => {
-  const contract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
+test("图像生成 不得被 output/output_metadata 的合法顶层 MIME 掩盖", () => {
+  const contract = independentContract({ production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
   delete contract.runtime_implementation;
   const nestedInvalid = imageGenAsset({
     output: { mime_type: "image/png", file: "public/hero.png" },
@@ -355,7 +379,7 @@ test("ImageGen 不得被 output/output_metadata 的合法顶层 MIME 掩盖", ()
 });
 
 test("V4 actual、runtime usage 和 runtime_outputs 的 snake/camel 别名冲突必须失败", () => {
-  const region = refreshAtomicRequirements({ ...multiComponentRegion(1), id: "v4-alias-region", annotation_number: 17, production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
+  const region = refreshAtomicRequirements({ ...multiComponentRegion(1), id: "v4-alias-region", annotation_number: 17, production_origin: "independent-production", production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
   region.expected_assets[0] = { ...region.expected_assets[0], mime_type: "image/png", width: 1, height: 1, alpha: true, sha256: HASH };
   refreshAtomicRequirements(region);
   const expected = region.expected_assets[0];
@@ -371,14 +395,14 @@ test("V4 actual、runtime usage 和 runtime_outputs 的 snake/camel 别名冲突
   assert(errors.some((item) => item.includes("mime_type/mimeType") || item.includes("mimeType")), errors.join("\n"));
   assert(errors.some((item) => item.includes("runtime_file/runtimeFile") || item.includes("runtimeFile")), errors.join("\n"));
 
-  const contract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
+  const contract = independentContract({ production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
   delete contract.runtime_implementation;
   const outputAliasErrors = validateImageGenerationContract(imageGenAsset({ runtime_outputs: ["public/hero.png"], runtimeOutputs: ["public/hero.webp"] }), contract, { stage: "V4", annotation_number: 18, region_id: "runtime-output-alias" });
   assert(outputAliasErrors.some((item) => item.includes("runtime_outputs/runtimeOutputs") || item.includes("runtimeOutputs")), outputAliasErrors.join("\n"));
 });
 
-test("ImageGen PNG/JPEG 通过且 authored-raster 的 WebP/AVIF/GIF/BMP 不误伤", () => {
-  const imageGenContract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
+test("图像生成 PNG/JPEG 通过且 authored-raster 的 WebP/AVIF/GIF/BMP 不误伤", () => {
+  const imageGenContract = independentContract({ production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
   delete imageGenContract.runtime_implementation;
   for (const extension of ["png", "jpg", "jpeg"]) {
     const asset = imageGenAsset({ mime_type: extension === "png" ? "image/png" : "image/jpeg", source_file: `art/valid.${extension}`, runtime_outputs: [`public/valid.${extension}`] });
@@ -392,7 +416,7 @@ test("ImageGen PNG/JPEG 通过且 authored-raster 的 WebP/AVIF/GIF/BMP 不误�
   }
 });
 
-test("ImageGen 错误包含阶段、annotation number、region ID、期望和观察方法", () => {
+test("图像生成 错误包含阶段、annotation number、region ID、期望和观察方法", () => {
   const errors = validateProductionContract(independentContract({ image_generation_required: true }), { stage: "V4", annotation_number: 6, region_id: "r6" });
   assert.match(errors[0], /\[V4\].*annotation_number=6.*region_id=r6.*expected_method=.*observed_method=/);
 });
@@ -430,13 +454,13 @@ test("V4 通过要求 freshness、消费和无未批准替换", () => {
 });
 
 test("production method 变更必须绑定 ACCEPTED Change Request、区域、候选、原文和时间", () => {
-  const pending = validateProductionMethodChangeRequest({ status: "PENDING", changeRequestId: "CR-1", workItemId: "WI-1", production_method_changes: [{ annotation_number: 1, region_id: "r1", previous_method: "phaser-graphics", proposed_method: "imagegen" }] });
+  const pending = validateProductionMethodChangeRequest({ status: "PENDING", changeRequestId: "CR-1", workItemId: "WI-1", production_method_changes: [{ annotation_number: 1, region_id: "r1", previous_method: "phaser-graphics", proposed_method: "image-generation" }] });
   assert(pending.some((item) => item.includes("ACCEPTED")));
-  const accepted = { status: "ACCEPTED", changeRequestId: "CR-1", workItemId: "WI-1", candidateVersion: "c2", candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1", user_original_text: "用户批准改为 ImageGen", accepted_at: "2026-08-15T00:00:00Z", production_method_changes: [{ annotation_number: 1, region_id: "r1", previous_method: "phaser-graphics", proposed_method: "imagegen" }] };
+  const accepted = { status: "ACCEPTED", changeRequestId: "CR-1", workItemId: "WI-1", candidateVersion: "c2", candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1", user_original_text: "用户批准改为 图像生成", accepted_at: "2026-08-15T00:00:00Z", production_method_changes: [{ annotation_number: 1, region_id: "r1", previous_method: "phaser-graphics", proposed_method: "image-generation" }] };
   assert.deepEqual(validateProductionMethodChangeRequest(accepted), []);
 });
 
-test("image_generation_required=false 不因 independent-production 或 generate-now 推断 ImageGen", () => {
+test("image_generation_required=false 不因 independent-production 或 generate-now 推断 图像生成", () => {
   const contract = independentContract({ production_method: "authored-svg", delivery_kind: "vector-image", expected_assets: [{ asset_id: "svg", source_file: "art/svg.svg", runtime_file: "public/svg.svg" }] });
   delete contract.runtime_implementation;
   const errors = validateProductionContract(contract, { annotation_number: 9, region_id: "r9" });
@@ -511,11 +535,11 @@ test("V4 atlas actual_assets 必须复核 V3 切片身份", () => {
 
 test("固定回归夹具①–④⑦–⑨只允许①⑦ PNG，错误交付被 V4/F2/V4 拒绝", async () => {
   for (const fixture of IMAGEGEN_REGRESSION_FIXTURES) {
-    const contract = independentContract({ production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, expected_assets: [{ asset_id: fixture.number, mime_type: fixture.mime_type }] });
+    const contract = independentContract({ production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, expected_assets: [{ asset_id: fixture.number, mime_type: fixture.mime_type }] });
     const asset = imageGenAsset({ mime_type: fixture.mime_type });
     const v3Errors = validateImageGenerationContract(asset, contract, { stage: "V3", annotation_number: fixture.annotation_number, region_id: fixture.number });
-    const region = { id: fixture.number, annotation_number: fixture.annotation_number, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "forbid", expected_assets: [{ asset_id: fixture.number, mime_type: fixture.mime_type }] };
-    const v4Errors = await auditProductionContract({ coverage_audit: { regions: [region] }, production_contract_audit: { status: "passed", candidate_version: "fixture", audited_at: "2026-08-15T00:00:00Z", units: [{ annotation_number: fixture.annotation_number, region_id: fixture.number, observed_method: "imagegen", observed_delivery_kind: fixture.delivery_kind, status: "passed", expected_assets: [fixture.number], actual_assets: [{ file: `art/${fixture.number}.png`, mime_type: fixture.mime_type }], runtime_consumption: { status: "passed" } }] } }, { checkFiles: false });
+    const region = { id: fixture.number, annotation_number: fixture.annotation_number, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "forbid", expected_assets: [{ asset_id: fixture.number, mime_type: fixture.mime_type }] };
+    const v4Errors = await auditProductionContract({ coverage_audit: { regions: [region] }, production_contract_audit: { status: "passed", candidate_version: "fixture", audited_at: "2026-08-15T00:00:00Z", units: [{ annotation_number: fixture.annotation_number, region_id: fixture.number, observed_method: "image-generation", observed_delivery_kind: fixture.delivery_kind, status: "passed", expected_assets: [fixture.number], actual_assets: [{ file: `art/${fixture.number}.png`, mime_type: fixture.mime_type }], runtime_consumption: { status: "passed" } }] } }, { checkFiles: false });
     if (["①", "⑦"].includes(fixture.number)) assert.deepEqual(v3Errors, [], fixture.number);
     else {
       assert(v3Errors.length > 0, `${fixture.number} V3 must reject non-PNG`);
@@ -567,7 +591,7 @@ test("Implementation Package 不能偷偷替换部件 asset_id 或 source/runtim
   assert(fileErrors.some((item) => item.includes("runtime_file 与 coverage 不一致")), fileErrors.join("\n"));
 });
 
-test("Implementation Package 的来源、ImageGen 开关和替换策略必须逐字段匹配 coverage", () => {
+test("Implementation Package 的来源、图像生成 开关和替换策略必须逐字段匹配 coverage", () => {
   const base = implementationPackageFixture();
   for (const [field, value] of [["production_origin", "bitmap-decomposition"], ["image_generation_required", true], ["generation_record_required", true], ["substitution_policy", "user-change-request-only"]]) {
     const changed = structuredClone(base.pkg); changed.visualProductionUnits[0][field] = value;
@@ -611,11 +635,11 @@ test("Implementation Package 拒绝 ../../outside.mjs 和未授权 sibling，接
   assert(siblingErrors.some((item) => item.includes("超出 allowedPaths") || item.includes("ownedPaths 未覆盖")), siblingErrors.join("\n"));
 });
 
-test("ImageGen 跨单元即使同 owner 同 share_id 也禁止共享 source/runtime/output", () => {
+test("图像生成 跨单元即使同 owner 同 share_id 也禁止共享 source/runtime/output", () => {
   const registry = new Map();
   const errors = [];
-  const first = { unitId: "IMAGEGEN-1", owner: "implementer", production_method: "imagegen", image_generation_required: true };
-  const second = { unitId: "IMAGEGEN-2", owner: "implementer", production_method: "imagegen", image_generation_required: true };
+  const first = { unitId: "IMAGEGEN-1", owner: "implementer", production_method: "image-generation", image_generation_required: true };
+  const second = { unitId: "IMAGEGEN-2", owner: "implementer", production_method: "image-generation", image_generation_required: true };
   for (const kind of ["source_file", "runtime_file", "outputPaths"]) {
     registerCrossUnitPath(registry, `public/shared-${kind}.png`, kind, first, "same-share", (message) => errors.push(message));
     registerCrossUnitPath(registry, `public/shared-${kind}.png`, kind, second, "same-share", (message) => errors.push(message));
@@ -714,9 +738,9 @@ test("Implementation Package 跨单元按规范化路径拒绝 PUBLIC/SHARED.PNG
   assert.deepEqual(sharedErrors, [], sharedErrors.join("\n"));
 });
 
-/** 构造一个所有 expected asset 均具备独立 ImageGen 记录的多部件区域。 */
-function multiImageGenManifest(count = 6) {
-  const region = refreshAtomicRequirements({ ...multiComponentRegion(count), id: "multi-image-region", annotation_number: 2, production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
+/** 构造一个所有 expected asset 均具备独立 图像生成 记录的多部件区域。 */
+function multiImageGenerationManifest(count = 6) {
+  const region = refreshAtomicRequirements({ ...multiComponentRegion(count), id: "multi-image-region", annotation_number: 2, production_origin: "independent-production", production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
   const identity = { evidence_sha256: HASH, candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1" };
   const assets = region.expected_assets.map((expected, index) => {
     const asset = { id: expected.asset_id, source_file: expected.source_file, mime_type: "image/png", width: 32, height: 32, alpha: true, sha256: HASH, runtime_outputs: [expected.runtime_file], runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", ...identity }, generation_record: { ...imageGenAsset().generation_record, record_id: `GEN-${index + 1}`, annotation_number: region.annotation_number, region_id: region.id, component_id: expected.component_id, state_id: expected.state_id, asset_id: expected.asset_id, source_file: expected.source_file, runtime_file: expected.runtime_file } };
@@ -727,13 +751,13 @@ function multiImageGenManifest(count = 6) {
 }
 
 test("六按钮只有第一张有 generation_record 时，V3 必须逐部件拒绝其余五张", () => {
-  const errors = validateVisualProductionCoverage(multiImageGenManifest(6), { stage: "V3" });
+  const errors = validateVisualProductionCoverage(multiImageGenerationManifest(6), { stage: "V3" });
   assert(errors.some((item) => item.includes("component_id=component-2") && item.includes("generation_record")), errors.join("\n"));
   assert(errors.some((item) => item.includes("component_id=component-6") && item.includes("generation_record")), errors.join("\n"));
 });
 
-test("多部件 ImageGen 不得复用同一个 generation_record.record_id", () => {
-  const manifest = multiImageGenManifest(2);
+test("多部件 图像生成 不得复用同一个 generation_record.record_id", () => {
+  const manifest = multiImageGenerationManifest(2);
   manifest.assets[1].generation_record = { ...structuredClone(manifest.assets[0].generation_record), component_id: "component-2", asset_id: "asset-2", source_file: "art/component-2.png", runtime_file: "public/component-2.png" };
   const errors = validateVisualProductionCoverage(manifest, { stage: "V3" });
   assert(errors.some((item) => item.includes("record_id=GEN-1") && item.includes("component_id=component-2")), errors.join("\n"));
@@ -742,7 +766,7 @@ test("多部件 ImageGen 不得复用同一个 generation_record.record_id", () 
 test("V4 文件门按 RGBA 像素指纹拒绝不同 ID/路径的重复 PNG", async () => {
   const root = await mkdtemp(join(tmpdir(), "visual-raster-dedupe-")); await mkdir(join(root, "evidence"), { recursive: true }); await writeFile(join(root, "evidence/runtime.json"), "runtime");
   const png = encodePngRgba(2, 2, Buffer.alloc(16, 128)); const pngSha = `sha256:${createHash("sha256").update(png).digest("hex")}`; const identity = { evidence_sha256: HASH, candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1" };
-  const region = refreshAtomicRequirements({ ...multiComponentRegion(2), id: "duplicate-pixels", annotation_number: 5, production_origin: "independent-production", production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
+  const region = refreshAtomicRequirements({ ...multiComponentRegion(2), id: "duplicate-pixels", annotation_number: 5, production_origin: "independent-production", production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
   region.expected_assets = region.expected_assets.map((asset, index) => ({ ...asset, mime_type: "image/png", width: 2, height: 2, alpha: true, sha256: pngSha, source_file: `art/unique-${index + 1}.png`, runtime_file: `public/unique-${index + 1}.png` })); region.asset_ids = region.expected_assets.map((asset) => asset.asset_id); refreshAtomicRequirements(region);
   const assets = region.expected_assets.map((expected, index) => {
     const normalization = normalizationRecordForAsset({ sourceFile: expected.source_file, outputFile: expected.runtime_file, width: 2, height: 2, alpha: true, sha256: pngSha });
@@ -750,7 +774,7 @@ test("V4 文件门按 RGBA 像素指纹拒绝不同 ID/路径的重复 PNG", asy
   });
   await mkdir(join(root, "public"), { recursive: true }); for (const expected of region.expected_assets) await writeFile(join(root, expected.runtime_file), png);
   const actualAssets = region.expected_assets.map((expected) => ({ ...expected, file: expected.runtime_file })); const usages = region.expected_assets.map((expected) => ({ component_id: expected.component_id, state_id: expected.state_id, asset_id: expected.asset_id, placement_ids: [expected.component_id === "component-1" ? "placement-1" : "placement-2"], runtime_file: expected.runtime_file, runtime_sha256: pngSha, status: "passed" }));
-  const manifest = { workItemId: "work-item-1", candidateVersion: "candidate-1", candidate_identity: { sha256: HASH, diff_fingerprint: "diff-1" }, visual_baseline: { style_fingerprint: HASH }, reference_target: { target_sha256: HASH }, coverage_audit: { regions: [region] }, assets, production_contract_audit: { status: "passed", candidate_version: "candidate-1", candidate_sha256: HASH, target_sha256: HASH, audited_at: "2026-08-15T00:00:00Z", units: [{ annotation_number: 5, region_id: region.id, observed_method: "imagegen", observed_delivery_kind: "raster-image", status: "passed", expected_assets: region.expected_assets, actual_assets: actualAssets, runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", ...identity, component_usages: usages } }] } };
+  const manifest = { workItemId: "work-item-1", candidateVersion: "candidate-1", candidate_identity: { sha256: HASH, diff_fingerprint: "diff-1" }, visual_baseline: { style_fingerprint: HASH }, reference_target: { target_sha256: HASH }, coverage_audit: { regions: [region] }, assets, production_contract_audit: { status: "passed", candidate_version: "candidate-1", candidate_sha256: HASH, target_sha256: HASH, audited_at: "2026-08-15T00:00:00Z", units: [{ annotation_number: 5, region_id: region.id, observed_method: "image-generation", observed_delivery_kind: "raster-image", status: "passed", expected_assets: region.expected_assets, actual_assets: actualAssets, runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", ...identity, component_usages: usages } }] } };
   const errors = await auditProductionContract(manifest, { projectRoot: root, checkFiles: true }); assert(errors.some((item) => item.includes("相同位图像素") && item.includes("component_id=component-2")), errors.join("\n"));
 });
 
@@ -807,11 +831,11 @@ test("V4 actual_assets 和 runtime usage 必须绑定 runtime_file 与实际 SHA
   assert(wrongShaErrors.some((item) => item.includes("checkFiles=true") && item.includes("projectRoot")), wrongShaErrors.join("\n"));
 });
 
-test("ImageGen 区域强制 individual，atlas/横向组图不能作为位图交付", () => {
+test("图像生成 区域强制 individual，atlas/横向组图不能作为位图交付", () => {
   const atlas = multiComponentRegion(6, "atlas");
-  Object.assign(atlas, { production_method: "imagegen", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
+  Object.assign(atlas, { production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
   const errors = validateVisualComponentContract(atlas, { stage: "V3", annotation_number: 2, region_id: "top-buttons-region" });
-  assert(errors.some((item) => item.includes("ImageGen 只能使用 individual") && item.includes("component_id=?")), errors.join("\n"));
+  assert(errors.some((item) => item.includes("图像生成 只能使用 individual") && item.includes("component_id=?")), errors.join("\n"));
 });
 
 test("interaction_hotspots 必须与 interaction_required 部件一一对应且不携带资产身份", () => {
@@ -873,13 +897,13 @@ test("状态分析完成时间必须严格早于部件清单创建时间", () =>
 
 test("Implementation Package schema 与生产合同方法/交付枚举保持一致", () => {
   const unit = IMPLEMENTATION_PACKAGE_SCHEMA.$defs.visualProductionUnit;
-  assert.deepEqual(unit.properties.production_method.enum, ["imagegen", "authored-raster", "authored-svg", "phaser-graphics", "runtime-program", "reuse"]);
+  assert.deepEqual(unit.properties.production_method.enum, ["image-generation", "authored-raster", "authored-svg", "phaser-graphics", "runtime-program", "reuse"]);
   assert.deepEqual(unit.properties.delivery_kind.enum, ["raster-image", "vector-image", "runtime-drawing", "runtime-program", "existing-asset"]);
   const conditions = JSON.stringify(unit.allOf);
   const schemaText = JSON.stringify(IMPLEMENTATION_PACKAGE_SCHEMA);
-  for (const pair of [["imagegen", "raster-image"], ["authored-raster", "raster-image"], ["authored-svg", "vector-image"], ["phaser-graphics", "runtime-drawing"], ["runtime-program", "runtime-program"], ["reuse", "existing-asset"]]) {
+  for (const pair of [["image-generation", "raster-image"], ["authored-raster", "raster-image"], ["authored-svg", "vector-image"], ["phaser-graphics", "runtime-drawing"], ["runtime-program", "runtime-program"], ["reuse", "existing-asset"]]) {
     assert(conditions.includes(`\"${pair[0]}\"`) && conditions.includes(`\"${pair[1]}\"`), `${pair[0]} delivery constraint missing`);
   }
   assert(schemaText.includes("image_generation_required") && schemaText.includes("atlas_allowed") && schemaText.includes("atlas_slice") && schemaText.includes("runtime_implementation"));
-  assert(schemaText.includes("imageNormalizationRecord") && schemaText.includes("imageGenerationRecord"), "ImageGen 尺寸归一化记录 schema 未接入实施包");
+  assert(schemaText.includes("imageNormalizationRecord") && schemaText.includes("imageGenerationRecord"), "图像生成 尺寸归一化记录 schema 未接入实施包");
 });

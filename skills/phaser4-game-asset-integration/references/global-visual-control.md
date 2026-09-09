@@ -67,11 +67,11 @@
 2. **资产特定段**：只描述资源 ID、用途、构图、尺寸、透明要求、锚点、可见部件和允许变量。
 3. **状态段**：描述默认、选中、错误、提示、购买、成功、失败、稀有度或动画时间点等适用状态。
 4. **负向段**：逐字引用基线禁止项和负向词，并补充该资产特有的失败模式。
-5. **生成记录**：保存模型及版本、种子、采样参数、参考输入及权属、遮罩/ControlNet 等控制输入、批次 ID、选择理由和后处理步骤。
+5. **生成记录**：保存系统实际选择的生成器及版本、种子、采样参数、参考输入及权属、遮罩/ControlNet 等控制输入、批次 ID、选择理由和后处理步骤。实际调用的工具身份必须保留，未暴露的版本、模型参数或种子明确记录 `not-provided`，不得编造。
 
-生成结果仍须以锚点和跨资源证据审阅。相同模型、种子、提示前缀或调色板只能证明生产条件相近，不能证明视觉一致。
+生成结果仍须以锚点和跨资源证据审阅。相同生成器、模型、种子、提示前缀或调色板只能证明生产条件相近，不能证明视觉一致。
 
-上述 AI 专用字段只强制用于路线为 `ai-composite-raster` 且状态为 `producing`、`review` 或 `accepted` 的资源，不泛化到非 AI 生产路线。机器清单中的 AI `generation_record` 必须至少包含非空 `global_prompt_prefix`、`asset_prompt`、`state_prompt`、`negative_prompt`、`model`、`model_version`、`seed`、非空 `reference_inputs` 路径列表和字符串 `postprocess` 数组；所有路线的 accepted 资源若没有 `source_file/source_files`，仍须满足公共生成身份：record ID、生成器及版本、时间、可执行命令/配方、输入来源和参数。状态段不适用时也必须显式说明原因；`--check-files` 必须验证每个 `reference_inputs` 文件。若 `expected_assets.alpha=true`，唯一透明路线是生成非透明高对比纯色背景后执行一次背景移除，记录 `source_background_mode=opaque`、`final_background_mode=transparent`、`transparency_strategy=background-removal` 及完整的 `background_removal_attempts[0]`；原图和去背输出的 Alpha 状态、路径、完成时间与 evidence 必须可审计，失败时原地修复或重验当前 V3/V4 门。
+上述 AI 专用字段只强制用于路线为 `ai-composite-raster` 且状态为 `producing`、`review` 或 `accepted` 的资源，不泛化到非 AI 生产路线。机器清单中的 AI `generation_record` 必须至少包含非空 `global_prompt_prefix`、`asset_prompt`、`state_prompt`、`negative_prompt`、实际生成器及版本、种子、非空 `reference_inputs` 路径列表和字符串 `postprocess` 数组；未暴露的版本写 `not-provided`。所有路线的 accepted 资源若没有 `source_file/source_files`，仍须满足公共生成身份：record ID、生成器及版本、时间、可执行命令/配方、输入来源和参数。状态段不适用时也必须显式说明原因；`--check-files` 必须验证每个 `reference_inputs` 文件。若 `expected_assets.alpha=true`，透明策略只能是 `direct-alpha` 或 `background-removal`：原图先按实际 Alpha 判断，简单纯色背景使用公共 `remove-background-local.mjs`，复杂背景另选分割工具；背景处理尝试按实际追加并记录失败原因和有限重试上限，原图和处理输出的 Alpha 状态、路径、完成时间与 evidence 必须可审计。
 
 ## 多资源一致性证据
 
@@ -128,7 +128,7 @@ V4 为每个生产包提交多资源联系表，并至少生成一张同屏组�
 
 ## 生成前全局基线硬门
 
-全局三候选人工选择并正式冻结后，所有场景主图、reference target、宿主场景 contextual effect image 和原子 ImageGen 资产都必须引用同一份 `visual_baseline`。冻结基线必须是 `global-static-baseline-frozen`，并固定 `id`、`version`、`style_fingerprint`、`document=docs/visual-baseline.md` 与完整 `anchor_evidence`。项目具体美术风格只写入该正文和锚点证据，通用提示词不硬编码项目风格；候选阶段的生成记录使用 `global-visual-baseline-candidate-generation/1.0`，不冒充已经冻结的全局基线。
+全局三候选人工选择并正式冻结后，所有场景主图、reference target、宿主场景 contextual effect image 和原子生成式位图资产都必须引用同一份 `visual_baseline`。冻结基线必须是 `global-static-baseline-frozen`，并固定 `id`、`version`、`style_fingerprint`、`document=docs/visual-baseline.md` 与完整 `anchor_evidence`。项目具体美术风格只写入该正文和锚点证据，通用提示词不硬编码项目风格；候选阶段的生成记录使用 `global-visual-baseline-candidate-generation/1.0`，不冒充已经冻结的全局基线。
 
 | 记录 | 必填生成身份 | 全局锚点 | 实际提示词 | 输出/证据 | 失效条件 |
 | --- | --- | --- | --- | --- | --- |
@@ -137,4 +137,4 @@ V4 为每个生产包提交多资源联系表，并至少生成一张同屏组�
 
 原子资产仍以完整冻结效果图作为主参考，全局锚点只作为额外强制 style references。文件门会复算基线正文、锚点、冻结目标、输出和一致性证据的真实 SHA，旧记录不能跨身份复用；记录或路径问题先原地修复，候选未变的证据更新只重验当前门，冻结身份真实漂移时才返回最早受影响阶段。
 
-生成式单图在绑定全局基线后仍按“生成原图 →（透明路线一次背景移除）→ Sharp 尺寸归一化 → V3/final/runtime”交付；首次输出比例不符时最多重生一次，第二次仍不符时，若已冻结裁切焦点和安全事实，则使用 `crop-and-resize-to-contract` 并绑定两次真实原始 ImageGen attempt、SHA、尺寸、focus 和 `crop_rect`，否则先由生产流程对不透明生成结果生成式延展到目标比例，再执行一次背景移除（如为透明路线）和普通归一化。透明路线的两次 attempt 仍是去背前的不透明原始输出，受控裁切可在唯一一次背景移除后的同尺寸含 Alpha 输入上执行。该分流适用于所有 ImageGen 图片；`padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘、以及裁切冻结 `reference_target`。归一化后的 PNG/JPEG 才是最终输出（`alpha=true` 只能是 PNG，`alpha=false` 可是 JPEG），透明目标前后都要保留 Alpha，并以 `normalization_record` 绑定当前输入、尺寸、路径、SHA 和工具版本。
+生成式单图在绑定全局基线后仍按“生成原图 → 按实际 Alpha 决定是否执行背景处理 → Sharp 尺寸归一化 → V3/final/runtime”交付；透明路线允许 `direct-alpha` 或 `background-removal`，公共去背景脚本与复杂背景分割工具均必须记录实际工具/版本、输入输出、Alpha 和失败历史。首次输出比例不符时最多重生一次，第二次仍不符时，若已冻结裁切焦点和安全事实，则使用 `crop-and-resize-to-contract` 并绑定两次真实原始生成 attempt、SHA、尺寸、focus 和 `crop_rect`，否则先由生产流程对原图生成式延展到目标比例，再按实际 Alpha 决定背景处理和普通归一化。该分流适用于所有生成式位图；`padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘、以及裁切冻结 `reference_target`。归一化后的 PNG/JPEG 才是最终输出（`alpha=true` 只能是 PNG，`alpha=false` 可是 JPEG），透明目标前后都要保留 Alpha，并以 `normalization_record` 绑定当前输入、尺寸、路径、SHA 和工具版本。

@@ -1,15 +1,15 @@
 /**
- * ImageGen 输出格式合同。
+ * 图像生成 输出格式合同。
  *
- * authored-raster 仍可使用工作流支持的其他位图格式；只有 ImageGen
+ * authored-raster 仍可使用工作流支持的其他位图格式；只有 图像生成
  * 或 image_generation_required 区域才通过本模块收紧到 PNG/JPEG，避免
  * 通用 raster-image 判断意外放行 WebP、AVIF、GIF 或 BMP。
  */
-/** ImageGen 正式允许的输出 MIME 集合，避免通用位图路线放宽本合同。 */
+/** 图像生成 正式允许的输出 MIME 集合，避免通用位图路线放宽本合同。 */
 const IMAGEGEN_MIME_TYPES = new Set(["image/png", "image/jpeg"]);
-/** ImageGen 正式允许的源文件与运行时文件扩展名。 */
+/** 图像生成 正式允许的源文件与运行时文件扩展名。 */
 const IMAGEGEN_PATH_PATTERN = /\.(?:png|jpe?g)$/i;
-/** ImageGen 各类路径字段的 snake/camel 同义别名；单文件与文件列表不是同一字段。 */
+/** 图像生成 各类路径字段的 snake/camel 同义别名；单文件与文件列表不是同一字段。 */
 const IMAGEGEN_PATH_ALIASES = Object.freeze([
   ["source_file", ["source_file", "sourceFile"]],
   ["source_files", ["source_files", "sourceFiles"]],
@@ -27,7 +27,7 @@ const IMAGEGEN_REQUIRED_PATH_GROUPS = Object.freeze({
   runtime_outputs: ["runtime_file", "runtimeFile", "runtime_output_file", "runtimeOutputFile", "runtime_outputs", "runtimeOutputs"],
   output_file: ["output_file", "outputFile"],
 });
-/** output/output_metadata 中所有可能承载 ImageGen 文件的字段。 */
+/** output/output_metadata 中所有可能承载 图像生成 文件的字段。 */
 const IMAGEGEN_NESTED_PATH_FIELDS = Object.freeze([
   "file", "path", "source_file", "sourceFile", "source_files", "sourceFiles",
   "runtime_file", "runtimeFile", "runtime_output_file", "runtimeOutputFile", "runtime_outputs", "runtimeOutputs",
@@ -139,27 +139,27 @@ export function collectImageGenerationPathValues(value = {}, fields = IMAGEGEN_A
   }));
 }
 
-/** 判断 ImageGen 合同允许的标准位图 MIME。 */
+/** 判断 图像生成 合同允许的标准位图 MIME。 */
 export function isImageGenerationRasterMime(value) {
   return typeof value === "string" && IMAGEGEN_MIME_TYPES.has(value.trim().toLowerCase());
 }
 
-/** 判断 ImageGen 合同允许的源文件/运行时文件后缀。 */
+/** 判断 图像生成 合同允许的源文件/运行时文件后缀。 */
 export function isImageGenerationRasterPath(value) {
   return typeof value === "string" && IMAGEGEN_PATH_PATTERN.test(value.trim());
 }
 
 /**
- * 在字段折叠前拒绝 ImageGen 的 snake/camel 和多路径别名，避免合法 PNG
+ * 在字段折叠前拒绝 图像生成 的 snake/camel 和多路径别名，避免合法 PNG
  * 优先取值而吞掉同一对象里混入的 WebP 等非法声明。
  */
 export function collectImageGenerationAliasViolations(value = {}) {
   const violations = [];
   if (!isObjectLike(value)) return violations;
   for (const [canonical, aliases] of IMAGEGEN_PATH_ALIASES) {
-    violations.push(...collectAliasGroupViolations(value, aliases, `ImageGen ${canonical} `));
+    violations.push(...collectAliasGroupViolations(value, aliases, `图像生成 ${canonical} `));
   }
-  violations.push(...collectAliasGroupViolations(value, ["mime_type", "mimeType"], "ImageGen MIME "));
+  violations.push(...collectAliasGroupViolations(value, ["mime_type", "mimeType"], "图像生成 MIME "));
   violations.push(...collectAliasGroupViolations(value, ["file", "path"], "V4 actual_assets file/path "));
   const outputs = nestedImageGenerationOutputs(value);
   for (const [container, output] of outputs) {
@@ -173,7 +173,7 @@ export function collectImageGenerationAliasViolations(value = {}) {
 }
 
 /**
- * 收集 ImageGen 资产中的格式违规，调用方负责把字段绑定到阶段和区域上下文。
+ * 收集 图像生成 资产中的格式违规，调用方负责把字段绑定到阶段和区域上下文。
  * 这里只检查已声明值；requiredMime 用于 expected/actual 这类必须登记 MIME 的入口。
  */
 export function collectImageGenerationRasterViolations(value = {}, options = {}) {
@@ -181,27 +181,27 @@ export function collectImageGenerationRasterViolations(value = {}, options = {})
   const violations = collectImageGenerationAliasViolations(source);
   const mimeValues = ["mime_type", "mimeType"].filter((field) => Object.hasOwn(source, field)).map((field) => [field, source[field]]);
   if (options.requiredMime === true && mimeValues.length === 0) mimeValues.push([options.mimeField ?? "mime_type", undefined]);
-  for (const [field, mime] of mimeValues) if (!isImageGenerationRasterMime(mime)) violations.push({ field, message: "ImageGen 仅允许 image/png 或 image/jpeg" });
+  for (const [field, mime] of mimeValues) if (!isImageGenerationRasterMime(mime)) violations.push({ field, message: "图像生成 仅允许 image/png 或 image/jpeg" });
   for (const field of options.requiredFileFields ?? []) {
     const candidates = IMAGEGEN_REQUIRED_PATH_GROUPS[field] ?? [field];
-    if (!candidates.some((candidate) => Object.hasOwn(source, candidate))) violations.push({ field, message: "ImageGen 必须登记 .png、.jpg 或 .jpeg 源文件/运行时文件" });
+    if (!candidates.some((candidate) => Object.hasOwn(source, candidate))) violations.push({ field, message: "图像生成 必须登记 .png、.jpg 或 .jpeg 源文件/运行时文件" });
   }
   const requestedFields = new Set(options.fileFields ?? []);
   // source_file/runtime_file 需要同时覆盖对应的列表字段，不能让 source_files
   // 或 runtimeOutputs 在规范化时被静默遗漏。
-  // ImageGen 的格式门扫描对象中所有已声明路径，而不是只扫描调用方预期字段。
+  // 图像生成 的格式门扫描对象中所有已声明路径，而不是只扫描调用方预期字段。
   for (const [, aliases] of IMAGEGEN_PATH_ALIASES) for (const field of aliases) requestedFields.add(field);
   requestedFields.add("file"); requestedFields.add("path");
   for (const field of requestedFields) {
     const values = Array.isArray(source[field]) ? source[field] : [source[field]];
-    for (const file of values) if (file !== undefined && file !== null && !isImageGenerationRasterPath(file)) violations.push({ field, value: file, message: "ImageGen 源文件和运行时文件扩展名仅允许 .png、.jpg 或 .jpeg" });
+    for (const file of values) if (file !== undefined && file !== null && !isImageGenerationRasterPath(file)) violations.push({ field, value: file, message: "图像生成 源文件和运行时文件扩展名仅允许 .png、.jpg 或 .jpeg" });
   }
   for (const [container, output] of nestedImageGenerationOutputs(source)) {
     for (const field of IMAGEGEN_NESTED_PATH_FIELDS) if (Object.hasOwn(output, field)) {
       const values = Array.isArray(output[field]) ? output[field] : [output[field]];
-      for (const file of values) if (file !== undefined && file !== null && !isImageGenerationRasterPath(file)) violations.push({ field: `${container}.${field}`, value: file, message: "ImageGen 输出扩展名仅允许 .png、.jpg 或 .jpeg" });
+      for (const file of values) if (file !== undefined && file !== null && !isImageGenerationRasterPath(file)) violations.push({ field: `${container}.${field}`, value: file, message: "图像生成 输出扩展名仅允许 .png、.jpg 或 .jpeg" });
     }
-    for (const field of ["mime_type", "mimeType"]) if (Object.hasOwn(output, field) && !isImageGenerationRasterMime(output[field])) violations.push({ field: `${container}.${field}`, message: "ImageGen 仅允许 image/png 或 image/jpeg" });
+    for (const field of ["mime_type", "mimeType"]) if (Object.hasOwn(output, field) && !isImageGenerationRasterMime(output[field])) violations.push({ field: `${container}.${field}`, message: "图像生成 仅允许 image/png 或 image/jpeg" });
   }
   return violations;
 }

@@ -33,7 +33,7 @@ description: Phaser 4 游戏仓库的唯一全局工作流控制面；按当前�
 - 只做路由或状态查询：读取本文件与 `references/control-model.md` 的相关段落。
 - 需要状态迁移或门判断：再读取 `references/state-gates.md`。
 - 需要工件字段：按命令读取对应 `references/*.schema.json`，不要预加载全部 Schema。
-- 需要视觉任务：读取 `references/visual-stage.schema.json` 及对应领域合同；效果图、ImageGen、全局基线和高保真前置只在适用时读取。
+- 需要视觉任务：读取 `references/visual-stage.schema.json` 及对应领域合同；效果图、生成式位图、全局基线和高保真前置只在适用时读取。
 - 需要 A3 委派、执行或证据：读取对应的 `implementation-package`、`delegation`、`execution-state`、`evidence` Schema。
 
 ## 不可绕过约束

@@ -75,6 +75,18 @@ node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs
 - `$phaser4-game-release`：发布候选、渠道和合规交付。
 - `$grilling`：只处理无法由事实确定且会改变范围、行为、预算、合规或数据边界的用户决定。
 
+## 生图与去背景
+
+系统根据提示词、参考图、素材类型和可用能力选择生图方案，以 `image-generation` 记录生产分类，并保存实际生成器身份。透明素材可以直接使用合格的透明原图；需要去背景时复用公共脚本并传入任务参数，随后进入尺寸归一化。详见[资产生产路线](skills/phaser4-game-asset-integration/references/asset-production-routes.md)。
+
+在本仓库中处理简单纯色背景 PNG：
+
+```powershell
+npm run remove:background -- --source art/raw.png --output art/transparent.png --background-color '#00aa55' --tolerance 24 --record art/removal.json --preview-dir art/previews
+```
+
+背景色和容差必须按实际素材设置；复杂背景应选择分割工具。脚本只做原尺寸去背景，生成处理记录与深浅底预览，不替代视觉质量检查。
+
 ## 高级诊断
 
 稳定入口之外，控制面仍提供以下底层命令：

@@ -2,7 +2,7 @@
 /**
  * 视觉生产合同共享校验模块。
  * 该模块只负责把视觉清单、实施包和门禁证据中的生产事实收敛为一套
- * 机器可读语义。它不调用 ImageGen，也不根据文件后缀或效果图来源猜测
+ * 机器可读语义。它不调用 图像生成，也不根据文件后缀或效果图来源猜测
  * 生产方式；所有生产方式都必须在合同中显式声明。
  */
 import { readFile } from "node:fs/promises";
@@ -30,7 +30,7 @@ export { FIXED_VISUAL_IMAGE_METHODS, PROGRAM_VISUAL_METHODS, manualDecomposition
 export { REUSE_SCHEMA, validateProductionMethodChangeRequest, validateReuseProductionGate, validateVisualConfirmationGate } from "./visual-confirmation-reuse-gates.mjs";
 export { normalizeProductionExpectedAssets as normalizeExpectedAssets } from "./visual-atomic-contract.mjs";
 export { isPngOrJpegMagic, isRasterDelivery, resolveOutputMetadata } from "./visual-raster-contract.mjs";
-export { CANONICAL_EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, CANONICAL_EFFECT_IMAGE_NEGATIVE_PROMPT, EFFECT_IMAGE_ASSET_PROMPT_FACTS, EFFECT_IMAGE_BACKGROUND_REMOVAL_PROMPT, EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, EFFECT_IMAGE_GLOBAL_VISUAL_CONSISTENCY_PROMPT, EFFECT_IMAGE_NEGATIVE_PROMPT, EFFECT_IMAGE_PIXEL_REUSE_POLICY, EFFECT_IMAGE_RECONSTRUCTION_MODE, EFFECT_IMAGE_REFERENCE_INPUT_MODE, buildEffectImageAssetPrompt, buildEffectImageFullPrompt, containsPositiveRedesignInstruction, hasFullReferenceInput, isEffectImageGeneration, validateEffectImageAssetPrompt, validateEffectImagePromptContract } from "./effect-image-prompt-contract.mjs"; export { BACKGROUND_REMOVAL_OPERATION, TRANSPARENT_BACKGROUND_REMOVAL_PROMPT, TRANSPARENT_BACKGROUND_STRATEGIES, TRANSPARENT_BACKGROUND_STRATEGY, TRANSPARENT_FINAL_BACKGROUND_MODE, TRANSPARENT_SOURCE_BACKGROUND_MODE, expressesBackgroundRemovalProduction, isBackgroundRemovalProduction, requiresTransparentBackgroundProduction, validateTransparentBackgroundContract, validateTransparentBackgroundProductionRecord, validateTransparentExpectedAssetContract, validateTransparentOutputMetadata } from "./visual-transparent-background-contract.mjs"; export { IMAGE_NORMALIZATION_OPERATIONS, IMAGE_NORMALIZATION_SCHEMA, IMAGE_NORMALIZATION_STATUS, getImageNormalizationRecord, getImageNormalizationRecords, sameImageAspectRatio, validateImageNormalizationContract } from "./visual-image-normalization-contract.mjs";
+export { CANONICAL_EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, CANONICAL_EFFECT_IMAGE_NEGATIVE_PROMPT, EFFECT_IMAGE_ASSET_PROMPT_FACTS, EFFECT_IMAGE_BACKGROUND_REMOVAL_PROMPT, EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, EFFECT_IMAGE_GLOBAL_VISUAL_CONSISTENCY_PROMPT, EFFECT_IMAGE_NEGATIVE_PROMPT, EFFECT_IMAGE_PIXEL_REUSE_POLICY, EFFECT_IMAGE_RECONSTRUCTION_MODE, EFFECT_IMAGE_REFERENCE_INPUT_MODE, buildEffectImageAssetPrompt, buildEffectImageFullPrompt, containsPositiveRedesignInstruction, hasFullReferenceInput, isEffectImageGeneration, validateEffectImageAssetPrompt, validateEffectImagePromptContract } from "./effect-image-prompt-contract.mjs"; export { BACKGROUND_REMOVAL_OPERATION, TRANSPARENT_BACKGROUND_REMOVAL_PROMPT, TRANSPARENT_BACKGROUND_STRATEGIES, TRANSPARENT_BACKGROUND_STRATEGY, TRANSPARENT_FINAL_BACKGROUND_MODE, TRANSPARENT_SOURCE_BACKGROUND_MODES, expressesBackgroundRemovalProduction, isBackgroundRemovalProduction, requiresTransparentBackgroundProduction, validateTransparentBackgroundContract, validateTransparentBackgroundProductionRecord, validateTransparentExpectedAssetContract, validateTransparentOutputMetadata } from "./visual-transparent-background-contract.mjs"; export { IMAGE_NORMALIZATION_OPERATIONS, IMAGE_NORMALIZATION_SCHEMA, IMAGE_NORMALIZATION_STATUS, getImageNormalizationRecord, getImageNormalizationRecords, sameImageAspectRatio, validateImageNormalizationContract } from "./visual-image-normalization-contract.mjs";
 export { CANONICAL_GLOBAL_VISUAL_CONSISTENCY_PROMPT, GLOBAL_VISUAL_BASELINE_DOCUMENT, GLOBAL_VISUAL_BASELINE_STATUS, GLOBAL_VISUAL_CONSISTENCY_PROMPT, GLOBAL_VISUAL_ORIGINS, GLOBAL_VISUAL_STYLE_DRIFT_POLICY, buildGlobalVisualConsistencyPrompt, collectGlobalAnchorPaths, collectGlobalVisualConsistencyEvidencePaths, globalVisualBaselineIdentity, isGlobalVisualSha256, normalizeGlobalAnchorEvidence, normalizeGlobalStyleReferenceInputs, normalizeGlobalVisualPath, validateGlobalStyleReferenceInputs, validateGlobalVisualBaseline, validateGlobalVisualGenerationRecord, validateVisualEffectImageOrigin } from "./global-visual-consistency-contract.mjs";
 /** 视觉生产合同允许的固定来源。来源不决定生产方法。 */
 export { validateSceneAssetUsageContract, validateSceneCombinationPreacceptance, validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "./scene-reconstruction-contract.mjs";
@@ -43,7 +43,7 @@ export { PRODUCTION_METHODS };
 export { DELIVERY_KINDS };
 /** 资源替换只能使用显式策略，默认禁止静默替换。 */
 export { SUBSTITUTION_POLICIES };
-/** ImageGen 的生成记录必须具备的提示词和工具身份字段。 */
+/** 图像生成 的生成记录必须具备的提示词和工具身份字段。 */
 export const IMAGEGEN_TEXT_FIELDS = ["global_prompt_prefix", "asset_prompt", "state_prompt", "negative_prompt", "model", "model_version"];
 /** 对外保留通用谓词名称，实际实现由共享核心单一维护。 */
 export { isObject, nonEmptyString, isSha256 };
@@ -153,21 +153,21 @@ export function validateProductionContract(contract, context = {}, options = {})
   });
   reportExpectedAssetShareAliasConflicts(contract, error);
   const rawExpectedAssets = Array.isArray(contract?.expected_assets) ? contract.expected_assets : (isObject(contract?.production_contract) ? contract.production_contract.expected_assets : current.expected_assets);
-  if ((current.production_method === "imagegen" || current.image_generation_required === true) && Array.isArray(rawExpectedAssets)) rawExpectedAssets.forEach((rawItem, index) => { const item = normalizeExpectedAssets([rawItem])[0] ?? {}; for (const field of ["source_file", "runtime_file"]) if (!nonEmptyString(item[field])) error(`expected_assets[${index}] 缺少 ImageGen ${field}`, { missing: `expected_assets[${index}].${field}` }); for (const violation of collectImageGenerationRasterViolations(rawItem, { requiredMime: true, requiredFileFields: ["source_file", "runtime_file"], fileFields: ["source_file", "runtime_file"] })) error(`expected_assets[${index}].${violation.field} ${violation.message}`, { missing: `expected_assets[${index}].${violation.field}` }); for (const violation of validateTransparentExpectedAssetContract(item, current)) error(`expected_assets[${index}] ${violation}`); });
+  if ((current.production_method === "image-generation" || current.image_generation_required === true) && Array.isArray(rawExpectedAssets)) rawExpectedAssets.forEach((rawItem, index) => { const item = normalizeExpectedAssets([rawItem])[0] ?? {}; for (const field of ["source_file", "runtime_file"]) if (!nonEmptyString(item[field])) error(`expected_assets[${index}] 缺少 图像生成 ${field}`, { missing: `expected_assets[${index}].${field}` }); for (const violation of collectImageGenerationRasterViolations(rawItem, { requiredMime: true, requiredFileFields: ["source_file", "runtime_file"], fileFields: ["source_file", "runtime_file"] })) error(`expected_assets[${index}].${violation.field} ${violation.message}`, { missing: `expected_assets[${index}].${violation.field}` }); for (const violation of validateTransparentExpectedAssetContract(item, current)) error(`expected_assets[${index}] ${violation}`); });
   if (current.image_generation_required === true) {
-    if (current.production_method !== "imagegen") error("image_generation_required=true 强制 production_method=imagegen", { expectedMethod: "imagegen", observedMethod: current.production_method ?? "unspecified" });
-    if (!isRasterDelivery(current.delivery_kind, contract.mime_type ?? contract.mimeType)) error("image_generation_required=true 强制 delivery_kind=raster-image，SVG/Graphics/CanvasTexture/runtime drawing 不能等价完成", { expectedMethod: "imagegen", observedMethod: current.production_method ?? "unspecified" });
-    if (current.generation_record_required !== true) error("image_generation_required=true 必须同时 generation_record_required=true", { missing: "generation_record_required" }); const inventory = current.component_inventory; if (isObject(inventory) && (inventory.delivery_mode !== "individual" || inventory.atlas_allowed !== false)) error("ImageGen 只能使用 individual 且 atlas_allowed=false，禁止组图/atlas");
+    if (current.production_method !== "image-generation") error("image_generation_required=true 强制 production_method=image-generation", { expectedMethod: "image-generation", observedMethod: current.production_method ?? "unspecified" });
+    if (!isRasterDelivery(current.delivery_kind, contract.mime_type ?? contract.mimeType)) error("image_generation_required=true 强制 delivery_kind=raster-image，SVG/Graphics/CanvasTexture/runtime drawing 不能等价完成", { expectedMethod: "image-generation", observedMethod: current.production_method ?? "unspecified" });
+    if (current.generation_record_required !== true) error("image_generation_required=true 必须同时 generation_record_required=true", { missing: "generation_record_required" }); const inventory = current.component_inventory; if (isObject(inventory) && (inventory.delivery_mode !== "individual" || inventory.atlas_allowed !== false)) error("图像生成 只能使用 individual 且 atlas_allowed=false，禁止组图/atlas");
   }
   const expectedDelivery = new Map([
-    ["imagegen", "raster-image"], ["authored-raster", "raster-image"], ["authored-svg", "vector-image"],
+    ["image-generation", "raster-image"], ["authored-raster", "raster-image"], ["authored-svg", "vector-image"],
     ["phaser-graphics", "runtime-drawing"], ["runtime-program", "runtime-program"], ["reuse", "existing-asset"],
   ]).get(current.production_method);
   if (expectedDelivery && current.delivery_kind !== expectedDelivery) error(`${current.production_method} 必须使用 delivery_kind=${expectedDelivery}`, { expectedMethod: current.production_method, observedMethod: current.production_method });
-  if (current.production_method === "imagegen" && current.image_generation_required !== true) error("production_method=imagegen 不得将 image_generation_required 声明为 false");
-  if (current.image_generation_required === true && current.substitution_policy !== "user-change-request-only") error("ImageGen 必须使用 substitution_policy=user-change-request-only", { missing: "substitution_policy=user-change-request-only" });
-  if (current.production_method !== "imagegen" && current.image_generation_required === true) error("非 imagegen 方法不得声明 image_generation_required=true", { observedMethod: current.production_method });
-  const fileProductionMethods = ["imagegen", "authored-raster", "authored-svg", "reuse"];
+  if (current.production_method === "image-generation" && current.image_generation_required !== true) error("production_method=image-generation 不得将 image_generation_required 声明为 false");
+  if (current.image_generation_required === true && current.substitution_policy !== "user-change-request-only") error("图像生成 必须使用 substitution_policy=user-change-request-only", { missing: "substitution_policy=user-change-request-only" });
+  if (current.production_method !== "image-generation" && current.image_generation_required === true) error("非 image-generation 方法不得声明 image_generation_required=true", { observedMethod: current.production_method });
+  const fileProductionMethods = ["image-generation", "authored-raster", "authored-svg", "reuse"];
   if (fileProductionMethods.includes(current.production_method) && hasRuntimeImplementationField(contract)) error(`${current.production_method} 文件交付不得携带 runtime_implementation`, { missing: "runtime_implementation" });
   if (["phaser-graphics", "runtime-program"].includes(current.production_method)) {
     const implementation = current.runtime_implementation;
@@ -187,13 +187,13 @@ export function validateProductionContract(contract, context = {}, options = {})
   if (options.requireComplete && current.production_origin === undefined) error("视觉生产合同未完整声明来源、方法和交付类型", { missing: "production_origin" });
   return errors;
 }
-/** 校验 ImageGen 生成记录、独立源文件、输出元数据和运行时消费声明。 */
+/** 校验 图像生成 生成记录、独立源文件、输出元数据和运行时消费声明。 */
 export function validateImageGenerationContract(asset, contract, context = {}, options = {}) {
   const errors = [];
   const label = contractContext(context.region ?? context, context.stage ?? "V3", context);
   const effectImage = isEffectImageGeneration({ asset, contract, context, options });
   const error = (message, details = {}) => errors.push(productionContractError(label, message, {
-    expectedMethod: "imagegen",
+    expectedMethod: "image-generation",
     observedMethod: observedProductionMethod(contract),
     missing: details.missing,
     rootCause: effectImage ? "执行问题" : details.rootCause,
@@ -204,7 +204,7 @@ export function validateImageGenerationContract(asset, contract, context = {}, o
   let generation = rawGeneration;
   // component_records 允许共享公共提示词，但身份和输出路径必须来自当前 component×state 的独立记录。
   let componentGenerationRecord = rawGeneration;
-  // 多部件 ImageGen 必须逐 component×state 使用独立文件和独立生成身份；component_records 只能共享公共提示词元数据，不能共享输出或图集。
+  // 多部件 图像生成 必须逐 component×state 使用独立文件和独立生成身份；component_records 只能共享公共提示词元数据，不能共享输出或图集。
   if (isObject(rawGeneration) && expectedComponent && Array.isArray(rawGeneration.component_records ?? rawGeneration.componentRecords)) {
     const records = rawGeneration.component_records ?? rawGeneration.componentRecords;
     const expectedState = expectedComponent.canonical_state_id || canonicalStateId(expectedComponent.state_id);
@@ -219,22 +219,21 @@ export function validateImageGenerationContract(asset, contract, context = {}, o
   }
   const expectedOutput = normalizeExpectedAssets(options.expectedAsset ? [options.expectedAsset] : contract.expected_assets).find((item) => item.mime_type || item.width || item.height || item.alpha !== undefined || item.sha256);
   const metadata = { ...expectedOutput, ...resolveOutputMetadata(asset) };
-  if (!isObject(generation)) { error("缺少 generation_record，无法证明 ImageGen 生成身份", { missing: "generation_record" }); return errors; }
+  if (!isObject(generation)) { error("缺少 generation_record，无法证明 图像生成 生成身份", { missing: "generation_record" }); return errors; }
   for (const field of ["record_id", "generator", "generator_version", "created_at", "command_or_recipe"]) if (!nonEmptyString(generation[field])) error(`generation_record.${field} 缺失`, { missing: `generation_record.${field}` });
   // 每个 expected asset 必须拥有唯一生成记录，避免多个部件复用同一 record_id 伪装独立生产。
   if (options.recordIdRegistry instanceof Map && nonEmptyString(generation.record_id)) { const previous = options.recordIdRegistry.get(generation.record_id); if (previous) error(`generation_record.record_id=${generation.record_id} 在区域/清单内重复`, { missing: `${previous.component_id ?? "?"}/${previous.state_id ?? "?"}` }); else options.recordIdRegistry.set(generation.record_id, { component_id: expectedComponent?.component_id, state_id: expectedComponent?.canonical_state_id || canonicalStateId(expectedComponent?.state_id) }); }
   if (nonEmptyString(generation.created_at) && Number.isNaN(Date.parse(generation.created_at))) error("generation_record.created_at 不是有效时间");
-  const generator = String(generation.generator ?? generation.tool ?? "").toLowerCase();
-  if (!generator.includes("imagegen") && !generator.includes("image_gen")) error("generation_record.generator 必须明确为 ImageGen");
+  // generator 记录本次实际选择的工具身份；生产分类不限制供应商，完整性由上面的必填字段校验保证。
   for (const field of IMAGEGEN_TEXT_FIELDS) if (!nonEmptyString(generation[field]) && !nonEmptyString(generation.prompt)) error(`generation_record.${field} 缺失，必须保留提示词合同`, { missing: `generation_record.${field}` });
   if (!(Number.isInteger(generation.seed) || nonEmptyString(generation.seed))) error("generation_record.seed 缺失", { missing: "generation_record.seed" });
   const referenceInputValid = effectImage ? (item) => nonEmptyString(item) || isObject(item) : nonEmptyString;
   if (!Array.isArray(generation.reference_inputs) || generation.reference_inputs.length === 0 || !generation.reference_inputs.every(referenceInputValid)) error("generation_record.reference_inputs 必须是非空来源列表", { missing: "generation_record.reference_inputs" });
   if (!Array.isArray(generation.postprocess) || !generation.postprocess.every(nonEmptyString)) error("generation_record.postprocess 必须是字符串处理记录数组（可为空）", { missing: "generation_record.postprocess" });
   const generationOperation = JSON.stringify({ operation: generation.operation, source_operation: generation.source_operation, reference_operation: generation.reference_operation, crop_reference: generation.crop_reference, reference_crop: generation.reference_crop, postprocess: generation.postprocess });
-  if (generation.crop_reference === true || generation.reference_crop === true || /crop[-_ ]?reference|裁切参考|裁剪参考/i.test(generationOperation)) error("禁止裁切参考图，ImageGen 只能把参考图作为输入约束");
+  if (generation.crop_reference === true || generation.reference_crop === true || /crop[-_ ]?reference|裁切参考|裁剪参考/i.test(generationOperation)) error("禁止裁切参考图，图像生成 只能把参考图作为输入约束");
   const referenceTarget = options.referenceOriginalFile;
-  if (effectImage) errors.push(...validateEffectImagePromptContract(asset, contract, generation, { ...context, visual_baseline: options.visual_baseline ?? context.visual_baseline }, { ...options, referenceOriginalFile: referenceTarget, referenceTargetSha: options.referenceTargetSha ?? options.identity?.target, visual_baseline: options.visual_baseline ?? context.visual_baseline, outputSha256: options.outputSha256 ?? options.output_sha256 ?? asset?.sha256, region: options.region ?? context.region }).map((message) => productionContractError(label, message, { expectedMethod: "imagegen", observedMethod: observedProductionMethod(contract), rootCause: "执行问题", returnStage: "V3/V4" })));
+  if (effectImage) errors.push(...validateEffectImagePromptContract(asset, contract, generation, { ...context, visual_baseline: options.visual_baseline ?? context.visual_baseline }, { ...options, referenceOriginalFile: referenceTarget, referenceTargetSha: options.referenceTargetSha ?? options.identity?.target, visual_baseline: options.visual_baseline ?? context.visual_baseline, outputSha256: options.outputSha256 ?? options.output_sha256 ?? asset?.sha256, region: options.region ?? context.region }).map((message) => productionContractError(label, message, { expectedMethod: "image-generation", observedMethod: observedProductionMethod(contract), rootCause: "执行问题", returnStage: "V3/V4" })));
   const sources = [...collectImageGenerationPathValues(asset), ...collectImageGenerationPathValues(generation)].filter(nonEmptyString);
   if (sources.length === 0) error("缺少独立生成源文件或输出文件", { missing: "source_file" });
   if (expectedComponent) {
@@ -266,7 +265,7 @@ export function validateImageGenerationContract(asset, contract, context = {}, o
     if (expectedRuntime && !assetRuntimeOutputs.includes(expectedRuntime)) error("manifest asset runtime_outputs 未匹配 expected_assets.runtime_file", { missing: expectedComponent.runtime_file });
   }
   if (!nonEmptyString(metadata.mime_type)) error("缺少输出 MIME", { missing: "mime_type" });
-  else if (!isRasterDelivery(contract.delivery_kind, metadata.mime_type)) error("输出 MIME 与 raster-image 不匹配，SVG/Graphics 不得冒充 ImageGen 位图");
+  else if (!isRasterDelivery(contract.delivery_kind, metadata.mime_type)) error("输出 MIME 与 raster-image 不匹配，SVG/Graphics 不得冒充 图像生成 位图");
   for (const value of [
     options.expectedAsset,
     expectedComponent,
@@ -283,7 +282,7 @@ export function validateImageGenerationContract(asset, contract, context = {}, o
   const consumption = asset?.runtime_consumption;
   if (!isObject(consumption) || !["passed", "consumed", "PASS"].includes(String(consumption.status).toLowerCase())) error("缺少带身份绑定的运行时实际消费 evidence", { missing: "runtime_consumption" });
   else errors.push(...validateEvidenceIdentity(consumption, label, options.identity ?? {}, { projectRoot: options.projectRoot }));
-  if (context.region?.scene_asset_usage || context.region?.sceneAssetUsage || contract?.scene_asset_usage || contract?.sceneAssetUsage || options.sceneAssetUsage) errors.push(...validateImageGenerationSizeContract(asset, contract, context, { ...options, expectedAsset: expectedComponent ?? options.expectedAsset, contract })); errors.push(...validateTransparentBackgroundContract({ asset, contract, generation, expectedAsset: expectedComponent ?? options.expectedAsset ?? expectedOutput, metadata }).map((message) => productionContractError(label, message, { expectedMethod: "imagegen", observedMethod: observedProductionMethod(contract), rootCause: effectImage ? "执行问题" : undefined, returnStage: effectImage ? "V3/V4" : undefined }))); errors.push(...validateImageNormalizationContract({ asset, contract, generation, expectedAsset: expectedComponent ?? options.expectedAsset ?? expectedOutput, metadata, options }).map((message) => productionContractError(label, message, { expectedMethod: "imagegen", observedMethod: observedProductionMethod(contract), rootCause: effectImage ? "执行问题" : undefined, returnStage: effectImage ? "V3/V4" : undefined })));
+  if (context.region?.scene_asset_usage || context.region?.sceneAssetUsage || contract?.scene_asset_usage || contract?.sceneAssetUsage || options.sceneAssetUsage) errors.push(...validateImageGenerationSizeContract(asset, contract, context, { ...options, expectedAsset: expectedComponent ?? options.expectedAsset, contract })); errors.push(...validateTransparentBackgroundContract({ asset, contract, generation, expectedAsset: expectedComponent ?? options.expectedAsset ?? expectedOutput, metadata }).map((message) => productionContractError(label, message, { expectedMethod: "image-generation", observedMethod: observedProductionMethod(contract), rootCause: effectImage ? "执行问题" : undefined, returnStage: effectImage ? "V3/V4" : undefined }))); errors.push(...validateImageNormalizationContract({ asset, contract, generation, expectedAsset: expectedComponent ?? options.expectedAsset ?? expectedOutput, metadata, options }).map((message) => productionContractError(label, message, { expectedMethod: "image-generation", observedMethod: observedProductionMethod(contract), rootCause: effectImage ? "执行问题" : undefined, returnStage: effectImage ? "V3/V4" : undefined })));
   return errors;
 }
 /** 校验效果图 coverage 的逐 annotation_number 生产合同。 */
@@ -341,7 +340,7 @@ export function validateVisualProductionCoverage(manifest, options = {}) {
         const componentContext = { ...context, region, component_id: expectedComponent.component_id, state_id: expectedComponent.canonical_state_id || canonicalStateId(expectedComponent.state_id) };
         const componentAsset = assets.get(expectedComponent.asset_id);
         if (!componentAsset) {
-          errors.push(productionContractError(componentContext, "ImageGen expected asset 缺少对应 manifest asset", { missing: `assets.${expectedComponent.asset_id}` }));
+          errors.push(productionContractError(componentContext, "图像生成 expected asset 缺少对应 manifest asset", { missing: `assets.${expectedComponent.asset_id}` }));
           continue;
         }
         const regionId = region.id ?? region.region_id ?? region.regionId;
@@ -520,7 +519,7 @@ export function auditProductionContract(manifest, options = {}) {
       for (const expectedComponent of expectedComponents) {
         const componentContext = { ...context, region, component_id: expectedComponent.component_id, state_id: expectedComponent.canonical_state_id || canonicalStateId(expectedComponent.state_id) };
         const componentAsset = assets.get(expectedComponent.asset_id);
-        if (!componentAsset) errors.push(productionContractError(componentContext, "V4 ImageGen expected asset 缺少对应 manifest asset", { missing: `assets.${expectedComponent.asset_id}` }));
+        if (!componentAsset) errors.push(productionContractError(componentContext, "V4 图像生成 expected asset 缺少对应 manifest asset", { missing: `assets.${expectedComponent.asset_id}` }));
         else errors.push(...validateImageGenerationContract(componentAsset, { ...expected, expected_assets: [expectedComponent] }, { ...componentContext, visual_baseline: manifest?.visual_baseline, region: { ...region, ...(reconstructionRegions.get(region.id) ?? {}) } }, { expectedAsset: expectedComponent, recordIdRegistry: generationRecordIds, effectImage, referenceOriginalFile: manifest?.reference_target?.original_file, visual_baseline: manifest?.visual_baseline, identity, candidateVersion: manifest?.candidateVersion, projectRoot: options.projectRoot }));
       }
     }
@@ -553,7 +552,7 @@ export function auditProductionContract(manifest, options = {}) {
       else if (!allowedPaths.length || !allowedPaths.includes(normalizedActualPath)) errors.push(productionContractError(actualContext, `V4 actual_assets[${index}] 未绑定 V3 runtime 输出路径`, { missing: actualPath }));
       const declaredMime = actual.mime_type ?? actual.mimeType;
       if (!nonEmptyString(declaredMime)) errors.push(productionContractError(context, `V4 actual_assets[${index}] 缺少 MIME`, { missing: `actual_assets[${index}].mime_type` }));
-      if (expected.production_method === "imagegen" || expected.image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(actual, { requiredMime: true, fileFields: ["file", "path", "runtime_file", "output_file"] })) errors.push(productionContractError(actualContext, `V4 actual_assets[${index}].${violation.field} ${violation.message}`));
+      if (expected.production_method === "image-generation" || expected.image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(actual, { requiredMime: true, fileFields: ["file", "path", "runtime_file", "output_file"] })) errors.push(productionContractError(actualContext, `V4 actual_assets[${index}].${violation.field} ${violation.message}`));
       if (expectedItem.mime_type && declaredMime && expectedItem.mime_type !== declaredMime) errors.push(productionContractError(context, `V4 actual_assets[${index}] MIME 与 V3 不一致`));
       for (const [field, expectedValue] of [["mime_type", expectedItem.mime_type], ["width", expectedItem.width], ["height", expectedItem.height], ["alpha", expectedItem.alpha], ["sha256", expectedItem.sha256]]) {
         if (expectedValue !== undefined && expectedValue !== "" && actual[field] !== undefined && actual[field] !== expectedValue) errors.push(productionContractError(context, `V4 actual_assets[${index}] ${field} 与 V3 expected_assets 不一致`));
@@ -656,7 +655,7 @@ export function validateProductionAuditShape(manifest, options = {}) {
     else unit.actual_assets.forEach((item, itemIndex) => {
       if (!isObject(item) || !nonEmptyString(item.file ?? item.path ?? item.output_file)) error(`actual_assets[${itemIndex}] 必须是带 file 的对象`, `actual_assets[${itemIndex}].file`);
       else {
-        if (resolveProductionContract(region ?? {}).production_method === "imagegen" || resolveProductionContract(region ?? {}).image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(item, { requiredMime: true, fileFields: ["file", "path", "runtime_file", "output_file"] })) error(`actual_assets[${itemIndex}].${violation.field} ${violation.message}`, `actual_assets[${itemIndex}].${violation.field}`);
+        if (resolveProductionContract(region ?? {}).production_method === "image-generation" || resolveProductionContract(region ?? {}).image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(item, { requiredMime: true, fileFields: ["file", "path", "runtime_file", "output_file"] })) error(`actual_assets[${itemIndex}].${violation.field} ${violation.message}`, `actual_assets[${itemIndex}].${violation.field}`);
         for (const field of ["mime_type", "sha256"]) if (!nonEmptyString(item[field])) error(`actual_assets[${itemIndex}] 缺少 ${field}`, `actual_assets[${itemIndex}].${field}`);
         if (nonEmptyString(item.sha256) && !isSha256(item.sha256)) error(`actual_assets[${itemIndex}].sha256 格式无效`, `actual_assets[${itemIndex}].sha256`);
         if (resolveProductionContract(region ?? {}).delivery_kind === "raster-image" && (!Number.isInteger(item.width) || !Number.isInteger(item.height) || typeof item.alpha !== "boolean")) error(`actual_assets[${itemIndex}] raster-image 必须记录 width、height、alpha`, `actual_assets[${itemIndex}].metadata`);
@@ -762,7 +761,7 @@ function validateVisualUnitAssetBindings(unit, region, context, errors, options 
   const nestedRegion = region.production_contract ?? region.productionContract;
   const rawExpected = region.expected_assets ?? region.expectedAssets ?? nestedRegion?.expected_assets ?? nestedRegion?.expectedAssets;
   const rawObserved = unit?.expected_assets ?? unit?.expectedAssets;
-  const imageGenContract = resolveProductionContract(region).production_method === "imagegen" || resolveProductionContract(region).image_generation_required === true;
+  const imageGenContract = resolveProductionContract(region).production_method === "image-generation" || resolveProductionContract(region).image_generation_required === true;
   for (const [label, values] of [["coverage.expected_assets", rawExpected], ["Implementation Package expected_assets", rawObserved]]) {
     if (Array.isArray(values)) values.forEach((value, index) => { if (hasShareAliasConflict(value)) errors.push(productionContractError(context, `${label}[${index}] share_id 与 shareId 不得同时声明`, { missing: `${label}[${index}].share_id` })); if (imageGenContract) for (const violation of collectImageGenerationRasterViolations(value, { requiredMime: true, requiredFileFields: ["source_file", "runtime_file"], fileFields: ["source_file", "runtime_file"] })) errors.push(productionContractError(context, `${label}[${index}].${violation.field} ${violation.message}`, { missing: `${label}[${index}].${violation.field}` })); });
   }
@@ -864,7 +863,7 @@ export function validateVisualProductionUnits(pkg, manifest = null, options = {}
         for (const expectedAsset of unitAssets) {
           const manifestAsset = manifestAssets.get(expectedAsset.asset_id);
           const componentContext = { ...context, component_id: expectedAsset.component_id, state_id: expectedAsset.canonical_state_id || canonicalStateId(expectedAsset.state_id) };
-          if (!manifestAsset) errors.push(productionContractError(componentContext, "Implementation Package ImageGen 部件缺少 manifest asset", { missing: `assets.${expectedAsset.asset_id}` }));
+          if (!manifestAsset) errors.push(productionContractError(componentContext, "Implementation Package 图像生成 部件缺少 manifest asset", { missing: `assets.${expectedAsset.asset_id}` }));
           else {
             const regionId = region.id ?? region.region_id ?? region.regionId;
             errors.push(...validateImageGenerationContract(manifestAsset, { ...unit, expected_assets: [expectedAsset] }, { ...componentContext, visual_baseline: manifest?.visual_baseline, region: { ...region, ...(reconstructionRegions.get(regionId) ?? {}) } }, { expectedAsset, recordIdRegistry: generationRecordIds, effectImage, referenceOriginalFile: manifest.reference_target?.original_file, visual_baseline: manifest?.visual_baseline, identity: manifestEvidenceIdentity(manifest), candidateVersion: manifest?.candidateVersion, projectRoot: options.projectRoot }));
@@ -896,7 +895,7 @@ export function validateVisualProductionUnits(pkg, manifest = null, options = {}
       registerCrossUnitPath(crossUnitPaths, asset.runtime_file, "runtime_file", unit, asset.share_id, error);
     }
     if (!nonEmptyString(unit?.format ?? unit?.delivery_kind)) error("缺少输出格式", { missing: "format" });
-    if (unit?.image_generation_required === true && unit?.production_method !== "imagegen") error("ImageGen 单元格式/方法不一致", { expectedMethod: "imagegen" });
+    if (unit?.image_generation_required === true && unit?.production_method !== "image-generation") error("图像生成 单元格式/方法不一致", { expectedMethod: "image-generation" });
   }
   if (manifest && regions.some((region) => !seen.has(`${region.annotation_number}\0${region.id}`))) errors.push("[V3] annotation_number=* region_id=* expected_method=visual-production observed_method=missing 缺失=visualProductionUnits：未覆盖全部编号区域");
   return errors;

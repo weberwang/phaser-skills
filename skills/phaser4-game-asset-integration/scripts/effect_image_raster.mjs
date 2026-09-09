@@ -53,13 +53,19 @@ export function decodePngRgba(bytes) {
       rows[rowStart + x] = filter === 0 ? raw : filter === 1 ? raw + left : filter === 2 ? raw + up : filter === 3 ? raw + Math.floor((left + up) / 2) : filter === 4 ? raw + paeth(left, up, upperLeft) : (() => { throw new Error(`PNG filter 不受支持：${filter}`); })();
     }
   }
+  // grayscale/truecolor 的 tRNS 都使用每个样本 16 位存储透明色；当前解码器只接受
+  // 8 位 PNG，因此比较解压后的 8 位样本值，不能固定写入 255 伪造不透明边界。
+  if (header.colorType === 0 && transparency && transparency.length !== 2) throw new Error("grayscale PNG 的 tRNS 必须包含 2 个字节");
+  if (header.colorType === 2 && transparency && transparency.length !== 6) throw new Error("truecolor PNG 的 tRNS 必须包含 6 个字节");
+  const grayscaleTransparency = header.colorType === 0 && transparency ? transparency.readUInt16BE(0) : null;
+  const truecolorTransparency = header.colorType === 2 && transparency ? [transparency.readUInt16BE(0), transparency.readUInt16BE(2), transparency.readUInt16BE(4)] : null;
   const pixels = Buffer.alloc(header.width * header.height * 4);
   for (let index = 0; index < header.width * header.height; index += 1) {
     const source = index * channels; const target = index * 4;
     if (header.colorType === 6) rows.copy(pixels, target, source, source + 4);
-    else if (header.colorType === 2) { pixels[target] = rows[source]; pixels[target + 1] = rows[source + 1]; pixels[target + 2] = rows[source + 2]; pixels[target + 3] = 255; }
+    else if (header.colorType === 2) { pixels[target] = rows[source]; pixels[target + 1] = rows[source + 1]; pixels[target + 2] = rows[source + 2]; pixels[target + 3] = truecolorTransparency && rows[source] === truecolorTransparency[0] && rows[source + 1] === truecolorTransparency[1] && rows[source + 2] === truecolorTransparency[2] ? 0 : 255; }
     else if (header.colorType === 4) { pixels[target] = rows[source]; pixels[target + 1] = rows[source]; pixels[target + 2] = rows[source]; pixels[target + 3] = rows[source + 1]; }
-    else if (header.colorType === 0) { const value = rows[source]; pixels.fill(value, target, target + 3); pixels[target + 3] = transparency?.length >= 2 && value === transparency.readUInt16BE(0) ? 0 : 255; }
+    else if (header.colorType === 0) { const value = rows[source]; pixels.fill(value, target, target + 3); pixels[target + 3] = grayscaleTransparency !== null && value === grayscaleTransparency ? 0 : 255; }
     else { const paletteIndex = rows[source]; const paletteOffset = paletteIndex * 3; if (paletteOffset + 2 >= palette.length) throw new Error("PNG 调色板索引越界"); pixels[target] = palette[paletteOffset]; pixels[target + 1] = palette[paletteOffset + 1]; pixels[target + 2] = palette[paletteOffset + 2]; pixels[target + 3] = transparency?.[paletteIndex] ?? 255; }
   }
   return { width: header.width, height: header.height, pixels, metadata };
