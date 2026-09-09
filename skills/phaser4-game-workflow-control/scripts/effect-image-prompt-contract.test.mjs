@@ -66,6 +66,7 @@ function validEffectRecord(overrides = {}) {
     reference_input_mode: "full-reference-guidance",
     pixel_reuse_policy: "forbid-output-reuse",
     source_background_mode: "opaque",
+    source_background_color: "#00FF00",
     final_background_mode: "transparent",
     transparency_strategy: "background-removal",
     global_prompt_prefix: EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX,
@@ -103,7 +104,7 @@ function validEffectRecord(overrides = {}) {
     runtime_file: "public/assets/sc-main-hero-idle.png",
     output_file: "public/assets/sc-main-hero-idle.png",
     postprocess: ["background-removal"],
-    background_removal_attempts: [{ operation: "background-removal", status: "completed", source_file: "art/generated/sc-main-hero-idle-raw.png", output_file: "art/generated/sc-main-hero-idle-cutout.png", source_has_alpha: false, output_has_alpha: true, completed_at: "2026-08-22T00:00:00Z", evidence: { record_id: "BR-SC-MAIN-HERO-IDLE", report: "evidence/visual/sc-main-hero-background-removal.json" } }],
+    background_removal_attempts: [{ operation: "background-removal", status: "completed", source_file: "art/generated/sc-main-hero-idle-raw.png", output_file: "art/generated/sc-main-hero-idle-cutout.png", source_has_alpha: false, output_has_alpha: true, completed_at: "2026-08-22T00:00:00Z", evidence: { record_id: "BR-SC-MAIN-HERO-IDLE", report: "evidence/visual/sc-main-hero-background-removal.json", solid_background_check: { status: "passed", background_color: "#00FF00", opaque: true, boundary_pixels: 4, matched_boundary_pixels: 4 } } }],
     ...overrides,
   };
 }
@@ -228,11 +229,11 @@ test("合法 effect-image 忠实还原记录通过", () => {
   assert.deepEqual(validateImageGenerationContract(asset, effectImageAssetContract(), effectImageValidationContext(), effectImageValidationOptions()), []);
 });
 
-test("alpha=true 单图必须声明背景模式并保留透明 PNG 交付要求", () => {
+test("alpha=true 单图必须声明背景模式并使用不透明纯色生图提示", () => {
   const record = validEffectRecord({ source_background_mode: undefined, full_prompt: buildEffectImageFullPrompt({ assetPrompt: validEffectRecord().asset_prompt, statePrompt: validEffectRecord().state_prompt, expectedAlpha: false }) });
   const errors = validateImageGenerationContract(validEffectAsset({ generation_record: record }), effectImageAssetContract(), effectImageValidationContext(), effectImageValidationOptions());
   assert(errors.some((item) => item.includes("source_background_mode")), errors.join("\n"));
-  assert(errors.some((item) => item.includes("透明 PNG")), errors.join("\n"));
+  assert(errors.some((item) => item.includes("纯色")), errors.join("\n"));
 });
 
 test("alpha=true 单图允许失败历史后由最终成功背景移除收尾", () => {
@@ -285,7 +286,7 @@ test("正向提示‘不得重新设计’通过", () => {
   const base = validEffectRecord();
   const assetPrompt = `${base.asset_prompt}\n不得重新设计`;
   const statePrompt = base.state_prompt;
-  assert.deepEqual(validate({ ...base, asset_prompt: assetPrompt, full_prompt: buildEffectImageFullPrompt({ assetPrompt, statePrompt }) }), []);
+  assert.deepEqual(validate({ ...base, asset_prompt: assetPrompt, full_prompt: buildEffectImageFullPrompt({ assetPrompt, statePrompt, expectedAlpha: true }) }), []);
 });
 
 test("negative_prompt 包含‘重新设计’不触发正向指令误报", () => {

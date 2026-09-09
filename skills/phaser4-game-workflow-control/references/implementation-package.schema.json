@@ -583,19 +583,44 @@
         "source_has_alpha": {"type": "boolean"}, "output_has_alpha": {"type": "boolean"},
         "completed_at": {"type": "string", "format": "date-time"}, "evidence": {"$ref": "#/$defs/evidenceValue"}
       },
-      "allOf": [{"if": {"properties": {"status": {"const": "completed"}}}, "then": {"properties": {"output_has_alpha": {"const": true}}}}],
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "completed"}}},
+          "then": {
+            "properties": {
+              "output_has_alpha": {"const": true},
+              "evidence": {
+                "type": "object",
+                "required": ["solid_background_check"],
+                "properties": {
+                  "solid_background_check": {
+                    "type": "object",
+                    "required": ["status", "background_color", "opaque", "boundary_pixels", "matched_boundary_pixels"],
+                    "properties": {
+                      "status": {"const": "passed"},
+                      "background_color": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+                      "opaque": {"const": true},
+                      "boundary_pixels": {"type": "integer", "minimum": 1},
+                      "matched_boundary_pixels": {"type": "integer", "minimum": 0}
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
       "additionalProperties": true
     },
     "transparentBackgroundProductionRecord": {
       "type": "object",
-      "required": ["source_background_mode", "final_background_mode", "transparency_strategy", "raw_source_file", "raw_source_has_alpha", "source_file", "source_has_alpha"],
+      "required": ["source_background_mode", "source_background_color", "final_background_mode", "transparency_strategy", "raw_source_file", "raw_source_has_alpha", "source_file", "source_has_alpha", "background_removal_attempts"],
       "properties": {
-        "source_background_mode": {"enum": ["opaque", "transparent"]}, "final_background_mode": {"const": "transparent"}, "transparency_strategy": {"enum": ["direct-alpha", "background-removal"]},
+        "source_background_mode": {"const": "opaque"}, "source_background_color": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"}, "final_background_mode": {"const": "transparent"}, "transparency_strategy": {"const": "background-removal"},
         "raw_source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "raw_source_has_alpha": {"type": "boolean"},
         "source_file": {"type": "string", "pattern": "\\.[Pp][Nn][Gg]$"}, "source_has_alpha": {"const": true},
-        "background_removal_max_attempts": {"type": "integer", "minimum": 1}, "background_removal_attempts": {"type": "array", "minItems": 0, "items": {"$ref": "#/$defs/transparentBackgroundRemovalAttempt"}}
+        "background_removal_max_attempts": {"type": "integer", "minimum": 1}, "background_removal_attempts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/transparentBackgroundRemovalAttempt"}}
       },
-      "allOf": [{"if": {"properties": {"transparency_strategy": {"const": "direct-alpha"}}}, "then": {"properties": {"source_background_mode": {"const": "transparent"}, "raw_source_has_alpha": {"const": true}, "source_has_alpha": {"const": true}, "background_removal_attempts": {"maxItems": 0}}}}, {"if": {"properties": {"transparency_strategy": {"const": "background-removal"}}}, "then": {"required": ["background_removal_attempts"], "properties": {"background_removal_attempts": {"minItems": 1}}}}],
       "not": {"anyOf": [{"required": ["background_mode"]}, {"required": ["direct_generation_attempt"]}, {"required": ["directGenerationAttempt"]}]},
       "additionalProperties": true
     },

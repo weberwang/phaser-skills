@@ -42,7 +42,7 @@ V2 布局标注在拆解确认之后串行产出：阶段 A 先生成按人工�
 
 V3 消费 V2 已确认的拆解图、技术 JSON、coverage、布局合同和生产计划，生产正式视觉资源，并完成正式布局与宿主场景同屏组合预验收。正式资源必须保留来源、适用的版权/许可信息、机器清单、生成记录、运行时文件、组件状态和冻结目标绑定。
 
-生成式位图区域按 V2 `component_inventory` 收齐全部待生成 component × required state，作为[一个批量生成任务](visual-production-pipeline.md#图片批量生成)一次提交；每项交付 individual 位图，`atlas_allowed=false`，不能将独立文件要求解释为逐张调度。宽高由逻辑像素 `ceil(max placement width/height × intended_scale_range.max × 1.5)` 决定，`max_dpr=1.5`，`padding_policy=none`。系统根据提示词、参考输入、主体材质、透明需求和可用能力选择实际生成工具，并在记录中写入工具/版本；透明资产生成原图后按实际 Alpha 决定直接保留或执行公共脚本/分割去背景，记录完整透明处理与归一化证据。
+生成式位图区域按 V2 `component_inventory` 收齐全部待生成 component × required state，作为[一个批量生成任务](visual-production-pipeline.md#图片批量生成)一次提交；每项交付 individual 位图，`atlas_allowed=false`，不能将独立文件要求解释为逐张调度。宽高由逻辑像素 `ceil(max placement width/height × intended_scale_range.max × 1.5)` 决定，`max_dpr=1.5`，`padding_policy=none`。系统根据提示词、参考输入、主体材质、透明需求和可用能力选择实际生成工具，并在记录中写入工具/版本；生成式透明资产先生成不透明指定 HEX 纯色背景，再由公共脚本去背景并记录 `source_background_mode=opaque`、`source_background_color`、完整透明处理与归一化证据；不得请求透明 PNG/Alpha 或接受棋盘格预览。已有真实透明图按资源复用合同接入，完整场景 `alpha=false` 背景不受纯色要求约束。
 
 V3 `combination_preacceptance` 必须使用正式 Scene 同结构、正式资源和正式布局计算，禁止整屏截图、隐藏覆盖层或绝对叠图。显示层必须绑定 `displayLayerId` 与 `hostSceneId`，并用宿主场景上下文图验证同屏关系。
 

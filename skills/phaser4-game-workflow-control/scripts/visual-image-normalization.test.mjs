@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
 import test from "node:test";
-import { validateTransparentBackgroundContract } from "./visual-transparent-background-contract.mjs";
+import { buildSolidBackgroundPrompt, DEFAULT_SOURCE_BACKGROUND_COLOR, validateTransparentBackgroundContract } from "./visual-transparent-background-contract.mjs";
 import { validateImageGenerationContract } from "./visual-production-contract.mjs";
 import { normalizeImageToContract } from "./visual-image-normalization.mjs";
 import { validateImageNormalizationContract } from "./visual-image-normalization-contract.mjs";
@@ -127,15 +127,16 @@ function transparentGeneration() {
     source_background_mode: "opaque",
     final_background_mode: "transparent",
     transparency_strategy: "background-removal",
+    source_background_color: DEFAULT_SOURCE_BACKGROUND_COLOR,
     raw_source_file: "art/hero-raw.png",
     raw_source_has_alpha: false,
     source_file: "art/hero-cutout.png",
     source_has_alpha: true,
-    full_prompt: "透明目标要求：生成非透明、轮廓清晰、与主体高对比、便于去背的纯色背景；禁止直接输出透明 Alpha。随后仅执行一次受控背景移除，产出含真实 Alpha 的 PNG。",
+    full_prompt: `生成独立角色。\n${buildSolidBackgroundPrompt(DEFAULT_SOURCE_BACKGROUND_COLOR)}`,
     command_or_recipe: "imagegen hero -> background-removal once",
     postprocess: ["background-removal"],
     record_id: "GEN-HERO",
-    background_removal_attempts: [{ operation: "background-removal", status: "completed", source_file: "art/hero-raw.png", output_file: "art/hero-cutout.png", source_has_alpha: false, output_has_alpha: true, completed_at: "2026-08-25T00:00:00.000Z", evidence: { provider_status: "completed" } }],
+    background_removal_attempts: [{ operation: "background-removal", status: "completed", source_file: "art/hero-raw.png", output_file: "art/hero-cutout.png", source_has_alpha: false, output_has_alpha: true, completed_at: "2026-08-25T00:00:00.000Z", evidence: { provider_status: "completed", solid_background_check: { status: "passed", background_color: DEFAULT_SOURCE_BACKGROUND_COLOR, tolerance: 0, boundary_pixels: 4, matched_boundary_pixels: 4, opaque: true } } }],
   };
 }
 

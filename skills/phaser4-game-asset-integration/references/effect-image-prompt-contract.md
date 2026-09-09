@@ -15,23 +15,25 @@
 
 允许重新绘制全部像素，但禁止把参考图裁切、抠图或复制后直接作为交付结果。
 
-输出单个独立位图资产。按当前 expected_assets 的背景生产合同生成背景。主体必须完整落入指定画布。不得生成组合图、atlas、sprite sheet、展示板、说明文字、无关 UI、数字、标签、水印或其他组件。
+输出单个独立位图资产。背景按本次实际请求中的源图背景要求绘制；主体必须完整落入指定画布。不得生成组合图、atlas、sprite sheet、展示板、说明文字、无关 UI、数字、标签、水印或其他组件。
 ```
 
-当当前 `expected_assets` 的 `alpha=true` 时，实际发送的完整提示词必须追加以下透明生产段：
+当当前 `expected_assets` 的 `alpha=true` 且 `origin=generated` 时，实际发送的完整提示词必须追加以下默认纯色背景生产段；若绿色与主体冲突，调用前选择其他 HEX 颜色并通过 `buildSolidBackgroundPrompt(color)` 生成对应段落，提示词、`source_background_color` 和脚本参数必须一致：
 
 ```text
-透明目标要求：输出单个独立位图资产，最终交付真实 Alpha 透明的 PNG；生成器可直接输出透明 PNG，或在原图不透明时按需执行背景移除。不得用可见背景像素或预览棋盘格冒充透明。
+背景要求：将参考图或 asset_prompt 中用于描述最终透明边界的区域，在本次原图中统一填充为不透明、无纹理的纯色平涂背景；指定颜色为 #00FF00（RGB 0, 255, 0）。
+主体必须完整落入画布并与画布边缘保持间隔；保持主体颜色、材质、光影和边缘形状不变，不把背景或背景阴影烘焙进主体。调用方应在发送提示词前选择与主体明显区分的指定纯色。
+背景必须整片均匀不透明；禁止棋盘格、网格、渐变、纹理、背景阴影、环境景物、边框、说明文字或色值文字。
 ```
 
-生成记录必须记录系统实际选择的 `generator` 与 `generator_version`；`generator` 必须记录实际调用的工具，未暴露的版本、模型参数或种子记录 `not-provided`，不得编造。直接透明路线声明 `transparency_strategy=direct-alpha`，并绑定原图/输出 Alpha；需要去背景时声明 `transparency_strategy=background-removal`，提供 `raw_source_file`、背景处理后的 `source_file` 和两侧 Alpha。背景处理使用公共 `remove-background-local.mjs` 或适配复杂背景的分割工具；`background_removal_attempts` 按实际尝试追加，记录 `operation`、`status`、源/输出路径、完成时间、源/输出 Alpha、失败原因和可审计 evidence。失败历史必须保留，重试由任务配置设定上限，不能无限重试或自动新增外部调用授权；`normalization_record.source_file` 必须绑定当前透明输入。最终 PNG 由 V4 文件解码复核真实 Alpha。
+生成记录必须记录系统实际选择的 `generator` 与 `generator_version`；`generator` 必须记录实际调用的工具，未暴露的版本、模型参数或种子记录 `not-provided`，不得编造。生成式透明路线固定声明 `transparency_strategy=background-removal`、`source_background_mode=opaque` 和显式 `source_background_color`，并提供 `raw_source_file`、背景处理后的 `source_file` 和两侧 Alpha；源图必须先通过 `--require-solid-background` 校验，失败时重新生成或修正输入。背景处理使用公共 `remove-background-local.mjs`；`background_removal_attempts` 只追加返回报告中的 `report.background_removal_attempt`，不嵌入完整报告；每个 attempt 记录 `operation`、`status`、源/输出路径、完成时间、源/输出 Alpha、背景颜色、失败原因和可审计 evidence。每条成功记录的 `evidence.solid_background_check` 必须证明不透明、边缘全数匹配且检查通过；最终记录还必须与当前源图背景色一致。失败历史必须保留，重试由任务配置设定上限，不能无限重试或自动新增外部调用授权；`normalization_record.source_file` 必须绑定当前透明输入。最终 PNG 由 V4 文件解码复核真实 Alpha。已有真实透明图按资源复用合同接入，不伪造生成去背记录。
 
 `background_mode`、`direct_generation_attempt` 和旧的策略值均不属于本合同；`postprocess` 必须是字符串数组，背景移除操作以结构化 `background_removal_attempts` 为权威记录。
 
 `negative_prompt` 必须逐字使用下面的 canonical 内容：
 
 ```text
-重新设计，二次创作，概念探索，风格迁移，风格改编，审美优化，专业修复，提升游戏感，自由发挥，改变轮廓，改变比例，改变朝向，改变透视，改变姿态，改变构图，替换符号语义，新增参考中不存在的结构，新增装甲，新增武器，新增翅膀，新增徽章，遗漏参考结构，通用科幻图标，过度发光，霓虹泛滥，卡通化，扁平化，低细节，模糊边缘，组图，atlas，sprite sheet，整屏 UI，设计展示板，说明文字，水印，棋盘格烘焙背景，黑底，白底，直接裁切参考图，直接抠取参考图，直接复制参考像素。
+重新设计，二次创作，概念探索，风格迁移，风格改编，审美优化，专业修复，提升游戏感，自由发挥，改变轮廓，改变比例，改变朝向，改变透视，改变姿态，改变构图，替换符号语义，新增参考中不存在的结构，新增装甲，新增武器，新增翅膀，新增徽章，遗漏参考结构，通用科幻图标，过度发光，霓虹泛滥，卡通化，扁平化，低细节，模糊边缘，组图，atlas，sprite sheet，整屏 UI，设计展示板，说明文字，水印，棋盘格烘焙背景，直接裁切参考图，直接抠取参考图，直接复制参考像素。
 ```
 
 ## 禁止与必须
@@ -71,11 +73,11 @@
 
 `generation_record.reference_inputs` 必须包含 `reference_target.original_file` 指向的完整冻结效果图；`style_reference_inputs` 只能补充，不能替代它。`source_file`、`runtime_file`、`output_file` 和实际输出路径/文件身份不得等于冻结图。`crop_reference=true`、`reference_crop=true`、裁切/抠图参考图或复用参考像素作为输出都必须失败。
 
-记录必须保存实际发送的完整提示词（`full_prompt` 或 `actual_prompt`）和真实 `reference_inputs`，不能在生成后拼一份未实际使用的文本。完整提示词至少可复核地包含 canonical 全局段、当前 region 事实资产段、状态段和 canonical 负向段；透明 `alpha=true` 资产还必须包含透明生产段；并绑定当前 `target_sha256`、`region_id`、候选 `candidate_sha256`/`diff_fingerprint`、候选版本与实际 `record_id`。`generator`/`generator_version` 必须记录系统按提示词、参考输入、材质、透明需求和可用能力实际选择的工具身份；未暴露时写 `not-provided`。
+记录必须保存实际发送的完整提示词（`full_prompt` 或 `actual_prompt`）和真实 `reference_inputs`，不能在生成后拼一份未实际使用的文本。完整提示词至少可复核地包含 canonical 全局段、当前 region 事实资产段、状态段和 canonical 负向段；生成式透明 `alpha=true` 资产还必须包含纯色背景生产段，并绑定当前 `target_sha256`、`region_id`、候选 `candidate_sha256`/`diff_fingerprint`、候选版本与实际 `record_id`。`generator`/`generator_version` 必须记录系统按提示词、参考输入、材质、透明需求和可用能力实际选择的工具身份；未暴露时写 `not-provided`。
 
 普通非 `effect-image` 生成式位图不要求以上三个重建字段，也不要求冻结效果图作为参考输入；仍须记录实际生成器、版本、提示词、输入、输出和后处理。
 
-透明单图必须按“生成原图 → 按实际 Alpha 决定是否执行背景处理 → 尺寸归一化 → V4/final/runtime”执行；direct-alpha 路线直接以原图作为透明输入，background-removal 路线以脚本或分割工具输出作为透明输入。归一化使用 Sharp，写入 `normalization_record`，并把 `normalization_record.source_file` 绑定当前透明输入，最终 `actual_output` 绑定归一化后的 PNG。生成失败或背景处理失败时保留历史尝试和失败原因，按任务配置的有限上限重试；不因重试自动新增外部调用授权。所有生成式位图首次输出比例不符时最多重生一次；第二次仍不符时，若冻结裁切焦点和安全事实允许，使用 `crop-and-resize-to-contract`，记录 `aspect_ratio_correction` 中两次真实原始生成 attempt、SHA、尺寸、focus 和最大目标比例 `crop_rect`；若裁切会损伤主体、文字、透明轮廓或关键构图，则先由生产流程对原图生成式延展到目标比例，再按实际 Alpha 决定背景处理和普通归一化。`padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘或裁切冻结 `reference_target`；透明目标归一化前后都必须保留 Alpha。
+透明单图必须按“生成不透明纯色原图 → 校验纯色背景 → 公共脚本去背景 → 尺寸归一化 → V4/final/runtime”执行；生成式透明路线只能以背景处理输出作为透明输入。归一化使用 Sharp，写入 `normalization_record`，并把 `normalization_record.source_file` 绑定当前透明输入，最终 `actual_output` 绑定归一化后的 PNG。生成失败、纯色校验失败或背景处理失败时保留历史尝试和失败原因，按任务配置的有限上限重试；不因重试自动新增外部调用授权。所有生成式位图首次输出比例不符时最多重生一次；第二次仍不符时，若冻结裁切焦点和安全事实允许，使用 `crop-and-resize-to-contract`，记录 `aspect_ratio_correction` 中两次真实原始生成 attempt、SHA、尺寸、focus 和最大目标比例 `crop_rect`；若裁切会损伤主体、文字、透明轮廓或关键构图，则先由生产流程对原图生成式延展到目标比例，再重新校验纯色背景并执行背景处理和普通归一化。`padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘或裁切冻结 `reference_target`；透明目标归一化前后都必须保留 Alpha。
 
 ## 全局视觉基线绑定
 

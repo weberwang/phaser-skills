@@ -77,15 +77,15 @@ node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs
 
 ## 生图与去背景
 
-系统根据提示词、参考图、素材类型和可用能力选择生图方案，以 `image-generation` 记录生产分类，并保存实际生成器身份。透明素材可以直接使用合格的透明原图；需要去背景时复用公共脚本并传入任务参数，随后进入尺寸归一化。详见[资产生产路线](skills/phaser4-game-asset-integration/references/asset-production-routes.md)。
+系统根据提示词、参考图、素材类型和可用能力选择生图方案，不绑定供应商；以 `image-generation` 记录生产分类并保存实际生成器身份。对 `alpha=true` 的生成式素材，生成器只接收不透明、单一指定 HEX 纯色背景要求，不请求透明 PNG/Alpha，也不接受棋盘格或网格预览作为背景；原图通过公共脚本校验后去背景，再进入尺寸归一化。已有真实透明图按既有资源复用，不伪造生成去背记录。`alpha=false` 的完整场景背景按场景合同生成，不受纯色背景要求约束。详见[资产生产路线](skills/phaser4-game-asset-integration/references/asset-production-routes.md)。
 
 在本仓库中处理简单纯色背景 PNG：
 
 ```powershell
-npm run remove:background -- --source art/raw.png --output art/transparent.png --background-color '#00aa55' --tolerance 24 --record art/removal.json --preview-dir art/previews
+npm run remove:background -- --source art/raw.png --output art/transparent.png --background-color '#00FF00' --tolerance 24 --require-solid-background --record art/removal.json --preview-dir art/previews
 ```
 
-背景色和容差必须按实际素材设置；复杂背景应选择分割工具。脚本只做原尺寸去背景，生成处理记录与深浅底预览，不替代视觉质量检查。
+生成式透明素材的源图必须整张不透明且边缘匹配指定纯色；`--require-solid-background` 校验失败时重新生成或修正输入，不通过提高容差吞掉棋盘格。默认背景色为 `#00FF00`，若主体含相近颜色可改用单一 `#FF00FF` 等颜色，并在生成记录与脚本参数中保持一致。脚本只做原尺寸去背景，生成处理记录与深浅底预览，不替代视觉质量检查。
 
 ## 高级诊断
 

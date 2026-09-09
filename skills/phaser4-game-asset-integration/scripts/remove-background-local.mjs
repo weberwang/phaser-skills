@@ -85,6 +85,11 @@ export function parseColorTolerance(value) {
   return value;
 }
 
+/** 将规范化后的 RGB 颜色编码为记录和证据中使用的稳定十六进制格式。 */
+function formatBackgroundColor(backgroundColor) {
+  return `#${backgroundColor.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+}
+
 /** 判断两个 RGB 颜色是否在给定欧氏容差内。 */
 function matchesBackground(pixels, pixelIndex, backgroundColor, tolerance) {
   const offset = pixelIndex * 4;
@@ -176,6 +181,37 @@ export function countAlphaPixels(pixels) {
     if (alpha === 255) opaque += 1;
   }
   return { transparent, foreground, opaque };
+}
+
+/**
+ * 严格模式核验输入是不透明的，且所有画布边缘像素匹配指定背景色。
+ *
+ * 这项证据只能证明输入满足不透明与边缘颜色条件，不能识别主体内部的棋盘格；
+ * 因此复杂背景仍需人工检查或专用前景分割流程。
+ */
+function inspectSolidBackground(image, backgroundColor, tolerance) {
+  const { width, height, pixels } = image;
+  const alpha = countAlphaPixels(pixels);
+  let boundaryPixels = 0;
+  let matchedBoundaryPixels = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (x !== 0 && x !== width - 1 && y !== 0 && y !== height - 1) continue;
+      boundaryPixels += 1;
+      if (matchesBackground(pixels, y * width + x, backgroundColor, tolerance)) matchedBoundaryPixels += 1;
+    }
+  }
+  const opaque = alpha.opaque === width * height;
+  return {
+    status: opaque && matchedBoundaryPixels === boundaryPixels ? "passed" : "failed",
+    background_color: formatBackgroundColor(backgroundColor),
+    tolerance,
+    boundary_pixels: boundaryPixels,
+    matched_boundary_pixels: matchedBoundaryPixels,
+    opaque,
+    opaque_pixels: alpha.opaque,
+    total_pixels: width * height,
+  };
 }
 
 /** 判断两个绝对路径是否相同，兼容 Windows 文件系统大小写。 */
@@ -289,6 +325,9 @@ export async function removeBackgroundLocal(options = {}) {
   const paths = resolvePaths(options);
   const reuseAlpha = options.reuseExistingAlpha ?? options.reuse_existing_alpha ?? options.reuseAlpha ?? options.reuse_alpha ?? false;
   if (typeof reuseAlpha !== "boolean") throw new BackgroundRemovalError("reuse_existing_alpha 必须是布尔值");
+  const requireSolidBackground = options.requireSolidBackground ?? options.require_solid_background ?? false;
+  if (typeof requireSolidBackground !== "boolean") throw new BackgroundRemovalError("require_solid_background 必须是布尔值");
+  if (reuseAlpha && requireSolidBackground) throw new BackgroundRemovalError("require_solid_background 与 reuse_existing_alpha 互斥");
 
   let sourceBytes;
   try {
@@ -309,6 +348,7 @@ export async function removeBackgroundLocal(options = {}) {
   let method;
   let backgroundColor = null;
   let tolerance = null;
+  let solidBackgroundCheck = null;
   if (reuseAlpha) {
     if (!hasTransparentPixels(source.pixels)) throw new BackgroundRemovalError("reuse_existing_alpha 要求输入包含透明像素");
     processed = { pixels: Buffer.from(source.pixels), removedPixels: 0 };
@@ -316,6 +356,16 @@ export async function removeBackgroundLocal(options = {}) {
   } else {
     backgroundColor = parseBackgroundColor(options.backgroundColor ?? options.background_color);
     tolerance = parseColorTolerance(options.tolerance);
+    if (requireSolidBackground) {
+      solidBackgroundCheck = inspectSolidBackground(source, backgroundColor, tolerance);
+      // 严格检查失败时在任何输出、预览或记录写入前终止，避免棋盘格被误当作成功输入。
+      if (solidBackgroundCheck.status !== "passed") {
+        const reasons = [];
+        if (!solidBackgroundCheck.opaque) reasons.push("输入必须完全不透明");
+        if (solidBackgroundCheck.matched_boundary_pixels !== solidBackgroundCheck.boundary_pixels) reasons.push("画布边缘必须匹配指定背景色");
+        throw new BackgroundRemovalError(`require_solid_background 检查失败：${reasons.join("；")}`);
+      }
+    }
     processed = removeConnectedBackground(source, { backgroundColor, tolerance });
     method = "edge-connected-chroma-removal";
   }
@@ -350,9 +400,10 @@ export async function removeBackgroundLocal(options = {}) {
       output_sha256: sha256Bytes(outputBytes),
       removed_pixels: processed.removedPixels,
       failures,
-      background_color: backgroundColor ? `#${backgroundColor.map((channel) => channel.toString(16).padStart(2, "0")).join("")}` : null,
+      background_color: backgroundColor ? formatBackgroundColor(backgroundColor) : null,
       tolerance,
       validation_status: status,
+      ...(solidBackgroundCheck ? { solid_background_check: solidBackgroundCheck } : {}),
     },
   };
   const record = {
@@ -379,7 +430,7 @@ export async function removeBackgroundLocal(options = {}) {
     transparent_pixels: outputAlpha.transparent,
     foreground_pixels: outputAlpha.foreground,
     removed_pixels: processed.removedPixels,
-    background_color: backgroundColor ? `#${backgroundColor.map((channel) => channel.toString(16).padStart(2, "0")).join("")}` : null,
+    background_color: backgroundColor ? formatBackgroundColor(backgroundColor) : null,
     tolerance,
     preserve_dimensions: true,
     normalization_required: true,
@@ -388,6 +439,7 @@ export async function removeBackgroundLocal(options = {}) {
     ...(previews ? { preview_files: previews } : {}),
     ...(paths.recordFile ? { record_file: paths.recordFile } : {}),
     ...(backgroundRemovalAttempt ? { background_removal_attempt: backgroundRemovalAttempt } : {}),
+    ...(solidBackgroundCheck ? { solid_background_check: solidBackgroundCheck } : {}),
   };
   if (paths.recordFile) {
     await mkdir(dirname(paths.recordFile), { recursive: true });
@@ -408,7 +460,7 @@ function readCliValue(args, flag) {
 /** 运行 CLI；成功和像素验证失败都输出完整记录，参数错误输出稳定错误对象。 */
 export async function runRemoveBackgroundCli(args = process.argv.slice(2), output = console) {
   if (args.includes("--help") || args.includes("-h")) {
-    output.log("用法：node remove-background-local.mjs --source input.png --output output.png --background-color '#00aa55' --tolerance 24 [--reuse-alpha] [--record record.json] [--preview-dir previews]");
+    output.log("用法：node remove-background-local.mjs --source input.png --output output.png --background-color '#00aa55' --tolerance 24 [--require-solid-background] [--reuse-alpha] [--record record.json] [--preview-dir previews]");
     return 0;
   }
   try {
@@ -417,6 +469,7 @@ export async function runRemoveBackgroundCli(args = process.argv.slice(2), outpu
       outputFile: readCliValue(args, "--output"),
       backgroundColor: readCliValue(args, "--background-color"),
       tolerance: Number(readCliValue(args, "--tolerance")),
+      requireSolidBackground: args.includes("--require-solid-background"),
       reuseExistingAlpha: args.includes("--reuse-alpha"),
       recordFile: readCliValue(args, "--record"),
       previewDirectory: readCliValue(args, "--preview-dir"),

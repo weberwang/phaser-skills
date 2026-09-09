@@ -4,7 +4,7 @@
  * 该模块集中保存唯一的提示词常量、资产提示词构建器和生成记录门禁，
  * 避免 SKILL、清单校验器与实际发送给生成器的文本各自漂移。
  */
-import { TRANSPARENT_BACKGROUND_REMOVAL_PROMPT } from "./visual-transparent-background-contract.mjs";
+import { buildSolidBackgroundPrompt, DEFAULT_SOURCE_BACKGROUND_COLOR, expressesSolidBackgroundProduction, TRANSPARENT_BACKGROUND_REMOVAL_PROMPT, normalizeSourceBackgroundColor } from "./visual-transparent-background-contract.mjs";
 import { CANONICAL_GLOBAL_VISUAL_CONSISTENCY_PROMPT, GLOBAL_VISUAL_CONSISTENCY_PROMPT, validateGlobalVisualGenerationRecord } from "./global-visual-consistency-contract.mjs";
 
 /** effect-image 生成记录必须声明的重建模式。 */
@@ -31,11 +31,11 @@ export const EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX = [
   "",
   "允许重新绘制全部像素，但禁止把参考图裁切、抠图或复制后直接作为交付结果。",
   "",
-  "输出单个独立位图资产。按当前 expected_assets 的透明度生产合同交付背景；主体必须完整落入指定画布。不得生成组合图、atlas、sprite sheet、展示板、说明文字、无关 UI、数字、标签、水印或其他组件。",
+  "输出单个独立位图资产。背景按本次实际请求中的源图背景要求绘制；主体必须完整落入指定画布。不得生成组合图、atlas、sprite sheet、展示板、说明文字、无关 UI、数字、标签、水印或其他组件。",
 ].join("\n");
 
 /** effect-image 的 canonical negative_prompt；该字段中的禁词不是正向改编指令。 */
-export const EFFECT_IMAGE_NEGATIVE_PROMPT = "重新设计，二次创作，概念探索，风格迁移，风格改编，审美优化，专业修复，提升游戏感，自由发挥，改变轮廓，改变比例，改变朝向，改变透视，改变姿态，改变构图，替换符号语义，新增参考中不存在的结构，新增装甲，新增武器，新增翅膀，新增徽章，遗漏参考结构，通用科幻图标，过度发光，霓虹泛滥，卡通化，扁平化，低细节，模糊边缘，组图，atlas，sprite sheet，整屏 UI，设计展示板，说明文字，水印，棋盘格烘焙背景，黑底，白底，直接裁切参考图，直接抠取参考图，直接复制参考像素。";
+export const EFFECT_IMAGE_NEGATIVE_PROMPT = "重新设计，二次创作，概念探索，风格迁移，风格改编，审美优化，专业修复，提升游戏感，自由发挥，改变轮廓，改变比例，改变朝向，改变透视，改变姿态，改变构图，替换符号语义，新增参考中不存在的结构，新增装甲，新增武器，新增翅膀，新增徽章，遗漏参考结构，通用科幻图标，过度发光，霓虹泛滥，卡通化，扁平化，低细节，模糊边缘，组图，atlas，sprite sheet，整屏 UI，设计展示板，说明文字，水印，棋盘格烘焙背景，直接裁切参考图，直接抠取参考图，直接复制参考像素。";
 
 /** 为调用方提供更明确的 canonical 别名，避免不同入口自行复制常量。 */
 export const CANONICAL_EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX = EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX;
@@ -185,12 +185,12 @@ export function buildEffectImageAssetPrompt({ region, sceneReconstructionContrac
 }
 
 /** 组合实际发送给图像生成器的完整正向/负向提示词，供生成器与记录共用。 */
-export function buildEffectImageFullPrompt({ assetPrompt, statePrompt = "", globalPromptPrefix = EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, globalConsistencyPrompt = GLOBAL_VISUAL_CONSISTENCY_PROMPT, negativePrompt = EFFECT_IMAGE_NEGATIVE_PROMPT, transparentBackground = false, expectedAlpha = false, expectedAsset = null } = {}) {
-  // alpha=true 只追加最终透明 PNG 交付要求，具体生成器和背景处理路线由系统按提示词选择。
-  const transparencyPrompt = transparentBackground === true || expectedAlpha === true || expectedAsset?.alpha === true
-    ? EFFECT_IMAGE_BACKGROUND_REMOVAL_PROMPT
-    : "";
-  return [globalPromptPrefix, globalConsistencyPrompt, assetPrompt, statePrompt, transparencyPrompt, negativePrompt].filter(nonEmptyString).join("\n\n");
+export function buildEffectImageFullPrompt({ assetPrompt, statePrompt = "", globalPromptPrefix = EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, globalConsistencyPrompt = GLOBAL_VISUAL_CONSISTENCY_PROMPT, negativePrompt = EFFECT_IMAGE_NEGATIVE_PROMPT, transparentBackground = false, expectedAlpha = false, expectedAsset = null, backgroundColor } = {}) {
+  const needsSolidBackground = transparentBackground === true || expectedAlpha === true || expectedAsset?.alpha === true;
+  // 生图前先确定实际纯色；记录层应复用同一个值，避免模型生成后才发现去背颜色不一致。
+  const resolvedBackgroundColor = backgroundColor ?? expectedAsset?.source_background_color ?? DEFAULT_SOURCE_BACKGROUND_COLOR;
+  const sourceBackgroundPrompt = needsSolidBackground ? buildSolidBackgroundPrompt(resolvedBackgroundColor) : "";
+  return [globalPromptPrefix, globalConsistencyPrompt, assetPrompt, statePrompt, sourceBackgroundPrompt, negativePrompt].filter(nonEmptyString).join("\n\n");
 }
 
 /** 判断一段文本是否确实包含忠实还原语义，而非只提到参考图。 */
@@ -314,6 +314,25 @@ export function validateEffectImagePromptContract(asset, contract, generation, c
       break;
     }
     if (key === "prompt") add("effect-image generation_record 缺少实际发送给生成器的完整提示词 full_prompt/actual_prompt");
+  }
+  if (generation.transparency_strategy === "background-removal" || generation.source_background_color !== undefined) {
+    let backgroundColor = null;
+    if (!/^#[0-9A-F]{6}$/i.test(generation.source_background_color ?? "")) {
+      add("effect-image generation_record.source_background_color 必须是 #RRGGBB");
+    } else {
+      backgroundColor = normalizeSourceBackgroundColor(generation.source_background_color);
+    }
+    if (backgroundColor) {
+      const promptEntries = [
+        ["full_prompt", generation.full_prompt],
+        ["actual_prompt", generation.actual_prompt],
+        ["prompt_sent", generation.prompt_sent],
+        ["sent_prompt", generation.sent_prompt],
+        ["positive_prompt", generation.positive_prompt],
+        ["prompt", generation.prompt],
+      ].filter(([, value]) => nonEmptyString(value));
+      for (const [field, prompt] of promptEntries) if (!expressesSolidBackgroundProduction(prompt, backgroundColor)) add(`effect-image generation_record.${field} 必须包含 ${backgroundColor}、不透明纯色背景和棋盘格禁用要求`);
+    }
   }
   errors.push(...validateEffectImageAssetPrompt(generation.asset_prompt, region, { sceneReconstructionContract: options.sceneReconstructionContract }));
   const paths = [...collectOutputPaths(asset), ...collectOutputPaths(generation)];

@@ -23,6 +23,7 @@ import {
   normalizeProjectRelativePath,
 } from "./visual-production-contract.mjs";
 import { declaredPathEntry, registerCrossUnitPath } from "./visual-package-paths.mjs";
+import { buildSolidBackgroundPrompt, DEFAULT_SOURCE_BACKGROUND_COLOR } from "./visual-transparent-background-contract.mjs";
 
 const HASH = `sha256:${"a".repeat(64)}`;
 
@@ -145,8 +146,8 @@ function imageGenAsset(overrides = {}) {
     runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", evidence_sha256: HASH, candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1" },
     generation_record: {
       record_id: "GEN-1", generator: "image-generation", generator_version: "1", created_at: "2026-08-15T00:00:00Z", command_or_recipe: "imagegen hero",
-      global_prompt_prefix: "固定风格", asset_prompt: "主角", state_prompt: "待机", negative_prompt: "文字", full_prompt: "固定风格\n主角\n待机\n透明目标要求：生成非透明、轮廓清晰、与主体高对比、便于去背的纯色背景；禁止直接输出透明 Alpha。随后仅执行一次受控背景移除，产出含真实 Alpha 的 PNG。", source_background_mode: "opaque", final_background_mode: "transparent", transparency_strategy: "background-removal", model: "image-generation", model_version: "1", seed: 1,
-      raw_source_file: "art/hero-raw.png", raw_source_has_alpha: false, source_file: "art/hero-cutout.png", source_has_alpha: true, reference_inputs: ["docs/reference.png"], postprocess: ["background-removal"], background_removal_attempts: [{ operation: "background-removal", status: "completed", source_file: "art/hero-raw.png", output_file: "art/hero-cutout.png", source_has_alpha: false, output_has_alpha: true, completed_at: "2026-08-15T00:00:00Z", evidence: { record_id: "BR-1", report: "evidence/background-removal.json" } }],
+      global_prompt_prefix: "固定风格", asset_prompt: "主角", state_prompt: "待机", negative_prompt: "文字", full_prompt: `固定风格\n主角\n待机\n${buildSolidBackgroundPrompt(DEFAULT_SOURCE_BACKGROUND_COLOR)}`, source_background_mode: "opaque", source_background_color: DEFAULT_SOURCE_BACKGROUND_COLOR, final_background_mode: "transparent", transparency_strategy: "background-removal", model: "image-generation", model_version: "1", seed: 1,
+      raw_source_file: "art/hero-raw.png", raw_source_has_alpha: false, source_file: "art/hero-cutout.png", source_has_alpha: true, reference_inputs: ["docs/reference.png"], postprocess: ["background-removal"], background_removal_attempts: [{ operation: "background-removal", status: "completed", source_file: "art/hero-raw.png", output_file: "art/hero-cutout.png", source_has_alpha: false, output_has_alpha: true, completed_at: "2026-08-15T00:00:00Z", evidence: { record_id: "BR-1", report: "evidence/background-removal.json", solid_background_check: { status: "passed", background_color: DEFAULT_SOURCE_BACKGROUND_COLOR, tolerance: 0, boundary_pixels: 4, matched_boundary_pixels: 4, opaque: true } } }],
     },
     ...overrides,
   };
@@ -246,15 +247,17 @@ test("生图分类允许不同实际生成器，但仍要求工具身份和版�
   }
 });
 
-test("自主选择的生成器可直接交付透明原图并进入尺寸归一化", () => {
+test("透明图像生成必须使用不透明纯色原图并执行去背", () => {
   const asset = imageGenAsset();
   const expectedAsset = { asset_id: "hero", source_file: asset.source_file, runtime_file: asset.runtime_outputs[0], width: 64, height: 96, mime_type: "image/png", alpha: true };
   const contract = independentContract({ production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, expected_assets: [expectedAsset] });
-  // 直接透明路线保留同一个原图身份，不能为了满足去背记录而伪造一次处理。
-  Object.assign(asset.generation_record, { generator: "local-render-model", full_prompt: "生成完整角色，交付透明 PNG", source_background_mode: "transparent", transparency_strategy: "direct-alpha", raw_source_file: asset.source_file, raw_source_has_alpha: true, postprocess: [], background_removal_attempts: [] });
   assert.deepEqual(validateImageGenerationContract(asset, contract), []);
-  asset.generation_record.raw_source_has_alpha = false;
-  assert(validateImageGenerationContract(asset, contract).some((error) => error.includes("raw_source_has_alpha")));
+
+  // 直接透明路线不再属于透明生图成功路径，必须由合同明确拒绝。
+  const directAlphaAsset = imageGenAsset();
+  Object.assign(directAlphaAsset.generation_record, { generator: "local-render-model", full_prompt: "生成完整角色，交付透明 PNG", source_background_mode: "transparent", transparency_strategy: "direct-alpha", raw_source_file: directAlphaAsset.source_file, raw_source_has_alpha: true, postprocess: [], background_removal_attempts: [] });
+  const errors = validateImageGenerationContract(directAlphaAsset, contract);
+  assert(errors.some((error) => error.includes("direct-alpha") || error.includes("source_background_mode")), errors.join("\n"));
 });
 
 test("图像生成 禁止裁切参考图", () => {

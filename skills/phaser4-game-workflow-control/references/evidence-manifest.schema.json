@@ -109,8 +109,49 @@
     },
     "evidenceValue": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "array", "minItems": 1, "items": {"type": ["string", "object"]}}, {"type": "object", "minProperties": 1}]},
     "globalVisualGenerationRecord": {"type": "object", "required": ["origin", "visual_baseline_id", "visual_baseline_version", "style_fingerprint", "baseline_document", "style_reference_inputs", "global_visual_consistency_prompt", "style_drift_policy", "full_prompt", "prompt_sent", "target_sha256", "output_sha256", "consistency_status", "consistency_evidence"], "properties": {"origin": {"const": "generated"}, "visual_baseline_id": {"type": "string", "minLength": 1}, "visual_baseline_version": {"type": "string", "minLength": 1}, "style_fingerprint": {"$ref": "#/$defs/sha256"}, "baseline_document": {"const": "docs/visual-baseline.md"}, "style_reference_inputs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/globalStyleReferenceInput"}}, "global_visual_consistency_prompt": {"type": "string", "minLength": 1}, "style_drift_policy": {"const": "forbid"}, "full_prompt": {"type": "string", "minLength": 1}, "prompt_sent": {"const": true}, "target_sha256": {"$ref": "#/$defs/sha256"}, "output_sha256": {"$ref": "#/$defs/sha256"}, "consistency_status": {"const": "passed"}, "consistency_evidence": {"$ref": "#/$defs/globalConsistencyEvidence"}}, "additionalProperties": true},
-    "transparentBackgroundRemovalAttempt": {"type": "object", "required": ["operation", "status", "source_file", "output_file", "source_has_alpha", "output_has_alpha", "completed_at", "evidence"], "properties": {"operation": {"const": "background-removal"}, "status": {"enum": ["failed", "completed"]}, "source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "output_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "source_has_alpha": {"type": "boolean"}, "output_has_alpha": {"type": "boolean"}, "completed_at": {"type": "string", "format": "date-time"}, "evidence": {"$ref": "#/$defs/evidenceValue"}}, "allOf": [{"if": {"properties": {"status": {"const": "completed"}}}, "then": {"properties": {"output_has_alpha": {"const": true}}}}], "additionalProperties": true},
-    "transparentBackgroundProductionRecord": {"type": "object", "required": ["source_background_mode", "final_background_mode", "transparency_strategy", "raw_source_file", "raw_source_has_alpha", "source_file", "source_has_alpha"], "properties": {"source_background_mode": {"enum": ["opaque", "transparent"]}, "final_background_mode": {"const": "transparent"}, "transparency_strategy": {"enum": ["direct-alpha", "background-removal"]}, "raw_source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "raw_source_has_alpha": {"type": "boolean"}, "source_file": {"type": "string", "pattern": "\\.[Pp][Nn][Gg]$"}, "source_has_alpha": {"const": true}, "background_removal_max_attempts": {"type": "integer", "minimum": 1}, "background_removal_attempts": {"type": "array", "minItems": 0, "items": {"$ref": "#/$defs/transparentBackgroundRemovalAttempt"}}}, "allOf": [{"if": {"properties": {"transparency_strategy": {"const": "direct-alpha"}}}, "then": {"properties": {"source_background_mode": {"const": "transparent"}, "raw_source_has_alpha": {"const": true}, "source_has_alpha": {"const": true}, "background_removal_attempts": {"maxItems": 0}}}}, {"if": {"properties": {"transparency_strategy": {"const": "background-removal"}}}, "then": {"required": ["background_removal_attempts"], "properties": {"background_removal_attempts": {"minItems": 1}}}}], "not": {"anyOf": [{"required": ["background_mode"]}, {"required": ["direct_generation_attempt"]}, {"required": ["directGenerationAttempt"]}]}, "additionalProperties": true},
+    "transparentBackgroundRemovalAttempt": {
+      "type": "object",
+      "required": ["operation", "status", "source_file", "output_file", "source_has_alpha", "output_has_alpha", "completed_at", "evidence"],
+      "properties": {
+        "operation": {"const": "background-removal"},
+        "status": {"enum": ["failed", "completed"]},
+        "source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
+        "output_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"},
+        "source_has_alpha": {"type": "boolean"},
+        "output_has_alpha": {"type": "boolean"},
+        "completed_at": {"type": "string", "format": "date-time"},
+        "evidence": {"$ref": "#/$defs/evidenceValue"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "completed"}}},
+          "then": {
+            "properties": {
+              "output_has_alpha": {"const": true},
+              "evidence": {
+                "type": "object",
+                "required": ["solid_background_check"],
+                "properties": {
+                  "solid_background_check": {
+                    "type": "object",
+                    "required": ["status", "background_color", "opaque", "boundary_pixels", "matched_boundary_pixels"],
+                    "properties": {
+                      "status": {"const": "passed"},
+                      "background_color": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+                      "opaque": {"const": true},
+                      "boundary_pixels": {"type": "integer", "minimum": 1},
+                      "matched_boundary_pixels": {"type": "integer", "minimum": 0}
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": true
+    },
+    "transparentBackgroundProductionRecord": {"type": "object", "required": ["source_background_mode", "source_background_color", "final_background_mode", "transparency_strategy", "raw_source_file", "raw_source_has_alpha", "source_file", "source_has_alpha", "background_removal_attempts"], "properties": {"source_background_mode": {"const": "opaque"}, "source_background_color": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"}, "final_background_mode": {"const": "transparent"}, "transparency_strategy": {"const": "background-removal"}, "raw_source_file": {"type": "string", "pattern": "\\.(?:[Pp][Nn][Gg]|[Jj][Pp](?:[Ee])?[Gg])$"}, "raw_source_has_alpha": {"type": "boolean"}, "source_file": {"type": "string", "pattern": "\\.[Pp][Nn][Gg]$"}, "source_has_alpha": {"const": true}, "background_removal_max_attempts": {"type": "integer", "minimum": 1}, "background_removal_attempts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/transparentBackgroundRemovalAttempt"}}}, "not": {"anyOf": [{"required": ["background_mode"]}, {"required": ["direct_generation_attempt"]}, {"required": ["directGenerationAttempt"]}]}, "additionalProperties": true},
     "imageGenerationRecord": {"allOf": [{"$ref": "#/$defs/globalVisualGenerationRecord"}, {"type": "object", "properties": {"normalization_record": {"$ref": "#/$defs/imageNormalizationRecord"}}}, {"if": {"required": ["transparency_strategy"]}, "then": {"$ref": "#/$defs/transparentBackgroundProductionRecord"}}]},
     "globalStyleReferenceInput": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}}},
     "globalConsistencyEvidence": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}}},

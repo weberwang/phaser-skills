@@ -71,7 +71,7 @@
 
 生成结果仍须以锚点和跨资源证据审阅。相同生成器、模型、种子、提示前缀或调色板只能证明生产条件相近，不能证明视觉一致。
 
-上述 AI 专用字段只强制用于路线为 `ai-composite-raster` 且状态为 `producing`、`review` 或 `accepted` 的资源，不泛化到非 AI 生产路线。机器清单中的 AI `generation_record` 必须至少包含非空 `global_prompt_prefix`、`asset_prompt`、`state_prompt`、`negative_prompt`、实际生成器及版本、种子、非空 `reference_inputs` 路径列表和字符串 `postprocess` 数组；未暴露的版本写 `not-provided`。所有路线的 accepted 资源若没有 `source_file/source_files`，仍须满足公共生成身份：record ID、生成器及版本、时间、可执行命令/配方、输入来源和参数。状态段不适用时也必须显式说明原因；`--check-files` 必须验证每个 `reference_inputs` 文件。若 `expected_assets.alpha=true`，透明策略只能是 `direct-alpha` 或 `background-removal`：原图先按实际 Alpha 判断，简单纯色背景使用公共 `remove-background-local.mjs`，复杂背景另选分割工具；背景处理尝试按实际追加并记录失败原因和有限重试上限，原图和处理输出的 Alpha 状态、路径、完成时间与 evidence 必须可审计。
+上述 AI 专用字段只强制用于路线为 `ai-composite-raster` 且状态为 `producing`、`review` 或 `accepted` 的资源，不泛化到非 AI 生产路线。机器清单中的 AI `generation_record` 必须至少包含非空 `global_prompt_prefix`、`asset_prompt`、`state_prompt`、`negative_prompt`、实际生成器及版本、种子、非空 `reference_inputs` 路径列表和字符串 `postprocess` 数组；未暴露的版本写 `not-provided`。所有路线的 accepted 资源若没有 `source_file/source_files`，仍须满足公共生成身份：record ID、生成器及版本、时间、可执行命令/配方、输入来源和参数。状态段不适用时也必须显式说明原因；`--check-files` 必须验证每个 `reference_inputs` 文件。若 `expected_assets.alpha=true` 且 `origin=generated`，透明策略固定为 `background-removal`：原图必须是整张不透明的指定 HEX 纯色 PNG，显式记录 `source_background_mode=opaque`、`source_background_color`，并先通过 `remove-background-local.mjs --require-solid-background`；棋盘格、网格或复杂背景校验失败时重新生成或修正输入。背景处理尝试按实际追加并记录失败原因和有限重试上限，原图和处理输出的 Alpha 状态、路径、背景颜色、完成时间与 evidence 必须可审计。已有真实透明图按资源复用合同接入；`alpha=false` 的完整场景背景不受纯色要求约束。
 
 ## 多资源一致性证据
 
@@ -137,4 +137,4 @@ V4 为每个生产包提交多资源联系表，并至少生成一张同屏组�
 
 原子资产仍以完整冻结效果图作为主参考，全局锚点只作为额外强制 style references。文件门会复算基线正文、锚点、冻结目标、输出和一致性证据的真实 SHA，旧记录不能跨身份复用；记录或路径问题先原地修复，候选未变的证据更新只重验当前门，冻结身份真实漂移时才返回最早受影响阶段。
 
-生成式单图在绑定全局基线后仍按“生成原图 → 按实际 Alpha 决定是否执行背景处理 → Sharp 尺寸归一化 → V3/final/runtime”交付；透明路线允许 `direct-alpha` 或 `background-removal`，公共去背景脚本与复杂背景分割工具均必须记录实际工具/版本、输入输出、Alpha 和失败历史。首次输出比例不符时最多重生一次，第二次仍不符时，若已冻结裁切焦点和安全事实，则使用 `crop-and-resize-to-contract` 并绑定两次真实原始生成 attempt、SHA、尺寸、focus 和 `crop_rect`，否则先由生产流程对原图生成式延展到目标比例，再按实际 Alpha 决定背景处理和普通归一化。该分流适用于所有生成式位图；`padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘、以及裁切冻结 `reference_target`。归一化后的 PNG/JPEG 才是最终输出（`alpha=true` 只能是 PNG，`alpha=false` 可是 JPEG），透明目标前后都要保留 Alpha，并以 `normalization_record` 绑定当前输入、尺寸、路径、SHA 和工具版本。
+生成式单图在绑定全局基线后仍按“生成原图 →（`alpha=true` 时）校验不透明纯色背景 → 公共脚本去背景 → Sharp 尺寸归一化 → V3/final/runtime”交付；生成式透明路线固定使用 `background-removal`，不请求透明 PNG/Alpha，公共脚本必须记录实际工具/版本、输入输出、`source_background_color`、Alpha 和失败历史。首次输出比例不符时最多重生一次，第二次仍不符时，若已冻结裁切焦点和安全事实，则使用 `crop-and-resize-to-contract` 并绑定两次真实原始生成 attempt、SHA、尺寸、focus 和 `crop_rect`，否则先由生产流程对原图生成式延展到目标比例，再重新校验纯色背景、执行背景处理和普通归一化。该分流适用于所有生成式位图；`padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘、以及裁切冻结 `reference_target`。归一化后的 PNG/JPEG 才是最终输出（`alpha=true` 只能是 PNG，`alpha=false` 可是 JPEG），透明目标前后都要保留 Alpha，并以 `normalization_record` 绑定当前输入、尺寸、路径、SHA 和工具版本。

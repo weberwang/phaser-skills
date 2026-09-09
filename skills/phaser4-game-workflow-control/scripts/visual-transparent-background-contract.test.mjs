@@ -4,7 +4,8 @@ import {
   BACKGROUND_REMOVAL_OPERATION,
   MAX_BACKGROUND_REMOVAL_ATTEMPTS,
   TRANSPARENT_BACKGROUND_REMOVAL_PROMPT,
-  TRANSPARENT_DIRECT_ALPHA_STRATEGY,
+  DEFAULT_SOURCE_BACKGROUND_COLOR,
+  buildSolidBackgroundPrompt,
   TRANSPARENT_BACKGROUND_STRATEGY,
   validateTransparentBackgroundContract,
 } from "./visual-transparent-background-contract.mjs";
@@ -34,6 +35,7 @@ function transparentFixture(overrides = {}) {
   };
   const generation = {
     source_background_mode: "opaque",
+    source_background_color: DEFAULT_SOURCE_BACKGROUND_COLOR,
     final_background_mode: "transparent",
     transparency_strategy: TRANSPARENT_BACKGROUND_STRATEGY,
     full_prompt: TRANSPARENT_BACKGROUND_REMOVAL_PROMPT,
@@ -53,7 +55,7 @@ function transparentFixture(overrides = {}) {
       source_has_alpha: false,
       output_has_alpha: true,
       completed_at: "2026-08-26T00:00:00Z",
-      evidence: { record_id: "BR-HERO-1", report: "evidence/hero-background-removal.json" },
+      evidence: { record_id: "BR-HERO-1", report: "evidence/hero-background-removal.json", solid_background_check: { status: "passed", background_color: DEFAULT_SOURCE_BACKGROUND_COLOR, opaque: true, boundary_pixels: 4, matched_boundary_pixels: 4 } },
     }],
   };
   return {
@@ -70,30 +72,38 @@ test("背景移除生产成功，允许最终成功记录", () => {
   assert.deepEqual(validateTransparentBackgroundContract(transparentFixture()), []);
 });
 
-test("提示词只保留透明 PNG 交付要求，不指定纯色或禁止直出", () => {
+test("生图提示词要求指定不透明纯色并禁止棋盘背景", () => {
   const prompt = buildEffectImageFullPrompt({ assetPrompt: "冻结 region 资产", expectedAlpha: true });
-  assert(prompt.includes("透明 PNG"));
-  assert(prompt.includes("可直接输出透明 PNG"));
-  assert(!prompt.includes("纯色背景"));
-  assert(!prompt.includes("禁止直接输出透明 Alpha"));
+  assert(prompt.includes(DEFAULT_SOURCE_BACKGROUND_COLOR));
+  assert(prompt.includes("不透明"));
+  assert(prompt.includes("纯色"));
+  assert(prompt.includes("禁止棋盘格"));
+  assert(!prompt.includes("可直接输出透明 PNG"));
+  assert(buildSolidBackgroundPrompt("#ff00ff").includes("#FF00FF"));
+  const custom = buildEffectImageFullPrompt({ assetPrompt: "白色角色", expectedAlpha: true, backgroundColor: "#000000" });
+  assert(custom.includes("#000000"));
+  assert(!custom.includes("黑底，白底"));
+  assert(!custom.includes(DEFAULT_SOURCE_BACKGROUND_COLOR));
+  assert.throws(() => buildSolidBackgroundPrompt("invalid"));
+  const scenePrompt = buildEffectImageFullPrompt({ assetPrompt: "完整城市场景", expectedAlpha: false });
+  assert(!scenePrompt.includes(DEFAULT_SOURCE_BACKGROUND_COLOR));
+  for (const term of ["渐变背景", "纹理背景", "背景阴影", "环境景物", "非指定颜色背景"]) assert(!scenePrompt.includes(term), term);
 });
 
-test("提示词允许透明直出指令", () => {
+test("旧透明直出提示词与缺失或不匹配的背景颜色被拒绝", () => {
   const base = transparentFixture();
-  const errors = validateTransparentBackgroundContract({
-    ...base,
-    generation: { ...base.generation, full_prompt: `${TRANSPARENT_BACKGROUND_REMOVAL_PROMPT}\n直接生成透明背景` },
-  });
-  assert.deepEqual(errors, []);
+  for (const change of [{ full_prompt: "直接生成透明背景 PNG" }, { full_prompt: "不透明纯色 #00FF00，添加棋盘格" }, { source_background_color: undefined }, { source_background_color: "green" }, { source_background_color: "#FF00FF" }]) {
+    assert(validateTransparentBackgroundContract({ ...base, generation: { ...base.generation, ...change } }).length > 0, JSON.stringify(change));
+  }
+  assert.deepEqual(validateTransparentBackgroundContract({ ...base, generation: { ...base.generation, source_background_color: "#FF00FF", full_prompt: buildSolidBackgroundPrompt("#FF00FF"), background_removal_attempts: [{ ...base.generation.background_removal_attempts[0], evidence: { solid_background_check: { status: "passed", background_color: "#FF00FF", opaque: true, boundary_pixels: 4, matched_boundary_pixels: 4 } } }] } }), []);
 });
 
-test("透明策略只允许 direct-alpha 或 background-removal", () => {
-  for (const strategy of ["direct-generation", "background-removal-fallback"]) {
+test("新生图透明策略只允许 background-removal", () => {
+  for (const strategy of ["direct-alpha", "direct-generation", "background-removal-fallback"]) {
     const errors = validateTransparentBackgroundContract({ ...transparentFixture(), generation: { ...transparentFixture().generation, transparency_strategy: strategy } });
     assert(errors.some((item) => item.includes("transparency_strategy")), `${strategy}: ${errors.join("\n")}`);
   }
 });
-
 test("旧 background_mode 和 direct_generation_attempt 字段被拒绝", () => {
   const base = transparentFixture();
   const errors = validateTransparentBackgroundContract({
@@ -160,58 +170,25 @@ test("归一化 source_file 必须绑定背景移除输出", () => {
   assert(errors.some((item) => item.includes("normalization_record.source_file")), errors.join("\n"));
 });
 
-test("direct-alpha 允许生成器直接交付透明图，并绑定同一 raw/source 与归一化", () => {
-  const base = transparentFixture();
-  const normalizationRecord = { ...base.generation.normalization_record, source_file: "art/hero-direct.png" };
-  const direct = {
-    ...base,
-    expectedAsset: { ...base.expectedAsset, source_file: "art/hero-direct.png" },
-    asset: { ...base.asset, source_file: "art/hero-direct.png", normalization_record: normalizationRecord },
-    generation: {
-      ...base.generation,
-      source_background_mode: "transparent",
-      transparency_strategy: TRANSPARENT_DIRECT_ALPHA_STRATEGY,
-      raw_source_file: "art/hero-direct.png",
-      raw_source_has_alpha: true,
-      source_file: "art/hero-direct.png",
-      source_has_alpha: true,
-      postprocess: [],
-      background_removal_attempts: [],
-      normalization_record: normalizationRecord,
-      full_prompt: `${TRANSPARENT_BACKGROUND_REMOVAL_PROMPT} 直接输出透明 PNG`,
-    },
-  };
-  assert.deepEqual(validateTransparentBackgroundContract(direct), []);
-  const omittedHistory = { ...direct.generation };
-  delete omittedHistory.background_removal_attempts;
-  assert.deepEqual(validateTransparentBackgroundContract({ ...direct, generation: omittedHistory }), []);
-  const fakeRemoval = validateTransparentBackgroundContract({ ...direct, generation: { ...direct.generation, background_removal_attempts: [base.generation.background_removal_attempts[0]] } });
-  assert(fakeRemoval.some((item) => item.includes("direct-alpha")), fakeRemoval.join("\n"));
-  assert(validateTransparentBackgroundContract({ ...direct, generation: { ...direct.generation, postprocess: ["background-removal"] } }).some((error) => error.includes("postprocess")));
+test("不透明原图允许存在全不透明 Alpha 通道，拒绝透明生成模式", () => {
+  const fixture = transparentFixture();
+  fixture.generation.raw_source_has_alpha = true;
+  fixture.generation.background_removal_attempts[0].source_has_alpha = true;
+  assert.deepEqual(validateTransparentBackgroundContract(fixture), []);
+  fixture.generation.source_background_mode = "transparent";
+  assert(validateTransparentBackgroundContract(fixture).some((error) => error.includes("source_background_mode")));
 });
-
-test("原图已有 Alpha 通道或部分透明仍可按实际背景继续去背", () => {
-  for (const mode of ["opaque", "transparent"]) {
-    const fixture = transparentFixture();
-    fixture.generation.source_background_mode = mode;
-    fixture.generation.raw_source_has_alpha = true;
-    fixture.generation.background_removal_attempts[0].source_has_alpha = true;
-    assert.deepEqual(validateTransparentBackgroundContract(fixture), []);
-  }
-});
-
 test("三类工作流 Schema 的透明生产和处理历史合同一致", () => {
   const schemas = ["evidence-manifest.schema.json", "implementation-package.schema.json", "work-item.schema.json"].map(loadSchema);
   for (const name of ["transparentBackgroundProductionRecord", "transparentBackgroundRemovalAttempt"]) {
     assert(schemas[0].$defs[name], `缺少 ${name}`);
     for (const schema of schemas.slice(1)) assert.deepEqual(schema.$defs[name], schemas[0].$defs[name]);
   }
-  // 无去背历史的直接透明记录必须同时满足 JS 和 Schema，不能被公共 required 误拦截。
+  // 新生成的透明资产必须同时记录纯色背景参数和去背历史。
   for (const schema of schemas) {
     const record = schema.$defs.transparentBackgroundProductionRecord;
-    assert(!record.required.includes("background_removal_attempts"));
-    const removalRule = record.allOf.find((rule) => rule.if.properties.transparency_strategy.const === "background-removal");
-    assert(removalRule.then.required.includes("background_removal_attempts"));
+    assert(record.required.includes("background_removal_attempts"));
+    assert(record.required.includes("source_background_color"));
   }
 });
 
@@ -223,4 +200,20 @@ test("alpha=false 与普通非透明路线不触发背景移除合同", () => {
   });
   assert.deepEqual(validateTransparentBackgroundContract(fixture), []);
   assert.deepEqual(validateTransparentBackgroundContract({ ...fixture, contract: { production_method: "authored-raster", image_generation_required: false } }), []);
+});
+
+test("纯色检查证据绑定最终去背颜色，允许保留不合格原图的失败历史", () => {
+  const base = transparentFixture();
+  const attempt = base.generation.background_removal_attempts[0];
+  const check = { status: "passed", background_color: "#00FF00", opaque: true, boundary_pixels: 12, matched_boundary_pixels: 12 };
+  const missingCheck = { ...attempt, evidence: { record_id: "missing-solid-check" } };
+  assert(validateTransparentBackgroundContract({ ...base, generation: { ...base.generation, background_removal_attempts: [missingCheck] } }).some((error) => error.includes("solid_background_check")));
+  const completed = { ...attempt, evidence: { ...attempt.evidence, background_color: "#00FF00", solid_background_check: check } };
+  assert.deepEqual(validateTransparentBackgroundContract({ ...base, generation: { ...base.generation, background_removal_attempts: [completed] } }), []);
+  for (const change of [{ status: "failed" }, { opaque: false }, { background_color: "#FF00FF" }, { matched_boundary_pixels: 11 }, { boundary_pixels: undefined, matched_boundary_pixels: undefined }, { boundary_pixels: 0, matched_boundary_pixels: 0 }]) {
+    const invalid = { ...completed, evidence: { ...completed.evidence, solid_background_check: { ...check, ...change } } };
+    assert(validateTransparentBackgroundContract({ ...base, generation: { ...base.generation, background_removal_attempts: [invalid] } }).length > 0, JSON.stringify(change));
+  }
+  const failed = { ...attempt, status: "failed", output_has_alpha: false, evidence: { reason: "背景检查失败", solid_background_check: { ...check, status: "failed", background_color: "#FF00FF", matched_boundary_pixels: 5 } } };
+  assert.deepEqual(validateTransparentBackgroundContract({ ...base, generation: { ...base.generation, background_removal_attempts: [failed, completed] } }), []);
 });
