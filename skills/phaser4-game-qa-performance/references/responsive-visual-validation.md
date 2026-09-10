@@ -52,7 +52,12 @@
     "strategy": "RESIZE",
     "allowWhitespace": true,
     "whitespaceTolerancePx": 8,
-    "backgroundCoverageTarget": 1
+    "backgroundCoverageTarget": 1,
+    "backgroundFit": {
+      "mode": "cover-v1",
+      "sourceFocalPoint": { "x": 0.5, "y": 0.5 },
+      "targetPoint": { "x": 0.5, "y": 0.5 }
+    }
   },
   "safeArea": { "required": true },
   "resize": { "required": true, "trajectory": ["baseline", "narrow", "landscape"] },
@@ -84,13 +89,14 @@
 | `logicalSize` | Hook 提供的逻辑画布宽高；没有 Hook 时为 `null` |
 | `edgeGaps` | `left/top/right/bottom`，负值表示溢出 |
 | `backgroundCoverage` | Hook 的背景矩形与 viewport 交集面积比例；缺失为 `null` |
+| `backgroundFit` | 满幅背景的实际资源尺寸、`cover-v1` 模式及其与合同缩放、位置和裁切的比较结果 |
 | `safeArea` | Hook 的四边 inset 和可用矩形；缺失为 `null` |
 | `keyUiRects` | Hook 提供的关键 UI 矩形映射 |
 | `scaling` | CSS 缩放、运行时实际物理 DPR（动态封顶 1.5）和逻辑到 CSS 的比例 |
 | `screenshot` | 已执行视口的页面截图路径和尺寸；`exact` 模式还要求 `fullPage: true` |
 | `hook` | 是否存在、版本和原始只读快照摘要 |
 
-`resize[]` 还记录代表性相邻视口、触发前后 `canvasRect`/关键 UI 变化、策略预期和页面是否
+`resize[]` 还记录代表性相邻视口、触发前后 `canvasRect`/背景适配/关键 UI 变化、策略预期和页面是否
 刷新（必须 `false`）。脚本会计算四边空隙和背景覆盖率；项目仍须结合截图判断
 裁切焦点、留白、层级和可读性。每项测量还输出 `rootCause.primary/secondary`，
 按下文分类标注主次，不把缺证包装成通过；单纯缺证保持 `unverified`，只有门禁曾错误
@@ -108,7 +114,11 @@ window.__PHASER_VISUAL_VALIDATION__ = {
   getSnapshot() {
     return {
       logicalCanvas: { width: 390, height: 844 },
-      backgroundRect: { x: 0, y: 0, width: 390, height: 844 },
+      background: {
+        rect: { x: -579, y: 0, width: 1548, height: 844 },
+        sourceSize: { width: 1920, height: 1047 },
+        fitMode: "cover-v1"
+      },
       safeArea: { top: 47, right: 0, bottom: 34, left: 0,
         rect: { x: 0, y: 47, width: 390, height: 763 } },
       keyUiRects: { score: { x: 16, y: 63, width: 96, height: 32 } },
@@ -122,6 +132,12 @@ Hook 必须只读、可重复调用且返回 CSS 像素矩形；不得通过 Hoo
 逻辑坐标替代 DOM 测量。缺 Hook 时，逻辑尺寸、背景覆盖、安全区和关键 UI 相关
 结论均为 `unverified`；Canvas DOM 矩形仍可记录，但绝不假通过。Hook 的快照仅是
 过程证据，不能替代已执行视口的截图；`exact` 模式下不能替代完整 viewport 截图。
+
+合同要求满幅背景时，`viewport.backgroundFit.mode` 必须为 `cover-v1`。QA 使用 Hook 的
+`background.sourceSize` 与 `background.rect` 重算两个轴的有效比例，并与
+`max(viewportWidth/sourceWidth, viewportHeight/sourceHeight)` 比较；两个轴比例不一致、
+缩放值不符、位置与冻结焦点的偏差超过 0.5 CSS 像素或裁切后出现空隙都失败。横竖屏资源可以不同，但不能把
+方向判断当作缩放轴判断。
 
 ## 假通过禁令与证据要求
 

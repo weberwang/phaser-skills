@@ -19,7 +19,11 @@ const uiTemplate = JSON.parse(readFileSync(new URL("../../phaser4-game-ui-layout
 const hook = {
   version: 1,
   logicalCanvas: { width: 360, height: 800 },
-  backgroundRect: { x: 0, y: 0, width: 360, height: 800 },
+  background: {
+    rect: { x: 0, y: 0, width: 360, height: 800 },
+    sourceSize: { width: 360, height: 800 },
+    fitMode: "cover-v1"
+  },
   safeArea: { top: 0, right: 0, bottom: 0, left: 0, rect: { x: 0, y: 0, width: 360, height: 800 } },
   keyUiRects: { score: { x: 8, y: 8, width: 80, height: 24 } }
 };
@@ -31,7 +35,14 @@ function contract(overrides = {}) {
     visual_validation: { mode: "exact" },
     contract_version: identity.layout_contract_version,
     scope: { ...structuredClone(uiTemplate.scope), scenes: ["main"], bindings: { ...structuredClone(uiTemplate.scope.bindings), code_candidate: identity.candidate_sha256, visual_baseline: identity.visual_baseline_version } },
-    viewport: { mode: "full-viewport", strategy: "RESIZE", allowWhitespace: false, backgroundCoverageTarget: 1, ...overrides.viewport },
+    viewport: {
+      mode: "full-viewport",
+      strategy: "RESIZE",
+      allowWhitespace: false,
+      backgroundCoverageTarget: 1,
+      backgroundFit: { mode: "cover-v1", sourceFocalPoint: { x: 0.5, y: 0.5 }, targetPoint: { x: 0.5, y: 0.5 } },
+      ...overrides.viewport
+    },
     safeArea: { required: true },
     resize: { required: true },
     hook: { required: true },
@@ -135,9 +146,63 @@ test("resize 轨迹记录同页面前后变化", () => {
 
 test("required resize 不接受无布局变化、刷新或跨 context 记录", () => { const base = [{ name: "a", status: "pass", contextId: 1, viewportRect: { width: 390, height: 844 }, canvasRect: { width: 390, height: 844 }, keyUiRects: { score: { x: 1 } } }, { name: "b", status: "pass", contextId: 1, viewportRect: { width: 360, height: 800 }, canvasRect: { width: 390, height: 844 }, keyUiRects: { score: { x: 1 } } }]; assert.equal(buildResizeRecords(base, { resize: { required: true } }).status, "fail"); const changedContext = structuredClone(base); changedContext[1].contextId = 2; changedContext[1].canvasRect.width = 360; assert.equal(buildResizeRecords(changedContext, { resize: { required: true } }).status, "fail"); const refreshed = structuredClone(base); refreshed[1].pageReloaded = true; refreshed[1].canvasRect.width = 360; assert.equal(buildResizeRecords(refreshed, { resize: { required: true } }).status, "fail"); });
 
+test("resize 轨迹接受同页背景 cover 几何重算", () => {
+  const measurements = [
+    { name: "portrait", contextId: 1, viewportRect: { width: 360, height: 800 }, canvasRect: { width: 360, height: 800 }, keyUiRects: { score: { x: 8 } }, backgroundFit: { matches: true, actual: { x: -531.1, y: 0, displayWidth: 1422.2, displayHeight: 800 } } },
+    { name: "landscape", contextId: 1, samePageWithPrevious: true, viewportRect: { width: 800, height: 360 }, canvasRect: { width: 360, height: 800 }, keyUiRects: { score: { x: 8 } }, backgroundFit: { matches: true, actual: { x: 0, y: -45, displayWidth: 800, displayHeight: 450 } } }
+  ];
+  const result = buildResizeRecords(measurements, { resize: { required: true }, viewport: { strategy: "RESIZE" } });
+  assert.equal(result.status, "pass");
+  assert.equal(result.records[0].backgroundChanged, true);
+});
+
+test("resize 轨迹拒绝只有预期值变化而实际背景未重排", () => {
+  const actual = { x: 0, y: 0, displayWidth: 360, displayHeight: 800 };
+  const measurements = [
+    { name: "portrait", contextId: 1, viewportRect: { width: 360, height: 800 }, canvasRect: { width: 360, height: 800 }, keyUiRects: { score: { x: 8 } }, backgroundFit: { matches: true, expected: { displayWidth: 360 }, actual } },
+    { name: "landscape", contextId: 1, samePageWithPrevious: true, viewportRect: { width: 800, height: 360 }, canvasRect: { width: 360, height: 800 }, keyUiRects: { score: { x: 8 } }, backgroundFit: { matches: false, expected: { displayWidth: 800 }, actual } }
+  ];
+  const result = buildResizeRecords(measurements, { resize: { required: true }, viewport: { strategy: "RESIZE" } });
+  assert.equal(result.status, "fail");
+  assert.equal(result.records[0].backgroundChanged, false);
+});
+
 test("覆盖率只按 viewport 交集计算", () => {
   assert.equal(computeCoverage({ x: 0, y: 0, width: 180, height: 800 }, { x: 0, y: 0, width: 360, height: 800 }), 0.5);
   assert.deepEqual(computeEdgeGaps({ x: 0, y: 0, width: 360, height: 800 }, { x: 0, y: 0, width: 360, height: 800 }), { left: 0, top: 0, right: 0, bottom: 0 });
+});
+
+test("cover-v1 拒绝虽铺满但发生非等比拉伸的背景", () => {
+  const stretchedHook = structuredClone(hook);
+  stretchedHook.background.sourceSize = { width: 1920, height: 1080 };
+  const result = evaluateViewport({ viewportRect: { x: 0, y: 0, width: 360, height: 800 }, canvasRect: { x: 0, y: 0, width: 360, height: 800 }, hookSnapshot: stretchedHook, contract: contract(), devicePixelRatio: 1, screenshot });
+  assert.equal(result.backgroundCoverage, 1);
+  assert.equal(result.status, "fail");
+  assert(result.failures.some((item) => item.includes("cover-v1")));
+});
+
+test("cover-v1 接受等比覆盖与中心裁切", () => {
+  const coveredHook = structuredClone(hook);
+  coveredHook.background.sourceSize = { width: 1920, height: 1080 };
+  coveredHook.background.rect = { x: -531.1111111111111, y: 0, width: 1422.2222222222222, height: 800 };
+  const result = evaluateViewport({ viewportRect: { x: 0, y: 0, width: 360, height: 800 }, canvasRect: { x: 0, y: 0, width: 360, height: 800 }, hookSnapshot: coveredHook, contract: contract(), devicePixelRatio: 1, screenshot });
+  assert.equal(result.status, "pass");
+  assert.equal(result.backgroundFit.matches, true);
+});
+
+test("cover-v1 要求合同显式冻结焦点与目标落点", () => {
+  const result = evaluateViewport({ viewportRect: { x: 0, y: 0, width: 360, height: 800 }, canvasRect: { x: 0, y: 0, width: 360, height: 800 }, hookSnapshot: hook, contract: contract({ viewport: { backgroundFit: { mode: "cover-v1" } } }), devicePixelRatio: 1, screenshot });
+  assert.equal(result.status, "decision_gap");
+  assert(result.decisionGaps.some((item) => item.includes("源图焦点")));
+  assert(result.decisionGaps.some((item) => item.includes("目标落点")));
+});
+
+test("cover-v1 将 Hook 的非法资源尺寸归类为执行失败", () => {
+  const invalidHook = structuredClone(hook);
+  invalidHook.background.sourceSize.width = 0;
+  const result = evaluateViewport({ viewportRect: { x: 0, y: 0, width: 360, height: 800 }, canvasRect: { x: 0, y: 0, width: 360, height: 800 }, hookSnapshot: invalidHook, contract: contract(), devicePixelRatio: 1, screenshot });
+  assert.equal(result.status, "fail");
+  assert(result.failures.some((item) => item.includes("资源尺寸")));
 });
 
 test("根因分类按方案、执行、验收顺序给出主次", () => {

@@ -5,6 +5,7 @@ import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { validateContract as validateUiLayoutContract } from "../../phaser4-game-ui-layout/scripts/validate_ui_layout_contract.mjs";
+import { calculateFullBleedCoverTransform } from "../../phaser4-game-asset-integration/scripts/full-bleed-background-adapter.mjs";
 import { DEFAULT_DPR, isDeviceDprInput, isWorkflowDpr, parseDeviceDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
 import { DEFAULT_VISUAL_VALIDATION_MODE, isExactVisualValidation, resolveVisualValidationMode, validateVisualValidationPolicy } from "../../phaser4-game-workflow-control/scripts/visual-validation-policy.mjs";
 
@@ -64,12 +65,16 @@ export function readHookData(snapshot) {
       present: false,
       logicalSize: null,
       backgroundRect: null,
+      backgroundSourceSize: null,
+      backgroundFitMode: null,
       safeArea: null,
       keyUiRects: null,
       cssScale: null
     };
   }
   const logical = snapshot.logicalCanvas ?? snapshot.logicalSize;
+  const background = snapshot.background && typeof snapshot.background === "object" ? snapshot.background : {};
+  const backgroundSource = background.sourceSize ?? snapshot.backgroundSourceSize;
   const logicalSize = logical && finiteNumber(logical.width) !== null && finiteNumber(logical.height) !== null
     ? { width: Number(logical.width), height: Number(logical.height) }
     : null;
@@ -87,7 +92,11 @@ export function readHookData(snapshot) {
     present: true,
     version: snapshot.version ?? null,
     logicalSize,
-    backgroundRect: normalizeRect(snapshot.backgroundRect ?? snapshot.background?.rect),
+    backgroundRect: normalizeRect(snapshot.backgroundRect ?? background.rect),
+    backgroundSourceSize: backgroundSource && finiteNumber(backgroundSource.width) !== null && finiteNumber(backgroundSource.height) !== null
+      ? { width: Number(backgroundSource.width), height: Number(backgroundSource.height) }
+      : null,
+    backgroundFitMode: background.fitMode ?? snapshot.backgroundFitMode ?? null,
     safeArea,
     keyUiRects: snapshot.keyUiRects ?? snapshot.uiRects ?? null,
     cssScale: snapshot.cssScale ?? null,
@@ -129,6 +138,7 @@ export function normalizeContract(raw = {}) {
   const viewport = source.viewport && typeof source.viewport === "object" ? source.viewport : {};
   const safeArea = source.safeArea && typeof source.safeArea === "object" ? source.safeArea : {};
   const resize = source.resize && typeof source.resize === "object" ? source.resize : {};
+  const backgroundFit = viewport.backgroundFit && typeof viewport.backgroundFit === "object" ? viewport.backgroundFit : {};
   const allowWhitespace = own(viewport, "allowWhitespace") && viewport.allowWhitespace !== null
     ? Boolean(viewport.allowWhitespace)
     : own(source, "allowWhitespace") && source.allowWhitespace !== null
@@ -147,6 +157,11 @@ export function normalizeContract(raw = {}) {
       allowWhitespace,
       whitespaceTolerancePx: tolerance ?? 0,
       backgroundCoverageTarget: target,
+      backgroundFit: {
+        mode: backgroundFit.mode === undefined || backgroundFit.mode === null ? undefined : String(backgroundFit.mode).toLowerCase(),
+        sourceFocus: backgroundFit.sourceFocalPoint ?? backgroundFit.sourceFocus,
+        targetPoint: backgroundFit.targetPoint
+      },
       requireCanvasCoverage: Boolean(viewport.requireCanvasCoverage ?? source.requireCanvasCoverage)
     },
     safeArea: {
@@ -233,6 +248,7 @@ export function evaluateViewport({ viewportRect, canvasRect, hookSnapshot, contr
   const failures = [];
   const decisionGaps = [];
   const unverified = [];
+  let backgroundFit = null;
 
   if (normalized.dprErrors.length > 0) failures.push(...normalized.dprErrors);
   if (normalized.visualValidationErrors.length > 0) failures.push(...normalized.visualValidationErrors);
@@ -250,11 +266,50 @@ export function evaluateViewport({ viewportRect, canvasRect, hookSnapshot, contr
   if (exact && normalized.viewport.strategy === undefined) decisionGaps.push("未定义适配策略");
   if (exact && normalized.viewport.mode === undefined) decisionGaps.push("未定义 viewport 判定面");
   if (exact && (normalized.viewport.backgroundCoverageTarget === null || normalized.viewport.backgroundCoverageTarget === undefined)) decisionGaps.push("未定义背景覆盖目标");
+  if (normalized.viewport.backgroundCoverageTarget !== null && normalized.viewport.backgroundCoverageTarget !== undefined && normalized.viewport.backgroundFit.mode === undefined) decisionGaps.push("未定义满幅背景适配模式");
   if (exact && !normalized.safeArea.requiredDefined) decisionGaps.push("未定义安全区要求");
   if (exact && !normalized.resize.requiredDefined) decisionGaps.push("未定义动态 resize 要求");
   if (normalized.viewport.backgroundCoverageTarget !== null && normalized.viewport.backgroundCoverageTarget !== undefined) {
     if (backgroundCoverage === null) unverified.push("缺少背景矩形 Hook");
     else if (backgroundCoverage + 1e-9 < normalized.viewport.backgroundCoverageTarget) failures.push("背景覆盖率低于契约目标");
+  }
+  if (normalized.viewport.backgroundFit.mode !== undefined) {
+    if (normalized.viewport.backgroundFit.mode !== "cover-v1") {
+      decisionGaps.push("满幅背景适配模式必须为 cover-v1");
+    } else if (!viewport || !hook.backgroundRect || !hook.backgroundSourceSize) {
+      unverified.push("缺少 cover-v1 所需的背景资源尺寸或矩形 Hook");
+    } else if (hook.backgroundSourceSize.width <= 0 || hook.backgroundSourceSize.height <= 0) {
+      failures.push("运行时背景资源尺寸必须为正有限数");
+    } else if (hook.backgroundFitMode !== "cover-v1") {
+      failures.push("运行时背景未报告 cover-v1 适配模式");
+    } else {
+      if (normalized.viewport.backgroundFit.sourceFocus === undefined) decisionGaps.push("未冻结满幅背景源图焦点");
+      if (normalized.viewport.backgroundFit.targetPoint === undefined) decisionGaps.push("未冻结满幅背景目标落点");
+      try {
+        const expected = calculateFullBleedCoverTransform({
+          sourceWidth: hook.backgroundSourceSize.width,
+          sourceHeight: hook.backgroundSourceSize.height,
+          viewportWidth: viewport.width,
+          viewportHeight: viewport.height,
+          sourceFocus: normalized.viewport.backgroundFit.sourceFocus,
+          targetPoint: normalized.viewport.backgroundFit.targetPoint
+        });
+        const actual = {
+          x: hook.backgroundRect.x - viewport.x,
+          y: hook.backgroundRect.y - viewport.y,
+          displayWidth: hook.backgroundRect.width,
+          displayHeight: hook.backgroundRect.height
+        };
+        // DOMRect 会产生亚像素量化，0.5 CSS 像素足以吸收取整误差而不会掩盖错误缩放轴。
+        const tolerancePx = 0.5;
+        const matches = Object.keys(actual).every((key) => Math.abs(actual[key] - expected[key]) <= tolerancePx);
+        backgroundFit = { mode: "cover-v1", sourceSize: hook.backgroundSourceSize, expected, actual, matches };
+        // 覆盖率无法识别非等比拉伸或错误裁切，因此必须逐项核对实际几何。
+        if (!matches) failures.push("背景几何不符合 cover-v1 等比缩放或焦点裁切");
+      } catch (error) {
+        decisionGaps.push(`满幅背景适配参数非法：${error.message}`);
+      }
+    }
   }
   if (normalized.safeArea.required && !hook.safeArea) unverified.push("缺少安全区 Hook");
   if (normalized.hook.required && !hook.present) unverified.push("缺少只读验证 Hook");
@@ -277,6 +332,7 @@ export function evaluateViewport({ viewportRect, canvasRect, hookSnapshot, contr
     logicalSize: hook.logicalSize,
     edgeGaps,
     backgroundCoverage,
+    backgroundFit,
     safeArea: hook.safeArea,
     keyUiRects: hook.keyUiRects,
     scaling: deriveScaling(canvas, hook.logicalSize, measuredDpr, hook.cssScale),
@@ -302,6 +358,8 @@ export function buildResizeRecords(measurements, contract = {}) {
     const after = measurements[index];
     const contextChanged = before.contextId !== undefined && after.contextId !== undefined && before.contextId !== after.contextId;
     const pageReloaded = Boolean(before.pageReloaded || after.pageReloaded);
+    const beforeBackground = before.backgroundFit?.matches === true ? before.backgroundFit.actual : null;
+    const afterBackground = after.backgroundFit?.matches === true ? after.backgroundFit.actual : null;
     records.push({
       from: before.name ?? String(index - 1),
       to: after.name ?? String(index),
@@ -309,13 +367,14 @@ export function buildResizeRecords(measurements, contract = {}) {
       contextChanged,
       samePage: !contextChanged && !pageReloaded && after.samePageWithPrevious !== false,
       canvasChanged: stableStringify(before.canvasRect) !== stableStringify(after.canvasRect),
+      backgroundChanged: beforeBackground !== null && afterBackground !== null && stableStringify(beforeBackground) !== stableStringify(afterBackground),
       keyUiChanged: stableStringify(before.keyUiRects) !== stableStringify(after.keyUiRects),
       viewportChanged: stableStringify(before.viewportRect) !== stableStringify(after.viewportRect),
       strategy: normalized.viewport.strategy ?? null
     });
   }
   const required = normalized.resize.required || normalized.resize.trajectory.length > 1;
-  const validReflow = records.some((record) => record.samePage && record.viewportChanged && (record.canvasChanged || record.keyUiChanged));
+  const validReflow = records.some((record) => record.samePage && record.viewportChanged && (record.canvasChanged || record.backgroundChanged || record.keyUiChanged));
   // DPR 由设备动态决定；resize 证据只证明同一 context 的视口变化。
   const trajectoryStatus = required ? validReflow ? "pass" : records.length === 0 ? "unverified" : "fail" : "pass";
   return { records, required, status: trajectoryStatus };

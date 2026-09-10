@@ -14,6 +14,11 @@
 
 纯布局计算尽量先返回几何结果，再由 Phaser GameObject 写入，以便确定性测试。每次计算从合同值重新推导，不能在上一次坐标上累加偏移或缩放；相同输入重复调用必须产生相同结果。
 
+屏幕空间装饰性满幅背景必须在该入口调用
+[`calculateFullBleedCoverTransform`](../../phaser4-game-asset-integration/scripts/full-bleed-background-adapter.mjs)，
+使用同一 scale 完成双轴等比 `cover`。横竖屏判断只用于选择可选方向资源，不能决定按宽或按高
+缩放；Canvas 的 `FIT`/`RESIZE` 策略也不能替代背景 GameObject 的 cover 计算。
+
 ## Phaser 专项审查模式
 
 以下模式触发专项布局审核，而不是直接判错：固定宽高、绝对定位、`setOrigin`、`setScrollFactor(0)`、Camera viewport、Container 嵌套、Mask/裁剪、固定或悬浮 HUD、DOM Overlay、手写断点、单行省略和自定义 resize/orientation 监听。专项审核需要看到参照物、坐标空间、断点/回退规则、重排入口和证据。

@@ -57,6 +57,11 @@ schema 1.1.0 根对象包含 `fidelity`、`frozen_visual_target`、`layout_nodes
 
 尺寸策略可以是 `fixed`、`content`、`proportional`、`stretch`、`contain`、`cover` 或 `nine_slice`，但必须同时给出最小、首选和最大值；三档宽高须为正数或非空表达式，数值最小值不能大于最大值。固定尺寸、绝对定位和悬浮元素是可审查模式，不是格式错误；缺少参照、策略或证据才退回。
 
+装饰性满幅背景的 `cover` 必须进一步在响应式合同冻结 `backgroundFit.mode=cover-v1`、
+`sourceFocalPoint` 和 `targetPoint`，算法与运行时证据遵循
+[`装饰性满幅背景`](../../phaser4-game-asset-integration/references/full-bleed-background.md)。
+这里的背景 cover 与 `targets.scale.mode` 的 Canvas 缩放是两层独立职责。
+
 ## 断点与结构
 
 普通静态布局允许 `breakpoints: []`；一旦声明断点，每个断点必须有非空 `when` 触发条件和 `structure_changes`。条件键和值、结构变化项必须是非空字符串或有效数值。条件可以基于宽度、高度、宽高比、方向、安全区或内容容量。必须明确变化的区域/列/导航/操作区，以及仍保持的关系。默认 `usability` 验证基准和代表性断点；只有 `exact` 或项目明确要求时才为每个断点执行临界三点 `breakpoint - 1`、`breakpoint`、`breakpoint + 1`。
