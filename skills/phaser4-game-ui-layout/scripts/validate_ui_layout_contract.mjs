@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { DPR_POLICY, MAX_DPR, isDeviceDprInput, isWorkflowDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
+import { DPR_POLICY, RUNTIME_MAX_DPR, isDeviceDprInput, isWorkflowDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
 import { layoutNodeIdentityProjection, validateEffectImageParentChildLayoutNodes } from "../../phaser4-game-workflow-control/scripts/layout-node-parent-geometry.mjs";
 import { resolveVisualValidationMode, validateVisualValidationPolicy } from "../../phaser4-game-workflow-control/scripts/visual-validation-policy.mjs";
 
@@ -253,7 +253,7 @@ function validateTargets(targets, errors) {
     for (const field of ["mode", "canvas", "css_size", "render_resolution", "dpr_policy"]) if (!isString(targets.scale[field])) errors.push(`targets.scale.${field} 必须是非空字符串`);
     if (targets.scale.dpr !== undefined && !isWorkflowDpr(targets.scale.dpr)) errors.push(`targets.scale.${workflowDprError("dpr", targets.scale.dpr)}`);
     if (targets.scale.dpr_policy !== DPR_POLICY) errors.push(`targets.scale.dpr_policy 必须为 ${DPR_POLICY}`);
-    if (targets.scale.max_dpr !== MAX_DPR || typeof targets.scale.max_dpr !== "number") errors.push(`targets.scale.max_dpr 必须严格为 ${MAX_DPR}`);
+    if (targets.scale.max_dpr !== RUNTIME_MAX_DPR || typeof targets.scale.max_dpr !== "number") errors.push(`targets.scale.max_dpr 必须严格为 ${RUNTIME_MAX_DPR}`);
   }
 }
 

@@ -80,7 +80,7 @@ V2→V3 是同一场景 Work Item 的内部阶段推进。V2 拆解与布局确�
 
 V2 必须完成逐 region 状态分析，绑定分析证据 SHA、冻结目标 SHA、分析 ID 和完成时间后，才能声明 `component_inventory`。`annotation_number` 只是审阅区域编号，不是资产数量单位；唯一原子部件由 `component_id/atomic_visual_key` 标识，重复实例用 `placements` 表达。效果图拆解分析 PNG、原子部件、状态和资产需求清单必须使用 `visual-decomposition-confirmation/1.0` 记录并由用户 `status=accepted`、`confirmation_mode=manual` 确认后才能进入 Implementation Package；缺失、pending、AUTO、旧字段、旧 SHA、漏编号或区域定义变化一律拒绝。
 
-生成式位图的每个唯一 `component_id × required state_id` 必须绑定一个独立位图，并强制 `delivery_mode=individual`、`atlas_allowed=false`，不能使用图集；其尺寸由验证器按逻辑像素 `ceil(max placement width/height × intended_scale_range.max × 1.5)` 自动计算，`expected_assets.width/height` 必须精确等于该最小值，`max_dpr=1.5` 和 `padding_policy=none` 必须存在。固定视觉组件只允许 `image-generation`、`authored-raster` 或有证据的 `reuse`，交付为真实 PNG/JPG 位图；非图片逻辑、交互热区、碰撞或布局才能使用程序绘制。
+生成式位图的每个唯一 `component_id × required state_id` 必须绑定一个独立位图，并强制 `delivery_mode=individual`、`atlas_allowed=false`，不能使用图集；其尺寸由验证器按逻辑像素 `ceil(max placement width/height × intended_scale_range.max × 1.5)` 自动计算，`expected_assets.width/height` 必须精确等于该最小值，图片生产基线 `max_dpr=1.5` 和 `padding_policy=none` 必须存在；运行时实际 DPR 仍由设备动态读取并封顶为 2。固定视觉组件只允许 `image-generation`、`authored-raster` 或有证据的 `reuse`，交付为真实 PNG/JPG 位图；非图片逻辑、交互热区、碰撞或布局才能使用程序绘制。
 
 V3 `production_contract_audit` 必须逐部件核对实际输出和 `component_usages`；F2 只消费 `validationMode=MACHINE` 的确定性机器事实，不再产生 `production_contract_review` 或 `component_reviews`；V4 还必须绑定 F3 runtime replay、非空 freshness-bound fidelity cases、运行时实际消费及无未批准替换。
 

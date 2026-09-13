@@ -7,6 +7,8 @@
  * 绑定在同一个 text_node 上，并只由 scene reconstruction 合同调用。
  */
 
+import { isWorkflowDpr } from "./workflow-dpr-contract.mjs";
+
 const TEXT_ROUTES = new Set(["phaser-text", "bitmap-text", "image-text", "hybrid"]);
 const PASS_VALUES = new Set(["passed", "pass", "true"]);
 
@@ -64,7 +66,7 @@ function sameBounds(first, second) {
 
 /** 判断工作流允许的 DPR；文本字号必须绑定真实参考 DPR，不能把像素字号直接当逻辑字号。 */
 function validDpr(value) {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 && value <= 1.5;
+  return isWorkflowDpr(value);
 }
 
 /** 判断允许的字号值；可接受带单位对象，但单位在上层单独检查。 */

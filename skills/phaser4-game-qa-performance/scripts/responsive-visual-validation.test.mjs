@@ -131,8 +131,8 @@ test("required Hook 缺版本、有效 UI 或截图不得通过", () => { for (c
 
 test("resize 轨迹记录同页面前后变化", () => {
   const measurements = [
-    { name: "baseline", status: "pass", viewportRect: { x: 0, y: 0, width: 390, height: 844 }, canvasRect: { x: 0, y: 0, width: 390, height: 844 }, scaling: { physical: { dpr: 1.5 } }, keyUiRects: { score: { x: 16, y: 16, width: 80, height: 24 } } },
-    { name: "narrow", status: "pass", viewportRect: { x: 0, y: 0, width: 360, height: 800 }, canvasRect: { x: 0, y: 0, width: 360, height: 800 }, scaling: { physical: { dpr: 1.5 } }, keyUiRects: { score: { x: 8, y: 8, width: 80, height: 24 } } }
+    { name: "baseline", status: "pass", viewportRect: { x: 0, y: 0, width: 390, height: 844 }, canvasRect: { x: 0, y: 0, width: 390, height: 844 }, scaling: { physical: { dpr: 2 } }, keyUiRects: { score: { x: 16, y: 16, width: 80, height: 24 } } },
+    { name: "narrow", status: "pass", viewportRect: { x: 0, y: 0, width: 360, height: 800 }, canvasRect: { x: 0, y: 0, width: 360, height: 800 }, scaling: { physical: { dpr: 2 } }, keyUiRects: { score: { x: 8, y: 8, width: 80, height: 24 } } }
   ];
   const resize = buildResizeRecords(measurements, { resize: { required: true }, viewport: { strategy: "RESIZE" } });
   assert.equal(resize.status, "pass");
@@ -140,7 +140,7 @@ test("resize 轨迹记录同页面前后变化", () => {
   assert.equal(resize.records[0].canvasChanged, true);
   assert.equal(summarizeReport(measurements, {
     ...contract(),
-    viewports: { baseline: { width: 390, height: 844, dpr: 1.5 }, narrow: { width: 360, height: 800, dpr: 1.5 } }
+    viewports: { baseline: { width: 390, height: 844, dpr: 2 }, narrow: { width: 360, height: 800, dpr: 2 } }
   }, identity).status, "pass");
 });
 
@@ -229,9 +229,9 @@ test("未声明视口矩阵时返回决策缺口", () => {
   assert.equal(report.responsivePass, false);
 });
 
-test("矩阵只使用运行时实测宽高和 DPR", () => { const measurements = [{ name: "baseline", status: "pass", declaredViewport: { width: 390, height: 844, deviceScaleFactor: 2 }, viewportRect: { width: 360, height: 800 }, scaling: { physical: { dpr: 1 } } }]; const report = summarizeReport(measurements, { ...contract(), resize: { required: false }, viewports: { baseline: { width: 390, height: 844, dpr: 1.5 } } }, identity); assert.equal(report.matrix.status, "fail"); assert.deepEqual(report.matrix.mismatched, ["baseline"]); });
+test("矩阵只使用运行时实测宽高和 DPR", () => { const measurements = [{ name: "baseline", status: "pass", declaredViewport: { width: 390, height: 844, deviceScaleFactor: 2 }, viewportRect: { width: 360, height: 800 }, scaling: { physical: { dpr: 1 } } }]; const report = summarizeReport(measurements, { ...contract(), resize: { required: false }, viewports: { baseline: { width: 390, height: 844, dpr: 2 } } }, identity); assert.equal(report.matrix.status, "fail"); assert.deepEqual(report.matrix.mismatched, ["baseline"]); });
 test("响应式验证记录动态有效 DPR，并对原始设备值封顶", () => {
-  for (const dpr of [0.5, 1, 1.25, 1.5]) {
+  for (const dpr of [0.5, 1, 1.25, 1.5, 2]) {
     const result = evaluateViewport({
       viewportRect: { x: 0, y: 0, width: 360, height: 800 },
       canvasRect: { x: 0, y: 0, width: 360, height: 800 },
@@ -245,11 +245,11 @@ test("响应式验证记录动态有效 DPR，并对原始设备值封顶", () =
   }
   const capped = evaluateViewport({ viewportRect: { x: 0, y: 0, width: 360, height: 800 }, canvasRect: { x: 0, y: 0, width: 360, height: 800 }, hookSnapshot: hook, contract: contract(), devicePixelRatio: 3, screenshot });
   assert.notEqual(capped.status, "fail", capped.failures.join("；"));
-  assert.equal(capped.scaling.physical.dpr, 1.5);
+  assert.equal(capped.scaling.physical.dpr, 2);
 });
 
 test("响应式验证拒绝非法原始设备 DPR", () => {
-  for (const dpr of [0, -1, NaN, Infinity, "1.5"]) {
+  for (const dpr of [0, -1, NaN, Infinity, "2"]) {
     const result = evaluateViewport({ viewportRect: { x: 0, y: 0, width: 360, height: 800 }, canvasRect: { x: 0, y: 0, width: 360, height: 800 }, hookSnapshot: hook, contract: contract(), devicePixelRatio: dpr, screenshot });
     assert.equal(result.status, "fail", `DPR=${dpr}`);
     assert(result.failures.some((item) => item.includes("正有限数字")), `DPR=${dpr}: ${result.failures}`);
@@ -257,13 +257,13 @@ test("响应式验证拒绝非法原始设备 DPR", () => {
 });
 
 test("响应式合同声明允许动态有效值并拒绝非法有效声明", () => {
-  for (const dpr of [0.5, 1, 1.25, 1.5]) {
+  for (const dpr of [0.5, 1, 1.25, 1.5, 2]) {
     const report = summarizeReport([], { ...contract(), dpr, resize: { required: false }, viewports: [] }, identity);
     assert.deepEqual(report.dprErrors, [], `DPR=${dpr}: ${report.dprErrors}`);
   }
-  for (const dpr of [0, -1, 1.5001, 2, 3, "1.5", NaN, Infinity]) {
+  for (const dpr of [0, -1, 2.0001, 3, "2", NaN, Infinity]) {
     const report = summarizeReport([], { ...contract(), dpr, resize: { required: false }, viewports: [] }, identity);
-    assert(report.dprErrors.some((item) => item.includes("正有限数字且不超过 1.5")), `DPR=${dpr}: ${report.dprErrors}`);
+    assert(report.dprErrors.some((item) => item.includes("正有限数字且不超过 2")), `DPR=${dpr}: ${report.dprErrors}`);
   }
 });
 

@@ -42,13 +42,13 @@ V2 布局标注在拆解确认之后串行产出：阶段 A 先生成按人工�
 
 V3 消费 V2 已确认的拆解图、技术 JSON、coverage、布局合同和生产计划，生产正式视觉资源，并完成正式布局与宿主场景同屏组合预验收。正式资源必须保留来源、适用的版权/许可信息、机器清单、生成记录、运行时文件、组件状态和冻结目标绑定。
 
-生成式位图区域按 V2 `component_inventory` 收齐全部待生成 component × required state，作为[一个批量生成任务](visual-production-pipeline.md#图片批量生成)一次提交；每项交付 individual 位图，`atlas_allowed=false`，不能将独立文件要求解释为逐张调度。宽高由逻辑像素 `ceil(max placement width/height × intended_scale_range.max × 1.5)` 决定，`max_dpr=1.5`，`padding_policy=none`。系统根据提示词、参考输入、主体材质、透明需求和可用能力选择实际生成工具，并在记录中写入工具/版本；生成式透明资产先生成不透明指定 HEX 纯色背景，再由公共脚本去背景并记录 `source_background_mode=opaque`、`source_background_color`、完整透明处理与归一化证据；不得请求透明 PNG/Alpha 或接受棋盘格预览。已有真实透明图按资源复用合同接入，完整场景 `alpha=false` 背景不受纯色要求约束。
+生成式位图区域按 V2 `component_inventory` 收齐全部待生成 component × required state，作为[一个批量生成任务](visual-production-pipeline.md#图片批量生成)一次提交；每项交付 individual 位图，`atlas_allowed=false`，不能将独立文件要求解释为逐张调度。宽高由逻辑像素 `ceil(max placement width/height × intended_scale_range.max × 1.5)` 决定，`max_dpr=1.5`，`padding_policy=none`。这里的 1.5 是图片生产基线；运行时实际 DPR 由设备动态读取并封顶为 2，不改变已冻结的资产尺寸。系统根据提示词、参考输入、主体材质、透明需求和可用能力选择实际生成工具，并在记录中写入工具/版本；生成式透明资产先生成不透明指定 HEX 纯色背景，再由公共脚本去背景并记录 `source_background_mode=opaque`、`source_background_color`、完整透明处理与归一化证据；不得请求透明 PNG/Alpha 或接受棋盘格预览。已有真实透明图按资源复用合同接入，完整场景 `alpha=false` 背景不受纯色要求约束。
 
 V3 `combination_preacceptance` 必须使用正式 Scene 同结构、正式资源和正式布局计算，禁止整屏截图、隐藏覆盖层或绝对叠图。显示层必须绑定 `displayLayerId` 与 `hostSceneId`，并用宿主场景上下文图验证同屏关系。
 
 ## V4 运行态与动态验收
 
-V4 按 `visual_validation.mode` 运行证据验证视觉与功能联合结果。默认 `usability` 在目标及代表性视口/状态提供可读画面，检查布局关系、边界、遮挡、交互和恢复；参考与候选记录视口、实际有效 DPR（动态封顶 1.5）、语言、操作轨迹、随机种子和动画时间点。只有 `exact` 或明确精确需求时才要求完整 viewport、逐状态/逐区域忠实度矩阵、严格容差、ROI、并排、叠加和像素差证据。
+V4 按 `visual_validation.mode` 运行证据验证视觉与功能联合结果。默认 `usability` 在目标及代表性视口/状态提供可读画面，检查布局关系、边界、遮挡、交互和恢复；参考与候选记录视口、实际有效 DPR（动态封顶 2）、语言、操作轨迹、随机种子和动画时间点。只有 `exact` 或明确精确需求时才要求完整 viewport、逐状态/逐区域忠实度矩阵、严格容差、ROI、并排、叠加和像素差证据。
 
 每个 fidelity/parity case 不可变绑定冻结目标 SHA、当前代码或构建 SHA、scene/state、viewport、实际有效 DPR、语言、随机种子、输入轨迹、动画采样/稳定帧、布局合同版本、视觉基线版本、双方证据、预定义容差、例外 ID 和结论。上游事实或当前受影响候选身份变化才令对应旧案例失效并重新采集；其他单元路径级结果继续有效。默认 `usability` 保留代表性案例，`exact` 或明确全覆盖需求才要求全部视口/状态组合。
 

@@ -48,13 +48,13 @@ test("正确的最小尺寸通过，尺寸合同不要求 human_review", () => {
 });
 
 test("expected asset 小于最小尺寸失败", () => {
-  const current = region({ expected_assets: [{ ...region().expected_assets[0], width: 89 }] });
+  const current = region({ expected_assets: [{ ...region().expected_assets[0], width: 67 }] });
   const errors = check(current, output(67, 45));
   assert(errors.some((item) => item.includes("精确使用机器计算的最小尺寸")));
 });
 
 test("expected asset 大于最小尺寸也失败，不能借大图放行", () => {
-  const current = region({ expected_assets: [{ ...region().expected_assets[0], width: 91 }] });
+  const current = region({ expected_assets: [{ ...region().expected_assets[0], width: 69 }] });
   const errors = check(current, output(69, 45));
   assert(errors.some((item) => item.includes("精确使用机器计算的最小尺寸")));
 });
@@ -63,14 +63,14 @@ test("max_dpr 缺失失败并包含完整定位上下文", () => {
   const current = region({ scene_asset_usage: { ...structuredClone(BASE_USAGE), max_dpr: undefined } });
   delete current.scene_asset_usage.max_dpr;
   const errors = check(current);
-  assert(errors.some((item) => item.includes("max_dpr 必须严格为生产上限 1.5") && item.includes("annotation_number=7") && item.includes("component_id=hero") && item.includes("state_id=default") && item.includes("asset_id=hero-default")));
+  assert(errors.some((item) => item.includes("max_dpr 必须严格为图片生产基线 1.5") && item.includes("annotation_number=7") && item.includes("component_id=hero") && item.includes("state_id=default") && item.includes("asset_id=hero-default")));
 });
 
-test("max_dpr 表示生产上限，只能为数字 1.5", () => {
+test("max_dpr 表示图片生产基线，只能为数字 1.5", () => {
   for (const maxDpr of [0.5, 1, 2, 3, "1.5"]) {
     const current = region({ scene_asset_usage: { ...structuredClone(BASE_USAGE), max_dpr: maxDpr } });
     const errors = check(current);
-    assert(errors.some((item) => item.includes("max_dpr 必须严格为生产上限 1.5")), `max_dpr=${maxDpr}: ${errors}`);
+    assert(errors.some((item) => item.includes("max_dpr 必须严格为图片生产基线 1.5")), `max_dpr=${maxDpr}: ${errors}`);
   }
 });
 

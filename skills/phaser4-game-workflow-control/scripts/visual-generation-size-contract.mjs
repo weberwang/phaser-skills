@@ -4,12 +4,12 @@
  *
  * 该模块只计算机器可确定的输出尺寸，不承载人工审阅字段；视觉方向
  * 只由 V2 唯一拆解确认冻结，V3/V4 继续执行机器证据门。尺寸按逻辑像素、最大运行缩放和
- * 最大生产 DPR 计算，并强制画布不额外添加 padding；运行时实际 DPR
+ * 图片生产基线 DPR 计算，并强制画布不额外添加 padding；运行时实际 DPR
  * 由设备动态解析，不能反向改变生产尺寸合同。
  */
 import { normalizeComponentInventory } from "./visual-component-contract.mjs";
 import { resolveOutputMetadata } from "./visual-raster-contract.mjs";
-import { MAX_DPR, isMaxDpr, maxDprError } from "./workflow-dpr-contract.mjs";
+import { IMAGE_PRODUCTION_DPR, imageProductionDprError, isImageProductionDpr } from "./workflow-dpr-contract.mjs";
 
 /** 判断值是否是普通对象。 */
 function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
@@ -125,23 +125,23 @@ export function validateImageGenerationSizeContract(asset, contract, context = {
     errors.push(sizeError(local, "intended_scale_range 必须包含正数 min/max 且 max>=min", { missing: "scene_asset_usage.intended_scale_range" }));
   }
   const maxDpr = field(usage, "max_dpr", "maxDpr");
-  if (!isMaxDpr(maxDpr)) errors.push(sizeError(local, maxDprError("max_dpr", maxDpr), { missing: "scene_asset_usage.max_dpr", expected: MAX_DPR }));
+  if (!isImageProductionDpr(maxDpr)) errors.push(sizeError(local, imageProductionDprError("max_dpr", maxDpr), { missing: "scene_asset_usage.max_dpr", expected: IMAGE_PRODUCTION_DPR }));
   const paddingPolicy = field(usage, "padding_policy", "paddingPolicy");
   if (paddingPolicy !== "none") errors.push(sizeError(local, "图像生成 individual 必须使用 padding_policy=none，禁止画布额外留白", { expected: "none", actual: paddingPolicy, missing: "scene_asset_usage.padding_policy" }));
 
   const display = calculateComponentDisplaySize(region ?? options.region, componentId, local, options);
   errors.push(...display.errors);
-  if (!display.displaySize || !isObject(scale) || !positiveNumber(scale.max) || !isMaxDpr(maxDpr)) return errors;
+  if (!display.displaySize || !isObject(scale) || !positiveNumber(scale.max) || !isImageProductionDpr(maxDpr)) return errors;
 
   const singleComponent = display.inventory.components.length === 1;
   if (singleComponent && isObject(displaySizeValue) && (displaySizeValue.width !== display.displaySize.width || displaySizeValue.height !== display.displaySize.height)) {
     errors.push(sizeError(local, "单组件场景 target_display_size 必须与 placement 最大逻辑尺寸一致", { expected: display.displaySize, actual: displaySizeValue }));
   }
-  // 生产位图永远按最大 DPR 计算，避免运行时设备值改变已冻结的资产尺寸。
-  const minimum = { width: Math.ceil(display.displaySize.width * scale.max * MAX_DPR), height: Math.ceil(display.displaySize.height * scale.max * MAX_DPR) };
+  // 生产位图固定按图片生产基线计算，避免运行时设备值改变已冻结的资产尺寸。
+  const minimum = { width: Math.ceil(display.displaySize.width * scale.max * IMAGE_PRODUCTION_DPR), height: Math.ceil(display.displaySize.height * scale.max * IMAGE_PRODUCTION_DPR) };
   const expectedSize = { width: expectedAsset.width, height: expectedAsset.height };
   if (expectedAsset.width !== minimum.width || expectedAsset.height !== minimum.height) {
-    errors.push(sizeError(local, "expected_assets 必须精确使用机器计算的最小尺寸（按逻辑像素×最大缩放×最大生产 DPR 1.5 向上取整）", { expected: minimum, actual: expectedSize }));
+    errors.push(sizeError(local, "expected_assets 必须精确使用机器计算的最小尺寸（按逻辑像素×最大缩放×图片生产基线 1.5 向上取整）", { expected: minimum, actual: expectedSize }));
   }
   const metadata = resolveOutputMetadata(asset ?? {});
   if (asset && (metadata.width !== minimum.width || metadata.height !== minimum.height)) {

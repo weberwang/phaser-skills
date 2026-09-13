@@ -263,7 +263,7 @@
 - 执行：全部图片在 N22 的同一批任务内生成，每个唯一 component×required state 交付独立位图，individual、atlas_allowed=false；批量提交不得变成组合图或图集。系统根据提示词、参考输入、主体材质、透明需求和可用能力选择实际生成方案，不绑定供应商；每项记录完整提示词、全局一致性段、主参考、额外锚点、实际生成器/版本（未暴露时记录 `not-provided`）、种子、参数与真实输出。选择生成能力不自动新增外部调用授权。`alpha=true` 的生成式素材必须在提示词中要求指定 HEX 的不透明纯色背景；不请求透明 PNG/Alpha，不接受棋盘格或网格预览。`alpha=false` 的完整场景背景按场景合同处理。
 - 产物：原始生成图、处理记录、normalization_record、最终 PNG/JPEG；透明资源只允许 PNG。
 - 人工点：禁止无限重试或暗改规格；无法按已冻条件处理时报告所需决策。
-- 放行：宽高分别为 ceil(最大 placement 对应尺寸 × intended_scale_range.max × 1.5) 的精确最小值，max_dpr=1.5、padding_policy=none。生成式位图使用 `production_method=image-generation`、`delivery_kind=raster-image`、独立位图及完整生成记录；其他方法的图集必须显式允许且逐部件状态有切片合同。
+- 放行：宽高分别为 ceil(最大 placement 对应尺寸 × intended_scale_range.max × 1.5) 的精确最小值，图片生产基线 `max_dpr=1.5`、`padding_policy=none`；运行时实际 DPR 仍由设备动态读取并封顶为 2。生成式位图使用 `production_method=image-generation`、`delivery_kind=raster-image`、独立位图及完整生成记录；其他方法的图集必须显式允许且逐部件状态有切片合同。
 - 失败/处理：`alpha=true` 的生成式素材必须先验证原图为整张不透明的指定 HEX 纯色背景，记录 `transparency_strategy=background-removal`、`source_background_mode=opaque` 和 `source_background_color`，并使用公共 `remove-background-local.mjs --require-solid-background`；棋盘格、网格或复杂背景校验失败时重新生成或修正输入，不提高容差吞掉问题。处理尝试按实际追加，失败记录原因并保留历史，重试次数由任务配置设定上限；不因重试自动新增外部调用授权。已有真实透明图按资源复用合同接入，不伪造生成去背记录。随后统一使用 Sharp 归一化；不得拉伸、补边或裁冻结参考图。比例不符最多重生一次；仍不符时按已冻结裁切焦点安全条件受控裁切，否则先对原图生成式延展，再重新校验纯色背景、去背景并归一化；尺寸已满足也记录 not-required。
 
 ### N24 V3 资源级验收与生产合同审计

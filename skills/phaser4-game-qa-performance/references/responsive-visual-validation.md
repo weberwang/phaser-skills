@@ -92,7 +92,7 @@
 | `backgroundFit` | 满幅背景的实际资源尺寸、`cover-v1` 模式及其与合同缩放、位置和裁切的比较结果 |
 | `safeArea` | Hook 的四边 inset 和可用矩形；缺失为 `null` |
 | `keyUiRects` | Hook 提供的关键 UI 矩形映射 |
-| `scaling` | CSS 缩放、运行时实际物理 DPR（动态封顶 1.5）和逻辑到 CSS 的比例 |
+| `scaling` | CSS 缩放、运行时实际物理 DPR（动态封顶 2）和逻辑到 CSS 的比例 |
 | `screenshot` | 已执行视口的页面截图路径和尺寸；`exact` 模式还要求 `fullPage: true` |
 | `hook` | 是否存在、版本和原始只读快照摘要 |
 
@@ -153,8 +153,8 @@ DPR 实际有效值、状态、轨迹、语言、稳定帧和 resize 记录关�
 
 当契约要求 Hook 时，快照必须带有效版本、至少一个正尺寸 `keyUiRects` 和已执行视口截图；
 `safeArea` 只有在包含正尺寸 `rect` 时才算存在。`exact` 矩阵通过不仅比较名称，还只使用运行时
-`viewportRect` 和 `scaling.physical.dpr` 逐项比较实际 width、height 和动态有效 DPR；默认 `usability` 只比较已执行代表性视口的关系和可用性。有效值必须为正有限数字且不超过 1.5。命令行声明值
-不能覆盖实测值；声明 DPR 必须有效，原始设备值大于 1.5 会被封顶，字符串或非正数失败。`resize.required` 还必须在同一 page/context 中观测到
+`viewportRect` 和 `scaling.physical.dpr` 逐项比较实际 width、height 和动态有效 DPR；默认 `usability` 只比较已执行代表性视口的关系和可用性。有效值必须为正有限数字且不超过 2。命令行声明值
+不能覆盖实测值；声明 DPR 必须有效，原始设备值大于 2 会被封顶，字符串或非正数失败。`resize.required` 还必须在同一 page/context 中观测到
 viewport 变化以及 Canvas 或关键 UI 的布局变化；刷新、跨 context 或只有声明变化均失败。
 
 ## 根因分类
@@ -198,7 +198,7 @@ JSON 文件或内联 JSON；`--identity` 必须传 JSON 文件或内联 JSON，�
 `frozen_visual_target.visual_baseline_version` 绑定。
 缺失、漂移或无效身份只能形成决策缺口。布局 parity/fidelity case 必须引用这份报告，
 上游事实或当前受影响候选身份变化后对应旧报告失效，其他单元报告继续有效。工作流使用运行时动态 DPR，在同一 context/page 调用 `setViewportSize` 完成动态轨迹；
-`dpr` 必须是已解析的有效值，原始 `deviceScaleFactor` 通过统一解析器封顶到 1.5，非法输入在验证前失败，绝不把错误
+`dpr` 必须是已解析的有效值，原始 `deviceScaleFactor` 通过统一解析器封顶到 2，非法输入在验证前失败，绝不把错误
 设备像素比记录计为同页 resize。Playwright 未
 安装时只报告安装/运行缺口，不改变纯计算结论。
 

@@ -111,8 +111,8 @@ function own(object, key) {
 
 /**
  * 收集合同中所有 DPR，区分有效证据声明和原始设备输入。
- * `dpr` 是已经解析过的证据值，必须在 (0,1.5]；`deviceScaleFactor` 是设备
- * 输入，允许大于 1.5 并由统一解析器封顶，其他非法类型仍必须失败。
+ * `dpr` 是已经解析过的证据值，必须在 (0,2]；`deviceScaleFactor` 是设备
+ * 输入，允许大于 2 并由统一解析器封顶，其他非法类型仍必须失败。
  */
 function collectDprErrors(value, path = "contract", errors = [], seen = new Set()) {
   if (!value || typeof value !== "object" || seen.has(value)) return errors;
@@ -576,7 +576,7 @@ async function runBrowserValidation(options) {
   try {
     for (let index = 0; index < viewports.length; index += 1) {
       const viewport = viewports[index];
-      // Playwright 只接收统一解析后的有效 DPR，设备值超过 1.5 时在 context 创建前封顶。
+      // Playwright 只接收统一解析后的有效 DPR，设备值超过 2 时在 context 创建前封顶。
       const rawDpr = viewport.deviceScaleFactor ?? viewport.dpr;
       const requestedDpr = viewport.deviceScaleFactor !== undefined ? parseDeviceDpr(rawDpr, DEFAULT_DPR) : rawDpr === undefined ? DEFAULT_DPR : rawDpr;
       const contextChanged = context === null || requestedDpr !== activeDpr;
