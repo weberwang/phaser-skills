@@ -71,6 +71,7 @@ node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs
 - `$phaser4-game-asset-integration`、`$phaser4-game-ui-layout`：资源、效果图还原和 UI 布局。
 - `$phaser4-spine-generative-reskin`、`$phaser4-game-image-optimization`：Spine 与图片处理。
 - `$phaser4-game-audio`、`$phaser4-game-balance`：音频和数值平衡。
+- [`$phaser4-game-ad-integration`](skills/phaser4-game-ad-integration/SKILL.md)：通过 AppLovin MAX 接入移动端聚合插页广告，管理预加载、失败退避、60 秒冷却和隐私验收。
 - `$phaser4-game-qa-performance`：质量、测试和性能验证。
 - `$phaser4-game-release`：发布候选、渠道和合规交付。
 - `$grilling`：只处理无法由事实确定且会改变范围、行为、预算、合规或数据边界的用户决定。
