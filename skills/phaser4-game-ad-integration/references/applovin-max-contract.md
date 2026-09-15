@@ -1,14 +1,14 @@
 # AppLovin MAX 广告接入合同
 
-本文件是 `phaser4-game-ad-integration` 的唯一详细运行合同。它约束 Phaser 4 + Capacitor 移动项目的 AppLovin MAX 聚合 Banner、插页与激励视频广告：平台边界、网络集合、多广告位状态、原生职责、桥接接口、静默预加载、广告位独立加载重试、Banner 布局与刷新、视频不可用提示、奖励、隐私、遥测和验收。实际项目仍须读取 AppLovin 官方当前页面；官方页面更新时，以当前页面和项目已批准的实现包为准，不把本文件当作 SDK 版本或法律意见。
+本文件是 `phaser4-game-ad-integration` 的唯一详细运行合同。它约束 Phaser 4 + Capacitor 移动项目通过 AppLovin 官方 MAX Cordova 原生插件接入 Banner、插页与激励视频广告：平台边界、插件职责、网络集合、状态、公开接口、静默预加载、广告位独立加载重试、Banner 布局与刷新、视频不可用提示、奖励、隐私、遥测和验收。实施时必须核对[官方 Cordova 集成文档](https://support.applovin.com/en/max/cordova/overview/integration)和[官方插件仓库](https://github.com/AppLovin/AppLovin-MAX-Cordova)；官方页面更新时，以当前页面、官方插件发布物和项目已批准的实现包为准，不把本文件当作 SDK 版本或法律意见。
 
 ## 不变量与平台边界
 
 - Phaser Web、浏览器预览、小游戏和其他没有原生 MAX 容器的目标不直接调用 MAX、不导入原生 SDK，也不发起网络广告请求。共享 TypeScript 门面在这些目标上返回结构化 `unsupported-platform` no-op，并立即让游戏继续。
-- iOS 与 Android 仅由 Capacitor 原生插件或项目自己的平台适配层调用 MAX。Phaser 场景只能调用共享门面，不能直接触碰 Activity、ViewController、MAX 对象或任何网络 SDK。
-- 项目已有插件只有在来源、许可证、平台支持、回调时序、隐私能力和版本可追溯性经过审查后才可封装复用。没有足够证据时，使用 AppLovin 官方原生 SDK 与官方 MAX adapter 资料建立最小桥接，不凭名称猜测社区插件 API。
+- iOS 与 Android 仅通过 AppLovin 官方 `cordova-plugin-applovin-max` 调用 MAX；Capacitor 使用其 Cordova 兼容层加载插件。Phaser 场景只能调用共享 TypeScript 门面，不能直接触碰官方插件全局对象、Activity、ViewController、MAX 原生对象或任何网络 SDK。
+- 项目不得改用社区广告插件、自建 Capacitor 原生广告插件或直接集成 Android/iOS MAX SDK。实施前核对官方插件版本与当前 Capacitor、Android Gradle、iOS CocoaPods/Swift Package Manager 路径的兼容性；任一目标平台不兼容时标记阻断并回到 Work Item 决策，不静默切换实现路线。
 - 所有已启用广告位都在初始化成功后后台静默预加载；加载、重试和展示回调均走后台/事件驱动路径。游戏主循环、输入、场景切换和结算不得等待广告加载、网络响应、CMP、展示或隐藏；展示触发只读取当前状态并快速返回，不能在触发路径临时 load。
-- 任何平台只允许一个广告服务实例。每个广告位持有一个与格式匹配的 MAX 对象、独立状态和至多一个加载重试 timer；所有广告位只共用全屏展示仲裁器等服务级门，不共用加载重试 timer。插页不维护任何展示冷却状态。重复初始化、预加载、展示请求或原生回调不能造成同广告位并发 load、递归回调或多套退避机制。
+- 任何平台只允许一个广告服务实例和一个官方插件接入实例。每个广告位持有独立业务状态和至多一个加载重试 timer，格式匹配的 MAX 原生对象由官方插件内部管理；所有广告位只共用全屏展示仲裁器等服务级门，不共用加载重试 timer。插页不维护任何展示冷却状态。重复初始化、预加载、展示请求或插件回调不能造成同广告位并发 load、递归回调或多套退避机制。
 - 加载失败、无填充和后台重试始终静默，不弹 Toast。视频广告触发时已不可用，或展示请求发出后收到 `displayFailed`，必须由共享 UI 层显示一次本地化“视频广告暂不可用，请稍后再试”Toast；重复和迟到事件不得重复提示。
 - Banner 使用原生 MAX ad view，创建后默认隐藏并静默加载。只有收到 `loaded` 且布局已确认安全时才能显示；未 ready、加载失败或布局不可用时保持隐藏并立即返回，不弹 Toast，也不让空白广告位阻塞或覆盖游戏。
 
@@ -37,26 +37,26 @@ MAX 控制台负责以下外部配置，由账号/变现责任人执行并留存
 1. 按平台登记 Android package name、iOS bundle ID 和商店信息，并为每个 Banner、插页和激励视频广告位创建格式正确的 ad unit。每个平台、格式和业务广告位使用清晰稳定的标识，避免共享状态或混用测试与生产。
 2. 在 `Mediation > Manage > Networks` 连接并启用固定七项渠道，填写各渠道要求的账号、API key、placement 或应用信息；把渠道加入对应 waterfall，并按需启用 bidding/auto-CPM。
 3. 创建测试设备、选择 Test Mode、导出或查看 Mediation Debugger 结果，并在发布前确认 `app-ads.txt`。
-4. 记录控制台环境、平台、ad unit 所属 Work Item 和责任人，但不把 SDK key、ad unit ID 或网络凭证提交到 Web 源码、公开文档、遥测或本仓库。
+4. 记录控制台环境、平台、ad unit 所属 Work Item 和责任人。SDK key 与 ad unit ID 由分环境构建配置注入官方插件适配器，不手写进业务源码、示例、公开文档、遥测或本仓库；广告网络账号凭证不得进入客户端。
 
 本 Skill 不自动登录、写入或修改 MAX 控制台，也不自动创建网络账号、placement、waterfall、`app-ads.txt` 或商店资料；这类外部动作按 [`$phaser4-game-workflow-control`](../../phaser4-game-workflow-control/SKILL.md) 的对象级边界处理。
 
-### 原生依赖
+### 官方原生插件与依赖
 
-Android 使用官方 MAX Android SDK 与官方 adapter 页面给出的 Gradle 依赖；iOS 使用官方 MAX iOS SDK 与官方 adapter 页面给出的 CocoaPods 或 Swift Package Manager 依赖。只采用页面标记为当前兼容的版本，版本选择要与项目的 compile SDK、部署目标、Xcode/Gradle、架构和隐私要求一起审查。
+项目安装 AppLovin 官方发布的 `cordova-plugin-applovin-max`，通过 Capacitor Cordova 兼容层同步到 Android/iOS。MAX Android/iOS SDK 的基础版本由官方插件声明，项目不得再手工添加另一份 MAX SDK；各 mediated network adapter 按 AppLovin Cordova 渠道文档接入，并与插件锁定的 MAX SDK 版本匹配。
 
-本合同不写死 SDK、adapter 或第三方网络 SDK 版本，也不鼓励无约束的版本通配。实施时在项目自己的依赖锁定/变更记录中选择和锁定已核实版本，保留官方页面、发布日期和兼容性证据；不得改名、重打包或替换 MAX 识别所需的 adapter 包名。Pangle 的区域配置、Android/iOS 差异和必要参数以 AppLovin 当前 Pangle 章节为准。
+本合同不写死插件、SDK、adapter 或第三方网络 SDK 版本，也不允许无约束的版本通配。实施时在项目依赖锁与变更记录中固定已核实的官方插件版本，记录其传递引入的 MAX SDK 版本、官方页面、发布日期和 Capacitor 双平台兼容性证据；不得改名、重打包或替换官方插件及 MAX 识别所需的 adapter 包名。Pangle 的区域配置、Android/iOS 差异和必要参数以 AppLovin 当前 Pangle 章节为准。
 
-### Capacitor bridge
+### Capacitor 官方插件适配层
 
-桥接层只做平台能力封装和事件归一化：
+TypeScript 适配层只封装 AppLovin 官方插件公开 API 并归一化事件，不实现新的原生桥：
 
-- 接收共享门面的初始化、按广告位预加载、状态查询和展示请求；验证运行平台、生命周期、隐私状态、广告位和 ad unit 配置后，把请求投递到原生 MAX。
-- 把 MAX 初始化、load、display、hidden、reward、Banner expand/collapse、click 和 failure 回调映射成稳定事件与结构化结果，原始 SDK 异常留在原生诊断层并脱敏。
+- 接收共享门面的初始化、按广告位预加载、状态查询和展示请求；验证运行平台、生命周期、隐私状态、业务 `slotId` 和环境配置后，将 `slotId` 映射为 MAX ad unit ID，再调用官方插件对应 API。
+- 把官方插件的初始化、load、display、hidden、reward、Banner expand/collapse、click 和 failure callback/event 映射成稳定事件与结构化结果；插件错误对象只提取稳定分类与数值码，原始消息不得直接进入业务 UI 或遥测。
 - 保存服务实例、每广告位状态和独立加载重试 timer；不把平台对象、原始 SDK 类、网络凭证、MAX waterfall 或设备标识返回 Web 层。
 - 在 Android 绑定当前有效 Activity，在 iOS 绑定当前有效 ViewController；后台、恢复、销毁和重复回调都必须有明确处理。不存在有效宿主时立即返回 `no-host`，不阻塞等待。
 
-SDK key、MAX ad unit ID、网络 placement/应用 ID 不是共享业务常量：从受控原生配置、构建变量或秘密管理注入，并按 debug/test/release 环境分离。即使某些 ad unit ID 本身不是密码，也遵循“不硬编码到业务源码和公开 Web 包”的约束。
+SDK key 与 MAX ad unit ID 是官方插件 API 所需的客户端配置，由生成式、分环境构建配置注入插件适配器并按 debug/test/release 隔离；业务场景只使用 `slotId`，不得直接持有这些值。它们不得写入手工维护的业务源码、示例、日志、遥测或版本库。广告网络账号凭证、Ad Review key 和服务器 API key 属于秘密，只能留在对应控制台、CI 秘密或原生构建配置，绝不传给 Web/Phaser 层。
 
 ## 平台行为矩阵
 
@@ -64,12 +64,12 @@ SDK key、MAX ad unit ID、网络 placement/应用 ID 不是共享业务常量�
 | --- | --- | --- |
 | Phaser Web / 浏览器 | 立即返回 `unsupported-platform`，不调用 MAX | `isReady=false`；全屏展示和 Banner 显隐均立即 no-op |
 | 小游戏或其他 Web 容器 | 同上；若平台有独立广告 SDK，另建经批准的 Skill/模块 | 不在本合同内实现或兜底为 no-op |
-| Capacitor Android | 原生桥异步初始化；完成后静默预加载全部启用广告位，调用立即返回 | 全屏只读状态后决定 show；Banner 只读状态与布局后立即显隐 |
-| Capacitor iOS | 原生桥异步初始化；完成后静默预加载全部启用广告位，调用立即返回 | 全屏只读状态后决定 show；Banner 只读状态与布局后立即显隐 |
+| Capacitor Android | Capacitor Cordova 兼容层加载官方插件；适配器包装插件异步初始化，完成后静默预加载全部启用广告位 | 全屏只读业务状态后调用官方插件 show；Banner 通过官方插件 API 显隐 |
+| Capacitor iOS | 同上；构建前验证官方插件与项目当前 iOS 包管理器路径兼容 | 全屏只读业务状态后调用官方插件 show；Banner 通过官方插件 API 显隐 |
 
 ## 公开桥接接口与结构化结果
 
-参数命名可按目标项目约定调整，但不得改变“快速返回、事件最终确认”的语义。`Promise` 只表示本地桥接请求已接受或拒绝，不表示广告网络加载、展示或隐藏已经完成；调用方不得等待它来推进游戏流程。Web 层只传环境、能力开关和自然中断上下文，SDK key、MAX ad unit ID、网络 placement/账号凭证由原生受控配置解析，绝不从 Web 传入。
+参数命名可按目标项目约定调整，但不得改变“快速返回、事件最终确认”的语义。适配器可以把官方插件 callback API 包装为 `Promise`；该 `Promise` 只表示本地插件调用已接受或拒绝，不表示广告网络加载、展示或隐藏已经完成，调用方不得等待它来推进游戏流程。业务层只传环境、能力开关、自然中断上下文和 `slotId`；SDK key 与 MAX ad unit ID 由插件适配器从受控构建配置解析，广告网络 placement/账号凭证绝不从 Web 传入。
 
 ```ts
 initialize(config: InitConfig): Promise<InitResult> // 初始化请求，仅等待本地受理/拒绝
@@ -207,7 +207,7 @@ interface AdUiNoticeEvent {
 
 ## 多广告位状态与单一服务
 
-每个广告位使用独立 `phase`、加载失败计数、retry deadline、加载重试 timer 和 MAX 对象；Banner 另有独立 `bannerVisibility`。不能把“已加载”和“当前可见”混成一个 phase。服务级只统一持有实例代次、全屏展示仲裁与 Banner 可见性仲裁。广告服务仍是这些状态的单一所有者；每个广告位的加载重试独立定时，插页不保存 `lastDisplayedAt`/`cooldownUntil`，不得复制另一套退避算法。
+每个广告位使用独立业务 `phase`、加载失败计数、retry deadline 和加载重试 timer；官方插件内部持有格式匹配的 MAX 原生对象，Banner 另有独立 `bannerVisibility`。不能把“已加载”和“当前可见”混成一个 phase。服务级只统一持有实例代次、全屏展示仲裁与 Banner 可见性仲裁。广告服务仍是业务状态的单一所有者；每个广告位的加载重试独立定时，插页不保存 `lastDisplayedAt`/`cooldownUntil`，不得复制另一套退避算法。
 
 ### phase 与原生 gates 分离
 
@@ -219,10 +219,10 @@ interface AdUiNoticeEvent {
 - `privacy`：CMP/TCF、MAX consent flags、ATT 等是否达到 `ready`；
 - `fullscreen`：原生 fullscreen arbiter 是否已有其他全屏广告或系统界面占用。
 
-Phaser 场景只提供 `slotId` 与自然中断点上下文并消费结构化结果；`tryShow` 前由 bridge 读取该广告位 phase 和共享 gates，任一 gate closed/unknown 都立即拒绝。前后台、断网、隐私变化和宿主切换由原生服务发布事件，恢复时重新计算 gates，而不是让场景写入广告 phase。
+Phaser 场景只提供 `slotId` 与自然中断点上下文并消费结构化结果；`tryShow` 前由官方插件适配层读取该广告位 phase 和共享 gates，任一 gate closed/unknown 都立即拒绝。前后台、断网、隐私变化和宿主切换由 Capacitor 生命周期与官方插件事件归一化后发布，恢复时重新计算 gates，而不是让场景写入广告 phase。
 
 1. `new → initializing` 只由首次有效 `initialize` 触发；相同配置的重复初始化复用原请求或返回当前 phase，不再次创建 SDK/广告对象。
-2. MAX 初始化和隐私前置完成后，为每个启用广告位创建正确格式的对象并进入 `idle`，随后分别通过各广告位的服务入口静默投递一次预加载，不等待调用方再触发；初始化 bridge 失败转为 `failed`。隐私未决或被阻断时由 privacy gate 和结果码表达，不能假装已初始化。
+2. MAX 初始化和隐私前置完成后，通过官方插件为每个启用广告位创建或加载正确格式的广告并进入 `idle`，随后分别通过各广告位的服务入口静默投递一次预加载，不等待调用方再触发；官方插件初始化失败转为 `failed`。隐私未决或被阻断时由 privacy gate 和结果码表达，不能假装已初始化。
 3. 每个广告位的 `idle → loading → ready` 是一次独立加载生命周期；加载中或 ready 时的重复 `preload(slotId)` 只返回当前 phase。`loaded`/`ready` 表示 MAX 已确认该广告位可展示，不表示刚刚请求成功。
 4. 全屏广告的 `ready → showing` 只由所有 gates open、自然中断点且满足格式策略的 `tryShow` 触发；插页不检查任何展示冷却。`already-showing` 和 `not-ready` 不能调用 MAX 的 show，也不能在触发路径补做 load。
 5. `showing → idle` 的 `displayFailed` 立即发起一次去重后的后台预加载；只有这次加载失败后才进入指数退避。`showing → idle` 的 `hidden` 也必须后台预加载。全屏锁释放后，任何 ready 且 gates open 的插页广告位都可以在下一个自然中断点发起展示。
@@ -234,7 +234,7 @@ Phaser 场景只提供 `slotId` 与自然中断点上下文并消费结构化结
 
 ### 初始化失败与显式重试
 
-- bridge 初始化失败必须显式进入 `failed`，结果包含稳定错误类别；在 `failed` 状态重复调用相同的 `initialize` 只返回当前失败快照，不自动递归或热重试。
+- 官方插件初始化失败必须显式进入 `failed`，结果包含稳定错误类别；在 `failed` 状态重复调用相同的 `initialize` 只返回当前失败快照，不自动递归或热重试。
 - 缺失 SDK/adapter、无效配置或 ad unit、平台不支持、策略阻断和隐私未 ready 属于确定性失败：不创建初始化重试 timer，修正配置或隐私状态后由调用方显式调用 `retryInitialize()`。
 - 网络超时、暂时无网络、原生服务瞬时错误等也进入 `failed`，不自动创建初始化重试 timer。只有 `host`、`foreground`、`connectivity` 和 `privacy=ready` 全部 open 后，调用方才能通过 `retryInitialize()` 显式恢复；后台、离线、宿主不可用或隐私未决时立即拒绝该请求。
 - 初始化重试与广告 load 重试是不同任务类型。初始化未成功前不得创建 load 任务；初始化成功后，每个广告位的预加载与退避都由该广告位自己的 `RetryState` 和 timer 管理，初始化重试不得创建或重置任何广告位的加载重试 timer 与计数。
@@ -323,7 +323,7 @@ n = consecutiveLoadFailures（本次失败递增后的值，n >= 1）
 - `tryShow` 因 `unknown-slot`、`not-initialized`、`privacy-pending`、`not-ready`、`loading`、`already-showing`、`background`、`offline`、`no-host` 或其他不可展示状态立即拒绝时，`ShowResult.noticeCode` 返回 `video-ad-unavailable`，并携带本次触发唯一的 `noticeDedupeKey`。共享 UI 层必须立即显示一次本地化 Toast，默认中文语义为“视频广告暂不可用，请稍后再试”。
 - 原生 show 已受理后若收到匹配当前 generation/slot/request 的 `displayFailed`，桥接层发布一个 `AdUiNoticeEvent`；UI 层按 `dedupeKey` 只显示一次相同 Toast。迟到、重复或旧实例回调不提示。
 - 后台预加载失败、no-fill、退避重试、恢复调度和被动状态变化不产生 Toast；只有实际展示触发失败才提示，避免后台错误打扰用户。
-- Toast 是 UI 反馈，不改变加载计数、奖励和游戏流程。原生层只发送稳定 `noticeCode`，不直接操作 Phaser UI，也不把 SDK 原始错误文本展示给用户。
+- Toast 是 UI 反馈，不改变加载计数、奖励和游戏流程。官方插件适配层只发送稳定 `noticeCode`，不直接操作 Phaser UI，也不把插件原始错误文本展示给用户。
 
 ## 展示失败、生命周期与断网
 
@@ -356,15 +356,15 @@ n = consecutiveLoadFailures（本次失败递增后的值，n >= 1）
 
 允许记录聚合且脱敏的事件：`initialize_started`、`initialize_completed`、`preload_requested`、`load_succeeded`、`load_failed`、`retry_scheduled`、`show_requested`、`ad_displayed`、`display_failed`、`ad_hidden`、`banner_shown`、`banner_hidden`、`banner_expanded`、`banner_collapsed`、`banner_size_changed`、`reward_granted`、`ui_notice_requested`、`paused`、`resumed`。每条事件只保留事件名、平台、业务广告位、广告格式、稳定原因码、`consecutiveLoadFailures`、延迟/耗时、phase 和可选的 canonical 网络别名。
 
-禁止记录或上传 SDK key、MAX ad unit ID、网络 placement/账号凭证、IDFA/AAID、设备标识、用户标识、IP、完整原始错误消息、完整 waterfall、竞价凭证、CMP 原文或可反推出个人的自由文本。MAX 的错误对象只取稳定分类/数值码；原始日志仅限受控本地 debug，发布构建关闭敏感日志。
+禁止记录或上传 SDK key、MAX ad unit ID、网络 placement/账号凭证、IDFA/AAID、设备标识、用户标识、IP、完整插件错误消息、完整 waterfall、竞价凭证、CMP 原文或可反推出个人的自由文本。官方插件错误对象只取稳定分类/数值码；原始日志仅限受控本地 debug，发布构建关闭敏感日志。
 
-测试、debug、staging 和生产的 SDK key、ad unit、MAX Test Mode 与遥测端点必须隔离；密钥由平台安全配置注入，不写在 TypeScript、HTML、JSON、README、Skill 或版本库。广告模块不建立新的用户画像、个性化标识或绕过 CMP/ATT 的通道。
+测试、debug、staging 和生产的 SDK key、ad unit、MAX Test Mode 与遥测端点必须隔离。SDK key 与 ad unit 通过不入库的生成式构建配置提供给官方插件适配器；广告网络账号凭证、Ad Review key 和服务器 API key 保持在 CI 秘密或原生构建配置中。广告模块不建立新的用户画像、个性化标识或绕过 CMP/ATT 的通道。
 
 ## 验收与测试矩阵
 
 ### 状态机和非阻塞单测
 
-使用假的单调时钟、timer、MAX bridge 和网络/生命周期事件，至少覆盖：
+使用假的单调时钟、timer、官方插件适配器和网络/生命周期事件，至少覆盖：
 
 - Web/小游戏所有入口均为 no-op，`isReady=false`，且不导入或触发原生 API。
 - 重复 `initialize`、同广告位重复 `preload`、重复 `tryShow` 和重复 listener 回调保持幂等；每广告位最多一个 in-flight load 和一个待执行加载重试 timer，服务不存在共享加载重试 timer。
@@ -380,7 +380,7 @@ n = consecutiveLoadFailures（本次失败递增后的值，n >= 1）
 - Banner 未 ready、布局失败、加载失败和显隐冲突均保持隐藏且不产生视频 Toast，不使用激励账本。
 - hidden 和 display failure 都静默重新预加载对应广告位；销毁后的旧回调不会污染新实例。
 - 激励视频只在匹配奖励待决账本的 `rewarded` 事件到达时发奖，同一 `showRequestId` 最多发放一次；覆盖 hidden→rewarded、开始新展示后旧 rewarded、display failure 后 rewarded、重复 rewarded 和结算超时，确保不漏发、不串单、不重复发奖。
-- 使用永不返回广告事件的原生 fake bridge：结算调用 `void ad.tryShow(context)` 后仍立即推进下一场景；断言桥接 Promise 只等待本地受理/拒绝，不等待 `loaded`、`displayed`、`hidden` 或任何广告回调。
+- 使用永不返回广告事件的 fake 官方插件适配器：结算调用 `void ad.tryShow(context)` 后仍立即推进下一场景；断言适配器 Promise 只等待本地受理/拒绝，不等待 `loaded`、`displayed`、`hidden` 或任何广告回调。
 
 ### 原生与渠道验收
 
