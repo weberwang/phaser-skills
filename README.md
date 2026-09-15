@@ -72,7 +72,7 @@ node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs
 - [`$phaser4-character-frame-animation`](skills/phaser4-character-frame-animation/SKILL.md)：以 Alpha 底部中心锚点归一化人物序列帧，打包水平 spritesheet 并验证跨帧连贯性。
 - `$phaser4-spine-generative-reskin`、`$phaser4-game-image-optimization`：Spine 与图片处理。
 - `$phaser4-game-audio`、`$phaser4-game-balance`：音频和数值平衡。
-- [`$phaser4-game-ad-integration`](skills/phaser4-game-ad-integration/SKILL.md)：通过 AppLovin MAX 接入移动端 Banner、插页与激励视频，管理多广告位静默预加载、统一失败重试、Banner 布局刷新、视频不可用提示、插页广告位独立 60 秒冷却和隐私验收。
+- [`$phaser4-game-ad-integration`](skills/phaser4-game-ad-integration/SKILL.md)：通过 AppLovin MAX 接入移动端 Banner、插页与激励视频，管理多广告位静默预加载、广告位独立加载重试、Banner 布局刷新、视频不可用提示和隐私验收。
 - `$phaser4-game-qa-performance`：质量、测试和性能验证。
 - `$phaser4-game-release`：发布候选、渠道和合规交付。
 - `$grilling`：只处理无法由事实确定且会改变范围、行为、预算、合规或数据边界的用户决定。
