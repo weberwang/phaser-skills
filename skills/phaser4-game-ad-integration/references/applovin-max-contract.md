@@ -1,6 +1,6 @@
 # AppLovin MAX 广告接入合同
 
-本文件是 `phaser4-game-ad-integration` 的唯一详细运行合同。它约束 Phaser 4 + Capacitor 移动项目的 AppLovin MAX 聚合 Banner、插页与激励视频广告：平台边界、网络集合、多广告位状态、原生职责、桥接接口、静默预加载、统一失败重试、Banner 布局与刷新、视频不可用提示、插页冷却、奖励、隐私、遥测和验收。实际项目仍须读取 AppLovin 官方当前页面；官方页面更新时，以当前页面和项目已批准的实现包为准，不把本文件当作 SDK 版本或法律意见。
+本文件是 `phaser4-game-ad-integration` 的唯一详细运行合同。它约束 Phaser 4 + Capacitor 移动项目的 AppLovin MAX 聚合 Banner、插页与激励视频广告：平台边界、网络集合、多广告位状态、原生职责、桥接接口、静默预加载、统一失败重试、Banner 布局与刷新、视频不可用提示、插页广告位局部冷却、奖励、隐私、遥测和验收。实际项目仍须读取 AppLovin 官方当前页面；官方页面更新时，以当前页面和项目已批准的实现包为准，不把本文件当作 SDK 版本或法律意见。
 
 ## 不变量与平台边界
 
@@ -8,7 +8,7 @@
 - iOS 与 Android 仅由 Capacitor 原生插件或项目自己的平台适配层调用 MAX。Phaser 场景只能调用共享门面，不能直接触碰 Activity、ViewController、MAX 对象或任何网络 SDK。
 - 项目已有插件只有在来源、许可证、平台支持、回调时序、隐私能力和版本可追溯性经过审查后才可封装复用。没有足够证据时，使用 AppLovin 官方原生 SDK 与官方 MAX adapter 资料建立最小桥接，不凭名称猜测社区插件 API。
 - 所有已启用广告位都在初始化成功后后台静默预加载；加载、重试和展示回调均走后台/事件驱动路径。游戏主循环、输入、场景切换和结算不得等待广告加载、网络响应、CMP、展示或隐藏；展示触发只读取当前状态并快速返回，不能在触发路径临时 load。
-- 任何平台只允许一个广告服务实例。每个广告位持有一个与格式匹配的 MAX 对象和独立状态，但所有广告位共用一个加载失败重试协调器与一个全屏展示仲裁器。重复初始化、预加载、展示请求或原生回调不能造成同广告位并发 load、递归回调或多套退避机制。
+- 任何平台只允许一个广告服务实例。每个广告位持有一个与格式匹配的 MAX 对象和独立状态，每个插页广告位的冷却也按 `slotId` 隔离；所有广告位只共用加载失败重试协调器与全屏展示仲裁器，不共用冷却。重复初始化、预加载、展示请求或原生回调不能造成同广告位并发 load、递归回调或多套退避机制。
 - 加载失败、无填充和后台重试始终静默，不弹 Toast。视频广告触发时已不可用，或展示请求发出后收到 `displayFailed`，必须由共享 UI 层显示一次本地化“视频广告暂不可用，请稍后再试”Toast；重复和迟到事件不得重复提示。
 - Banner 使用原生 MAX ad view，创建后默认隐藏并静默加载。只有收到 `loaded` 且布局已确认安全时才能显示；未 ready、加载失败或布局不可用时保持隐藏并立即返回，不弹 Toast，也不让空白广告位阻塞或覆盖游戏。
 
@@ -53,7 +53,7 @@ Android 使用官方 MAX Android SDK 与官方 adapter 页面给出的 Gradle �
 
 - 接收共享门面的初始化、按广告位预加载、状态查询和展示请求；验证运行平台、生命周期、隐私状态、广告位和 ad unit 配置后，把请求投递到原生 MAX。
 - 把 MAX 初始化、load、display、hidden、reward、Banner expand/collapse、click 和 failure 回调映射成稳定事件与结构化结果，原始 SDK 异常留在原生诊断层并脱敏。
-- 保存服务实例、每广告位状态、单调时间戳和统一重试协调器；不把平台对象、原始 SDK 类、网络凭证、MAX waterfall 或设备标识返回 Web 层。
+- 保存服务实例、每广告位状态、每插页广告位的单调冷却时间戳和统一重试协调器；不把平台对象、原始 SDK 类、网络凭证、MAX waterfall 或设备标识返回 Web 层。
 - 在 Android 绑定当前有效 Activity，在 iOS 绑定当前有效 ViewController；后台、恢复、销毁和重复回调都必须有明确处理。不存在有效宿主时立即返回 `no-host`，不阻塞等待。
 
 SDK key、MAX ad unit ID、网络 placement/应用 ID 不是共享业务常量：从受控原生配置、构建变量或秘密管理注入，并按 debug/test/release 环境分离。即使某些 ad unit ID 本身不是密码，也遵循“不硬编码到业务源码和公开 Web 包”的约束。
@@ -121,7 +121,7 @@ interface AdResult {
   format?: AdFormat;
   bannerVisibility?: BannerVisibility;
   retryScheduled?: boolean;
-  cooldownRemainingMs?: number;
+  cooldownRemainingMs?: number; // 仅表示结果中 slotId 对应插页广告位的剩余局部冷却
 }
 
 interface InitResult extends AdResult {
@@ -185,7 +185,7 @@ interface AdUiNoticeEvent {
 }
 ```
 
-服务首次创建时从 `instanceGeneration=0` 开始；实例重建（原生 SDK 重启、宿主切换或配置变更）必须先使旧实例失效，再将 `instanceGeneration` 加一；每次实际展示尝试生成进程内唯一 `showRequestId`。全屏事件按 generation/slot/request 关联：第一次插页 `displayed` 才记录冷却，第一次 `rewarded` 才发放奖励，第一次 `displayFailed` 或 `hidden` 才释放展示锁；迟到、重复或跨实例事件不得改变新实例 phase、冷却、奖励或计数。激励请求另存于幂等的奖励待决账本，`hidden` 只释放全屏锁，不能删除尚未结算的奖励资格。
+服务首次创建时从 `instanceGeneration=0` 开始；实例重建（原生 SDK 重启、宿主切换或配置变更）必须先使旧实例失效，再将 `instanceGeneration` 加一；每次实际展示尝试生成进程内唯一 `showRequestId`。全屏事件按 generation/slot/request 关联：第一次插页 `displayed` 才更新对应 `slotId` 的局部冷却，第一次 `rewarded` 才发放奖励，第一次 `displayFailed` 或 `hidden` 才释放展示锁；迟到、重复或跨实例事件不得改变新实例 phase、冷却、奖励或计数。激励请求另存于幂等的奖励待决账本，`hidden` 只释放全屏锁，不能删除尚未结算的奖励资格。
 
 所有原生回调另带稳定 `eventId`，同一回调跨桥重投时不得重新生成，以此去重传输层重复。应用主动 load 的回调必须匹配当前 `loadOperationId`；Banner auto-refresh 的回调必须匹配当前活动 `refreshEpoch`。同一 refresh epoch 可以产生多轮合法 `loaded`，不能仅因 generation/slot 相同而丢弃；停止 auto-refresh 时立即使该 epoch 失效，之后到达的旧回调不得进入重试或改变可见性。上述类型中的 `phase` 只描述对应广告位自身，所有 gates 由原生服务依赖计算，不能镜像到 Phaser 场景状态。
 
@@ -196,7 +196,7 @@ interface AdUiNoticeEvent {
 - `layout-not-ready`、`banner-visible-conflict`：Banner 尚无安全布局，或当前 viewport 已有另一个可见 Banner。
 - `not-initialized`、`initializing`、`privacy-pending`、`privacy-blocked`：初始化或合规前置未完成。
 - `not-ready`、`loading`、`already-showing`：当前没有可立即展示的缓存广告，或已有展示请求。
-- `cooldown`：距上一次已确认展示成功不足 60 秒，并返回 `cooldownRemainingMs`。
+- `cooldown`：本次请求的插页广告位距自身上一次已确认展示成功不足 60 秒，并返回该广告位的 `cooldownRemainingMs`；其他广告位的展示不得触发此结果。
 - `background`、`offline`、`no-host`：当前生命周期或网络不适合展示。
 - `not-natural-break`：调用点不是明确的自然中断点，不发起展示。
 - `request-dispatched`：已向原生 MAX 发起展示请求；这不是展示成功确认。
@@ -209,7 +209,7 @@ interface AdUiNoticeEvent {
 
 ## 多广告位状态与单一服务
 
-每个广告位使用独立 `phase`、加载失败计数、retry deadline 和 MAX 对象；Banner 另有独立 `bannerVisibility`，不能把“已加载”和“当前可见”混成一个 phase。服务级统一持有实例代次、全屏展示仲裁、插页冷却、Banner 可见性仲裁与重试协调器。任何广告位都不得复制另一套退避算法或自行建立无人管理的 timer。
+每个广告位使用独立 `phase`、加载失败计数、retry deadline 和 MAX 对象；每个插页广告位另有独立 `lastDisplayedAt`/`cooldownUntil`，Banner 另有独立 `bannerVisibility`。不能把“已加载”和“当前可见”混成一个 phase，也不能建立服务级或跨广告位的全局冷却。服务级只统一持有实例代次、全屏展示仲裁、Banner 可见性仲裁与重试协调器。广告服务仍是这些状态的单一所有者；局部冷却按需用单调时间计算，不为每个广告位创建 timer，也不得复制另一套退避算法。
 
 ### phase 与原生 gates 分离
 
@@ -226,13 +226,13 @@ Phaser 场景只提供 `slotId` 与自然中断点上下文并消费结构化结
 1. `new → initializing` 只由首次有效 `initialize` 触发；相同配置的重复初始化复用原请求或返回当前 phase，不再次创建 SDK/广告对象。
 2. MAX 初始化和隐私前置完成后，为每个启用广告位创建正确格式的对象并进入 `idle`，随后通过统一协调器静默投递一次预加载，不等待调用方再触发；初始化 bridge 失败转为 `failed`。隐私未决或被阻断时由 privacy gate 和结果码表达，不能假装已初始化。
 3. 每个广告位的 `idle → loading → ready` 是一次独立加载生命周期；加载中或 ready 时的重复 `preload(slotId)` 只返回当前 phase。`loaded`/`ready` 表示 MAX 已确认该广告位可展示，不表示刚刚请求成功。
-4. 全屏广告的 `ready → showing` 只由所有 gates open、自然中断点且满足格式策略的 `tryShow` 触发；插页还必须通过 60 秒冷却。`already-showing` 和 `not-ready` 不能调用 MAX 的 show，也不能在触发路径补做 load。
-5. `showing → idle` 的 `displayFailed` 不记录冷却，并立即发起一次去重后的后台预加载；只有这次加载失败后才进入指数退避。`showing → idle` 的 `hidden` 也必须后台预加载。若冷却仍有效，预加载可以继续，但 `tryShow` 仍返回 `cooldown`。
+4. 全屏广告的 `ready → showing` 只由所有 gates open、自然中断点且满足格式策略的 `tryShow` 触发；插页还必须通过当前 `slotId` 自己的 60 秒局部冷却。`already-showing` 和 `not-ready` 不能调用 MAX 的 show，也不能在触发路径补做 load。
+5. `showing → idle` 的 `displayFailed` 不记录冷却，并立即发起一次去重后的后台预加载；只有这次加载失败后才进入指数退避。`showing → idle` 的 `hidden` 也必须后台预加载。若当前广告位的局部冷却仍有效，预加载可以继续，但对该广告位的 `tryShow` 仍返回 `cooldown`；其他插页广告位只受各自冷却和共享全屏仲裁约束。
 6. 后台、离线、隐私未决或无有效宿主时保留当前 phase 快照，但不发起新的 load/show；恢复到前台且网络可用后重新计算 gates，并按保留的退避 deadline 最多恢复一次调度。
-7. 任何销毁、平台切换或配置变更都使旧回调携带的实例代次失效；旧事件不得把新实例推进到 `ready` 或重置新实例的计数。Activity/ViewController 重建或宿主切换不得清空进程级 `lastDisplayedAt`/`cooldownUntil`，避免用生命周期切换绕过 60 秒冷却。
+7. 任何销毁、平台切换或配置变更都使旧回调携带的实例代次失效；旧事件不得把新实例推进到 `ready` 或重置新实例的计数。Activity/ViewController 重建或宿主切换不得清空广告服务中各插页广告位的 `lastDisplayedAt`/`cooldownUntil`，避免用生命周期切换绕过该广告位的 60 秒局部冷却；也不得把这些时间戳合并为全局值。
 8. Banner 创建时 `bannerVisibility=hidden`；`loaded` 只把 phase 置为 `ready`，不会自动显示。`setBannerVisibility(true)` 只有在 ready、前台、宿主有效且布局安全时才立即显示；否则保持 hidden 并返回原因，不触发 load。`setBannerVisibility(false)` 总是尽快隐藏并立即返回。
 
-每广告位的 deadline、失败计数与正在加载标记，以及共享的协调 timer、正在展示标记、奖励待决账本和实例代次，都属于广告服务这个单一状态所有者。不得让 Phaser 场景、多个组件或多个原生回调各自维护一份冷却、重试或奖励状态。
+每广告位的 deadline、失败计数、正在加载标记和插页局部冷却时间戳，以及共享的协调 timer、正在展示标记、奖励待决账本和实例代次，都属于广告服务这个单一状态所有者。局部表示作用域按 `slotId` 隔离，不表示由 Phaser 场景或组件自行计时；不得让场景、多个组件或多个原生回调各自维护一份冷却、重试或奖励状态。
 
 ### 初始化失败与显式重试
 
@@ -259,7 +259,7 @@ Google AdMob 通过 MAX 提供需求时，EEA/英国等适用区域需使用 Goo
 - `initialize` 完成后，统一协调器立即为全部启用广告位各发起一次后台静默预加载；新增或重新启用广告位也通过同一入口登记，禁止各业务组件自行 load。
 - `loaded` 事件把对应广告位置为 `ready`，将该广告位的 `consecutiveLoadFailures` 清零，并从协调器移除其 retry deadline。不要在 ready 状态重复 load。
 - 全屏广告的 `hidden` 事件后尽快静默预加载该广告位的下一条广告；`displayFailed` 事件立即发起一次去重后的静默预加载，但遥测原因与 load failure 分开。Banner 不使用这些全屏回调。只有新的加载请求失败时才进入加载退避。
-- 预加载可以在 60 秒冷却期间进行；冷却只限制展示，不限制缓存下一条广告。
+- 预加载可以在对应插页广告位的 60 秒局部冷却期间进行；冷却只限制该广告位展示，不限制缓存下一条广告，也不限制其他广告位。
 - 所有 preload/loadFailed/retry 路径禁止 Toast、弹窗、loading 遮罩和声音；只有展示触发不可用或 `displayFailed` 才产生 UI 提示事件。
 
 ### 退避公式
@@ -302,7 +302,7 @@ n = consecutiveLoadFailures（本次失败递增后的值，n >= 1）
 
 - `setBannerVisibility(slotId, true)` 只读取广告位 phase、前台/宿主/隐私 gate、布局代次和可见性仲裁。ready 且布局安全时立即显示并返回 `banner-shown`；否则保持隐藏并返回 `not-ready`、`layout-not-ready`、`background`、`no-host` 或 `banner-visible-conflict`，不得在显隐调用中 load 或等待。
 - `setBannerVisibility(slotId, false)` 无论当前 phase 如何都应幂等隐藏并返回 `banner-hidden`。Banner 未 ready、显隐失败或 loadFailed 都不显示视频不可用 Toast，也不阻塞 Phaser 场景。
-- Banner 不使用全屏 `showRequestId`、`displayed`/`hidden`、全屏仲裁、插页 60 秒冷却或激励账本。点击、展开和收起使用 Banner 专属回调；不得依赖官方标记为全屏保留的 displayed/hidden 回调判断 Banner 可见性。
+- Banner 不使用全屏 `showRequestId`、`displayed`/`hidden`、全屏仲裁、插页广告位局部冷却或激励账本。点击、展开和收起使用 Banner 专属回调；不得依赖官方标记为全屏保留的 displayed/hidden 回调判断 Banner 可见性。
 
 ### 刷新单一所有者
 
@@ -312,15 +312,15 @@ n = consecutiveLoadFailures（本次失败递增后的值，n >= 1）
 - 每次启动 Banner auto-refresh 都递增 `refreshEpoch`；正常刷新可在同一 epoch 内产生多轮 `loaded`。MAX 暴露给应用层的 load failure 必须先使 epoch 失效、可靠停止 auto-refresh、隐藏视图并清除可见请求，再由统一 `RetryCoordinator` 按退避公式登记一次，避免 SDK 与手动恢复双重请求。重新 `loaded` 后仍保持隐藏，必须由业务再次调用 `setBannerVisibility(true)` 才显示并开启新 epoch，不能迟到自动弹出。
 - Banner 展开期间保持视图归属但禁止布局抖动；收起后恢复已确认尺寸。页面离开或长期隐藏时停止刷新但保留可复用视图，只有服务销毁或配置移除才销毁对象。
 
-## 展示触发、视频失败提示与插页 60 秒冷却
+## 展示触发、视频失败提示与插页广告位局部冷却
 
 插页只放在用户自然停顿处，例如关卡完成、结算页进入前或明确的主视图切换后；激励视频只由明确的用户操作触发。不得在启动、首屏加载、输入手势中间、战斗关键帧、失败即时反馈、连续点击处理或网络请求等待期间强行打断。
 
-- 冷却常量为 `60_000 ms`，使用单调时钟：Android 采用 `SystemClock.elapsedRealtime()` 等价能力，iOS 采用 `CACurrentMediaTime()`/`mach_continuous_time` 等等价能力，Web 只走 no-op。不要用可被用户改动的墙上时间 `Date.now()` 计算冷却。
-- `tryShow` 必须只读检查 `slotId`、格式、平台、前台状态、privacy、宿主、该广告位 `phase=ready` 和全屏仲裁；插页额外检查 `cooldownRemainingMs=0`。不满足任一条件就立即返回，并由调用方继续自然流程；不得在这个调用中等待或补做 load。
-- 只有收到 MAX 原生插页 `displayed`/`didDisplayAd` 的确认事件，且该事件属于当前展示代次时，才记录 `lastDisplayedAt = monotonicNow()` 并开始 60 秒冷却。激励视频不使用这项插页冷却；`request-dispatched`、`loaded`、点击、展示前失败和 `hidden` 都不能启动冷却。
-- `displayFailed` 不消耗冷却；`hidden` 结束展示后不延长冷却，只负责触发下一条预加载。重复 `displayed` 回调必须幂等，不能把冷却重新延长。
-- `cooldownRemainingMs = max(0, 60_000 - (monotonicNow() - lastDisplayedAt))`；冷却期间可以保持 ready，但 `tryShow` 必须返回 `cooldown`。
+- 每个插页广告位的局部冷却常量为 `60_000 ms`，使用单调时钟：Android 采用 `SystemClock.elapsedRealtime()` 等价能力，iOS 采用 `CACurrentMediaTime()`/`mach_continuous_time` 等等价能力，Web 只走 no-op。不要用可被用户改动的墙上时间 `Date.now()` 计算冷却，也不要创建用于解除冷却的 timer。
+- `tryShow` 必须只读检查 `slotId`、格式、平台、前台状态、privacy、宿主、该广告位 `phase=ready` 和全屏仲裁；插页额外检查目标 `slotId` 的 `cooldownRemainingMs=0`。不满足任一条件就立即返回，并由调用方继续自然流程；不得在这个调用中等待或补做 load。
+- 只有收到 MAX 原生插页 `displayed`/`didDisplayAd` 的确认事件，且该事件匹配当前 `instanceGeneration`/`slotId`/`showRequestId` 时，才记录 `lastDisplayedAtBySlot[slotId] = monotonicNow()` 并开始该广告位的 60 秒局部冷却。不得写入服务级 `lastDisplayedAt`/`cooldownUntil`；激励视频不使用插页局部冷却，`request-dispatched`、`loaded`、点击、展示前失败和 `hidden` 都不能启动冷却。
+- `displayFailed` 不消耗冷却；`hidden` 结束展示后不延长冷却，只负责触发下一条预加载。重复 `displayed` 回调必须幂等，不能把对应广告位的冷却重新延长。
+- `cooldownRemainingMs = max(0, 60_000 - (monotonicNow() - lastDisplayedAtBySlot[slotId]))`；局部冷却期间该广告位可以保持 ready，但针对该广告位的 `tryShow` 必须返回 `cooldown`。另一插页广告位在共享全屏展示锁释放后，只要自身 gates、phase 和局部冷却满足条件即可展示。
 
 最小调用方式应类似“发起展示尝试后立即结束当前同步处理”；禁止 `await ad.load()`、`await ad.showUntilHidden()` 或为了广告结果暂停 Phaser 更新。激励 show 受理时以 generation/slot/request 建立奖励待决记录；`rewarded` 事件可以在 `hidden` 前后到达，只要匹配一条仍有效且未失败的待决记录就异步发奖并原子标记已结算。`hidden` 不发奖也不删除待决记录，下一次展示不能覆盖上一条记录；`displayFailed` 将对应记录标为不可发奖。待决记录只能在发奖、明确展示失败或经过项目基于平台测试确定的有界结算窗口后清理，超时必须记录 `reward-settlement-timeout`。高价值或跨进程奖励应采用 MAX S2S rewarded callback 与服务端幂等账本。
 
@@ -380,10 +380,10 @@ n = consecutiveLoadFailures（本次失败递增后的值，n >= 1）
 - Banner 使用实际自适应尺寸与 safe area，方向/窗口变化后旧布局回调失效，内容 inset 不修改 Phaser DPR；主要按钮、手势区和系统安全区不会被遮挡。
 - Banner 只有 MAX auto-refresh 一个正常刷新所有者；隐藏/后台时停止，重新显示时恢复；load failure 先停止 auto-refresh，再通过统一协调器只登记一次，避免 SDK 与手动恢复双重 load。
 - 连续 Banner auto-refresh 成功回调在同一 `refreshEpoch` 内均被处理；重复桥接事件按 `eventId` 去重。refresh failure 使旧 epoch 失效，随后旧回调不改变状态；协调器恢复 load 使用新的 `loadOperationId`。
-- 未 ready、冷却中、已经展示、非自然时机、其他全屏广告占用和 display failure 都立即返回并继续业务流程。
-- 仅 `displayed` 开始 60 秒冷却；load success、show request、click、display failure、hidden 和重复 displayed 的行为符合合同；使用单调时钟而非墙上时间。
+- 未 ready、目标插页广告位局部冷却中、已经展示、非自然时机、其他全屏广告占用和 display failure 都立即返回并继续业务流程。
+- 仅匹配的插页 `displayed` 开始该 `slotId` 的 60 秒局部冷却；验证一个插页广告位进入冷却后不影响另一个插页广告位，Banner 与激励视频也不受该冷却影响。load success、show request、click、display failure、hidden 和重复 displayed 不启动或延长冷却；使用单调时钟而非墙上时间，且不存在服务级全局冷却或广告位私有 timer。
 - 所有 preload/load failure/retry 路径不产生 Toast；`tryShow` 立即拒绝时返回 `video-ad-unavailable`，异步 display failure 发布一次同码 UI 事件，重复/迟到回调按 dedupeKey 不重复提示。
-- Banner 未 ready、布局失败、加载失败和显隐冲突均保持隐藏且不产生视频 Toast，不使用插页冷却或激励账本。
+- Banner 未 ready、布局失败、加载失败和显隐冲突均保持隐藏且不产生视频 Toast，不使用插页广告位局部冷却或激励账本。
 - hidden 和 display failure 都静默重新预加载对应广告位；销毁后的旧回调不会污染新实例。
 - 激励视频只在匹配奖励待决账本的 `rewarded` 事件到达时发奖，同一 `showRequestId` 最多发放一次；覆盖 hidden→rewarded、开始新展示后旧 rewarded、display failure 后 rewarded、重复 rewarded 和结算超时，确保不漏发、不串单、不重复发奖。
 - 使用永不返回广告事件的原生 fake bridge：结算调用 `void ad.tryShow(context)` 后仍立即推进下一场景；断言桥接 Promise 只等待本地受理/拒绝，不等待 `loaded`、`displayed`、`hidden` 或任何广告回调。
