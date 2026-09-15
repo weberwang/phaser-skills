@@ -8,7 +8,7 @@ V3 为每个资源选择一条主路线，并在机器清单记录场景或 shar
 | --- | --- | --- | --- | --- |
 | UI/图标与字体 `ui-icon-font` | Figma/SVG/矢量源、字体工程、九宫格源图 | SVG 或 PNG/WebP、字体子集、九宫格与布局配置 | 像素密度、透明边缘、图标语法、字体授权、文本安全区、停靠关系 | 纹理尺寸、九宫格数量、Draw Call |
 | 像素美术 `pixel-art` | Aseprite/PSD 分层源、调色板 | PNG/WebP、图集与帧数据 | 整数缩放、最近邻采样、调色板、帧边界、像素抖动 | 图集、帧数、纹理内存、采样模式 |
-| 逐帧动画 `frame-animation` | Aseprite/PSD/动画工程 | spritesheet/atlas、帧定义 | 帧序、原点、循环、事件帧、命中与反馈时序 | 采样率、帧数、图集页、纹理内存 |
+| 逐帧动画 [`frame-animation`](../../phaser4-character-frame-animation/SKILL.md) | Aseprite/PSD/动画工程、独立透明 PNG 帧 | spritesheet/atlas、帧定义、Phaser preload+anims 合同 | 帧序、Alpha 底部中心根锚点、循环、事件帧、命中与反馈时序；归一化/打包可由专用 Skill 执行 | 采样率、帧数、图集页、纹理内存 |
 | 骨骼动画 `skeletal-animation` | Spine/DragonBones 等工程与依赖贴图 | 骨骼数据、atlas、纹理 | 骨骼层级、蒙皮、混合、事件、运行时版本与许可 | 骨骼/插槽数、贴图、采样、CPU/GPU 成本 |
 | 场景/Tilemap `scene-tilemap` | Tiled/LDtk 工程、tileset 源图 | 地图 JSON、tileset、碰撞/对象层数据 | 接缝、碰撞语义、对象层、坐标系、分块加载 | 图块/图集、地图数据、可见层、Draw Call |
 | VFX/粒子/Shader `vfx-particle-shader` | 粒子配置、shader 源码、噪声/遮罩源图 | 配置、GLSL、纹理 | 动态时序、混合模式、降级、遮挡、色觉差异、设备兼容 | 粒子峰值、过绘、纹理、Draw Call、GPU 时间 |

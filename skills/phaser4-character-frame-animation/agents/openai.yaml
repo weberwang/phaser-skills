@@ -1,0 +1,4 @@
+interface:
+  display_name: "Phaser 4 人物序列帧动画"
+  short_description: "自动对齐并验证角色序列帧动画质量"
+  default_prompt: "使用 $phaser4-character-frame-animation 生成锚点稳定、连贯可验收的 Phaser 4 人物序列帧资源。"

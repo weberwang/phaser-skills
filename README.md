@@ -69,6 +69,7 @@ node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs
 - `$phaser4-game-architecture`：工程架构与公开契约。
 - `$phaser4-gameplay-development`：玩法规则、状态和交互实现。
 - `$phaser4-game-asset-integration`、`$phaser4-game-ui-layout`：资源、效果图还原和 UI 布局。
+- [`$phaser4-character-frame-animation`](skills/phaser4-character-frame-animation/SKILL.md)：以 Alpha 底部中心锚点归一化人物序列帧，打包水平 spritesheet 并验证跨帧连贯性。
 - `$phaser4-spine-generative-reskin`、`$phaser4-game-image-optimization`：Spine 与图片处理。
 - `$phaser4-game-audio`、`$phaser4-game-balance`：音频和数值平衡。
 - [`$phaser4-game-ad-integration`](skills/phaser4-game-ad-integration/SKILL.md)：通过 AppLovin MAX 接入移动端 Banner、插页与激励视频，管理多广告位静默预加载、统一失败重试、Banner 布局刷新、视频不可用提示、插页 60 秒冷却和隐私验收。
