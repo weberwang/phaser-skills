@@ -19,12 +19,14 @@ description: 为 Phaser 4 游戏建立可验证的 UI 布局合同、坐标空�
 
 UI 设计与实现优先用符合全局视觉基线且含义清晰、熟悉的图标、形状、层级、位置、颜色和动效表达功能；图标含义已明显时，不并列放置永久可见的重复文字说明。图标有歧义或首次学习成本高、高风险或不可逆操作、必须精确表达的状态或数值仍应使用文字；无障碍可访问名称必须保留，但不要求成为重复的可见标签。F2 应检查图标与文字重复、通用图标堆叠，以及界面脱离说明文字后是否仍足够自解释。
 
+程序化文本必须同时交付英语、简体中文、日语、俄语和西班牙语，并逐语言验证字形宽度、字体回退、基线与容器适配。可见文案保持单行且不得截断或自动换行；空间不足时优先压缩文案、调整字距/字号或扩展容器，但不得降到不可读字号。表达应短促、游戏化，倍率统一写成 `x3` 这类 `x{value}` 形式，数值变化优先使用 `+10`、图标+数值等熟悉表达，避免解释性长句。
+
 布局验收默认使用 `visual_validation.mode=usability`：位置、尺寸、边距、换行和少量对齐差异只要保持清晰、可读、可操作且不越界、裁切或关键遮挡即可通过；effect-image 也不自动启用 `exact`。只有用户明确要求像素级还原或项目合同明确指定时才选择 `exact`，启用严格容差、逐项 delta 和全视口/全状态矩阵。V2 仍必须保留拆解顺序、父子归属、锚点语义和内部几何一致性。
 
 ## 核心流程
 
 1. 读取项目的 GDD/TDD、当前候选、总控审核漏斗和适用视觉阶段；确定稳定 UI ID、坐标空间、参照物、状态与平台输入。
-2. 复制 schema 1.1.0 [合同模板](assets/ui-layout-contract-template.yaml)。普通布局使用 `not-applicable` 并保持 `layout_nodes: []`；冻结视觉目标先用 `frozen-target/specified`。V2 先生成拆解图、技术 JSON 和 `decomposition_elements`，人工修改并确认；确认后由智能视觉判断生成逐元素 `left/center/right × top/center/bottom` 决策，再由同一入口同步生成布局 PNG、`layout-nodes.json`、`layout-decision.json`、离线 `review.html` 和 `generation-result.json`。随后登记由确认元素和视觉决策共同推导的非空 `layout_nodes` 与关键对齐合同。
+2. 复制 schema 1.2.0 [合同模板](assets/ui-layout-contract-template.yaml)。普通布局使用 `not-applicable` 并保持 `layout_nodes: []`；冻结视觉目标先用 `frozen-target/specified`。V2 先生成拆解图、技术 JSON 和 `decomposition_elements`，人工修改并确认；确认后由智能视觉判断生成逐元素 `left/center/right × top/center/bottom` 决策，再由同一入口同步生成布局 PNG、`layout-nodes.json`、`layout-decision.json`、离线 `review.html` 和 `generation-result.json`。随后登记由确认元素和视觉决策共同推导的非空 `layout_nodes` 与关键对齐合同。
 3. 用 [Phaser 适配器](references/phaser-adapter.md) 设计唯一布局入口：把视口、安全区、方向、内容尺寸和状态作为输入，分离资源 origin、布局停靠点和动画偏移，保证重排幂等。
 4. specified 阶段运行结构检查 `node scripts/validate_ui_layout_contract.mjs <contract>`；verified 正式验收必须运行 `node scripts/validate_ui_layout_contract.mjs <contract> --check-files --project-root .`，复算冻结原图 SHA 并检查目标/运行/parity 证据文件。
 5. 按 [证据矩阵](references/evidence-matrix.md) 生成代表性视口、关键状态和窄高度证据；关键 UI/HUD 记录稳定 element/reference ID、双轴关系、目标/运行测量、实际测试 ID/状态、视觉证据和项目定义容差。`exact` 或明确的全覆盖需求才扩展到完整矩阵和严格 delta。

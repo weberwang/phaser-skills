@@ -11,6 +11,7 @@ import { resolveVisualValidationMode, validateVisualValidationPolicy } from "../
 const ROOT_REQUIRED = ["schema_version", "contract_id", "contract_version", "scope", "fidelity", "frozen_visual_target", "targets", "coordinate_spaces", "regions", "layout_nodes", "content", "platform_insets", "scrolling", "dynamic_content", "overlay_rules", "breakpoints", "invariants", "critical_alignments", "parity_cases", "evidence_matrix"];
 const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const REQUIRED_EVIDENCE_AXES = new Set(["breakpoint-neighbors", "width", "height", "orientation", "text-scale", "localization", "safe-area", "action-state", "dpr", "dynamic-values", "scene-lifecycle", "overlay-keyboard-scroll"]);
+const REQUIRED_PROGRAMMATIC_TEXT_LANGUAGES = ["en", "zh-CN", "ja", "ru", "es"];
 
 /** 判断值是否为合同允许的对象类型。 */
 function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
@@ -93,7 +94,7 @@ function validateRoot(document, errors) {
   if (!isObject(document)) { errors.push("根对象必须是 JSON 对象"); return; }
   for (const field of ROOT_REQUIRED) if (!(field in document)) errors.push(`缺少根字段：${field}`);
   for (const field of ["schema_version", "contract_id", "contract_version"]) if (field in document && !isString(document[field])) errors.push(`字段 ${field} 必须是非空字符串`);
-  if (document.schema_version !== "1.1.0") errors.push("schema_version 必须为 1.1.0");
+  if (document.schema_version !== "1.2.0") errors.push("schema_version 必须为 1.2.0");
   for (const field of ["coordinate_spaces", "regions", "layout_nodes", "overlay_rules", "breakpoints", "invariants", "critical_alignments", "parity_cases"]) if (field in document && !Array.isArray(document[field])) errors.push(`字段 ${field} 必须是数组`);
   for (const field of ["scope", "fidelity", "targets", "content", "platform_insets", "scrolling", "dynamic_content", "evidence_matrix"]) if (field in document && !isObject(document[field])) errors.push(`字段 ${field} 必须是对象`);
 }
@@ -415,9 +416,28 @@ function validatePlatformAndScrolling(document, ids, errors) {
   if (!isObject(scrolling.narrow_height_degradation)) errors.push("scrolling.narrow_height_degradation 必须是对象"); else for (const field of ["trigger", "strategy", "fallback"]) if (!isString(scrolling.narrow_height_degradation[field])) errors.push(`scrolling.narrow_height_degradation.${field} 必须是非空字符串`);
 }
 
+/** 验证程序化文本的五语种、单行显示与短文案合同。 */
+function validateProgrammaticTextLocalization(localization, errors) {
+  const label = "dynamic_content.localization";
+  if (typeof localization.programmatic_text !== "boolean") errors.push(`${label}.programmatic_text 必须是布尔值`);
+  if (!Array.isArray(localization.required_languages) || localization.required_languages.length === 0 || !localization.required_languages.every(isString)) errors.push(`${label}.required_languages 必须是非空语言数组`);
+  if (localization.programmatic_text !== true) return;
+
+  const languages = new Set(localization.required_languages ?? []);
+  const missing = REQUIRED_PROGRAMMATIC_TEXT_LANGUAGES.filter((language) => !languages.has(language));
+  if (missing.length) errors.push(`${label}.required_languages 缺少程序化文本必需语言：${missing.join(", ")}`);
+  if (languages.size !== (localization.required_languages?.length ?? 0)) errors.push(`${label}.required_languages 不得包含重复语言`);
+  if (localization.wrap !== "forbid") errors.push(`${label}.wrap 必须为 forbid，程序化文本禁止换行`);
+  if (localization.growth !== "single-line-fit") errors.push(`${label}.growth 必须为 single-line-fit`);
+  if (localization.truncate_policy !== "forbid") errors.push(`${label}.truncate_policy 必须为 forbid，程序化文本禁止截断`);
+  if (localization.copy_style !== "concise-gameplay") errors.push(`${label}.copy_style 必须为 concise-gameplay`);
+  if (localization.multiplier_format !== "x{value}") errors.push(`${label}.multiplier_format 必须为 x{value}`);
+  if (!isString(localization.display_fit_evidence)) errors.push(`${label}.display_fit_evidence 必须引用五语种单行适配证据`);
+}
+
 /** 验证本地化、文字缩放、关键动作和重排事件。 */
 function validateDynamicContent(dynamic, ids, errors) {
-  if (!isObject(dynamic)) return; if (!isObject(dynamic.localization)) errors.push("dynamic_content.localization 必须是对象"); else for (const field of ["default_language", "longest_copy", "wrap", "growth", "truncate_policy"]) if (!(field in dynamic.localization)) errors.push(`dynamic_content.localization 缺少字段：${field}`);
+  if (!isObject(dynamic)) return; if (!isObject(dynamic.localization)) errors.push("dynamic_content.localization 必须是对象"); else { for (const field of ["default_language", "longest_copy", "programmatic_text", "required_languages", "wrap", "growth", "truncate_policy", "copy_style", "multiplier_format", "display_fit_evidence"]) if (!(field in dynamic.localization)) errors.push(`dynamic_content.localization 缺少字段：${field}`); validateProgrammaticTextLocalization(dynamic.localization, errors); }
   if (!isObject(dynamic.text_scaling) || !("default" in dynamic.text_scaling) || !("maximum" in dynamic.text_scaling)) errors.push("dynamic_content.text_scaling 必须声明 default 和 maximum"); else if (!isString(dynamic.text_scaling.strategy)) errors.push("dynamic_content.text_scaling.strategy 必须是非空字符串");
   if (!Array.isArray(dynamic.key_actions)) errors.push("dynamic_content.key_actions 必须是数组"); else dynamic.key_actions.forEach((action, index) => { if (!isObject(action)) { errors.push(`dynamic_content.key_actions[${index}] 必须是对象`); return; } if (!isString(action.id)) errors.push(`dynamic_content.key_actions[${index}].id 必须是非空字符串`); else if (!ids.has(action.id)) errors.push(`dynamic_content.key_actions[${index}].id 引用不存在的区域：${action.id}`); const required = new Set(["default", "disabled", "submitting", "completed"]); if (!Array.isArray(action.states) || action.states.length === 0 || !action.states.every(isString)) errors.push(`dynamic_content.key_actions[${index}].states 必须是非空字符串数组`); else { const missing = [...required].filter((state) => !action.states.includes(state)).sort(); if (missing.length) errors.push(`dynamic_content.key_actions[${index}].states 缺少必需状态：${missing.join(", ")}`); } if (!["forbid", "forbid-critical"].includes(action.text_truncation)) errors.push(`关键动作禁止文本截断：dynamic_content.key_actions[${index}]`); });
   if (!Array.isArray(dynamic.reflow_events) || dynamic.reflow_events.length === 0) errors.push("dynamic_content.reflow_events 必须是非空数组"); else { if (!dynamic.reflow_events.every(isString)) errors.push("dynamic_content.reflow_events 必须只包含非空字符串"); const missing = ["text-change", "state-change", "resize", "safe-area-change"].filter((item) => !dynamic.reflow_events.includes(item)).sort(); if (missing.length) errors.push(`dynamic_content.reflow_events 缺少必需事件：${missing.join(", ")}`); }
@@ -453,6 +473,12 @@ function validateEvidenceMatrixDpr(value, path, errors, seen = new Set()) {
 /** 验证证据矩阵绑定和必需轴。 */
 function validateEvidenceMatrix(matrix, errors, mode = "usability") { if (!isObject(matrix)) return; for (const field of ["candidate_binding", "golden_policy", "snapshot_stability"]) if (!isString(matrix[field])) errors.push(`evidence_matrix.${field} 必须是非空字符串`); const exact = mode === "exact"; if (exact && (!Array.isArray(matrix.required_axes) || matrix.required_axes.length === 0 || !matrix.required_axes.every(isString))) errors.push("evidence_matrix.required_axes 必须是非空数组"); else if (Array.isArray(matrix.required_axes) && matrix.required_axes.some((axis) => !isString(axis))) errors.push("evidence_matrix.required_axes 只能包含非空字符串"); else if (exact) { const missing = [...REQUIRED_EVIDENCE_AXES].filter((axis) => !matrix.required_axes.includes(axis)).sort(); if (missing.length) errors.push(`evidence_matrix.required_axes 缺少必需轴：${missing.join(", ")}`); } validateEvidenceMatrixDpr(matrix, "evidence_matrix", errors); }
 
+/** 程序化文本必须始终保留本地化显示轴，不能因 usability 模式跳过五语种适配。 */
+function validateProgrammaticTextEvidence(document, errors) {
+  if (document.dynamic_content?.localization?.programmatic_text !== true) return;
+  if (!Array.isArray(document.evidence_matrix?.required_axes) || !document.evidence_matrix.required_axes.includes("localization")) errors.push("程序化文本的 evidence_matrix.required_axes 必须包含 localization");
+}
+
 /** 验证布局合同并返回稳定结果。 */
 export function validateContract(document) {
   const errors = []; const warnings = []; const specialized = []; validateRoot(document, errors); if (!isObject(document)) return { status: "failed", errors, warnings, specialized_review: specialized };
@@ -465,7 +491,7 @@ export function validateContract(document) {
       if (mode === "exact" && Array.isArray(document.parity_cases) && document.parity_cases.some((item) => item?.conclusion !== "passed")) errors.push("verified 的 parity_cases 必须全部 passed");
     } else if (!Array.isArray(document.parity_cases) || document.parity_cases.length > 0) errors.push("specified 的 parity_cases 必须为空数组");
   }
-  validateEvidenceMatrix(document.evidence_matrix, errors, mode);
+  validateEvidenceMatrix(document.evidence_matrix, errors, mode); validateProgrammaticTextEvidence(document, errors);
   if (isObject(document.dynamic_content?.localization) && !["forbid-critical", "forbid"].includes(document.dynamic_content.localization.truncate_policy)) warnings.push("本地化截断策略未明确禁止关键文本");
   return { status: errors.length ? "failed" : "passed", errors, warnings, specialized_review: specialized };
 }

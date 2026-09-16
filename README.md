@@ -60,6 +60,8 @@ node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs
 
 视觉和测试默认以可用性为准：位置、尺寸、边距、换行允许合理偏差，只拦截越界、裁切、遮挡、不可读和交互失效。像素级容差、全视口/全状态矩阵只在任务明确要求或项目合同明确指定时启用；V2 拆解确认、布局确认、独立资源产物和关键功能证据仍然保留。
 
+程序化文本必须同时支持英语、简体中文、日语、俄语和西班牙语，并逐语言验证字形宽度、字体回退、基线和容器适配。文案优先使用 `x3`、`+10`、图标+数值等短促游戏化表达；可见文本保持单行，禁止截断和自动换行，空间不足时调整文案、字体或容器。
+
 详细状态、门、Schema 和返工语义见 [`phaser4-game-workflow-control`](skills/phaser4-game-workflow-control/SKILL.md) 及其 [`control-model.md`](skills/phaser4-game-workflow-control/references/control-model.md)、[`state-gates.md`](skills/phaser4-game-workflow-control/references/state-gates.md)、[`schemas.md`](skills/phaser4-game-workflow-control/references/schemas.md)。
 
 ## 领域 Skill 索引
