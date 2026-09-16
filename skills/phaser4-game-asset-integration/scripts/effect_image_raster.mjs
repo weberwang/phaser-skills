@@ -116,7 +116,8 @@ export function annotationProductionContract(region = {}) {
   // 只有明确的 reuse 方法、reuse-existing 计划和完整来源对象同时成立时，右栏才可显示“复用”。
   const reuseSnapshot = region.reuse_snapshot;
   const reuseBound = production_method === "reuse" && region.implementation_plan?.mode === "reuse-existing" && isObject(reuseSnapshot) && reuseSnapshot.schema === "asset-reuse-snapshot/1.0" && reuseSnapshot.source_status === "accepted";
-  const label = reuseBound ? "复用既有资源" : production_method === "runtime-program" ? "程序实现" : "本次生成";
+  const nativeMethod = production_method === "runtime-program" || production_method === "phaser-graphics";
+  const label = reuseBound ? "复用现有图片" : nativeMethod ? "程序绘制或动态逻辑" : "新建图片资产";
   return { production_method, production_origin, delivery_kind, label };
 }
 
@@ -235,7 +236,7 @@ function glyphAdvance(character, scale) { if (isCjkCharacter(character) || (!FON
 /** 按当前字号计算混合文本的像素宽度，供面板扩展和居中绘制共用。 */
 function textVisualWidth(value, scale) { return [...mixedText(value)].reduce((sum, character) => sum + glyphAdvance(character, scale), 0); }
 /** 将生产模式转换为右栏可读的稳定中文标签；未知模式仍保留可审计的 ASCII 值。 */
-function userPlanLabel(mode, planLabels = {}) { return planLabels?.[mode] ?? { "generate-now": "本次生成", "reuse-existing": "复用既有资源", "runtime-program": "程序实现" }[mode] ?? asciiText(mode); }
+function userPlanLabel(mode, planLabels = {}) { return planLabels?.[mode] ?? { "generate-now": "新建图片资产", "reuse-existing": "复用现有图片", "runtime-program": "程序绘制或动态逻辑" }[mode] ?? asciiText(mode); }
 /** 在确定性位图上绘制中英文混合文本；中文直接落入像素，不能只依赖 iTXt。 */
 function drawText(pixels, width, height, x, baseline, value, color, scale) {
   let cursor = Math.round(x);

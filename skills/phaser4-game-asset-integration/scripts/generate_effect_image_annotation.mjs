@@ -123,7 +123,7 @@ async function selectRegions(manifest, sceneId, stateId, projectRoot) {
 /** 生成与共享确认门相同的区域快照；提案的 regions 不能混入可变展示字段。 */
 function confirmationRegionSnapshot(region) {
   const production = resolveProductionContract(region);
-  const planLabels = { "generate-now": "本次生成", "reuse-existing": "复用既有资源", "runtime-program": "程序实现" };
+  const planLabels = { "generate-now": "新建图片资产", "reuse-existing": "复用现有图片", "runtime-program": "程序绘制或动态逻辑" };
   const components = Array.isArray(production.component_inventory?.components) ? production.component_inventory.components : [];
   const stateIds = [...new Set([
     region.state_id,

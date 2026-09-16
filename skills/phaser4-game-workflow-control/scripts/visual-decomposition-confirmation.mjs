@@ -22,7 +22,7 @@ export const VISUAL_DECOMPOSITION_CONFIRMATION_SCHEMA = "visual-decomposition-co
 /** 对外保留拆解合同的词汇名称，实际集合由共享核心单一维护。 */
 export { FIXED_VISUAL_IMAGE_METHODS, PROGRAM_VISUAL_METHODS };
 const RUNTIME_OWNER_TYPES = new Set(["runtime-data", "runtime-rendered"]);
-const PLAN_LABELS = new Map([["generate-now", "本次生成"], ["reuse-existing", "复用既有资源"], ["runtime-program", "程序实现"]]);
+const PLAN_LABELS = new Map([["generate-now", "新建图片资产"], ["reuse-existing", "复用现有图片"], ["runtime-program", "程序绘制或动态逻辑"]]);
 const SHA_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const REQUIRED_CONFIRMATION_FIELDS = [
   "confirmation_schema",

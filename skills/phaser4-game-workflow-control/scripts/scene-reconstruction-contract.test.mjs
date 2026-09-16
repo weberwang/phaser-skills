@@ -6,11 +6,29 @@ import test from "node:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { validateSceneReconstructionContract, validateStructuredFidelityCases } from "./scene-reconstruction-contract.mjs";
+import { validateSceneVisualRouteContract } from "./scene-visual-route-contract.mjs";
 import { validateSceneAssetUsageContract, validateSceneCombinationPreacceptance, validateV4ProductionGate, validateVisualImplementationPackageBinding } from "./visual-production-contract.mjs"; import { computeLayoutAnnotationConfirmationSha256, computeLayoutUserMessageSha256 } from "./layout_annotation_confirmation.mjs";
 
 const SHA = "sha256:" + "a".repeat(64);
 const LAYOUT_SHA = "sha256:" + "b".repeat(64);
 const LAYOUT_DECOMPOSITION_VERSION = "layout-decomposition-1";
+
+/** 构造绑定冻结目标的全原生独立视觉分析。 */
+function allNativeJustification(overrides = {}) {
+  return {
+    analysis_method: "independent-visual-analysis",
+    analysis_id: "all-native-review-1",
+    producer_role: "independent-visual-reviewer",
+    target_sha256: SHA,
+    analysis_artifact_file: "evidence/route/all-native-analysis.json",
+    analysis_artifact_sha256: SHA,
+    reviewed_region_ids: ["board", "hud"],
+    conclusion: "all-native-eligible",
+    reason: "冻结目标仅包含纯色几何与动态数据",
+    evidence: ["evidence/route/all-native-analysis.json"],
+    ...overrides,
+  };
+}
 
 /** 构造覆盖运行时和固定视觉事实的最小完整场景合同。 */
 function contract() {
@@ -32,7 +50,6 @@ function contract() {
         implementation_plan_mode: "asset-and-scene",
         production_method: "authored-raster",
         delivery_kind: "raster-image",
-        is_full_screen_capture: false,
       }
       : {
         element_type: "dynamic-data",
@@ -49,7 +66,6 @@ function contract() {
         implementation_plan_mode: "runtime-program",
         production_method: "runtime-program",
         delivery_kind: "runtime-program",
-        is_full_screen_capture: false,
       };
     return {
     annotation_number: id === "hud" ? 1 : 2,
@@ -73,6 +89,7 @@ function contract() {
     responsive_behavior: { target: "exact", other: "preserve-relative-anchors" },
     implementation_owner: owner,
     implementation_plan: { mode: owner.startsWith("runtime") ? "runtime-program" : "asset-and-scene" },
+    assembly_analysis: { strategy: "atomic-scene-composition", uses_full_screen_capture: false, allows_atomic_image_assets: true, evidence: [`evidence/scene/${id}-assembly.json`] },
     visual_route_analysis: visualRouteAnalysis,
     applicable_states: ["default"],
     evidence: ["evidence/scene/" + id + ".json"],
@@ -819,6 +836,66 @@ test("effect-image 每个 coverage region 缺少 visual_route_analysis 时在 V1
   }
 });
 
+test("非整屏原子装配允许图片资产，旧整屏字段不得继续混入视觉路线", () => {
+  const value = effectImageContract();
+  assert.equal(value.coverage_regions[1].visual_route_analysis.selected_route, "image-asset");
+  assert.deepEqual(validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V3" }), []);
+
+  value.coverage_regions[1].visual_route_analysis.is_full_screen_capture = false;
+  const legacyErrors = validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V3" });
+  assert(legacyErrors.some((item) => item.includes("已从视觉来源路线移除") && item.includes("assembly_analysis")), legacyErrors.join("\n"));
+});
+
+test("全程序视觉路线必须提供绑定冻结目标且可复核的独立分析工件", async () => {
+  const value = effectImageContract();
+  for (const region of value.coverage_regions) {
+    region.implementation_owner = "runtime-program";
+    region.implementation_plan = { mode: "runtime-program" };
+    region.fidelity_obligations = { geometry: "target-bound" };
+    region.visual_route_analysis = {
+      ...region.visual_route_analysis,
+      element_type: "simple-geometry",
+      visual_complexity: "simple",
+      distinctive_visual: false,
+      observed_features: ["纯色基础几何"],
+      asset_first_decision: "native-allowed",
+      selected_route: "phaser-native",
+      final_owner: "runtime-program",
+      implementation_plan_mode: "runtime-program",
+      production_method: "phaser-graphics",
+      delivery_kind: "runtime-drawing",
+      native_suitability: { eligible: true, primitive_basis: ["pure-color", "basic-geometry"], evidence: [`evidence/route/${region.region_id}-native.json`] },
+    };
+  }
+  const missing = validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V3" });
+  assert(missing.some((item) => item.includes("all_native_justification")), missing.join("\n"));
+  value.all_native_justification = allNativeJustification();
+  assert.deepEqual(validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V3" }), []);
+
+  value.all_native_justification.reviewed_region_ids = ["hud"];
+  const incomplete = validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V3" });
+  assert(incomplete.some((item) => item.includes("精确覆盖全部 coverage region")), incomplete.join("\n"));
+
+  const projectRoot = await mkdtemp(join(tmpdir(), "all-native-analysis-"));
+  const artifact = {
+    analysis_schema: "all-native-visual-analysis/1.0",
+    analysis_id: "all-native-review-1",
+    producer_role: "independent-visual-reviewer",
+    target_sha256: SHA,
+    reviewed_region_ids: ["board", "hud"],
+    conclusion: "all-native-eligible",
+    region_findings: ["board", "hud"].map((region_id) => ({ region_id, eligible: true, observed_features: ["纯色基础几何"], primitive_basis: ["pure-color", "basic-geometry"], evidence: [`evidence/${region_id}.json`] })),
+  };
+  const artifactBytes = Buffer.from(JSON.stringify(artifact));
+  await writeFile(join(projectRoot, "all-native-analysis.json"), artifactBytes);
+  value.all_native_justification = allNativeJustification({ analysis_artifact_file: "all-native-analysis.json", analysis_artifact_sha256: `sha256:${createHash("sha256").update(artifactBytes).digest("hex")}` });
+  assert.deepEqual(validateSceneVisualRouteContract(value, null, { stage: "V3", checkFiles: true, projectRoot }), []);
+
+  value.all_native_justification.analysis_artifact_sha256 = SHA;
+  const tampered = validateSceneVisualRouteContract(value, null, { stage: "V3", checkFiles: true, projectRoot });
+  assert(tampered.some((item) => item.includes("工件 SHA-256 不匹配")), tampered.join("\n"));
+});
+
 test("特色按钮皮肤或背景框错误选择 Phaser 原生路线时阻断", () => {
   const button = effectImageContract();
   const buttonRegion = button.coverage_regions[0];
@@ -906,6 +983,7 @@ test("纯色几何、动态进度填充和纹理 Sprite/NineSlice 分别走正�
     delivery_kind: "runtime-drawing",
     native_suitability: { eligible: true, primitive_basis: ["pure-color", "basic-geometry"], evidence: ["evidence/route/geometry-native.json"] },
   };
+  geometry.all_native_justification = allNativeJustification();
   assert.deepEqual(validateSceneReconstructionContract(geometry, effectImageManifest(geometry), { stage: "V3" }), []);
 
   const progress = structuredClone(geometry);
@@ -957,6 +1035,22 @@ test("语义相似图标没有精确身份时不得 reuse，复合区域必须�
   composite.coverage_regions[1].fidelity_obligations = { geometry: "target-bound" };
   const compositeErrors = validateSceneReconstructionContract(composite, effectImageManifest(composite), { stage: "V3" });
   assert(compositeErrors.some((item) => item.includes("混合视觉区域未拆分")), compositeErrors.join("\n"));
+
+  composite.coverage_regions[1].visual_route_analysis.composite_parts = [
+    { part_id: "board-appearance", part_role: "appearance", selected_route: "image-asset", final_owner: "fixed-production-visual", production_method: "authored-raster", delivery_kind: "raster-image", evidence: ["evidence/route/board-appearance.json"] },
+    { part_id: "board-behavior", part_role: "behavior", selected_route: "phaser-native", final_owner: "runtime-program", production_method: "runtime-program", delivery_kind: "runtime-program", evidence: ["evidence/route/board-behavior.json"] },
+  ];
+  assert.deepEqual(validateSceneReconstructionContract(composite, effectImageManifest(composite), { stage: "V3" }), []);
+
+  composite.coverage_regions[1].visual_route_analysis.composite_parts[0] = {
+    ...composite.coverage_regions[1].visual_route_analysis.composite_parts[0],
+    selected_route: "phaser-native",
+    final_owner: "runtime-program",
+    production_method: "phaser-graphics",
+    delivery_kind: "runtime-drawing",
+  };
+  const wrappedNative = validateSceneReconstructionContract(composite, effectImageManifest(composite), { stage: "V3" });
+  assert(wrappedNative.some((item) => item.includes("appearance 必须选择 image-asset")), wrappedNative.join("\n"));
 });
 
 test("文本视觉路线委托 text_decomposition，普通非 effect-image 合同仍不受新路线门影响", () => {
@@ -982,7 +1076,7 @@ test("visual_route_analysis 必须与 coverage/实施计划/实施包字段一�
   assert(methodErrors.some((item) => item.includes("coverage_audit region") && item.includes("production_method")), methodErrors.join("\n"));
 });
 
-test("三份场景 Schema 同步声明 visual_route_analysis 及其 canonical 字段", () => {
+test("三份场景 Schema 同步分离 assembly_analysis 与 visual_route_analysis", () => {
   const paths = [
     "skills/phaser4-game-workflow-control/references/evidence-manifest.schema.json",
     "skills/phaser4-game-workflow-control/references/implementation-package.schema.json",
@@ -991,9 +1085,17 @@ test("三份场景 Schema 同步声明 visual_route_analysis 及其 canonical �
   const schemas = paths.map((path) => JSON.parse(readFileSync(path, "utf8")));
   const required = schemas.map((schema) => schema.$defs.sceneCoverageRegion.required);
   assert(required.every((fields) => fields.includes("visual_route_analysis")));
+  assert(required.every((fields) => fields.includes("assembly_analysis")));
   assert.deepEqual(required[0], required[1]);
   assert.deepEqual(required[1], required[2]);
   assert.deepEqual(schemas[0].$defs.sceneVisualRouteAnalysis, schemas[1].$defs.sceneVisualRouteAnalysis);
   assert.deepEqual(schemas[1].$defs.sceneVisualRouteAnalysis, schemas[2].$defs.sceneVisualRouteAnalysis);
+  assert.deepEqual(schemas[0].$defs.allNativeJustification, schemas[1].$defs.allNativeJustification);
+  assert.deepEqual(schemas[1].$defs.allNativeJustification, schemas[2].$defs.allNativeJustification);
+  assert(schemas.every((schema) => schema.$defs.allNativeJustification.required.includes("analysis_artifact_sha256")));
+  assert(schemas.every((schema) => schema.$defs.allNativeJustification.required.includes("reviewed_region_ids")));
   assert(schemas.every((schema) => schema.$defs.sceneCoverageRegion.properties.visual_route_analysis.$ref === "#/$defs/sceneVisualRouteAnalysis"));
+  assert(schemas.every((schema) => schema.$defs.sceneCoverageRegion.properties.assembly_analysis.$ref === "#/$defs/assemblyAnalysis"));
+  assert(schemas.every((schema) => !schema.$defs.sceneVisualRouteAnalysis.required.includes("is_full_screen_capture")));
+  assert(schemas.every((schema) => !Object.hasOwn(schema.$defs.sceneVisualRouteAnalysis.properties, "is_full_screen_capture")));
 });

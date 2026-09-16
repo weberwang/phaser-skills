@@ -50,7 +50,7 @@ function componentContract(componentId, assetId, sourceFile = `art/${assetId}.pn
     owner_type: "fixed-production-visual",
     production_origin: "independent-production",
     production_method: "authored-raster",
-    production_label: "复用既有资源",
+    production_label: "复用现有图片",
     delivery_kind: "raster-image",
     image_generation_required: false,
     generation_record_required: false,
@@ -78,7 +78,7 @@ function multiComponentRegion(count, mode = "individual", expectedAssets = null)
     owner_type: "fixed-production-visual",
     production_origin: "independent-production",
     production_method: "authored-raster",
-    production_label: "复用既有资源",
+    production_label: "复用现有图片",
     delivery_kind: "raster-image",
     image_generation_required: false,
     generation_record_required: false,
@@ -573,7 +573,7 @@ function implementationPackageFixture() {
 
 /** 构造无图片输出的运行时实现区域，用于路径所有权和方法互斥回归。 */
 function runtimeRegionFixture(annotationNumber = 1, regionId = `runtime-region-${annotationNumber}`, assetId = `runtime-asset-${annotationNumber}`) {
-  return { id: regionId, annotation_number: annotationNumber, scene_id: "main-gameplay", state_id: "default", owner_type: "runtime-rendered", production_origin: "independent-production", production_method: "phaser-graphics", production_label: "程序实现", delivery_kind: "runtime-drawing", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", runtime_implementation: { kind: "phaser-graphics", integration_files: ["src/components/main.mjs"] } };
+  return { id: regionId, annotation_number: annotationNumber, scene_id: "main-gameplay", state_id: "default", owner_type: "runtime-rendered", production_origin: "independent-production", production_method: "phaser-graphics", production_label: "程序绘制或动态逻辑", delivery_kind: "runtime-drawing", image_generation_required: false, generation_record_required: false, substitution_policy: "forbid", runtime_implementation: { kind: "phaser-graphics", integration_files: ["src/components/main.mjs"] } };
 }
 
 /** 构造带 ownedPaths/allowedPaths 的运行时实施包，便于区分合法文件与旁路路径。 */

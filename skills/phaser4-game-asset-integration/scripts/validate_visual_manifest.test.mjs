@@ -60,7 +60,7 @@ function addManualConfirmationRecords(manifest) {
     const text = `确认 ${sceneId}/${stateId} 效果图拆解、生产标签与全部编号定义。`;
     region.confirmation = {
       confirmation_schema: "visual-decomposition-confirmation/1.0", confirmation_id: confirmationId, confirmation_sha256: EMPTY_DOCUMENT_FINGERPRINT, status: "accepted", confirmation_mode: "manual", ...shared, proposal_sha256: EMPTY_DOCUMENT_FINGERPRINT, annotation_sha256: EMPTY_DOCUMENT_FINGERPRINT, decision_record_sha256: EMPTY_DOCUMENT_FINGERPRINT, user_decision_receipt_sha256: EMPTY_DOCUMENT_FINGERPRINT, annotation_width: 0, annotation_height: 0, annotation_schema: "effect-image-annotation/png/1", annotation_layout: "image-plus-right-panel", annotation_metadata_sha256: EMPTY_DOCUMENT_FINGERPRINT, annotation_identity_sha256: EMPTY_DOCUMENT_FINGERPRINT,
-      target_sha256: target, scene_id: region.scene_id, state_id: region.state_id, annotation_number: region.annotation_number, region_id: region.id, region_definition_sha256: computeRegionDefinitionSha256(region), production_origin: region.production_origin ?? null, production_method: region.production_method ?? "", delivery_kind: region.delivery_kind ?? "", production_label: region.implementation_plan.mode === "reuse-existing" ? "复用既有资源" : region.implementation_plan.mode === "runtime-program" ? "程序实现" : "本次生成", component_ids: components.map((component) => component.component_id).sort(), state_ids: states, asset_requirement_ids: requirements.map((item) => item.requirement_id).sort(), asset_ids: assetIds, user_original_text: text, user_message_sha256: sha256Bytes(Buffer.from(text)), accepted_at: "2026-08-15T00:20:00Z", work_item_id: manifest.workItemId, candidate_version: manifest.candidateVersion, candidate_sha256: candidate,
+      target_sha256: target, scene_id: region.scene_id, state_id: region.state_id, annotation_number: region.annotation_number, region_id: region.id, region_definition_sha256: computeRegionDefinitionSha256(region), production_origin: region.production_origin ?? null, production_method: region.production_method ?? "", delivery_kind: region.delivery_kind ?? "", production_label: region.implementation_plan.mode === "reuse-existing" ? "复用现有图片" : region.implementation_plan.mode === "runtime-program" ? "程序绘制或动态逻辑" : "新建图片资产", component_ids: components.map((component) => component.component_id).sort(), state_ids: states, asset_requirement_ids: requirements.map((item) => item.requirement_id).sort(), asset_ids: assetIds, user_original_text: text, user_message_sha256: sha256Bytes(Buffer.from(text)), accepted_at: "2026-08-15T00:20:00Z", work_item_id: manifest.workItemId, candidate_version: manifest.candidateVersion, candidate_sha256: candidate,
     };
   }
   }
@@ -160,7 +160,6 @@ function attachSceneReconstructionContract(manifest) {
         implementation_plan_mode: implementationMode,
         production_method: region.production_method,
         delivery_kind: region.delivery_kind,
-        is_full_screen_capture: false,
       }
       : {
         element_type: "dynamic-data",
@@ -177,7 +176,6 @@ function attachSceneReconstructionContract(manifest) {
         implementation_plan_mode: "runtime-program",
         production_method: "runtime-program",
         delivery_kind: "runtime-program",
-        is_full_screen_capture: false,
       };
     return {
       annotation_number: region.annotation_number,
@@ -203,6 +201,7 @@ function attachSceneReconstructionContract(manifest) {
       responsive_behavior: { target: "exact", other: "preserve-relative-anchors" },
       implementation_owner: runtimeOwner,
       implementation_plan: region.implementation_plan,
+      assembly_analysis: { strategy: "atomic-scene-composition", uses_full_screen_capture: false, allows_atomic_image_assets: true, evidence: [`evidence/route/${region.id}-assembly.json`] },
       visual_route_analysis: visualRouteAnalysis,
       applicable_states: [region.state_id],
       evidence: [region.ownership_evidence],
@@ -477,7 +476,7 @@ async function writeConfirmationFixtureFiles(root, manifest, annotationBytes = n
     const states = [...new Set([region.state_id, ...(Array.isArray(region.state_analysis?.states) ? region.state_analysis.states.map((item) => item?.state_id) : []), ...components.flatMap((component) => (Array.isArray(component?.state_coverage) ? component.state_coverage : []).map((item) => item?.state_id))].filter(nonEmptyString))].sort();
     const requirements = Array.isArray(region.atomic_image_requirements) ? region.atomic_image_requirements : deriveAtomicImageRequirements(region);
     const assetIds = [...new Set([...(Array.isArray(contract.asset_ids) ? contract.asset_ids : []), contract.asset_id, ...(Array.isArray(contract.expected_assets) ? contract.expected_assets.map((item) => item?.asset_id) : [])].filter(nonEmptyString))].sort();
-    const labels = { "generate-now": "本次生成", "reuse-existing": "复用既有资源", "runtime-program": "程序实现" };
+    const labels = { "generate-now": "新建图片资产", "reuse-existing": "复用现有图片", "runtime-program": "程序绘制或动态逻辑" };
     return { annotation_number: region.annotation_number, region_id: region.id, scene_id: region.scene_id, state_id: region.state_id, region_definition_sha256: computeRegionDefinitionSha256(region), production_origin: contract.production_origin ?? null, production_method: contract.production_method ?? "", delivery_kind: contract.delivery_kind ?? "", production_label: region.production_label ?? labels[region.implementation_plan?.mode] ?? contract.production_method ?? "", component_ids: components.map((item) => item?.component_id).filter(nonEmptyString).sort(), state_ids: states, asset_requirement_ids: requirements.map((item) => item.requirement_id).filter(nonEmptyString).sort(), asset_ids: assetIds };
   };
   for (const [key, groupRegions] of groups) {

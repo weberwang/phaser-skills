@@ -81,7 +81,7 @@ function confirmationFor(region, overrides = {}) {
     production_origin: region.production_origin,
     production_method: region.production_method,
     delivery_kind: region.delivery_kind,
-    production_label: "本次生成",
+    production_label: "新建图片资产",
     asset_ids: [],
     scene_id: region.scene_id,
     state_id: region.state_id,
@@ -121,7 +121,7 @@ function confirmedFixture(region) {
     production_origin: region.production_origin,
     production_method: region.production_method,
     delivery_kind: region.delivery_kind,
-    production_label: "本次生成",
+    production_label: "新建图片资产",
     component_ids: ["button-1"],
     state_ids: ["default"],
     asset_requirement_ids: ["req-button-1"],
@@ -228,7 +228,7 @@ function appendConfirmedGroup(valid, region, prefix) {
   const evidenceDir = join(valid.projectRoot, "evidence", "visual");
   const acceptedAt = new Date(Date.now() - 60_000).toISOString(); const createdAt = new Date(Date.now() - 120_000).toISOString();
   const decompositionElements = buildDecompositionElements([region]);
-  const snapshot = { annotation_number: region.annotation_number, region_id: region.id, scene_id: region.scene_id, state_id: region.state_id, region_definition_sha256: computeRegionDefinitionSha256(region), production_origin: region.production_origin, production_method: region.production_method, delivery_kind: region.delivery_kind, production_label: "本次生成", component_ids: ["button-1"], state_ids: [region.state_id], asset_requirement_ids: ["req-button-1"], asset_ids: [] };
+  const snapshot = { annotation_number: region.annotation_number, region_id: region.id, scene_id: region.scene_id, state_id: region.state_id, region_definition_sha256: computeRegionDefinitionSha256(region), production_origin: region.production_origin, production_method: region.production_method, delivery_kind: region.delivery_kind, production_label: "新建图片资产", component_ids: ["button-1"], state_ids: [region.state_id], asset_requirement_ids: ["req-button-1"], asset_ids: [] };
   const metadataSnapshot = { ...snapshot, decomposition_elements: decompositionElements };
   const metadata = { schema: "effect-image-annotation/png/1", layout: "image-plus-right-panel", width: 2, height: 1, original_width: 2, original_height: 1, panel_content_complete: true, original_sha256: HASH, regions: [metadataSnapshot] };
   const annotationFile = `evidence/visual/${prefix}-annotated.png`; const annotationBytes = encodePngRgba(2, 1, Buffer.from([80, 90, 100, 255, 110, 120, 130, 200]), metadata); writeFileSync(join(valid.projectRoot, annotationFile), annotationBytes);
@@ -336,7 +336,7 @@ test("Implementation Package 必须冻结全部拆解编号的同一确认身份
   const valid = confirmedFixture(region);
   const confirmed = { ...region, confirmation: valid.record };
   const manifest = { workItemId: "work-item-1", candidateVersion: "candidate-1", candidate_identity: { sha256: HASH }, reference_target: { target_sha256: HASH }, coverage_audit: { regions: [confirmed] } };
-  const group = { scene_id: region.scene_id, state_id: region.state_id, ledger_file: valid.work.visualConfirmationAuthorityRefs[0].ledger_file, receipt_id: valid.work.visualConfirmationAuthorityRefs[0].receipt_id, receipt_sha256: valid.work.visualConfirmationAuthorityRefs[0].receipt_sha256, confirmation_id: valid.record.confirmation_id, confirmation_sha256: valid.record.confirmation_sha256, proposal_id: valid.record.proposal_id, proposal_sha256: valid.record.proposal_sha256, proposal_file: valid.record.proposal_file, annotation_file: valid.record.annotation_file, annotation_sha256: valid.record.annotation_sha256, annotation_width: valid.record.annotation_width, annotation_height: valid.record.annotation_height, annotation_schema: valid.record.annotation_schema, annotation_layout: valid.record.annotation_layout, annotation_metadata_sha256: valid.record.annotation_metadata_sha256, annotation_identity_sha256: valid.record.annotation_identity_sha256, decision_record_file: valid.record.decision_record_file, decision_record_sha256: valid.record.decision_record_sha256, user_decision_receipt_file: valid.record.user_decision_receipt_file, user_decision_receipt_sha256: valid.record.user_decision_receipt_sha256, target_sha256: HASH, work_item_id: "work-item-1", candidate_version: "candidate-1", candidate_sha256: HASH, regions: [{ annotation_number: 2, region_id: "region-buttons", scene_id: region.scene_id, state_id: region.state_id, region_definition_sha256: computeRegionDefinitionSha256(region), production_origin: region.production_origin, production_method: region.production_method, delivery_kind: region.delivery_kind, production_label: "本次生成", component_ids: ["button-1"], state_ids: ["default"], asset_requirement_ids: ["req-button-1"], asset_ids: [], confirmation_id: valid.record.confirmation_id, confirmation_sha256: valid.record.confirmation_sha256 }] };
+  const group = { scene_id: region.scene_id, state_id: region.state_id, ledger_file: valid.work.visualConfirmationAuthorityRefs[0].ledger_file, receipt_id: valid.work.visualConfirmationAuthorityRefs[0].receipt_id, receipt_sha256: valid.work.visualConfirmationAuthorityRefs[0].receipt_sha256, confirmation_id: valid.record.confirmation_id, confirmation_sha256: valid.record.confirmation_sha256, proposal_id: valid.record.proposal_id, proposal_sha256: valid.record.proposal_sha256, proposal_file: valid.record.proposal_file, annotation_file: valid.record.annotation_file, annotation_sha256: valid.record.annotation_sha256, annotation_width: valid.record.annotation_width, annotation_height: valid.record.annotation_height, annotation_schema: valid.record.annotation_schema, annotation_layout: valid.record.annotation_layout, annotation_metadata_sha256: valid.record.annotation_metadata_sha256, annotation_identity_sha256: valid.record.annotation_identity_sha256, decision_record_file: valid.record.decision_record_file, decision_record_sha256: valid.record.decision_record_sha256, user_decision_receipt_file: valid.record.user_decision_receipt_file, user_decision_receipt_sha256: valid.record.user_decision_receipt_sha256, target_sha256: HASH, work_item_id: "work-item-1", candidate_version: "candidate-1", candidate_sha256: HASH, regions: [{ annotation_number: 2, region_id: "region-buttons", scene_id: region.scene_id, state_id: region.state_id, region_definition_sha256: computeRegionDefinitionSha256(region), production_origin: region.production_origin, production_method: region.production_method, delivery_kind: region.delivery_kind, production_label: "新建图片资产", component_ids: ["button-1"], state_ids: ["default"], asset_requirement_ids: ["req-button-1"], asset_ids: [], confirmation_id: valid.record.confirmation_id, confirmation_sha256: valid.record.confirmation_sha256 }] };
   const pkg = { visualDecompositionConfirmations: [group] };
   const bindingOptions = { projectRoot: valid.options.projectRoot, checkFiles: true, authority: valid.options.authority };
   assert.deepEqual(validateVisualDecompositionConfirmationBinding(pkg, manifest, bindingOptions), []);

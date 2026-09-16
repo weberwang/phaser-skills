@@ -8,6 +8,9 @@
  * 在 V1 就阻断把特色美术误降级为 Graphics，也能让布局/行为代码保持独立。
  */
 
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { isAbsolute, relative, resolve } from "node:path";
 import { validateReuseProductionGate } from "./visual-confirmation-reuse-gates.mjs";
 import { validateFixedVisualProductionMethod } from "./visual-decomposition-confirmation.mjs";
 
@@ -107,6 +110,7 @@ const NATIVE_ELEMENT_TYPES = new Set([
 ]);
 const DISTINCTIVE_FEATURE_PATTERN = /材质|纹理|texture|material|非规则|irregular|定制描边|custom\s*(?:outline|stroke)|描边|阴影|shadow|高光|highlight|装饰纹样|装饰|品牌|brand|像素美术|pixel\s*(?:art)?|绘制细节|paint(?:ed)?\s*detail|插画|illustration/i;
 const SEMANTIC_REUSE_PATTERN = /semantic|语义|相似|similar|same[-_ ]?kind|looks[-_ ]?similar|看起来一样|同类|同义/i;
+const SHA_PATTERN = /^sha256:[a-f0-9]{64}$/;
 
 /** 判断是否为普通对象。 */
 function isObject(value) {
@@ -258,10 +262,93 @@ function validateCompositeParts(analysis, region, contract, stage, errors) {
     if (nonEmptyString(part.part_id) && ids.has(part.part_id)) errors.push(routeError(stage, contract, region, "composite_parts.part_id 不能重复", { actual: part.part_id }));
     if (nonEmptyString(part.part_id)) ids.add(part.part_id);
     if (nonEmptyString(part.part_role)) roles.add(part.part_role);
+    if (part.part_role === "appearance" && part.selected_route !== SCENE_VISUAL_ROUTES.IMAGE_ASSET) errors.push(routeError(stage, contract, region, `composite_parts[${index}] appearance 必须选择 image-asset，不能用复合包装绕过图片资产路线`, { expected: "appearance + image-asset", actual: `${part.part_role} + ${part.selected_route}` }));
+    if (part.part_role === "behavior" && part.selected_route !== SCENE_VISUAL_ROUTES.PHASER_NATIVE) errors.push(routeError(stage, contract, region, `composite_parts[${index}] behavior 必须选择 phaser-native`, { expected: "behavior + phaser-native", actual: `${part.part_role} + ${part.selected_route}` }));
+    if (!new Set(["appearance", "behavior"]).has(part.part_role)) errors.push(routeError(stage, contract, region, `composite_parts[${index}].part_role 无效`, { expected: "appearance|behavior", actual: String(part.part_role ?? "missing") }));
     if (part.selected_route === SCENE_VISUAL_ROUTES.IMAGE_ASSET && (!FIXED_OWNERS.has(part.final_owner) || !FIXED_METHODS.has(part.production_method) || !FIXED_DELIVERIES.has(part.delivery_kind))) errors.push(routeError(stage, contract, region, `composite_parts[${index}] 外观必须是固定图片资产`, { expected: "fixed-production-visual + image asset method/delivery", actual: JSON.stringify(part) }));
     if (part.selected_route === SCENE_VISUAL_ROUTES.PHASER_NATIVE && (!NATIVE_OWNERS.has(part.final_owner) || !NATIVE_METHODS.has(part.production_method) || !NATIVE_DELIVERIES.has(part.delivery_kind))) errors.push(routeError(stage, contract, region, `composite_parts[${index}] 行为必须是 Phaser 原生/运行时路线`, { expected: "runtime owner + native method/delivery", actual: JSON.stringify(part) }));
   }
   if (!roles.has("appearance") || !roles.has("behavior")) errors.push(routeError(stage, contract, region, "composite_parts 必须同时拆出 appearance 与 behavior", { expected: "appearance + behavior", actual: [...roles].join(",") || "missing" }));
+}
+
+/**
+ * 校验场景装配方式；该事实只约束整屏捕获与原子装配，不参与视觉来源路线选择。
+ */
+function validateAssemblyAnalysis(region, contract, stage, errors) {
+  const assembly = region?.assembly_analysis;
+  if (!isObject(assembly)) {
+    errors.push(routeError(stage, contract, region, "coverage region 缺少独立 assembly_analysis，不能把非整屏装配推导为程序绘制", { missing: "assembly_analysis" }));
+    return;
+  }
+  if (assembly.strategy !== "atomic-scene-composition") errors.push(routeError(stage, contract, region, "assembly_analysis.strategy 必须使用原子场景装配", { expected: "atomic-scene-composition", actual: String(assembly.strategy ?? "missing") }));
+  if (assembly.uses_full_screen_capture !== false) errors.push(routeError(stage, contract, region, "禁止把整屏截图作为交互场景装配来源", { expected: "uses_full_screen_capture=false", actual: String(assembly.uses_full_screen_capture ?? "missing") }));
+  if (assembly.allows_atomic_image_assets !== true) errors.push(routeError(stage, contract, region, "原子场景装配必须明确允许独立图片资产，不能把结构化实现等同于程序绘制", { expected: "allows_atomic_image_assets=true", actual: String(assembly.allows_atomic_image_assets ?? "missing") }));
+  if (!hasEvidence(assembly.evidence)) errors.push(routeError(stage, contract, region, "assembly_analysis 缺少原子装配证据", { missing: "assembly_analysis.evidence" }));
+}
+
+/** 将证据路径限制在项目根目录内，避免文件校验越界读取。 */
+function resolveProjectEvidenceFile(projectRoot, file) {
+  if (!nonEmptyString(file)) return null;
+  const root = resolve(projectRoot ?? ".");
+  const target = resolve(root, file);
+  const fromRoot = relative(root, target);
+  return fromRoot.startsWith("..") || isAbsolute(fromRoot) ? null : target;
+}
+
+/** 校验独立全原生分析工件的结构，并逐区域核对资格事实。 */
+function validateAllNativeArtifact(artifact, justification, regions, contract, stage, errors) {
+  const regionIds = regions.map((region) => region?.region_id).filter(nonEmptyString).sort();
+  if (!isObject(artifact)) {
+    errors.push(routeError(stage, contract, null, "全原生独立分析工件必须是 JSON 对象", { expected: "all-native-visual-analysis/1.0", actual: typeof artifact }));
+    return;
+  }
+  for (const [field, expected] of [["analysis_schema", "all-native-visual-analysis/1.0"], ["analysis_id", justification.analysis_id], ["producer_role", "independent-visual-reviewer"], ["target_sha256", justification.target_sha256], ["conclusion", "all-native-eligible"]]) {
+    if (artifact[field] !== expected) errors.push(routeError(stage, contract, null, `全原生独立分析工件 ${field} 不匹配`, { expected, actual: String(artifact[field] ?? "missing") }));
+  }
+  const reviewed = Array.isArray(artifact.reviewed_region_ids) ? artifact.reviewed_region_ids : [];
+  if (JSON.stringify([...new Set(reviewed)].sort()) !== JSON.stringify(regionIds)) errors.push(routeError(stage, contract, null, "全原生独立分析工件未精确覆盖全部区域", { expected: JSON.stringify(regionIds), actual: JSON.stringify(reviewed) }));
+  const findings = Array.isArray(artifact.region_findings) ? artifact.region_findings : [];
+  for (const regionId of regionIds) {
+    const region = regions.find((item) => item?.region_id === regionId);
+    const finding = findings.find((item) => item?.region_id === regionId);
+    if (!isObject(finding) || finding.eligible !== true || !hasEvidence(finding.observed_features) || !hasEvidence(finding.primitive_basis) || !hasEvidence(finding.evidence)) errors.push(routeError(stage, contract, { region_id: regionId }, "独立分析工件必须为每个区域记录 eligible、观察事实、原语依据和证据", { expected: "eligible=true + observed_features + primitive_basis + evidence", actual: JSON.stringify(finding ?? "missing") }));
+    if (isObject(finding) && JSON.stringify(finding.observed_features) !== JSON.stringify(region?.visual_route_analysis?.observed_features)) errors.push(routeError(stage, contract, { region_id: regionId }, "独立分析工件的观察事实与场景路线分析不一致", { expected: JSON.stringify(region?.visual_route_analysis?.observed_features), actual: JSON.stringify(finding.observed_features) }));
+    if (isObject(finding) && JSON.stringify(finding.primitive_basis) !== JSON.stringify(region?.visual_route_analysis?.native_suitability?.primitive_basis)) errors.push(routeError(stage, contract, { region_id: regionId }, "独立分析工件的原生原语依据与场景路线分析不一致", { expected: JSON.stringify(region?.visual_route_analysis?.native_suitability?.primitive_basis), actual: JSON.stringify(finding.primitive_basis) }));
+  }
+}
+
+/** 全原生场景必须绑定独立视觉分析，避免同一提案通过自声明把全部视觉降级为程序实现。 */
+function validateAllNativeJustification(contract, regions, options, stage, errors) {
+  const justification = contract?.all_native_justification;
+  const targetSha256 = contract?.target_conditions?.target_sha256;
+  const regionIds = regions.map((region) => region?.region_id).filter(nonEmptyString).sort();
+  if (!isObject(justification)) {
+    errors.push(routeError(stage, contract, null, "全部 coverage region 均选择 phaser-native 时必须提供独立视觉分析", { missing: "all_native_justification", expected: "绑定冻结目标的独立全原生资格分析" }));
+    return;
+  }
+  if (justification.analysis_method !== "independent-visual-analysis") errors.push(routeError(stage, contract, null, "all_native_justification.analysis_method 无效", { expected: "independent-visual-analysis", actual: String(justification.analysis_method ?? "missing") }));
+  if (!nonEmptyString(justification.analysis_id)) errors.push(routeError(stage, contract, null, "all_native_justification 缺少独立分析 ID", { missing: "all_native_justification.analysis_id" }));
+  if (justification.producer_role !== "independent-visual-reviewer") errors.push(routeError(stage, contract, null, "all_native_justification 必须由独立视觉复核角色产出", { expected: "independent-visual-reviewer", actual: String(justification.producer_role ?? "missing") }));
+  if (!nonEmptyString(targetSha256) || justification.target_sha256 !== targetSha256) errors.push(routeError(stage, contract, null, "all_native_justification 未绑定当前冻结目标", { expected: targetSha256 ?? "target_conditions.target_sha256", actual: String(justification.target_sha256 ?? "missing") }));
+  if (!nonEmptyString(justification.analysis_artifact_file)) errors.push(routeError(stage, contract, null, "all_native_justification 缺少独立分析工件路径", { missing: "all_native_justification.analysis_artifact_file" }));
+  if (!SHA_PATTERN.test(justification.analysis_artifact_sha256 ?? "")) errors.push(routeError(stage, contract, null, "all_native_justification 缺少合法工件 SHA-256", { missing: "all_native_justification.analysis_artifact_sha256" }));
+  const reviewedRegionIds = Array.isArray(justification.reviewed_region_ids) ? [...new Set(justification.reviewed_region_ids)].sort() : [];
+  if (JSON.stringify(reviewedRegionIds) !== JSON.stringify(regionIds)) errors.push(routeError(stage, contract, null, "all_native_justification 必须精确覆盖全部 coverage region", { expected: JSON.stringify(regionIds), actual: JSON.stringify(justification.reviewed_region_ids ?? "missing") }));
+  if (justification.conclusion !== "all-native-eligible") errors.push(routeError(stage, contract, null, "all_native_justification 结论无效", { expected: "all-native-eligible", actual: String(justification.conclusion ?? "missing") }));
+  if (!nonEmptyString(justification.reason)) errors.push(routeError(stage, contract, null, "all_native_justification 缺少全原生路线理由", { missing: "all_native_justification.reason" }));
+  if (!hasEvidence(justification.evidence)) errors.push(routeError(stage, contract, null, "all_native_justification 缺少独立视觉证据", { missing: "all_native_justification.evidence" }));
+  if (options.checkFiles === true && nonEmptyString(justification.analysis_artifact_file) && SHA_PATTERN.test(justification.analysis_artifact_sha256 ?? "")) {
+    const artifactPath = resolveProjectEvidenceFile(options.projectRoot, justification.analysis_artifact_file);
+    if (!artifactPath) errors.push(routeError(stage, contract, null, "全原生独立分析工件路径越出项目根目录", { actual: justification.analysis_artifact_file }));
+    else if (!existsSync(artifactPath)) errors.push(routeError(stage, contract, null, "全原生独立分析工件不存在", { actual: justification.analysis_artifact_file }));
+    else {
+      const bytes = readFileSync(artifactPath);
+      const actualSha256 = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+      if (actualSha256 !== justification.analysis_artifact_sha256) errors.push(routeError(stage, contract, null, "全原生独立分析工件 SHA-256 不匹配", { expected: justification.analysis_artifact_sha256, actual: actualSha256 }));
+      try { validateAllNativeArtifact(JSON.parse(bytes.toString("utf8")), justification, regions, contract, stage, errors); }
+      catch (error) { errors.push(routeError(stage, contract, null, "全原生独立分析工件不是合法 JSON", { actual: error.message })); }
+    }
+  }
 }
 
 /** 验证单个 coverage 的 canonical visual_route_analysis。 */
@@ -271,6 +358,8 @@ export function validateSceneVisualRouteAnalysis(region, contract = {}, options 
   if (!isObject(region)) return [routeError(stage, contract, region, "coverage region 必须是对象", { missing: "coverage region" })];
   const analysis = region.visual_route_analysis;
   if (!isObject(analysis)) return [routeError(stage, contract, region, "effect-image coverage 缺少 visual_route_analysis", { missing: "visual_route_analysis" })];
+  validateAssemblyAnalysis(region, contract, stage, errors);
+  if (Object.hasOwn(analysis, "is_full_screen_capture")) errors.push(routeError(stage, contract, region, "is_full_screen_capture 已从视觉来源路线移除；整屏约束必须写入 assembly_analysis", { expected: "assembly_analysis.uses_full_screen_capture", actual: "visual_route_analysis.is_full_screen_capture" }));
 
   const required = [
     "element_type",
@@ -287,11 +376,10 @@ export function validateSceneVisualRouteAnalysis(region, contract = {}, options 
     "implementation_plan_mode",
     "production_method",
     "delivery_kind",
-    "is_full_screen_capture",
   ];
   for (const key of required) {
     const value = analysis[key];
-    const valid = key === "distinctive_visual" || key === "is_full_screen_capture"
+    const valid = key === "distinctive_visual"
       ? typeof value === "boolean"
       : key === "observed_features"
         ? Array.isArray(value) && value.length > 0 && value.every((item) => nonEmptyString(item) || isObject(item))
@@ -300,7 +388,6 @@ export function validateSceneVisualRouteAnalysis(region, contract = {}, options 
           : nonEmptyString(value);
     if (!valid) errors.push(routeError(stage, contract, region, `visual_route_analysis 缺少或无效 ${key}`, { missing: `visual_route_analysis.${key}` }));
   }
-  if (analysis.is_full_screen_capture === true) errors.push(routeError(stage, contract, region, "禁止把整屏截图作为交互场景视觉来源", { expected: "is_full_screen_capture=false", actual: "true" }));
   if (!new Set(["simple", "distinctive", "mixed"]).has(analysis.visual_complexity)) errors.push(routeError(stage, contract, region, "visual_complexity 只能是 simple/distinctive/mixed", { expected: "simple|distinctive|mixed", actual: String(analysis.visual_complexity ?? "missing") }));
   if (!ELEMENT_TYPES.has(analysis.element_type)) errors.push(routeError(stage, contract, region, "element_type 不在视觉区域分类枚举中", { expected: [...ELEMENT_TYPES].join("|"), actual: String(analysis.element_type ?? "missing") }));
   if (!new Set(["asset-first", "native-allowed", "composite-required"]).has(analysis.asset_first_decision)) errors.push(routeError(stage, contract, region, "asset_first_decision 无效", { expected: "asset-first|native-allowed|composite-required", actual: String(analysis.asset_first_decision ?? "missing") }));
@@ -412,5 +499,7 @@ export function validateSceneVisualRouteContract(contract, manifest = null, opti
     validateBoundProductionFields(region, analysis, manifestRegions.get(regionId), "coverage_audit region", contract, stage, errors);
     for (const unit of units.filter((item) => item?.region_id === regionId)) validateBoundProductionFields(region, analysis, unit, "visualProductionUnit", contract, stage, errors);
   }
+  const analyses = regions.map((region) => region?.visual_route_analysis).filter(isObject);
+  if (regions.length > 0 && analyses.length === regions.length && analyses.every((analysis) => analysis.selected_route === SCENE_VISUAL_ROUTES.PHASER_NATIVE)) validateAllNativeJustification(contract, regions, options, stage, errors);
   return errors;
 }

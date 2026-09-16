@@ -7,7 +7,7 @@ import { semanticGroupingDefinition } from "./semantic-grouping-contract.mjs";
 /** 标注图使用的固定计划颜色，机器值与展示标签分离，便于审计和人工阅读。 */
 export const PLAN_COLORS = { "generate-now": "#ef4444", "reuse-existing": "#22c55e", "runtime-program": "#3b82f6" };
 /** 标注图使用的三类中文展示标签。 */
-export const PLAN_LABELS = { "generate-now": "本次生成", "reuse-existing": "复用既有资源", "runtime-program": "程序实现" };
+export const PLAN_LABELS = { "generate-now": "新建图片资产", "reuse-existing": "复用现有图片", "runtime-program": "程序绘制或动态逻辑" };
 // 确认哈希覆盖所有会改变生产合同或拆解粒度的字段；自声明 production_method_changed 不能替代此不可变身份。
 const REGION_DEFINITION_FIELDS = ["scene_id", "state_id", "layer", "bounds", "layout_node_ids", "decomposition_elements", "owner_type", "owner_id", "asset_id", "asset_ids", "production_origin", "production_method", "delivery_kind", "image_generation_required", "generation_record_required", "substitution_policy", "runtime_implementation", "state_analysis", "component_inventory", "expected_assets", "interaction_hotspots", "atomic_image_requirements", "ownership_evidence", "annotation_number", "implementation_plan"];
 
