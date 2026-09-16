@@ -5,7 +5,7 @@ export const PROJECT_PHASES = Object.freeze([
   Object.freeze({ id: 'requirements-scope', label: '需求与范围' }),
   Object.freeze({ id: 'global-baseline', label: '全局基线' }),
   Object.freeze({ id: 'foundation-engineering', label: '基础工程' }),
-  Object.freeze({ id: 'scene-production', label: '逐场景生产' }),
+  Object.freeze({ id: 'scene-production', label: '场景与弹窗生产' }),
   Object.freeze({ id: 'global-integration-validation', label: '全局集成验证' }),
   Object.freeze({ id: 'release', label: '发布' }),
 ]);
@@ -25,7 +25,6 @@ const VISUAL_STAGES = new Set(['V0', 'V1', 'V2', 'V3', 'V4']);
 const GLOBAL_BASELINE_STATES = new Set(['BASELINE', 'PROPOSAL', 'REVIEW']);
 const RELEASE_STATES = new Set(['RELEASE_APPROVAL_REQUIRED', 'RELEASING']);
 const FOUNDATION_UNIT_TYPES = new Set(['SHARED', 'MODULE']);
-const SCENE_UNIT_TYPES = new Set(['SCENE', 'DISPLAY_LAYER']);
 const VALID_UNIT_TYPES = new Set(['SHARED', 'MODULE', 'SCENE', 'DISPLAY_LAYER', 'INTEGRATION']);
 
 /** 把可选的状态值规范化为稳定的大写标识；缺失值保持 null，避免伪造阶段。 */
@@ -52,12 +51,15 @@ function packageKind(implementationPackage) {
   const types = implementationPackage.executionUnits.map((unit) => normalizeIdentifier(unit?.unitType));
   if (types.some((type) => !type || !VALID_UNIT_TYPES.has(type))) return 'unknown';
   const uniqueTypes = new Set(types);
-  const hasScene = types.some((type) => SCENE_UNIT_TYPES.has(type));
+  const hasScene = uniqueTypes.has('SCENE');
+  const hasDisplayLayer = uniqueTypes.has('DISPLAY_LAYER');
   const hasIntegration = uniqueTypes.has('INTEGRATION');
   const foundationOnly = types.every((type) => FOUNDATION_UNIT_TYPES.has(type));
   if (foundationOnly) return 'foundation';
-  // 合法完整包可以把跨场景 INTEGRATION 放在场景单元之后，仍属于场景生产上下文。
+  // 场景与弹窗使用独立实施包；混包无法投影成可信的用户进度。
+  if (hasScene && hasDisplayLayer) return 'unknown';
   if (hasScene) return 'scene';
+  if (hasDisplayLayer) return 'display-layer';
   if (hasIntegration) return 'integration';
   return 'unknown';
 }
@@ -139,6 +141,12 @@ export function projectWorkflowView(input = {}) {
   if (kind === 'foundation') {
     if (visual.stage && !['V0', 'V1'].includes(visual.stage)) return unknownView(internalStage, 'foundation-only 包与 V2-V4 阶段冲突');
     return knownView('foundation-engineering', null, internalStage);
+  }
+
+  // 弹窗沿用 V0-V4 证据门，但作为独立工作项展示，不冒充宿主场景进度。
+  if (kind === 'display-layer') {
+    if (globalState === 'INTAKE') return unknownView(internalStage, 'INTAKE 与弹窗生产声明冲突');
+    return knownView('scene-production', null, internalStage);
   }
 
   let sceneStep = visual.stage ? SCENE_STEP_BY_STAGE.get(visual.stage) : null;

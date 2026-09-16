@@ -46,7 +46,12 @@ templates.optional.assets["asset-license-register.md"] += "拆解确认前的 V2
 templates.optional.assets["asset-license-register.md"] += "用户确认回执只能由编排层写入 `.phaser-workflow/user-resolutions/` 下的 `user-resolution-ledger/1.0`；写入后先冻结新的 Git commit/tree 基线，loader 必须从 Work Item.baselineHash 比对 ledger/receipt blob；实施代理和委派单元不得创建或修改 ledger。Work Item 仅保存 `visualConfirmationAuthorityRefs[]` 的 ledger_file/receipt_id/receipt_sha256 引用，禁止内嵌 receipt 或自称 authority。\n";
 templates.optional.assets["asset-license-register.md"] += "效果图还原必须额外填写 `scene_reconstruction_contract`：冻结 target 条件、整屏 composition、逐 coverage region 视觉事实（含 runtime fidelity obligations）、目标绑定 layout、responsive 不变量、predeclared tolerances 和完整 implementation plan；同时强制填写 `display_layer_planning`，在 G0/V1 盘点 HUD、modal、popup、drawer、toast（无显示层也使用空 inventory），区分 scene master、宿主场景上下文效果图和 V2 component×state 拆解事实；V3/V4 还要填同屏组合及打开→交互→关闭/恢复轨迹。\n";
 templates.optional.assets["asset-license-register.md"] += "视觉阶段必须使用唯一 `visualStage`/`visualStageState` 枚举：V0→V1→V2→V3→V4；`global-static-baseline-frozen` 只表示全局静态基线冻结，不等于 `v2-production-planning-complete`。\n";
-templates.core["TDD.md"] += "\n### 显示层实施单元补充\n\n`DISPLAY_LAYER` 与场景一样进入 `executionUnits`，但必须填写 `displayLayerId` 和 `hostSceneId`，并将 `sceneId` 置为 null；它必须在数组中紧邻并归属于宿主 `SCENE`，与宿主场景一起完成玩法上下文、正式资源、UI/弹窗、清理和联合证据，不得在全部场景之后形成独立尾部阶段。它还必须绑定 `highFidelityPrerequisite`，证据文件声明 V2/COMPLETE/frozen、scene master 和带 scene/layer/host 身份的宿主上下文图，并由控制面复算文件 SHA；它复用场景的 V0-V4、A0-A6、F0-F4 顺序，不建立第二套状态机。\n";
+templates.core["TDD.md"] += "\n### 弹窗实施单元补充\n\nmodal/popup 等弹窗建立独立 `DISPLAY_LAYER` Work Item 和 Implementation Package，必须填写 `displayLayerId`、`hostSceneId`，并将 `sceneId` 置为 null。`hostSceneId` 仅描述运行上下文和公开接口接线，不表示弹窗归属于宿主场景实现。`SCENE` 与 `DISPLAY_LAYER` 不得出现在同一包；弹窗复用 V0-V4 证据门并独立完成自身 V4，未完成弹窗不阻断大厅或其他宿主场景验收。\n";
+// 清理早期模板中“场景与弹窗同包闭环”的旧表述，确保新项目文档只生成独立工作项模型。
+templates.core["TDD.md"] = templates.core["TDD.md"]
+  .replace("正式场景顺序为 SCENE+紧邻从属 DISPLAY_LAYER，全部场景闭环后再做 INTEGRATION", "SCENE 与 DISPLAY_LAYER 分属独立 Implementation Package；全部场景闭环后再做 INTEGRATION")
+  .replace("每个 SCENE 必须闭环玩法、正式资源、全部 UI/显示层、清理和联合证据", "每个 SCENE 必须闭环玩法、正式资源、场景自有 UI/常驻 HUD、清理和场景证据；弹窗由独立 DISPLAY_LAYER Work Item 闭环")
+  .replace("仅当功能、V3 资源、V4 接入、全部显示层、占位清理、联合验证全部关闭时，场景才完成", "仅当功能、V3 资源、V4 接入、场景自有显示层、占位清理和场景验证全部关闭时，场景才完成");
 templates.optional.assets["asset-license-register.md"] += "整条 V0→V4 链在 V2 使用 `visual-decomposition-confirmation/1.0` 确认拆解图、技术 JSON 与生产方案；旧式方向审批字段、旧动态方案样片和完整 Phaser 候选不得作为阶段门。V3/V4 逐资产、逐区域和 F2 检查只使用绑定当前身份的确定性机器证据，不要求重复 `human_review`。\n";
 templates.optional.assets["visual-assets.json"] = `${JSON.stringify({
   schema_version: "1.5",

@@ -9,7 +9,7 @@
 | `requirements-scope` | 需求与范围 | Work Item 摘要、用户目标、范围、基线和验收清单 | `INTAKE` |
 | `global-baseline` | 全局基线 | GDD、TDD、全局视觉基线、任务范围和全局选择证据 | `G0`、`BASELINE`、`PROPOSAL`、`REVIEW` |
 | `foundation-engineering` | 基础工程 | foundation-only 实施包、`SHARED`/`MODULE` 基础代码和验证证据 | 仅含 `SHARED`/`MODULE` 的实施包；纯工程包可在全局选图前实施，视觉依赖包仍受全局基线门约束 |
-| `scene-production` | 逐场景生产 | 场景规格、V2 拆解方案、V3 正式资源、正式实现和 V4 运行验收证据 | `V0`-`V4`，或包含 `SCENE`/`DISPLAY_LAYER` 的场景实施包 |
+| `scene-production` | 场景与弹窗生产 | 场景或独立弹窗的规格、V2 拆解方案、V3 正式资源、正式实现和 V4 运行验收证据 | `V0`-`V4`，或独立包含 `SCENE`/`DISPLAY_LAYER` 的实施包 |
 | `global-integration-validation` | 全局集成验证 | 跨场景集成候选、导航/存档/音频/性能/响应式回归和联合证据 | `G2`、`INTEGRATING`，或纯 `INTEGRATION` 实施包 |
 | `release` | 发布 | 独立发布 Work Item、可复现发布包、平台/合规/回滚资料和精确审批回执 | `G3`、`RELEASE_APPROVAL_REQUIRED`、`RELEASING` 或发布 Work Item |
 
@@ -34,7 +34,7 @@ node <skill-dir>/scripts/workflow-control.mjs transition --work-item <work-item>
 
 V3 证据闭合后，沿既有 `REVIEW → IMPLEMENTING → VALIDATING → PASSED` 入口激活正式包；正式代码序列完成后，再执行 `--to IMPLEMENTING --visual-stage V4` 进入运行验收。V4 运行证据闭合后，在同一 `IMPLEMENTING` 状态显式提交 `--visual-stage-state v4-runtime-integration-candidate`，再记录新的候选审计并进入 `VALIDATING → PASSED → COMPLETE`。旧阶段状态会被校验并保留审计记录，当前阶段重新绑定自己的候选审计和验证批次。
 
-没有可识别的 `V0`-`V4` 声明时，场景阶段仍可显示为“逐场景生产”，但 `sceneStepId` 和 `sceneStepLabel` 必须为 `null`；这表示缺少可投影的场景步骤，不表示任何视觉门已通过。
+没有可识别的 `V0`-`V4` 声明时，生产阶段仍可显示为“场景与弹窗生产”，但 `sceneStepId` 和 `sceneStepLabel` 必须为 `null`；这表示缺少可投影的步骤，不表示任何视觉门已通过。
 
 ## CLI 输出
 
@@ -45,7 +45,7 @@ V3 证据闭合后，沿既有 `REVIEW → IMPLEMENTING → VALIDATING → PASSE
 默认文本优先显示简化阶段，例如：
 
 ```text
-阶段：逐场景生产 · 拆解确认
+阶段：场景与弹窗生产 · 拆解确认
 下一步：完成当前待执行单元
 ```
 

@@ -5,7 +5,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import test from "node:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { validateSceneReconstructionContract, validateStructuredFidelityCases } from "./scene-reconstruction-contract.mjs";
+import { validateDisplayLayerPlanning, validateSceneReconstructionContract, validateStructuredFidelityCases } from "./scene-reconstruction-contract.mjs";
 import { validateSceneVisualRouteContract } from "./scene-visual-route-contract.mjs";
 import { validateSceneAssetUsageContract, validateSceneCombinationPreacceptance, validateV4ProductionGate, validateVisualImplementationPackageBinding } from "./visual-production-contract.mjs"; import { computeLayoutAnnotationConfirmationSha256, computeLayoutUserMessageSha256 } from "./layout_annotation_confirmation.mjs";
 
@@ -157,6 +157,20 @@ function contract() {
 
 function manifest() {
   return { visual_validation: { mode: "exact" }, reference_target: { target_sha256: SHA, scene_ids: ["main"], state_ids: ["default"] }, visual_baseline: { version: "1.0.0" }, coverage_audit: { regions: [{ id: "hud" }, { id: "board" }] }, scene_reconstruction_contract: { predeclared_tolerances: [{ id: "layout-tolerance", rules: { geometry: { value: 2 } } }], coverage_regions: [{ id: "hud", tolerance_reference: "layout-tolerance", approved_exception_ids: [] }, { id: "board", tolerance_reference: "layout-tolerance", approved_exception_ids: [] }] } };
+}
+
+/** 将常驻 HUD 夹具转换为独立弹窗工作项合同，并补齐宿主场景上下文。 */
+function displayLayerContract() {
+  const value = structuredClone(contract());
+  const layer = value.display_layer_planning.inventory[0];
+  layer.layer_id = "pause-modal";
+  layer.type = "modal";
+  layer.persistence = "transient";
+  layer.in_scene_master = false;
+  layer.states = [{ state_id: "open", required: true, contextual_effect_image: { evidence: "evidence/display/pause-open.png", sha256: SHA, origin: "provided", host_scene_id: "main", host_target_sha256: SHA, layer_target_sha256: SHA, viewport: { width: 390, height: 844 }, kind: "host-scene-context", isolated_only: false } }];
+  layer.runtime_replay = { status: "passed", host_scene_id: "main", same_screen_combination: true, steps: ["open", "interact", "close", "restore"].map((phase) => ({ phase, evidence: `evidence/display/pause-${phase}.json` })) };
+  value.display_layer_planning.scene_master.persistent_layer_ids = [];
+  return value;
 }
 
 /** 构造同条件的结构化 fidelity case；差异夹具只替换逐区域目标/候选事实。 */
@@ -365,7 +379,7 @@ test("场景还原合同覆盖整屏构图和 runtime fidelity obligation", () =
   assert(validateSceneReconstructionContract(missing, manifest(), { stage: "V3" }).some((item) => item.includes("fidelity obligations")));
 });
 
-test("显示层规划必须区分 scene master 与宿主场景上下文效果图", () => {
+test("场景合同只允许 scene master 常驻层，瞬态弹窗必须拆为独立工作项", () => {
   const missing = structuredClone(contract()); delete missing.display_layer_planning;
   assert(validateSceneReconstructionContract(missing, manifest(), { stage: "V1" }).some((item) => item.includes("display_layer_planning")));
 
@@ -374,23 +388,45 @@ test("显示层规划必须区分 scene master 与宿主场景上下文效果图
   layer.layer_id = "pause-modal"; layer.type = "modal"; layer.persistence = "transient"; layer.in_scene_master = true; layer.states = [{ state_id: "open", required: true }];
   transient.display_layer_planning.scene_master.persistent_layer_ids = ["pause-modal"];
   const masterErrors = validateSceneReconstructionContract(transient, manifest(), { stage: "V1" });
-  assert(masterErrors.some((item) => item.includes("上下文效果图") || item.includes("不得进入默认 scene master")));
-
-  layer.in_scene_master = false; transient.display_layer_planning.scene_master.persistent_layer_ids = [];
-  layer.states[0].contextual_effect_image = { evidence: "evidence/display/pause-open.png", sha256: SHA, origin: "provided", host_scene_id: "main", host_target_sha256: SHA, layer_target_sha256: SHA, viewport: { width: 390, height: 844 }, kind: "host-scene-context", isolated_only: true };
-  const isolatedErrors = validateSceneReconstructionContract(transient, manifest(), { stage: "V1" });
-  assert(isolatedErrors.some((item) => item.includes("孤立组件图")));
+  assert(masterErrors.some((item) => item.includes("瞬态显示层不属于场景工作项")));
 });
 
-test("V3/V4 瞬态显示层必须提供宿主场景生命周期轨迹", () => {
-  const value = structuredClone(contract());
+test("独立 DISPLAY_LAYER 的 V4 仍必须提供宿主场景生命周期轨迹", () => {
+  const value = displayLayerContract();
   const layer = value.display_layer_planning.inventory[0];
-  layer.layer_id = "pause-modal"; layer.type = "modal"; layer.persistence = "transient"; layer.in_scene_master = false; value.display_layer_planning.scene_master.persistent_layer_ids = [];
-  layer.states = [{ state_id: "open", required: true, contextual_effect_image: { evidence: "evidence/display/pause-open.png", sha256: SHA, origin: "provided", host_scene_id: "main", host_target_sha256: SHA, layer_target_sha256: SHA, viewport: { width: 390, height: 844 }, kind: "host-scene-context", isolated_only: false } }];
-  const errors = validateSceneReconstructionContract(value, manifest(), { stage: "V4" });
+  delete layer.runtime_replay;
+  const targetInfo = { sceneId: "main", stateId: "default", targetSha: SHA, viewport: { width: 390, height: 844 } };
+  const errors = validateDisplayLayerPlanning(value.display_layer_planning, targetInfo, { stage: "V4", scope: "display-layer" });
   assert(errors.some((item) => item.includes("runtime_replay")));
   layer.runtime_replay = { status: "passed", host_scene_id: "main", same_screen_combination: true, steps: ["open", "interact", "close", "restore"].map((phase) => ({ phase, evidence: `evidence/display/pause-${phase}.json` })) };
-  assert.deepEqual(validateSceneReconstructionContract(value, manifest(), { stage: "V4" }), []);
+  assert.deepEqual(validateDisplayLayerPlanning(value.display_layer_planning, targetInfo, { stage: "V4", scope: "display-layer" }), []);
+});
+
+test("正式实施包门按 executionUnits 区分场景与弹窗验收作用域", async () => {
+  const root = await mkdtemp(join(tmpdir(), "display-layer-scope-"));
+  const snapshot = {
+    ...manifest(),
+    schema_version: "1.5",
+    effect_image_reconstruction: { applicability: "effect-image" },
+    workItemId: "popup-work-item",
+    candidateVersion: "candidate-1",
+    scene_reconstruction_contract: displayLayerContract(),
+  };
+  const bytes = JSON.stringify(snapshot);
+  const file = "popup-manifest.json";
+  await writeFile(join(root, file), bytes);
+  const basePackage = {
+    visualProductionUnits: [],
+    visualManifestFile: file,
+    visualManifestSha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+    workItemId: "popup-work-item",
+    candidateVersion: "candidate-1",
+    current_stage: "V2",
+  };
+  const displayErrors = validateVisualImplementationPackageBinding({ ...basePackage, executionUnits: [{ unitType: "DISPLAY_LAYER" }] }, { projectRoot: root });
+  assert(!displayErrors.some((item) => item.includes("瞬态显示层不属于场景工作项")), displayErrors.join("\n"));
+  const sceneErrors = validateVisualImplementationPackageBinding({ ...basePackage, executionUnits: [{ unitType: "SCENE" }] }, { projectRoot: root });
+  assert(sceneErrors.some((item) => item.includes("瞬态显示层不属于场景工作项")), sceneErrors.join("\n"));
 });
 
 test("effect-image 布局拆解、双向 region 绑定、V4 几何和 V4 逐节点证据完整通过", () => {

@@ -345,6 +345,10 @@ function validateAcceptedAsset(asset, label, errors) {
 export function validateManifest(data, options = {}) {
   const errors = [];
   if (!isObject(data)) return ["清单根节点必须是对象"];
+  const workItemType = String(options.workItemType ?? "SCENE").toUpperCase();
+  if (!["SCENE", "DISPLAY_LAYER"].includes(workItemType)) errors.push("workItemType 只能是 SCENE 或 DISPLAY_LAYER");
+  // 独立清单入口没有实施包上下文，必须由调用方显式提供可信工作项类型；默认继续按场景收紧。
+  const displayLayerScope = workItemType === "DISPLAY_LAYER" ? "display-layer" : "scene";
   const visualValidationMode = resolveVisualValidationMode(data, data.scene_reconstruction_contract);
   validateVisualValidationPolicy(errors, "visual_validation", data, data.scene_reconstruction_contract);
   const requestedStage = options.stage === undefined ? null : String(options.stage).toUpperCase();
@@ -390,7 +394,7 @@ export function validateManifest(data, options = {}) {
     const stage = requestedStage ?? (reconstruction.lifecycle === "v4-complete" ? "V4" : "V2");
     // V2 拆解图确认之后，清单上的所有后续证据都只能是确定性机器验证；旧复核字段 fail closed。
     errors.push(...validateVisualPostApprovalReviewFields(data, { stage }));
-    errors.push(...validateSceneReconstructionGate(data, { stage, requireFinalLayout: stage === "V3" || stage === "V4" || reconstruction.lifecycle === "v4-complete" || [data.visualStageState, data.visual_stage_state].includes("v2-production-planning-complete"), visual_validation: { mode: visualValidationMode } }));
+    errors.push(...validateSceneReconstructionGate(data, { stage, displayLayerScope, requireFinalLayout: stage === "V3" || stage === "V4" || reconstruction.lifecycle === "v4-complete" || [data.visualStageState, data.visual_stage_state].includes("v2-production-planning-complete"), visual_validation: { mode: visualValidationMode } }));
     const fileGateError = productionFileGateError(data, options, stage);
     if (fileGateError) errors.push(fileGateError);
     errors.push(...validateVisualProductionCoverage(fixedVisualAuditManifest(data), { stage: "V2", requireManualConfirmation: false }));
@@ -400,7 +404,7 @@ export function validateManifest(data, options = {}) {
     if (requireV4) { validateV4LayoutMeasurements(data, layoutBindings, errors, { visual_validation: { mode: visualValidationMode } });
       errors.push(...validateProductionAuditShape(fixedVisualAuditManifest(data), { ...options, projectRoot: options.projectRoot, checkFiles: options.checkFiles }));
       const structuralGate = { ...data, coverage_audit: isObject(data.coverage_audit) ? { ...data.coverage_audit, regions: [] } : data.coverage_audit };
-      errors.push(...validateV4ProductionGate(structuralGate, { requireEvidenceIdentity: true, requireSceneReconstruction: true }));
+      errors.push(...validateV4ProductionGate(structuralGate, { requireEvidenceIdentity: true, requireSceneReconstruction: true, displayLayerScope }));
     } else if (requireAudit) {
       errors.push(...validateProductionAuditShape(fixedVisualAuditManifest(data), { ...options, projectRoot: options.projectRoot, checkFiles: options.checkFiles }));
     } else {
@@ -938,7 +942,7 @@ export async function loadManifest(path) {
   catch (error) { if (error instanceof ManifestValidationError) throw error; throw new ManifestValidationError(`无法读取清单 ${path}：${error.message}`); }
 }
 
-/** 解析清单路径、项目根目录和文件检查开关。 */
+/** 解析清单路径、项目根目录、工作项类型和文件检查开关。 */
 function parseArgs(argv) {
   const args = { checkFiles: false };
   for (let index = 0; index < argv.length; index += 1) {
@@ -946,6 +950,7 @@ function parseArgs(argv) {
     if (token === "--check-files") args.checkFiles = true;
     else if (token === "--project-root") args.projectRoot = argv[++index];
     else if (token === "--stage") args.stage = String(argv[++index] ?? "").toUpperCase();
+    else if (token === "--work-item-type") args.workItemType = String(argv[++index] ?? "").toUpperCase();
     else if (!args.manifest && !token.startsWith("-")) args.manifest = token;
     else throw new ManifestValidationError(`不支持的参数：${token}`);
   }
@@ -963,7 +968,7 @@ export async function main(argv = process.argv.slice(2)) {
   try {
     const args = parseArgs(argv); const data = await loadManifest(args.manifest);
     if (!args.checkFiles && requiresBitmapFileGate(data)) { console.error("检测到 bitmap-decomposition：未运行文件证据校验，不予放行。必须使用 --stage V2 --check-files --project-root ."); return 2; }
-    const errors = validateManifest(data, { stage: args.stage, checkFiles: args.checkFiles, projectRoot: args.projectRoot });
+    const errors = validateManifest(data, { stage: args.stage, checkFiles: args.checkFiles, projectRoot: args.projectRoot, workItemType: args.workItemType });
     if (args.checkFiles) errors.push(...await checkManifestFiles(data, args.projectRoot ?? resolve(args.manifest, "..", ".."), { stage: args.stage }));
     const uniqueErrors = [...new Set(errors)];
     if (uniqueErrors.length) { console.error("视觉资源清单无效："); for (const error of uniqueErrors) console.error(`- ${error}`); return 1; }

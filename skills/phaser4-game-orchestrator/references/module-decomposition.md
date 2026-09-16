@@ -7,15 +7,15 @@
 1. 从已批准 GDD、TDD 和代码事实提取玩家行为、状态变化、平台能力、资源依赖、失败路径和验收证据；优先扩展边界清晰的现有模块。
 2. 建立候选模块图，记录职责与非目标、公开入口和输入/输出、状态/数据所有权、生命周期、错误与降级、资源/平台依赖、允许/禁止依赖、测试边界和负责人。
 3. 规定单向依赖和调用契约。公共代码和公共正式资源只有被至少两个已确认场景稳定复用，或属于启动运行必需时才提取；消除或明确处理循环依赖、双向状态写入、无边界 `common`/`utils`、公共素材库、全局事件和绕过公开入口的访问。
-4. 给出 G1 内可独立验证的实施计划。全局基线、foundation-only 边界和场景 V0→V4 顺序以[控制模型](../../phaser4-game-workflow-control/references/control-model.md)和[状态、阶段与停止门](../../phaser4-game-workflow-control/references/state-gates.md)为准；本文件只冻结模块/场景/显示层的职责、所有权、依赖和实施单元。基础包只承载场景无关的 `SHARED`/`MODULE` 能力，纯工程包可在全局选图前实施；声明视觉合同/资产生产依赖的基础包需通过全局基线门，声明正式入口或可见资源消费的基础包回到正式视觉门。所有基础包都禁止具体场景玩法、UI/布局、正式可见资产消费、Boot→正式可见 Scene 接入和删除旧视觉实现。每个场景内部完成规则、适配与表现、正式视觉、全部显示层、清理和联合证据后再关闭；参考还原仍属于当前场景 Work Item，不创建第二条生命周期。
+4. 给出 G1 内可独立验证的实施计划。全局基线、foundation-only 边界和场景 V0→V4 顺序以[控制模型](../../phaser4-game-workflow-control/references/control-model.md)和[状态、阶段与停止门](../../phaser4-game-workflow-control/references/state-gates.md)为准；本文件只冻结模块/场景/显示层的职责、所有权、依赖和实施单元。基础包只承载场景无关的 `SHARED`/`MODULE` 能力。场景闭环自身规则、画面、常驻 HUD、清理和证据；modal/popup 等弹窗建立独立 DISPLAY_LAYER Work Item，不并入宿主场景完成条件。
 5. 把每个模块、场景、共享基础和集成点拆成实施单元，按数组位置记录单元 ID、类型、范围、并行模式/并行组、负责人、互斥写范围、状态所有权、验收命令或证据；同一非空并行组的 PARALLEL 单元必须在数组中连续出现并视为一个顺序阶段，串行单元必须写明原因，禁止只写笼统的“可并行”。
-6. 主动识别安全并行：`SHARED` 契约/入口和 `INTEGRATION` 单元强制串行；`MODULE`、`SCENE`、`DISPLAY_LAYER` 可在依赖满足且写范围与状态所有权互斥时并行。`DISPLAY_LAYER` 必须绑定宿主场景身份、紧邻宿主 `SCENE` 并在该宿主场景内闭环，不能在所有场景之后单独实施。SERIAL 单元的 READY 需要其前面全部单元有当前有效 PASS Unit Result，PARALLEL 单元的 READY 只需要其并行组首项之前全部单元有当前有效 PASS，同组 peer 不互相等待，不得手工自填。至少两个互斥的 MODULE/SCENE/DISPLAY_LAYER 单元属于同一非空组时，使用完整不可变批次原子委派；跨模块/跨场景集成点保持串行；并行组不得分散在数组多个位置，也不得跳过预设前序门或验收。
+6. 主动识别安全并行：`SHARED` 契约/入口和 `INTEGRATION` 单元强制串行；`MODULE`、`SCENE`、`DISPLAY_LAYER` 可在依赖满足且写范围与状态所有权互斥时并行。`SCENE` 与 `DISPLAY_LAYER` 必须位于不同 Work Item 和 Implementation Package；后者的 `hostSceneId` 只标识运行上下文。SERIAL 单元的 READY 需要其前面全部单元有当前有效 PASS Unit Result，PARALLEL 单元的 READY 只需要其并行组首项之前全部单元有当前有效 PASS，同组 peer 不互相等待，不得手工自填。
 7. 场景与模块使用同一粒度规则逐个标注。当前共享工作区可依独占所有权并行；不得自动创建 worktree，只有人工明确要求时才按既有规则使用。
 
 ## 场景与公共基础边界
 
 - `SHARED` 定义为项目最小骨架，只提供稳定契约和最小 Boot/Preload 生命周期；`MODULE` 定义为场景无关基础模块，可承载配置/状态/输入/平台/资源基础设施和测试支撑。纯工程 foundation-only 包只需当前任务范围、工程基线、冻结实施包和工程证据即可实施，不要求全局选图；声明视觉合同/资产生产依赖的基础包仍由控制面的全局基线文件门约束，声明正式入口或可见资源消费的基础包则进入正式视觉门，且均不需要场景 V2/V3。具体场景玩法、UI/布局、正式可见资产消费和 Boot→正式可见 Scene 接入不属于纯基础阶段。SCENE/DISPLAY_LAYER 仍必须绑定当前场景 Work Item 的 V2 拆解与布局确认和 V3 资源组合验收引用，不能用全局静态冻结或其他场景证据替代；场景 V2 前仅允许隔离灰盒/无业务逻辑视觉样片。
-- `gameplay` 与 `supporting` 是完整场景覆盖的分类；各场景的实际顺序由计划制定者冻结，不再强制某一类别先于另一类别。每个 `SCENE` 必须连同其全部 HUD、UI、modal、popup、drawer、toast 等显示层一起闭环。
+- `gameplay` 与 `supporting` 是完整场景覆盖的分类；各场景的实际顺序由计划制定者冻结。每个 `SCENE` 只闭环自身玩法、画面和常驻 HUD；modal/popup 等弹窗由独立 DISPLAY_LAYER Work Item 闭环，不影响场景验收。
 - 场景之间通过公开服务、状态仓库或明确消息契约协作，不直接读取或写入另一 Scene 实例的内部状态。
 - 单场景逻辑和资源归属具体场景；只有满足公共提取条件的内容才能标记为 shared。
 

@@ -1,6 +1,6 @@
 # 结构化 Schema
 
-全部显示层支持按需 `deferred_layers` 子任务数组：每项严格包含非空 `layer_id`、`host_scene_id`、`owner`、`reason`，以及 `type=hud|modal|popup|drawer|toast`、`persistence=persistent|transient`、布尔 `in_scene_master`。与完整 `inventory` ID 互斥，宿主匹配；HUD 必须 persistent；常驻待办必须在主图及 `persistent_layer_ids` 中，瞬态待办不得在其中。完整层关系可引用待办 ID。待办不要求尚未产生的图或 target SHA；显示层门允许宿主 V1–V3 继续，V4 非空拒绝联合完成。未延期可省略数组；已有 inventory 层的 required 图不可省略。字段由 `display-layer-planning-contract.mjs` 校验，边界见[控制模型](control-model.md#显示层子任务与宿主继续推进)。
+`display_layer_planning` 不再支持 `deferred_layers`。场景 Work Item 的 `inventory` 只记录场景自有常驻显示层；modal/popup 等弹窗建立独立 DISPLAY_LAYER Work Item，并在自己的 `inventory` 中记录完整事实。弹窗仍必须提供 `host_scene_id`、required state 上下文图和自身 V4 运行轨迹，但其状态不进入宿主场景验收。字段由 `display-layer-planning-contract.mjs` 校验，边界见[控制模型](control-model.md#弹窗工作项与场景解耦)。
 
 机器文件使用 UTF-8 JSON。权威 JSON Schema 位于本目录：
 

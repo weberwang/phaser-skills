@@ -1,16 +1,15 @@
 /**
- * 场景内显示层规划合同校验。
+ * 当前工作项的显示层规划合同校验。
  *
- * 显示层沿用场景的 V0-V4 生命周期，但把弹窗、抽屉、HUD 和 Toast
- * 作为可独立实施、可独立验收的对象。这里不创建第二套状态机，只校验
- * 场景主图、上下文效果图和运行时轨迹之间的确定性绑定。
+ * 场景工作项只记录自身常驻显示层；弹窗、抽屉和 Toast 由独立
+ * DISPLAY_LAYER 工作项规划与验收。host_scene_id 仅绑定运行上下文，
+ * 不把独立显示层并回宿主场景的完成条件。
  */
 
 import { collectGlobalVisualConsistencyEvidencePaths, validateVisualEffectImageOrigin } from "./global-visual-consistency-contract.mjs";
 
 const DISPLAY_LAYER_TYPES = new Set(["hud", "modal", "popup", "drawer", "toast"]);
 const DISPLAY_LAYER_LIFECYCLES = new Set(["persistent", "transient"]);
-const DEFERRED_DISPLAY_LAYER_FIELDS = ["layer_id", "host_scene_id", "type", "persistence", "in_scene_master", "owner", "reason"];
 const REPLAY_PHASES = ["open", "interact", "close", "restore"];
 
 /** 判断是否为普通对象。 */
@@ -163,43 +162,14 @@ function validateLayer(layer, sceneMaster, targetInfo, stage, errors, layerIds, 
 }
 
 /**
- * 校验暂不进入完整视觉规划的显示层待办。
+ * 校验当前工作项的场景上下文和显示层清单。
  *
- * 待办只记录后续工作的最小路由信息，故明确禁止复用完整显示层字段，
- * 避免缺失宿主上下文图时用半成品对象绕过 inventory 的证据门。
- */
-function validateDeferredLayer(layer, sceneMaster, stage, errors, layerIds) {
-  if (!isObject(layer)) {
-    errors.push(planningError(stage, null, "deferred_layers 每项必须是对象"));
-    return;
-  }
-  const missing = DEFERRED_DISPLAY_LAYER_FIELDS.filter((field) => layer[field] === undefined || layer[field] === null);
-  const extra = Object.keys(layer).filter((field) => !DEFERRED_DISPLAY_LAYER_FIELDS.includes(field));
-  if (missing.length || extra.length) errors.push(planningError(stage, layer, "deferred layer 字段不严格", `缺少=${missing.join(",") || "无"} 多余=${extra.join(",") || "无"}`));
-  if (!nonEmptyString(layer.layer_id)) {
-    errors.push(planningError(stage, layer, "deferred layer_id 必须为非空字符串"));
-    return;
-  }
-  if (layerIds.has(layer.layer_id)) errors.push(planningError(stage, layer, "deferred layer_id 与已声明显示层重复"));
-  else layerIds.add(layer.layer_id);
-  if (!DISPLAY_LAYER_TYPES.has(layer.type)) errors.push(planningError(stage, layer, "deferred layer type 无效", `预期=hud/modal/popup/drawer/toast 实际=${String(layer.type ?? "missing")}`));
-  if (layer.host_scene_id !== sceneMaster.scene_id || !nonEmptyString(layer.host_scene_id)) errors.push(planningError(stage, layer, "deferred layer 必须绑定当前宿主场景", `预期=${sceneMaster.scene_id}`));
-  if (!DISPLAY_LAYER_LIFECYCLES.has(layer.persistence)) errors.push(planningError(stage, layer, "deferred layer persistence 无效", "预期=persistent/transient"));
-  if (layer.type === "hud" && layer.persistence !== "persistent") errors.push(planningError(stage, layer, "deferred HUD 必须声明 persistent 生命周期"));
-  const mustBeInMaster = layer.persistence === "persistent" || layer.type === "hud";
-  if (layer.in_scene_master !== mustBeInMaster) errors.push(planningError(stage, layer, `deferred layer ${mustBeInMaster ? "必须" : "不得"}进入 scene master`, `预期=in_scene_master:${mustBeInMaster}`));
-  if (!nonEmptyString(layer.owner)) errors.push(planningError(stage, layer, "deferred layer owner 必须为非空字符串"));
-  if (!nonEmptyString(layer.reason)) errors.push(planningError(stage, layer, "deferred layer reason 必须为非空字符串"));
-}
-
-/**
- * 校验场景主图和显示层清单。
- *
- * inventory=[] 是有意允许的显式声明；只有 inventory 与 deferred_layers 都为空（或后者省略）时，
- * 才表示场景没有显示层，避免把已登记待办误判为遗漏规划。
+ * inventory=[] 是场景没有自有显示层的显式声明。未实现的弹窗不得以
+ * deferred_layers 挂在场景下，而应建立独立 DISPLAY_LAYER 工作项。
  */
 export function validateDisplayLayerPlanning(planning, targetInfo = null, options = {}) {
   const stage = String(options.stage ?? "V1").toUpperCase();
+  const scope = options.scope ?? "display-layer";
   const errors = [];
   if (!isObject(planning)) {
     errors.push(planningError(stage, null, "缺少 display_layer_planning；即使无显示层也必须声明 inventory=[]"));
@@ -233,30 +203,23 @@ export function validateDisplayLayerPlanning(planning, targetInfo = null, option
     return errors;
   }
   const layerIds = new Set();
-  for (const layer of planning.inventory) validateLayer(layer, sceneMaster, targetInfo ?? { sceneId: sceneMaster.scene_id, targetSha: sceneMaster.target_sha256 }, stage, errors, layerIds, options.visual_baseline ?? null);
-  const deferredLayers = planning.deferred_layers;
-  if (deferredLayers !== undefined) {
-    if (!Array.isArray(deferredLayers)) errors.push(planningError(stage, null, "display_layer_planning.deferred_layers 必须是数组"));
-    else {
-      for (const layer of deferredLayers) validateDeferredLayer(layer, sceneMaster, stage, errors, layerIds);
-      if (String(stage).toUpperCase() === "V4" && deferredLayers.length > 0) {
-        errors.push(planningError(stage, null, "待办显示层未完成宿主联合验收", "V4 必须先完成待办子任务并移入 inventory，补齐适用视觉和运行证据；不会自动跳转或自动生成效果图"));
-      }
+  for (const layer of planning.inventory) {
+    // 场景合同只允许 scene master 的常驻层；瞬态弹窗必须转入独立工作项，避免其状态进入场景门。
+    if (scope === "scene" && isObject(layer) && layer.persistence === "transient") {
+      errors.push(planningError(stage, layer, "瞬态显示层不属于场景工作项", "请建立独立 DISPLAY_LAYER Work Item；host_scene_id 仅作为运行上下文"));
+      continue;
     }
+    validateLayer(layer, sceneMaster, targetInfo ?? { sceneId: sceneMaster.scene_id, targetSha: sceneMaster.target_sha256 }, stage, errors, layerIds, options.visual_baseline ?? null);
   }
+  if (Object.hasOwn(planning, "deferred_layers")) errors.push(planningError(stage, null, "display_layer_planning.deferred_layers 已移除", "弹窗、抽屉和 Toast 必须建立独立 DISPLAY_LAYER 工作项，不得挂入场景验收"));
   const declaredMasterIds = new Set(sceneMaster.persistent_layer_ids ?? []);
   for (const declaredId of declaredMasterIds) if (!layerIds.has(declaredId)) errors.push(planningError(stage, null, `scene_master.persistent_layer_ids 引用了不存在的 layer_id：${declaredId}`));
-  for (const layer of Array.isArray(deferredLayers) ? deferredLayers : []) {
-    if (!isObject(layer) || !nonEmptyString(layer.layer_id)) continue;
-    const shouldBeMaster = layer.persistence === "persistent" || layer.type === "hud";
-    if (shouldBeMaster !== declaredMasterIds.has(layer.layer_id)) errors.push(planningError(stage, layer, `scene_master.persistent_layer_ids 与 deferred ${shouldBeMaster ? "常驻层" : "瞬态层"}归属不一致`));
-  }
   for (const layer of planning.inventory) {
     if (!isObject(layer) || !nonEmptyString(layer.layer_id)) continue;
     const shouldBeMaster = layer.persistence === "persistent" || layer.type === "hud";
     if (shouldBeMaster !== declaredMasterIds.has(layer.layer_id)) errors.push(planningError(stage, layer, `scene_master.persistent_layer_ids 与 ${shouldBeMaster ? "常驻层" : "瞬态层"}归属不一致`));
     for (const relationType of ["mutually_exclusive_layer_ids", "coexists_with_layer_ids"]) for (const relatedId of (layer.relations?.[relationType] ?? [])) {
-      if (!layerIds.has(relatedId)) errors.push(planningError(stage, layer, `relations.${relationType} 引用了不存在的 layer_id：${relatedId}`));
+      // 关系可以指向其他独立 Work Item；这里只阻止自引用，不把外部层拉入当前任务验收。
       if (relatedId === layer.layer_id) errors.push(planningError(stage, layer, `relations.${relationType} 不得引用自身`));
     }
   }

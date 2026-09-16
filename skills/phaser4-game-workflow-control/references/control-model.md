@@ -62,20 +62,15 @@ Work Item 保存用户原始请求、目标、当前范围、实施计划、路�
 
 ## V0→V4 跨阶段硬门
 
-### 显示层子任务与宿主继续推进
+### 弹窗工作项与场景解耦
 
-所有显示层（HUD、modal、popup、drawer、toast）统一作为宿主场景下的子任务，可分开排期并行推进。未准备好的层先在 `scene_reconstruction_contract.display_layer_planning.deferred_layers` 登记，以 `layer_id` 为稳定标识、`host_scene_id` 为父场景关联，分别指定负责人；不自动转向子任务 V0、补图或代码实现。宿主沿自己的拆解确认、布局确认、V3 资源预验收和正式代码实现推进，但自身冻结目标、资源与证据门仍须满足。子任务未完成不等于场景整体完成：V4 联合验收必须关闭全部显示层子任务。
+场景工作项和弹窗工作项独立规划、实现、验收。场景只负责自身玩法、场景画面及属于 scene master 的常驻 HUD；modal、popup、drawer、toast 等瞬态显示层建立独立 `DISPLAY_LAYER` Work Item 和独立 Implementation Package。`host_scene_id` 只描述弹窗打开时的运行上下文及接线目标，不表示弹窗归属于宿主场景实现，也不把弹窗完成状态并入场景 V4。
 
-- `inventory` 保存本次进入完整视觉规划的显示层；其中瞬态层的 required state 仍必须有真实冻结上下文图。`deferred_layers` 保存未就绪显示层子任务，不伪造 target SHA、图或 PASS。
-- 每项待办只含 `layer_id`、`host_scene_id`、`type`、`persistence`、`in_scene_master`、`owner`、`reason`；ID、负责人和原因非空，宿主匹配；类型为 hud/modal/popup/drawer/toast。不得与 inventory 或其他待办重复。HUD 必须 persistent；常驻待办仍为 `in_scene_master=true` 并列入 `persistent_layer_ids`，瞬态待办为 false 且不列入；拆任务不能删掉原主图可见内容。
-- 没有延期可省略数组；一旦有未规划弹窗必须明确登记，不能用 `inventory=[]` 假装没有弹窗。已有完整层缺图不会被验证器自动转为待办。
-- 合法待办不阻断宿主 V1/V2/V3；V2 根计划引用的 `sceneReconstructionContract` 保留待办，`displayLayerContexts` 只列已冻结上下文。宿主 SCENE 不要求待办层的图；准备执行的 DISPLAY_LAYER 仍必须拥有自身唯一上下文及有效 V2/V3，不能以待办身份进入可执行包。
-- 弹窗可由用户或其他执行者并行推进自身参考、拆解确认、布局确认和生产；代码并行仍需已冻结宿主接口、各自前置有效及文件/状态所有权互斥，不要求宿主代码全部完成后才开始。现有执行单元仍使用同一场景 Work Item 的证据，不新增全局状态机或放宽跨工作项身份。
-- 宿主可先实现稳定触发事件/公开接口，弹窗内容、资源与接线由其责任方补齐；不得因延期删掉原图中的按钮、重排布局、加载未验收资源或伪造弹窗行为通过证据。
-- 弹窗准备就绪后，以完整 inventory 项替换其待办并更新受影响的场景合同/证据/实施计划，不直接往运行中的冻结包塞单元。真实身份变化按影响刷新，不能复用已过期的确认或单元结果。
-- V4 检测到任一待办必须阻断最终联合验收；补齐每层适用的视觉、资源、正式消费与生命周期证据，瞬态层还需上下文图及打开→交互→关闭→恢复证据。常驻层按自身交互/状态验收，不虚构弹窗式关闭行为。不得通过清空待办、永久禁用入口或删除需求来冒充完成；真实取消需求另走范围变更。
-
-本节限定下文“必需宿主上下文图”和“全部显示层”的生效时点：前者在 V1–V3 指本次完整规划的 inventory，后者在场景整体 V4/完成时包括全部已登记待办。
+- 场景 `display_layer_planning.inventory` 只记录场景自有的常驻显示层；没有自有显示层时显式使用 `inventory=[]`。`deferred_layers` 已移除，不得把未完成弹窗作为场景待办。
+- 弹窗 Work Item 的 `inventory` 记录本任务实际交付的瞬态层，并独立完成参考、拆解确认、布局确认、正式资源、代码和 V4 运行轨迹。required state 仍必须绑定真实宿主上下文图，V4 仍验证打开→交互→关闭→恢复。
+- `SCENE` 与 `DISPLAY_LAYER` 不得出现在同一个 Implementation Package。独立弹窗包可包含多个写范围和状态所有权互斥的 DISPLAY_LAYER 单元；每个单元保留 `displayLayerId` 和 `hostSceneId`。
+- 大厅或其他宿主场景只实现自己范围内的稳定触发事件/公开接口。弹窗内容、资源、状态、接线和验收由弹窗 Work Item 负责；弹窗未开始、失败或延期均不阻断宿主场景验收。
+- 弹窗与宿主需要联合调试时，在弹窗 Work Item 内消费宿主已冻结的公开接口与上下文证据。联合调试结果证明弹窗自身可用，不回写为场景完成前置，也不要求重新打开已通过的场景验收。
 
 视觉阶段是唯一的机器枚举 `V0`、`V1`、`V2`、`V3`、`V4`，且必须同时声明有语义的 `visualStageState`。V0/V1 必须先建立全局基线 brief、生成恰好三张同条件候选效果图、同屏交给人工并确认其中一张；`globalVisualBaselineSelectionRef` 通过后才可写入 `global-static-baseline-frozen`。该引用通过不可变 `path` + `sha256` 跨 Work Item 复用，根证据顶层 `workItemId` 始终是生产者身份，不是当前消费者；该状态只冻结颜色、字体、栅格等静态规则；它不等于 `v2-production-planning-complete`，三候选人工选择也不能替代逐场景 V2 拆解图确认。V2 方案冻结必须由拆解图、技术 JSON、coverage、生产计划和拆解确认证据派生。
 
@@ -91,8 +86,9 @@ Work Item 保存用户原始请求、目标、当前范围、实施计划、路�
   → 智能视觉判断生成双轴对齐决策，仅消费已确认元素与该决策生成布局图，人工修改并独立确认
   → V2 完成布局确认与合同回对/coverage/生产方案
   → V3 正式资源与宿主场景同屏组合预验收
-  → 正式 SCENE/DISPLAY_LAYER 功能实现
-  → V4 运行态视觉接入与功能/视觉联合复验
+  → 正式 SCENE 功能实现
+  → V4 场景运行态视觉接入与功能/视觉验收
+  → 各弹窗 DISPLAY_LAYER Work Item 独立完成 V1→V4，可与场景按公开接口并行
   → 跨场景 INTEGRATION/联合验收 → A4 正式入口（带副作用时进入 F4）
 ```
 
@@ -105,13 +101,13 @@ Work Item 保存用户原始请求、目标、当前范围、实施计划、路�
 effect-image 的 V2 功能归属是拆解确认的一部分，遵守[功能语义分组约束](../../phaser4-game-ui-layout/references/functional-semantic-grouping.md)。最终元素必须显式声明 `parent_element_id` 与 `semantic_grouping.kind/rationale`；布局严格继承，不以几何包含兜底。机器检查归属结构和身份，语义判断由人工确认；新增容器、归属或理由变化返回拆解确认并使旧布局身份失效，不自动改写已冻结的项目工件。
 
 同一命令内，`loadExecutionState` 完整复核绑定 Result 后，READY 与完成证据只消费该已校验状态；独立命令入口仍重新读取并校验，不能跨命令缓存。
-全局实施顺序在状态控制面固定为：先记录当前任务范围和工程基线，再按实施包是否声明视觉依赖决定基础工程是否等待全局视觉冻结；纯工程 foundation-only 包可先完成 `SHARED` 最小项目骨架和 `MODULE` 场景无关基础模块，具有视觉合同或资产生产依赖的基础包则先建立全局基线 brief、生成三张同条件候选效果图、同屏交给人工、人工选择确认一张并通过 `globalVisualBaselineSelectionRef` 正式冻结全局静态 `visual_baseline`。基础阶段完成后进入各场景 Work Item，先在 V1 生成或接收并冻结 scene master/reference target、宿主上下文效果图、视觉合同和初步还原草案，再完成 V2 拆解图确认与生产方案、V3 正式资源与组合预验收，才实施正式 `SCENE`/`DISPLAY_LAYER`，再进入 V4 和跨场景 `INTEGRATION`。基础阶段允许最小 Boot/Preload 生命周期、公开契约、游戏数据配置加载与 schema 校验、状态/存档仓库、输入/平台适配、资源目录/加载基础设施和测试支撑；禁止具体场景玩法规则、场景 UI/布局、正式可见资产消费、Boot→正式可见 Scene 接入和删除旧视觉实现。具有视觉依赖的基础包必须同时复核 `globalVisualBaselineSelectionRef` 与 `globalStaticBaselineState=global-static-baseline-frozen`，纯工程包不创建视觉产物、不消费正式可见资产，也不要求该全局选图门；任何正式视觉行为或混入场景、显示层、集成单元的包仍按 V2/V3 正式门处理。参考模式的 `effect-image` 仍在同一场景 Work Item 内完成 V1→V4。正式代码数组顺序固定为 `SHARED`→`MODULE`→按场景连续的 `SCENE`+紧邻从属 `DISPLAY_LAYER`→`INTEGRATION`/联合验收；MODULE/SCENE/DISPLAY_LAYER 可按互斥所有权并行，SHARED/INTEGRATION 保持串行，显示层不得在所有场景之后另设尾部阶段，实际场景顺序由计划制定者冻结。代码面在每个 SCENE/DISPLAY_LAYER 单元准备、委派、READY 和激活前读取当前 Work Item 的 V2/V3 结果；全局视觉冻结、手写 PASS 或数组前序均不构成该逐单元证据。
+全局实施顺序先建立任务范围、工程基线和必要的全局视觉基线，再完成 foundation-only 的 `SHARED`/`MODULE`。随后 SCENE Work Item 与 DISPLAY_LAYER Work Item 分别完成自己的 V1→V4。正式代码包顺序为 `SHARED`→`MODULE`→`SCENE`→`INTEGRATION`，或 `SHARED`→`MODULE`→`DISPLAY_LAYER`→`INTEGRATION`；两类视觉单元不得混在同一包。每个单元只读取所属 Work Item 的 V2/V3 结果，弹窗的 `hostSceneId` 只绑定宿主上下文和公开接口。
 
 effect-image 的布局拆解在控制面按串行顺序处理：先在确认 proposal 中按原顺序冻结 `decomposition_elements`，再由布局阶段逐项继承 `parent_element_id` 为 `parent_layout_node_id` 并计算 `parent_target_bounds`。智能布局必须结合原图构图、视觉重心和元素语义，按同一顺序生成唯一决策并显式声明 `axis_alignment.horizontal=left|center|right` 与 `vertical=top|center|bottom`；不得依据四边距离自动决定对齐，也不得调序、生成多个布局方案或重新生成/替换视觉参考图。布局标注 PNG 只在冻结原图上叠加父子框与右栏说明。父内容框内的 `relative_position` 只承担测量和漂移复核，`offset` 与两个 `${vertical}-${horizontal}` 锚点按显式视觉决策计算。`reference_id` 必须等于父 ID，父级只能是节点、`viewport` 或 `safe-area`，不得循环或越界；视觉决策文件及父子几何变化都会使布局身份 SHA 失效。
 
 进入 A3 `IMPLEMENTING` 时创建 `evidence/<workItemId>/execution-state.json`；纯工程 foundation-only 包在当前任务范围、工程基线、冻结实施包和工程证据就绪后即可在全局选图前初始化，具有视觉依赖的基础包仍须在三候选人工选择证据和全局静态基线冻结后初始化，场景/集成包仍只能在相应 V2/V3 门满足后初始化。该状态记录绑定当前 Work Item、Implementation Package、baseline、执行计划指纹和 `executionUnits` 数组位置；只有通过 `unit-check` 的当前 PASS Result 可以把当前单元更新为 `COMPLETE`，并按预设数组激活下一串行单元或下一并行组的 `IN_PROGRESS`。并行组未全部完成时，后续顺序阶段不得提前激活；当前阶段实施序列完成后只输出 `WORKFLOW_COMPLETE`，表示该实施包已闭环，不表示场景 Work Item 已完成。场景 Work Item 继续推进时，必须在同一 `workItemId` 下通过显式阶段入口推进；进入 V3 正式实施时提交并校验新的冻结 Implementation Package，V3→V4 运行验收则复用已完成正式包并只更新 Execution State 阶段元数据。控制面先按旧包复核完整 Execution State，再清空旧 Diff Audit/validation batch；换包时归档旧状态并初始化新阶段状态，复用包时保留原单元结果。旧状态和 Result 只保留审计用途，不能证明新阶段候选。`delegate-check`、`parallel-check`、`unit-check`、`evidence-check` 和进入 `VALIDATING` 的迁移均必须读取并复核当前阶段状态，缺失、过期、篡改或身份/顺序不一致一律阻断；其中 SCENE/DISPLAY_LAYER 的 READY、委派和激活还必须复核当前 Work Item 的 V2/V3 结果。门禁问题先输出 `repair`/`revalidate` 及其真实受影响单元；只有上游事实失效、任务范围真实变化或硬门将被绕过时才输出 `return`；普通候选身份变化不触发 `RETURN`。
 
-`highFidelityPrerequisite` 是 SCENE/DISPLAY_LAYER 必填、其他类型必须为 null 的严格 nullable 字段，表示同一场景 Work Item 的 V2 方案引用，严格包含 `workItemId`、`status=COMPLETE`、`stage=V2`、`frozen=true`、scene/layer/host 身份、冻结 `targetSha256`、`candidateSha256`、`diffFingerprint`、仓库内 `evidenceFile` 和 `evidenceSha256`。证据文件统一为 `phaser4-scene-v2-reconstruction-plan/1.0` 的单一场景根结果：根提供带实际文件 SHA 的 `sceneMaster`、`sceneReconstructionContract`、拆解标注图、技术拆解 JSON、拆解确认、生产合同、`visualProductionUnits` 和 `displayLayerContexts[]`。SCENE 与 DISPLAY_LAYER 必须使用同一 `evidenceFile`，候选、差异、目标和宿主上下文身份必须彼此一致。不得使用独立工作项身份、独立任务字段或后续代码包 ID；缺字段、身份漂移、文件缺失或 SHA 漂移均 fail closed。
+`highFidelityPrerequisite` 是 SCENE/DISPLAY_LAYER 必填、其他类型必须为 null 的严格 nullable 字段，引用当前单元所属 Work Item 的 V2 方案。SCENE 引用场景工作项证据；DISPLAY_LAYER 引用独立弹窗工作项证据，并额外以 scene/layer/host 身份绑定宿主上下文图。两者不得共用一个实施包，也不要求使用同一 `evidenceFile`；缺字段、身份漂移、文件缺失或 SHA 漂移均 fail closed。
 
 控制面读取 V2 布局候选目录的实际五份产物，并把 `layout_review_file`、`layout_review_sha256`、`layout_review_identity_sha256`、`layout_nodes_file`、`layout_nodes_sha256` 与 PNG、决策、拆解确认、proposal、target、scene/state 身份逐项复核。`review.html` 仅是候选审阅展示，不能改变状态或替代标准布局 PNG、F2 机器门；缺父节点、成环、越界、顺序/身份漂移或任一 SHA 不一致均 fail closed。字段和页面约束见[离线布局审阅产物](../../phaser4-game-ui-layout/references/layout-review-artifacts.md)。
 

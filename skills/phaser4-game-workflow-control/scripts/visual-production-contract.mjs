@@ -713,7 +713,7 @@ export function validateV4ProductionGate(manifest, options = {}) {
     }
   });
   if (options.requireSceneReconstruction === true) {
-    errors.push(...validateSceneReconstructionGate(manifest, { stage: "V4", visual_validation: { mode: visualValidationMode } }));
+    errors.push(...validateSceneReconstructionGate(manifest, { stage: "V4", displayLayerScope: options.displayLayerScope, visual_validation: { mode: visualValidationMode } }));
   }
   const runtimeConsumption = gate.runtime_consumption;
   if (!isObject(runtimeConsumption) || !["passed", "consumed", "PASS"].includes(String(runtimeConsumption.status).toLowerCase())) error("V4 缺少带身份绑定的运行时实际消费 evidence", "runtime_consumption");
@@ -734,7 +734,7 @@ export async function validateV4VisualManifest(manifest, options = {}) {
   const identity = manifestEvidenceIdentity(manifest);
   const evidenceOptions = { requireEvidenceIdentity: options.requireEvidenceIdentity !== false, identity, projectRoot: options.projectRoot, checkFiles: options.checkFiles === true, targetFrozenAt: manifest?.reference_target?.frozen_at, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority: options.authority };
   const errors = [
-    ...validateSceneReconstructionGate(manifest, { stage: "V4" }),
+    ...validateSceneReconstructionGate(manifest, { stage: "V4", displayLayerScope: options.displayLayerScope }),
     ...validateVisualProductionCoverage(manifest, { stage: "V2", requireManualConfirmation: true, projectRoot: options.projectRoot, checkFiles: options.checkFiles === true, targetSha: identity.target, targetFrozenAt: manifest?.reference_target?.frozen_at, candidateSha: identity.candidate, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority: options.authority }),
     ...validateProductionAuditShape(manifest, { ...options, authority: options.authority }),
     ...validateV4ProductionGate(manifest, { ...options, ...evidenceOptions, requireSceneReconstruction: true }),
@@ -742,6 +742,12 @@ export async function validateV4VisualManifest(manifest, options = {}) {
   // 总门始终复核 V3 的方法/交付一致性；只有传入项目根目录时才额外检查实际文件 SHA。
   errors.push(...await auditProductionContract(manifest, { projectRoot: options.projectRoot, checkFiles: options.checkFiles === true, targetSha: identity.target, targetFrozenAt: manifest?.reference_target?.frozen_at, candidateSha: identity.candidate, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority: options.authority }));
   return [...new Set(errors)];
+}
+
+/** 根据实施包的正式执行单元确定显示层验收作用域，避免由 manifest 自行声明并绕过场景边界。 */
+function displayLayerScopeFromPackage(pkg) {
+  const unitTypes = new Set((pkg?.executionUnits ?? []).map((unit) => unit?.unitType));
+  return unitTypes.has("DISPLAY_LAYER") && !unitTypes.has("SCENE") ? "display-layer" : "scene";
 }
 /** 校验实施包与 coverage 的部件资产一一绑定，并覆盖每个预期源/运行输出。 */
 function validateVisualUnitAssetBindings(unit, region, context, errors, options = {}) {
@@ -935,8 +941,9 @@ export function validateVisualImplementationPackageBinding(pkg, options = {}) {
   if (manifest?.workItemId !== pkg?.workItemId) error("visual manifest.workItemId 未绑定当前 Implementation Package workItemId", "workItemId");
   if (manifest?.candidateVersion !== pkg?.candidateVersion) error("visual manifest.candidateVersion 未绑定当前 Implementation Package candidateVersion", "candidateVersion");
   const authority = options.authority;
+  const displayLayerScope = displayLayerScopeFromPackage(pkg);
   // current_stage 由实施包显式决定；远程场景合同门与本地用户拆解确认门必须同时通过。
-  if (requestedStage !== undefined && requestedStage !== null) errors.push(...validateSceneReconstructionGate(manifest, { stage }));
+  if (requestedStage !== undefined && requestedStage !== null) errors.push(...validateSceneReconstructionGate(manifest, { stage, displayLayerScope }));
   errors.push(...validateVisualDecompositionConfirmationBinding(pkg, manifest, { stage: "V2", projectRoot, targetSha: manifest?.reference_target?.target_sha256, candidateSha: manifest?.candidate_identity?.sha256, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority }));
   errors.push(...validateVisualProductionCoverage(manifest, { stage, requireManualConfirmation: true, checkFiles: options.checkFiles === true || stage === "V2", projectRoot, targetSha: manifest?.reference_target?.target_sha256, targetFrozenAt: manifest?.reference_target?.frozen_at, candidateSha: manifest?.candidate_identity?.sha256, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority }));
   errors.push(...validateVisualProductionUnits(pkg, manifest, options));
@@ -947,7 +954,7 @@ export function validateVisualImplementationPackageBinding(pkg, options = {}) {
   if (stage === "V4") {
     const identity = manifestEvidenceIdentity(manifest);
     errors.push(...validateVisualPostApprovalReviewFields(manifest, { stage: "V4" }));
-    errors.push(...validateV4ProductionGate(manifest, { requireEvidenceIdentity: true, identity, projectRoot, requireSceneReconstruction: true }));
+    errors.push(...validateV4ProductionGate(manifest, { requireEvidenceIdentity: true, identity, projectRoot, requireSceneReconstruction: true, displayLayerScope }));
   }
   return errors;
 }
@@ -976,8 +983,9 @@ export function validateVisualEvidence(evidence, pkg, options = {}) {
   const baseIdentity = manifestEvidenceIdentity(manifest); const identity = { ...baseIdentity, diff: options.diffFingerprint ?? baseIdentity.diff };
   for (const [key, label] of [["candidate", "candidate"], ["target", "target"], ["baseline", "baseline"], ["diff", "diff"]]) if (!nonEmptyString(identity[key])) errors.push(`[V4] annotation_number=* region_id=* expected_method=production-contract observed_method=missing 缺失=${label}_identity：视觉证据缺少当前身份绑定`);
   const authority = options.authority;
-  // Evidence/COMPLETE 只允许消费新版完整场景合同，资源工程子门不能单独形成视觉 PASS。
-  errors.push(...validateSceneReconstructionGate(manifest, { stage: "V4" }));
+  const displayLayerScope = displayLayerScopeFromPackage(pkg);
+  // Evidence/COMPLETE 必须消费当前工作项的完整合同；弹窗合同不再进入宿主场景验收。
+  errors.push(...validateSceneReconstructionGate(manifest, { stage: "V4", displayLayerScope }));
   errors.push(...validateProductionAuditShape(manifest, { authority, projectRoot: options.projectRoot, checkFiles: Boolean(options.projectRoot) }));
   errors.push(...auditProductionContract(manifest, { projectRoot: options.projectRoot, checkFiles: Boolean(options.projectRoot), targetSha: identity.target, targetFrozenAt: manifest?.reference_target?.frozen_at, candidateSha: identity.candidate, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority }));
   const evidenceOptions = { requireEvidenceIdentity: true, identity, projectRoot: options.projectRoot, checkFiles: Boolean(options.projectRoot), targetFrozenAt: manifest?.reference_target?.frozen_at, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority };
@@ -987,6 +995,6 @@ export function validateVisualEvidence(evidence, pkg, options = {}) {
   errors.push(...validateVisualF2MachineGate(evidence?.gateResults?.F2, { stage: "F2" }, evidenceOptions));
   const replay = evidence?.gateResults?.F3?.runtime_replay ?? evidence?.runtime_replay;
   if (!isObject(replay) || !["passed", "PASS"].includes(String(replay.status)) || !nonEmptyString(replay.evidence)) errors.push("[F3] annotation_number=* region_id=* expected_method=runtime-replay observed_method=missing 缺失=runtime_replay：视觉候选必须绑定通过的 runtime replay"); else errors.push(...validateEvidenceIdentity(replay, { stage: "F3", annotation_number: "*", region_id: "runtime-replay" }, identity, evidenceOptions));
-  const gate = evidence?.visual_production_gate ?? evidence?.v4_production_gate; if (!gate) errors.push("[V4] annotation_number=* region_id=* expected_method=production-contract observed_method=missing 缺失=visual_production_gate：视觉候选缺少 V4 生产合同门"); else errors.push(...validateV4ProductionGate({ ...manifest, visual_production_gate: gate }, { ...evidenceOptions, candidateSha256: identity.candidate, targetSha256: identity.target, targetFrozenAt: manifest?.reference_target?.frozen_at, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion }));
+  const gate = evidence?.visual_production_gate ?? evidence?.v4_production_gate; if (!gate) errors.push("[V4] annotation_number=* region_id=* expected_method=production-contract observed_method=missing 缺失=visual_production_gate：视觉候选缺少 V4 生产合同门"); else errors.push(...validateV4ProductionGate({ ...manifest, visual_production_gate: gate }, { ...evidenceOptions, displayLayerScope, candidateSha256: identity.candidate, targetSha256: identity.target, targetFrozenAt: manifest?.reference_target?.frozen_at, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion }));
   return errors;
 } export async function productionContractAuditResult(manifest, options = {}) { const errors = await auditProductionContract(manifest, options); return { status: errors.length ? "failed" : "passed", errors }; }

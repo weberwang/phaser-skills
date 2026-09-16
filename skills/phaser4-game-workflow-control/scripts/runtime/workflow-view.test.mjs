@@ -3,9 +3,9 @@ import test from 'node:test';
 import { PROJECT_PHASES, SCENE_STEPS, projectWorkflowView, workflowViewMetadata } from './workflow-view.mjs';
 import { renderResult, resultRecord } from './output.mjs';
 
-/** 验证六阶段用户视图的顺序与中文标签固定，避免 CLI 文案随实现漂移。 */
-test('项目视图固定为六个阶段', () => {
-  assert.deepEqual(PROJECT_PHASES.map((phase) => phase.label), ['需求与范围', '全局基线', '基础工程', '逐场景生产', '全局集成验证', '发布']);
+/** 验证项目视图显式区分场景与弹窗生产，避免 CLI 把独立工作项混为大厅实现。 */
+test('六阶段视图在生产阶段内区分场景和弹窗任务', () => {
+  assert.deepEqual(PROJECT_PHASES.map((phase) => phase.label), ['需求与范围', '全局基线', '基础工程', '场景与弹窗生产', '全局集成验证', '发布']);
   assert.equal(new Set(PROJECT_PHASES.map((phase) => phase.id)).size, 6);
   assert.deepEqual(SCENE_STEPS.map((step) => step.label), ['场景定义', '拆解确认', '资源与组合验收', '正式实现与运行验收']);
 });
@@ -37,7 +37,7 @@ test('V0-V4 固定映射到四步单场景视图', () => {
 });
 
 /** 验证 foundation-only 与场景包按单元类型区分，不让基础包误显示为场景生产。 */
-test('foundation-only 与场景实施包映射不同阶段', () => {
+test('foundation-only、场景和弹窗实施包映射不同阶段', () => {
   const foundation = projectWorkflowView({
     workItem: { stageId: 'G1', globalState: 'IMPLEMENTING', visualStage: 'V1' },
     implementationPackage: { executionUnits: [{ unitType: 'SHARED' }, { unitType: 'MODULE' }] },
@@ -47,24 +47,31 @@ test('foundation-only 与场景实施包映射不同阶段', () => {
 
   const scene = projectWorkflowView({
     workItem: { stageId: 'G1', globalState: 'IMPLEMENTING', visualStage: 'V4' },
-    implementationPackage: { executionUnits: [{ unitType: 'SCENE' }, { unitType: 'DISPLAY_LAYER' }] },
+    implementationPackage: { executionUnits: [{ unitType: 'SCENE' }] },
   });
   assert.equal(scene.phaseId, 'scene-production');
   assert.equal(scene.sceneStepId, 'formal-implementation-runtime-validation');
+
+  const popup = projectWorkflowView({
+    workItem: { stageId: 'G1', globalState: 'IMPLEMENTING', visualStage: 'V4' },
+    implementationPackage: { executionUnits: [{ unitType: 'DISPLAY_LAYER' }] },
+  });
+  assert.equal(popup.phaseId, 'scene-production');
+  assert.equal(popup.sceneStepId, null);
 });
 
 /** 验证合法完整实施顺序允许场景单元与集成单元同包，纯集成包也能单独投影。 */
 test('完整场景包与纯集成包按合法单元顺序投影', () => {
   const complete = projectWorkflowView({
     workItem: { stageId: 'G1', globalState: 'IMPLEMENTING', visualStage: 'V3' },
-    implementationPackage: { executionUnits: [{ unitType: 'SHARED' }, { unitType: 'MODULE' }, { unitType: 'SCENE' }, { unitType: 'DISPLAY_LAYER' }, { unitType: 'INTEGRATION' }] },
+    implementationPackage: { executionUnits: [{ unitType: 'SHARED' }, { unitType: 'MODULE' }, { unitType: 'SCENE' }, { unitType: 'INTEGRATION' }] },
   });
   assert.equal(complete.phaseId, 'scene-production');
   assert.equal(complete.sceneStepId, 'production-ready');
 
   const integrated = projectWorkflowView({
     workItem: { stageId: 'G2', globalState: 'INTEGRATING', visualStage: 'V4' },
-    implementationPackage: { executionUnits: [{ unitType: 'SCENE' }, { unitType: 'DISPLAY_LAYER' }, { unitType: 'INTEGRATION' }] },
+    implementationPackage: { executionUnits: [{ unitType: 'SCENE' }, { unitType: 'INTEGRATION' }] },
   });
   assert.equal(integrated.phaseId, 'global-integration-validation');
   assert.equal(integrated.sceneStepId, null);
@@ -87,6 +94,14 @@ test('未知组合返回 unknown 并保留内部阶段', () => {
   assert.equal(view.phaseLabel, '未知阶段');
   assert.equal(view.sceneStepId, null);
   assert.equal(view.internalStage, 'G1/IMPLEMENTING');
+});
+
+test('SCENE 与 DISPLAY_LAYER 混包保守返回 unknown', () => {
+  const view = projectWorkflowView({
+    workItem: { stageId: 'G1', globalState: 'IMPLEMENTING', visualStage: 'V4' },
+    implementationPackage: { executionUnits: [{ unitType: 'SCENE' }, { unitType: 'DISPLAY_LAYER' }] },
+  });
+  assert.equal(view.phaseId, 'unknown');
 });
 
 /** 验证 V3 正式资源验收通过后，进入正式实施状态才切换到最后一个场景步骤。 */
@@ -126,7 +141,7 @@ test('JSON 顶层字段不变且默认文本显示简化阶段', () => {
   const record = resultRecord({ status: 'READY', stage: 'V2/REVIEW', next: '完成当前待执行单元', metadata: { workflowView: view } });
   assert.deepEqual(Object.keys(record), ['status', 'stage', 'changed', 'blocking', 'next', 'metadata']);
   const text = renderResult(record);
-  assert.match(text, /阶段：逐场景生产 · 拆解确认/);
+  assert.match(text, /阶段：场景与弹窗生产 · 拆解确认/);
   assert.doesNotMatch(text, /阶段：V2\/REVIEW/);
   assert.match(text, /下一步：完成当前待执行单元/);
 });

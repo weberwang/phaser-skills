@@ -41,7 +41,7 @@ function isNonEmptyString(value) {
   return typeof value === 'string' && Boolean(value.trim());
 }
 
-/** 生成单一场景 Work Item 的视觉实现上下文身份。 */
+/** 生成场景或独立弹窗 Work Item 的视觉实现上下文身份。 */
 function unitContext(unit) {
   return unit.unitType === 'SCENE'
     ? { sceneId: unit.sceneId, displayLayerId: null, hostSceneId: null }
@@ -57,7 +57,7 @@ export function validateHighFidelityPrerequisiteShape(unit) {
     return errors;
   }
   if (!isRecord(value)) {
-    errors.push(`execution unit ${unit.unitId}.highFidelityPrerequisite 必须引用当前场景 Work Item 的 V2 拆解还原方案`);
+    errors.push(`execution unit ${unit.unitId}.highFidelityPrerequisite 必须引用当前 Work Item 的 V2 拆解还原方案`);
     return errors;
   }
   const missing = PREREQUISITE_FIELDS.filter((field) => value[field] === undefined);
@@ -71,9 +71,9 @@ export function validateHighFidelityPrerequisiteShape(unit) {
   return errors;
 }
 
-/** 生成所有视觉前置失败的统一错误，明确回到同一 Work Item 的 V2 拆解方案。 */
+/** 生成视觉前置失败的统一错误，明确回到当前场景或弹窗 Work Item。 */
 function prerequisiteError(unit, detail) {
-  return new Error(`场景视觉 V2 前置门拒绝 ${unit?.unitId ?? '<package>'}：${detail}；应回到当前场景 Work Item 的 V2 拆解方案确认`);
+  return new Error(`视觉 V2 前置门拒绝 ${unit?.unitId ?? '<package>'}：${detail}；应回到当前 Work Item 的 V2 拆解方案确认`);
 }
 
 /** 生成正式执行 V3 门失败信息，避免把资源验收问题误导回 V2。 */
@@ -201,14 +201,14 @@ function assertReviewEvidence(review, fields, expected, repo, io, unit, label) {
   if (io.fileHash(target) !== review.evidenceSha256) throw prerequisiteError(unit, `${label}.evidenceFile SHA-256 已漂移：${review.evidenceFile}`);
 }
 
-/** 读取并复核同一场景 Work Item 的不可变 V2 拆解还原方案。 */
+/** 读取并复核当前场景或弹窗 Work Item 的不可变 V2 拆解还原方案。 */
 export function assertHighFidelityPrerequisite(unit, work, pkg, repo, io) {
   const shapeErrors = validateHighFidelityPrerequisiteShape(unit);
   if (shapeErrors.length) throw prerequisiteError(unit, shapeErrors[0]);
   if (!SCENE_UNIT_TYPES.has(unit.unitType)) return null;
   if (!repo || !io || typeof io.resolve !== 'function' || typeof io.existsSync !== 'function' || typeof io.readFileSync !== 'function' || typeof io.fileHash !== 'function') throw prerequisiteError(unit, '缺少不可变证据读取能力');
   const reference = unit.highFidelityPrerequisite;
-  if (reference.workItemId !== work?.workItemId || pkg?.workItemId !== work?.workItemId) throw prerequisiteError(unit, 'Implementation Package、前置引用与当前 Work Item 不一致；只能引用当前场景结果');
+  if (reference.workItemId !== work?.workItemId || pkg?.workItemId !== work?.workItemId) throw prerequisiteError(unit, 'Implementation Package、前置引用与当前 Work Item 不一致；只能引用当前任务结果');
   const currentV2 = work?.visualStageEvidenceRefs?.V2;
   if (!isRecord(currentV2) || currentV2.path !== reference.evidenceFile || currentV2.sha256 !== reference.evidenceSha256 || (currentV2.workItemId && currentV2.workItemId !== work.workItemId)) throw prerequisiteError(unit, 'Implementation Package 必须只引用当前 Work Item 的 V2 拆解方案');
   const evidencePath = resolveRepoFile(repo, reference.evidenceFile, io, unit, 'evidenceFile');

@@ -48,19 +48,17 @@ export function validateExecutionPlan(pkg, pathMatches, fail) {
     unitsById.set(unit.unitId, unit);
   }
 
-  // 数组位置是唯一执行顺序：显示层只能紧跟匹配的宿主 Scene，不能跨过场景或落到独立尾部。
+  // SCENE 与 DISPLAY_LAYER 属于相互独立的 Work Item/实施包；hostSceneId 只描述弹窗运行上下文，不能把宿主场景拉回同一包。
+  const unitTypes = new Set(pkg.executionUnits.map((unit) => unit.unitType));
+  if (unitTypes.has('SCENE') && unitTypes.has('DISPLAY_LAYER')) fail('SCENE 与 DISPLAY_LAYER execution unit 不得出现在同一 Implementation Package');
+
+  // 数组位置是唯一执行顺序：正式视觉单元各自占据同一阶段，不要求显示层邻接或同包绑定宿主 Scene。
   const phaseByType = { SHARED: 0, MODULE: 1, SCENE: 2, DISPLAY_LAYER: 2, INTEGRATION: 3 };
   let lastPhase = -1;
-  let hostSceneId = null;
   for (const unit of pkg.executionUnits) {
-    if (unit.unitType === 'DISPLAY_LAYER') {
-      if (hostSceneId === null || unit.hostSceneId !== hostSceneId) fail(`DISPLAY_LAYER execution unit ${unit.unitId} 必须紧邻同包中 hostSceneId 匹配的宿主 SCENE`);
-      continue;
-    }
     const phase = phaseByType[unit.unitType];
     if (phase < lastPhase) fail(`executionUnits 类型顺序非法：${unit.unitId}(${unit.unitType}) 必须遵循 SHARED→MODULE→SCENE/DISPLAY_LAYER→INTEGRATION`);
     lastPhase = phase;
-    hostSceneId = unit.unitType === 'SCENE' ? unit.sceneId : null;
   }
 
   for (const unit of pkg.executionUnits) {

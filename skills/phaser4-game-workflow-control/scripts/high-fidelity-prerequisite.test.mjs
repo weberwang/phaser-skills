@@ -108,7 +108,7 @@ function refreshGlobalBaselineSelectionReference(fixture, selection) {
   fixture.work.globalVisualBaselineSelectionRef.sha256 = hashFile(join(fixture.repo, 'docs', 'global-baseline-selection.json'));
 }
 
-/** 创建同一场景 Work Item 及其包含多个显示层上下文的完整 V2 结果夹具。 */
+/** 创建场景或独立弹窗 Work Item 及其完整 V2 结果夹具。 */
 function makeFixture(unitType = 'SCENE', selectedLayer = 'pause') {
   const repo = mkdtempSync(join(tmpdir(), 'phaser-scene-v2-'));
   mkdirSync(join(repo, 'docs'), { recursive: true });
@@ -122,12 +122,13 @@ function makeFixture(unitType = 'SCENE', selectedLayer = 'pause') {
     settingsContext: join(repo, 'docs', 'settings-context.png'),
   };
   Object.values(files).forEach((path) => writeFileSync(path, `${path}\n`));
+  const workItemId = unitType === 'SCENE' ? 'WI-1' : `WI-DISPLAY-${selectedLayer}`;
   const expected = unitType === 'SCENE' ? { sceneId: 'play', displayLayerId: null, hostSceneId: null } : { sceneId: 'play', displayLayerId: selectedLayer, hostSceneId: 'play' };
   const artifact = (path) => ({ file: path.slice(repo.length + 1).replaceAll('\\', '/'), sha256: hashFile(path), sceneId: 'play' });
   const contextArtifact = (path, displayLayerId) => ({ ...artifact(path), displayLayerId, hostSceneId: 'play' });
   const visualDecompositionConfirmation = { confirmationId: 'V2-CONFIRM-1', confirmationMode: 'manual', status: 'PASS', targetSha256: TARGET_SHA, candidateSha256: CANDIDATE_SHA, diffFingerprint: DIFF, evidenceFile: 'docs/v2-decomposition-confirmation.json', evidenceSha256: hashFile(files.confirmation) };
   const evidence = {
-    schemaVersion: 'phaser4-scene-v2-reconstruction-plan/1.0', workItemId: 'WI-1', status: 'COMPLETE', stage: 'V2', frozen: true, sceneId: 'play',
+    schemaVersion: 'phaser4-scene-v2-reconstruction-plan/1.0', workItemId, status: 'COMPLETE', stage: 'V2', frozen: true, sceneId: 'play',
     targetSha256: TARGET_SHA, candidateSha256: CANDIDATE_SHA, diffFingerprint: DIFF, sceneMaster: artifact(files.sceneMaster),
     sceneReconstructionContract: artifact(files.reconstructionContract), decompositionAnnotation: artifact(files.decompositionAnnotation), technicalDecomposition: artifact(files.technicalDecomposition), visualDecompositionConfirmation,
     visualProductionContract: { contractId: 'VPC-1' },
@@ -138,18 +139,17 @@ function makeFixture(unitType = 'SCENE', selectedLayer = 'pause') {
     ],
   };
   const evidencePath = join(repo, 'docs', 'scene-v2-plan.json');
-  const unit = { unitId: unitType === 'SCENE' ? 'SCENE-1' : `DISPLAY-${selectedLayer}`, unitType, sceneId: unitType === 'SCENE' ? 'play' : null, displayLayerId: unitType === 'SCENE' ? null : selectedLayer, hostSceneId: unitType === 'SCENE' ? null : 'play', highFidelityPrerequisite: { workItemId: 'WI-1', status: 'COMPLETE', stage: 'V2', frozen: true, ...expected, targetSha256: TARGET_SHA, candidateSha256: CANDIDATE_SHA, diffFingerprint: DIFF, evidenceFile: 'docs/scene-v2-plan.json', evidenceSha256: '' } };
-  const work = { workItemId: 'WI-1', visualStage: 'V2', visualStageState: 'v2-production-planning-complete', visualStageEvidenceRefs: { V2: { path: 'docs/scene-v2-plan.json', sha256: '', workItemId: 'WI-1' } } };
-  const pkg = { workItemId: 'WI-1' };
+  const unit = { unitId: unitType === 'SCENE' ? 'SCENE-1' : `DISPLAY-${selectedLayer}`, unitType, sceneId: unitType === 'SCENE' ? 'play' : null, displayLayerId: unitType === 'SCENE' ? null : selectedLayer, hostSceneId: unitType === 'SCENE' ? null : 'play', highFidelityPrerequisite: { workItemId, status: 'COMPLETE', stage: 'V2', frozen: true, ...expected, targetSha256: TARGET_SHA, candidateSha256: CANDIDATE_SHA, diffFingerprint: DIFF, evidenceFile: 'docs/scene-v2-plan.json', evidenceSha256: '' } };
+  const work = { workItemId, visualStage: 'V2', visualStageState: 'v2-production-planning-complete', visualStageEvidenceRefs: { V2: { path: 'docs/scene-v2-plan.json', sha256: '', workItemId } } };
+  const pkg = { workItemId };
   const fixture = { repo, evidencePath, evidence, unit, work, pkg, io: { resolve, existsSync, readFileSync, fileHash: hashFile } };
   writeEvidenceFile(fixture);
   return fixture;
 }
 
-test('一个 SCENE 与两个 DISPLAY_LAYER 共用同一场景 V2 拆解还原方案', () => {
+test('SCENE 与 DISPLAY_LAYER 使用各自 Work Item 的 V2 拆解还原方案', () => {
   const fixtures = [makeFixture('SCENE'), makeFixture('DISPLAY_LAYER', 'pause'), makeFixture('DISPLAY_LAYER', 'settings')];
-  const evidenceFiles = fixtures.map((fixture) => fixture.unit.highFidelityPrerequisite.evidenceFile);
-  assert.deepEqual(new Set(evidenceFiles).size, 1);
+  assert.equal(new Set(fixtures.map((fixture) => fixture.work.workItemId)).size, 3);
   for (const fixture of fixtures) {
     assert.doesNotThrow(() => assertHighFidelityPrerequisite(fixture.unit, fixture.work, fixture.pkg, fixture.repo, fixture.io));
     rmSync(fixture.repo, { recursive: true, force: true });

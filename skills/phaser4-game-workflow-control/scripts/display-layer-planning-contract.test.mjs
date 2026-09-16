@@ -15,8 +15,8 @@ function targetInfo() {
   return { sceneId: "main", stateId: "default", targetSha: SHA, viewport: { width: 390, height: 844 } };
 }
 
-/** 构造最小显示层规划，默认包含显式的延期待办数组。 */
-function planning({ inventory = [], deferredLayers = [], persistentLayerIds = [] } = {}) {
+/** 构造当前工作项的最小显示层规划。 */
+function planning({ inventory = [], persistentLayerIds = [] } = {}) {
   return {
     version: "1.0",
     scene_master: {
@@ -28,21 +28,6 @@ function planning({ inventory = [], deferredLayers = [], persistentLayerIds = []
       persistent_layer_ids: persistentLayerIds,
     },
     inventory,
-    deferred_layers: deferredLayers,
-  };
-}
-
-/** 构造可并行记录的最小显示层待办。 */
-function deferredLayer(overrides = {}) {
-  return {
-    layer_id: "pause-popup",
-    host_scene_id: "main",
-    type: "popup",
-    persistence: "transient",
-    in_scene_master: false,
-    owner: "popup-worker",
-    reason: "宿主上下文效果图尚未确认",
-    ...overrides,
   };
 }
 
@@ -275,115 +260,42 @@ function highFidelityFixture(unitType, displayLayerIds) {
   };
 }
 
-test("V1-V3 允许并行记录 HUD、modal、popup、drawer、toast 待办", () => {
-  const deferredLayers = [
-    deferredLayer({ layer_id: "main-hud", type: "hud", persistence: "persistent", in_scene_master: true }),
-    deferredLayer({ layer_id: "pause-modal", type: "modal" }),
-    deferredLayer({ layer_id: "pause-popup", type: "popup" }),
-    deferredLayer({ layer_id: "help-drawer", type: "drawer" }),
-    deferredLayer({ layer_id: "save-toast", type: "toast" }),
-  ];
-  const value = planning({ deferredLayers, persistentLayerIds: ["main-hud"] });
-  for (const stage of ["V1", "v2", "V3"]) assert.deepEqual(validateDisplayLayerPlanning(value, targetInfo(), { stage }), []);
+test("场景规划拒绝 deferred_layers，弹窗必须拆为独立工作项", () => {
+  const value = { ...planning(), deferred_layers: [{ layer_id: "pause-popup" }] };
+  const errors = validateDisplayLayerPlanning(value, targetInfo(), { stage: "V1" });
+  assert.ok(errors.some((item) => item.includes("deferred_layers 已移除")), errors.join(" | "));
 });
 
-test("V4 统一阻断仍存在的待办，且阶段大小写不影响门禁", () => {
-  const errors = validateDisplayLayerPlanning(planning({ deferredLayers: [deferredLayer()] }), targetInfo(), { stage: "v4" });
-  assert.ok(errors.some((item) => item.includes("待办显示层未完成宿主联合验收")));
-});
-
-test("deferred_layers 可以为空或省略，但错误类型必须拒绝", () => {
-  const empty = planning({ deferredLayers: [] });
-  assert.deepEqual(validateDisplayLayerPlanning(empty, targetInfo(), { stage: "V1" }), []);
-
-  const omitted = planning();
-  delete omitted.deferred_layers;
-  assert.deepEqual(validateDisplayLayerPlanning(omitted, targetInfo(), { stage: "V1" }), []);
-
-  const invalid = { ...planning(), deferred_layers: {} };
-  const errors = validateDisplayLayerPlanning(invalid, targetInfo(), { stage: "V1" });
-  assert.ok(errors.some((item) => item.includes("deferred_layers 必须是数组")));
-});
-
-test("待办字段、类型、宿主、身份和责任信息均严格校验", () => {
-  const cases = [
-    [deferredLayer({ layer_id: "" }), "layer_id 必须为非空字符串"],
-    [deferredLayer({ layer_id: 42 }), "layer_id 必须为非空字符串"],
-    [deferredLayer({ type: "unknown" }), "deferred layer type 无效"],
-    [deferredLayer({ host_scene_id: "menu" }), "必须绑定当前宿主场景"],
-    [deferredLayer({ type: "hud", persistence: "transient", in_scene_master: false }), "deferred HUD 必须声明 persistent"],
-    [deferredLayer({ persistence: "persistent", in_scene_master: false }), "必须进入 scene master"],
-    [deferredLayer({ owner: "" }), "owner 必须为非空字符串"],
-    [deferredLayer({ reason: "" }), "reason 必须为非空字符串"],
-    [deferredLayer({ unknown: true }), "字段不严格"],
-  ];
-  for (const [value, expected] of cases) {
-    const errors = validateDisplayLayerPlanning(planning({ deferredLayers: [value] }), targetInfo(), { stage: "V1" });
-    assert.ok(errors.some((item) => item.includes(expected)), `${expected}: ${errors.join(" | ")}`);
-  }
-  const duplicate = deferredLayer({ layer_id: "same-layer" });
-  const duplicateErrors = validateDisplayLayerPlanning(planning({ deferredLayers: [duplicate, { ...duplicate }] }), targetInfo(), { stage: "V1" });
-  assert.ok(duplicateErrors.some((item) => item.includes("layer_id 与已声明显示层重复")));
-
-  const crossCollectionDuplicate = validateDisplayLayerPlanning(planning({
-    inventory: [completeTransientLayer()],
-    deferredLayers: [deferredLayer({ layer_id: "pause-modal" })],
-  }), targetInfo(), { stage: "V1" });
-  assert.ok(crossCollectionDuplicate.some((item) => item.includes("layer_id 与已声明显示层重复")));
-});
-
-test("延期层与 scene master 的常驻归属以及完整 inventory 的上下文门分别生效", () => {
-  const missingMaster = validateDisplayLayerPlanning(planning({
-    deferredLayers: [deferredLayer({ layer_id: "hud-main", type: "hud", persistence: "persistent", in_scene_master: true })],
-  }), targetInfo(), { stage: "V1" });
-  assert.ok(missingMaster.some((item) => item.includes("persistent_layer_ids 与 deferred 常驻层归属不一致")));
-
-  const unexpectedMaster = validateDisplayLayerPlanning(planning({
-    deferredLayers: [deferredLayer({ layer_id: "toast-main" })],
-    persistentLayerIds: ["toast-main"],
-  }), targetInfo(), { stage: "V1" });
-  assert.ok(unexpectedMaster.some((item) => item.includes("persistent_layer_ids 与 deferred 瞬态层归属不一致")));
-
+test("独立弹窗工作项仍校验完整上下文与自身 V4 轨迹", () => {
   const complete = completeTransientLayer();
   delete complete.states[0].contextual_effect_image;
   const missingContext = validateDisplayLayerPlanning(planning({ inventory: [complete] }), targetInfo(), { stage: "V1" });
   assert.ok(missingContext.some((item) => item.includes("缺少宿主场景上下文效果图")));
+
+  const withoutReplay = completeTransientLayer();
+  delete withoutReplay.runtime_replay;
+  const v4Errors = validateDisplayLayerPlanning(planning({ inventory: [withoutReplay] }), targetInfo(), { stage: "V4" });
+  assert.ok(v4Errors.some((item) => item.includes("runtime_replay")));
+
+  assert.deepEqual(validateDisplayLayerPlanning(planning({ inventory: [completeTransientLayer()] }), targetInfo(), { stage: "V4" }), []);
 });
 
-test("完整显示层移入 inventory 后可通过 V4，inventory 关系可引用待办 ID", () => {
-  const complete = completeTransientLayer({ relations: { mutually_exclusive_layer_ids: [], coexists_with_layer_ids: ["save-toast"] } });
-  const value = planning({ inventory: [complete], deferredLayers: [deferredLayer({ layer_id: "save-toast", type: "toast" })] });
-  const v1Errors = validateDisplayLayerPlanning(value, targetInfo(), { stage: "V1" });
-  assert.ok(!v1Errors.some((item) => item.includes("引用了不存在的 layer_id")));
+test("独立弹窗可以引用其他工作项的 HUD 或弹窗关系", () => {
+  const complete = completeTransientLayer({ relations: { mutually_exclusive_layer_ids: ["settings-popup"], coexists_with_layer_ids: ["main-hud"] } });
+  const errors = validateDisplayLayerPlanning(planning({ inventory: [complete] }), targetInfo(), { stage: "V1" });
+  assert.deepEqual(errors, []);
 
-  const v4Value = planning({
-    inventory: [complete, completeTransientLayer({ layer_id: "save-toast", type: "toast" })],
-    deferredLayers: [],
-  });
-  assert.deepEqual(validateDisplayLayerPlanning(v4Value, targetInfo(), { stage: "V4" }), []);
+  complete.relations.mutually_exclusive_layer_ids = [complete.layer_id];
+  const selfErrors = validateDisplayLayerPlanning(planning({ inventory: [complete] }), targetInfo(), { stage: "V1" });
+  assert.ok(selfErrors.some((item) => item.includes("不得引用自身")));
 });
 
-test("inventory 关系引用未登记 ID 时仍然拒绝", () => {
-  const complete = completeTransientLayer({ relations: { mutually_exclusive_layer_ids: [], coexists_with_layer_ids: ["unknown-layer"] } });
-  const errors = validateDisplayLayerPlanning(planning({ inventory: [complete], deferredLayers: [] }), targetInfo(), { stage: "V1" });
-  assert.ok(errors.some((item) => item.includes("引用了不存在的 layer_id")));
-});
+test("场景合同不包含弹窗时可独立通过显示层门", () => {
+  const errors = validateSceneReconstructionContract(sceneContract(planning()), sceneManifest(), { stage: "V1" });
+  assert.ok(!errors.some((item) => item.includes("display_layer")), errors.join(" | "));
 
-test("实际场景合同调用允许宿主先推进，并在 v4-complete 生命周期时阻断待办", () => {
-  const deferred = [deferredLayer({ layer_id: "save-toast", type: "toast" })];
-  const v1Errors = validateSceneReconstructionContract(
-    sceneContract(planning({ deferredLayers: deferred })),
-    sceneManifest(),
-    { stage: "V1" },
-  );
-  assert.deepEqual(v1Errors, []);
-
-  const finalErrors = validateSceneReconstructionContract(
-    sceneContract(planning({ deferredLayers: deferred })),
-    sceneManifest({ effect_image_reconstruction: { lifecycle: "v4-complete" } }),
-    { stage: "V2" },
-  );
-  assert.ok(finalErrors.some((item) => item.includes("待办显示层未完成宿主联合验收")), finalErrors.join(" | "));
+  const misplaced = validateSceneReconstructionContract(sceneContract(planning({ inventory: [completeTransientLayer()] })), sceneManifest(), { stage: "V1" });
+  assert.ok(misplaced.some((item) => item.includes("瞬态显示层不属于场景工作项")), misplaced.join(" | "));
 });
 
 test("SCENE 的宿主上下文数组可以为空，但 DISPLAY_LAYER 必须有自身上下文", (t) => {

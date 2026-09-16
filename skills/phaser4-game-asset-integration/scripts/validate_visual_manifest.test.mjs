@@ -651,9 +651,35 @@ test("显示层合同拒绝默认主图中的瞬态层和孤立上下文图", ()
   const transient = validManifest();
   const planning = transient.scene_reconstruction_contract.display_layer_planning;
   const layer = planning.inventory[0]; layer.layer_id = "pause-modal"; layer.type = "modal"; layer.persistence = "transient"; layer.in_scene_master = true; planning.scene_master.persistent_layer_ids = ["pause-modal"]; layer.states = [{ state_id: "open", required: true }];
-  assert(validateManifest(transient).some((item) => item.includes("上下文效果图") || item.includes("不得进入默认 scene master")));
+  assert(validateManifest(transient).some((item) => item.includes("上下文效果图") || item.includes("不得进入默认 scene master") || item.includes("瞬态显示层不属于场景工作项")));
   layer.in_scene_master = false; planning.scene_master.persistent_layer_ids = []; layer.states[0].contextual_effect_image = { evidence: "evidence/display/pause-open.png", sha256: transient.reference_target.target_sha256, origin: "provided", host_scene_id: "main-gameplay", host_target_sha256: transient.reference_target.target_sha256, layer_target_sha256: transient.reference_target.target_sha256, viewport: { width: 390, height: 844 }, kind: "host-scene-context", isolated_only: true };
-  assert(validateManifest(transient).some((item) => item.includes("孤立组件图")));
+  assert(validateManifest(transient, { workItemType: "DISPLAY_LAYER" }).some((item) => item.includes("孤立组件图")));
+});
+test("独立清单入口显式区分场景与弹窗工作项", async () => {
+  const transient = validManifest();
+  transient.effect_image_reconstruction.lifecycle = "v2-ready";
+  transient.fidelity_cases = [];
+  const planning = transient.scene_reconstruction_contract.display_layer_planning;
+  const layer = planning.inventory[0];
+  layer.layer_id = "pause-modal"; layer.type = "modal"; layer.persistence = "transient"; layer.in_scene_master = false;
+  planning.scene_master.persistent_layer_ids = [];
+  layer.states = [{ state_id: "open", required: true, contextual_effect_image: { evidence: "evidence/display/pause-open.png", sha256: transient.reference_target.target_sha256, origin: "provided", host_scene_id: "main-gameplay", host_target_sha256: transient.reference_target.target_sha256, layer_target_sha256: transient.reference_target.target_sha256, viewport: { width: 390, height: 844 }, kind: "host-scene-context", isolated_only: false } }];
+  const displayErrors = validateManifest(transient, { workItemType: "DISPLAY_LAYER" });
+  assert(!displayErrors.some((item) => item.includes("瞬态显示层不属于场景工作项")), displayErrors.join("\n"));
+  assert(validateManifest(transient, { workItemType: "SCENE" }).some((item) => item.includes("瞬态显示层不属于场景工作项")));
+  const root = await mkdtemp(join(tmpdir(), "display-layer-manifest-cli-"));
+  const path = join(root, "visual-assets.json");
+  await writeFile(path, JSON.stringify(transient));
+  const messages = [];
+  const originalError = console.error;
+  console.error = (...args) => messages.push(args.join(" "));
+  try {
+    // 夹具仍带 V4 阶段身份，CLI 会因阶段冲突失败；这里专门确认它不再误报场景作用域。
+    assert.equal(await main([path, "--stage", "V2", "--work-item-type", "DISPLAY_LAYER"]), 1);
+  } finally {
+    console.error = originalError;
+  }
+  assert(!messages.join("\n").includes("瞬态显示层不属于场景工作项"), messages.join("\n"));
 });
 test("V4 stage 对 v2-ready 清单强制 production_contract_audit", async () => { const root = await mkdtemp(join(tmpdir(), "visual-v4-stage-")); const path = join(root, "visual-assets.json"); const manifest = validManifest(); manifest.effect_image_reconstruction.lifecycle = "v2-ready"; delete manifest.production_contract_audit; await writeFile(path, JSON.stringify(manifest)); assert(validateManifest(manifest, { stage: "V4" }).some((item) => item.includes("production_contract_audit 缺失"))); assert.equal(await main([path, "--stage", "V4", "--check-files", "--project-root", root]), 1); });
 test("V3/V4 效果图 API 和 CLI 缺少文件门必须拒绝，显式文件门才可继续结构校验", async () => {

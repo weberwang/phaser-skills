@@ -1,6 +1,6 @@
 # 状态、阶段与停止门
 
-全部显示层可按[显示层子任务规则](control-model.md#显示层子任务与宿主继续推进)记录 `display_layer_planning.deferred_layers` 并分工并行推进，不自动抢占宿主主线。下文前置宿主图要求在 V1–V3 仅作用于本次完整 inventory；常驻子任务仍保留主图归属，宿主自身资源/证据门不豁免。V4 联合完成要求所有待办关闭，子任务登记不代表通过其实现前置。
+场景与弹窗按[独立工作项规则](control-model.md#弹窗工作项与场景解耦)分别推进。场景只验收自身画面和常驻 HUD；modal/popup 等弹窗使用独立 DISPLAY_LAYER Work Item，宿主图与运行轨迹只约束弹窗自身 V1–V4，不阻断场景 V4。
 
 效果图还原是当前场景实现 Work Item 内的可选视觉模式；foundation-only 基础实施完成后进入场景 V1，由 V1 生成或接收并冻结 `scene_reconstruction_contract`、scene master/reference target、必需宿主上下文图和初步还原草案，再进入 V2 拆解确认门。工作流默认沿 V0→V4 和当前全局状态向前推进：缺字段、格式、路径或可补证据问题先在当前阶段原地修复，上游事实未变的机器验证失败只重验当前门。只有上游事实失效、任务范围真实变化，或继续推进会绕过硬门并使下游无效，才使用 `RETURN` 回到最早受影响阶段；普通候选身份变化不触发回退。
 
@@ -56,7 +56,7 @@ V0-V4、G0-G3 与领域阶段是 `stageId`，不是另一套状态机。只有�
 
 具有视觉依赖的 foundation-only 包必须同时通过 `globalVisualBaselineSelectionRef` 的三候选/唯一人工确认/真实 SHA 文件门和 `globalStaticBaselineState=global-static-baseline-frozen`，缺失任一项时 fail closed；纯工程包只需当前任务范围、工程基线、冻结实施包和工程证据，不等待全局选图；一旦基础包声明正式入口或可见资源消费等视觉行为，即回到正式 V2/V3 门。混入 SCENE/DISPLAY_LAYER/INTEGRATION 的包仍以 V2 `v2-production-planning-complete` 为规划边界，并以 V3 正式资源与同屏组合预验收为执行边界。全局选择是独立硬门，不能替代逐场景 V2。参考模式的 `effect-image` 仍在同一 Work Item 内完成 V1→V4。
 
-正式代码的 `executionUnits` 唯一顺序为 `SHARED`→`MODULE`→按场景连续的 `SCENE`+紧邻从属 `DISPLAY_LAYER`→`INTEGRATION`/联合验收；MODULE/SCENE/DISPLAY_LAYER 可按互斥所有权并行，SHARED/INTEGRATION 保持串行，显示层不得在所有场景之后另设尾部阶段，实际场景顺序由计划制定者冻结。代码面在每个 SCENE/DISPLAY_LAYER 单元准备、委派、READY 和激活前读取当前 Work Item 的 V2 拆解方案和 V3 资源组合验收证据；全局冻结、手写布尔/PASS、数组前序均不构成该证据。
+正式代码包按 `SHARED`→`MODULE`→`SCENE`→`INTEGRATION` 或 `SHARED`→`MODULE`→`DISPLAY_LAYER`→`INTEGRATION` 排列；SCENE 与 DISPLAY_LAYER 不得混在同一包。各单元读取所属 Work Item 的 V2/V3 证据，`hostSceneId` 不构成宿主场景完成依赖。
 
 ## 高保真前置
 
