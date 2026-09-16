@@ -69,9 +69,10 @@ test("区域参照循环失败", () => { const document = copy(); document.regio
 test("缺少和重复滚动所有者失败", () => { const missing = copy(); delete missing.scrolling.axes; assertFailed(missing, "scrolling.axes 必须是数组"); const duplicate = copy(); duplicate.scrolling.axes.push(structuredClone(duplicate.scrolling.axes[0])); assertFailed(duplicate, "滚动轴存在多个所有者"); });
 test("普通静态 HUD 允许无断点、滚动轴和关键动作", () => { const document = copy(); document.breakpoints = []; document.scrolling.axes = []; document.dynamic_content.key_actions = []; assert.equal(validateContract(document).status, "passed"); });
 test("关键动作禁止截断", () => { const document = copy(); document.dynamic_content.key_actions[0].text_truncation = "allow"; assertFailed(document, "关键动作禁止文本截断"); });
-test("程序化文本强制五语种和单行游戏化文案合同", () => {
+test("程序化文本强制五语种、逐语言行布局和游戏化文案合同", () => {
   const languages = copy(); languages.dynamic_content.localization.required_languages = ["en", "zh-CN", "ja", "ru"]; assertFailed(languages, "缺少程序化文本必需语言：es");
-  const wrap = copy(); wrap.dynamic_content.localization.wrap = "word-or-grapheme"; assertFailed(wrap, "程序化文本禁止换行");
+  const wrap = copy(); delete wrap.dynamic_content.localization.wrap.ru; assertFailed(wrap, "wrap.ru 必须为 single-line 或 wrap");
+  const invalidWrap = copy(); invalidWrap.dynamic_content.localization.wrap.es = "truncate"; assertFailed(invalidWrap, "wrap.es 必须为 single-line 或 wrap");
   const truncate = copy(); truncate.dynamic_content.localization.truncate_policy = "forbid-critical"; assertFailed(truncate, "程序化文本禁止截断");
   const style = copy(); style.dynamic_content.localization.copy_style = "descriptive"; assertFailed(style, "copy_style 必须为 concise-gameplay");
   const multiplier = copy(); multiplier.dynamic_content.localization.multiplier_format = "{value}倍"; assertFailed(multiplier, "multiplier_format 必须为 x{value}");

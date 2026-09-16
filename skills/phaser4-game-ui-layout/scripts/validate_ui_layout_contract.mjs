@@ -416,7 +416,7 @@ function validatePlatformAndScrolling(document, ids, errors) {
   if (!isObject(scrolling.narrow_height_degradation)) errors.push("scrolling.narrow_height_degradation 必须是对象"); else for (const field of ["trigger", "strategy", "fallback"]) if (!isString(scrolling.narrow_height_degradation[field])) errors.push(`scrolling.narrow_height_degradation.${field} 必须是非空字符串`);
 }
 
-/** 验证程序化文本的五语种、单行显示与短文案合同。 */
+/** 验证程序化文本的五语种、逐语言行布局与短文案合同。 */
 function validateProgrammaticTextLocalization(localization, errors) {
   const label = "dynamic_content.localization";
   if (typeof localization.programmatic_text !== "boolean") errors.push(`${label}.programmatic_text 必须是布尔值`);
@@ -427,12 +427,13 @@ function validateProgrammaticTextLocalization(localization, errors) {
   const missing = REQUIRED_PROGRAMMATIC_TEXT_LANGUAGES.filter((language) => !languages.has(language));
   if (missing.length) errors.push(`${label}.required_languages 缺少程序化文本必需语言：${missing.join(", ")}`);
   if (languages.size !== (localization.required_languages?.length ?? 0)) errors.push(`${label}.required_languages 不得包含重复语言`);
-  if (localization.wrap !== "forbid") errors.push(`${label}.wrap 必须为 forbid，程序化文本禁止换行`);
-  if (localization.growth !== "single-line-fit") errors.push(`${label}.growth 必须为 single-line-fit`);
+  if (!isObject(localization.wrap)) errors.push(`${label}.wrap 必须逐语言声明 single-line 或 wrap`);
+  else for (const language of REQUIRED_PROGRAMMATIC_TEXT_LANGUAGES) if (!["single-line", "wrap"].includes(localization.wrap[language])) errors.push(`${label}.wrap.${language} 必须为 single-line 或 wrap`);
+  if (localization.growth !== "locale-adaptive") errors.push(`${label}.growth 必须为 locale-adaptive`);
   if (localization.truncate_policy !== "forbid") errors.push(`${label}.truncate_policy 必须为 forbid，程序化文本禁止截断`);
   if (localization.copy_style !== "concise-gameplay") errors.push(`${label}.copy_style 必须为 concise-gameplay`);
   if (localization.multiplier_format !== "x{value}") errors.push(`${label}.multiplier_format 必须为 x{value}`);
-  if (!isString(localization.display_fit_evidence)) errors.push(`${label}.display_fit_evidence 必须引用五语种单行适配证据`);
+  if (!isString(localization.display_fit_evidence)) errors.push(`${label}.display_fit_evidence 必须引用五语种逐语言行布局适配证据`);
 }
 
 /** 验证本地化、文字缩放、关键动作和重排事件。 */

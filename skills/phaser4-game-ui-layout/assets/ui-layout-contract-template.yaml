@@ -210,8 +210,8 @@
     "narrow_height_degradation": {"trigger": "content-height-exceeds-safe-height", "strategy": "vertical-scroll", "fallback": "collapse-secondary-content"}
   },
   "dynamic_content": {
-    "localization": {"default_language": "zh-CN", "longest_copy": "fixtures/longest-copy.json", "programmatic_text": true, "required_languages": ["en", "zh-CN", "ja", "ru", "es"], "wrap": "forbid", "growth": "single-line-fit", "truncate_policy": "forbid", "copy_style": "concise-gameplay", "multiplier_format": "x{value}", "display_fit_evidence": "fixtures/programmatic-text-fit.json"},
-    "text_scaling": {"default": 1.0, "maximum": 2.0, "strategy": "fit-single-line-with-readable-minimum"},
+    "localization": {"default_language": "zh-CN", "longest_copy": "fixtures/longest-copy.json", "programmatic_text": true, "required_languages": ["en", "zh-CN", "ja", "ru", "es"], "wrap": {"en": "single-line", "zh-CN": "single-line", "ja": "single-line", "ru": "wrap", "es": "wrap"}, "growth": "locale-adaptive", "truncate_policy": "forbid", "copy_style": "concise-gameplay", "multiplier_format": "x{value}", "display_fit_evidence": "fixtures/programmatic-text-fit.json"},
+    "text_scaling": {"default": 1.0, "maximum": 2.0, "strategy": "fit-per-locale-with-readable-minimum"},
     "key_actions": [{"id": "primary-action", "states": ["default", "disabled", "pressed", "submitting", "completed", "error"], "text_truncation": "forbid"}],
     "dynamic_values": ["member-count", "timer"],
     "reflow_events": ["text-change", "member-change", "state-change", "resize", "safe-area-change"]
