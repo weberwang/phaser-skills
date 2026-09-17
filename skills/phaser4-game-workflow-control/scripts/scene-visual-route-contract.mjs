@@ -14,12 +14,14 @@ import { isAbsolute, relative, resolve } from "node:path";
 import { validateReuseProductionGate } from "./visual-confirmation-reuse-gates.mjs";
 import { validateFixedVisualProductionMethod } from "./visual-decomposition-confirmation.mjs";
 
-/** 图片资产、Phaser 原生和复合路线是唯一的场景来源分类。 */
+/** 图片资产与 Phaser 原生是唯一可交付的场景来源分类。 */
 export const SCENE_VISUAL_ROUTES = Object.freeze({
   IMAGE_ASSET: "image-asset",
   PHASER_NATIVE: "phaser-native",
-  COMPOSITE: "composite",
 });
+
+// composite 仅保留为诊断输入；混合区域必须退回 V1 重新拆分，不能进入生产或验收。
+const COMPOSITE_ROUTE = "composite";
 
 /** scene coverage 的实现 owner；与既有生产合同的 owner_type 保持同一词汇。 */
 export const SCENE_VISUAL_OWNERS = Object.freeze({
@@ -39,7 +41,7 @@ const FIXED_METHODS = new Set(["image-generation", "authored-raster", "reuse"]);
 const NATIVE_METHODS = new Set(["phaser-graphics", "runtime-program"]);
 const FIXED_DELIVERIES = new Set(["raster-image", "existing-asset"]);
 const NATIVE_DELIVERIES = new Set(["runtime-drawing", "runtime-program"]);
-const PLAN_MODES = new Set(["generate-now", "reuse-existing", "runtime-program", "asset-and-scene"]);
+const PLAN_MODES = new Set(["generate-now", "reuse-existing", "runtime-program"]);
 const NATIVE_PRIMITIVES = new Set([
   "pure-color",
   "basic-geometry",
@@ -111,6 +113,16 @@ const NATIVE_ELEMENT_TYPES = new Set([
 const DISTINCTIVE_FEATURE_PATTERN = /材质|纹理|texture|material|非规则|irregular|定制描边|custom\s*(?:outline|stroke)|描边|阴影|shadow|高光|highlight|装饰纹样|装饰|品牌|brand|像素美术|pixel\s*(?:art)?|绘制细节|paint(?:ed)?\s*detail|插画|illustration/i;
 const SEMANTIC_REUSE_PATTERN = /semantic|语义|相似|similar|same[-_ ]?kind|looks[-_ ]?similar|看起来一样|同类|同义/i;
 const SHA_PATTERN = /^sha256:[a-f0-9]{64}$/;
+
+/** 统一拒绝已废止的单区域混合输入，避免 composite 路线和遗留字段分别报重复错误。 */
+function compositeRouteError(stage, contract, region, actual) {
+  return routeError(stage, contract, region, "程序逻辑与独立视觉资产必须重新拆解；禁止单一区域闭环（禁止单一 composite region 继续生产或验收）", {
+    expected: "selected_route=image-asset|phaser-native 且不得携带 composite_parts",
+    actual,
+    returnStage: "V1/PROPOSAL",
+    rootCause: "方案缺失",
+  });
+}
 
 /** 判断是否为普通对象。 */
 function isObject(value) {
@@ -242,35 +254,6 @@ function validateReuseSuitability(analysis, region, contract, stage, errors) {
   if (analysis.production_method === "reuse" && suitability.eligible !== true) errors.push(routeError(stage, contract, region, "production_method=reuse 必须通过精确复用资格分析", { expected: "reuse_suitability.eligible=true", actual: String(suitability.eligible ?? "missing") }));
 }
 
-/** 验证复合路线必须真实拆出外观资产与行为逻辑，避免 runtime owner 吞掉美术。 */
-function validateCompositeParts(analysis, region, contract, stage, errors) {
-  const parts = analysis.composite_parts;
-  if (!Array.isArray(parts) || parts.length < 2) {
-    errors.push(routeError(stage, contract, region, "混合视觉区域未拆分：composite 必须登记独立外观资产和运行时行为子区域", { expected: "composite_parts 至少包含 appearance + behavior", actual: "missing/不足" }));
-    return;
-  }
-  const ids = new Set();
-  const roles = new Set();
-  for (const [index, part] of parts.entries()) {
-    if (!isObject(part)) {
-      errors.push(routeError(stage, contract, region, `composite_parts[${index}] 必须是对象`, { missing: `composite_parts[${index}]` }));
-      continue;
-    }
-    for (const key of ["part_id", "part_role", "selected_route", "final_owner", "production_method", "delivery_kind", "evidence"]) {
-      if (key === "evidence" ? !hasEvidence(part[key]) : !nonEmptyString(part[key])) errors.push(routeError(stage, contract, region, `composite_parts[${index}] 缺少 ${key}`, { missing: `composite_parts[${index}].${key}` }));
-    }
-    if (nonEmptyString(part.part_id) && ids.has(part.part_id)) errors.push(routeError(stage, contract, region, "composite_parts.part_id 不能重复", { actual: part.part_id }));
-    if (nonEmptyString(part.part_id)) ids.add(part.part_id);
-    if (nonEmptyString(part.part_role)) roles.add(part.part_role);
-    if (part.part_role === "appearance" && part.selected_route !== SCENE_VISUAL_ROUTES.IMAGE_ASSET) errors.push(routeError(stage, contract, region, `composite_parts[${index}] appearance 必须选择 image-asset，不能用复合包装绕过图片资产路线`, { expected: "appearance + image-asset", actual: `${part.part_role} + ${part.selected_route}` }));
-    if (part.part_role === "behavior" && part.selected_route !== SCENE_VISUAL_ROUTES.PHASER_NATIVE) errors.push(routeError(stage, contract, region, `composite_parts[${index}] behavior 必须选择 phaser-native`, { expected: "behavior + phaser-native", actual: `${part.part_role} + ${part.selected_route}` }));
-    if (!new Set(["appearance", "behavior"]).has(part.part_role)) errors.push(routeError(stage, contract, region, `composite_parts[${index}].part_role 无效`, { expected: "appearance|behavior", actual: String(part.part_role ?? "missing") }));
-    if (part.selected_route === SCENE_VISUAL_ROUTES.IMAGE_ASSET && (!FIXED_OWNERS.has(part.final_owner) || !FIXED_METHODS.has(part.production_method) || !FIXED_DELIVERIES.has(part.delivery_kind))) errors.push(routeError(stage, contract, region, `composite_parts[${index}] 外观必须是固定图片资产`, { expected: "fixed-production-visual + image asset method/delivery", actual: JSON.stringify(part) }));
-    if (part.selected_route === SCENE_VISUAL_ROUTES.PHASER_NATIVE && (!NATIVE_OWNERS.has(part.final_owner) || !NATIVE_METHODS.has(part.production_method) || !NATIVE_DELIVERIES.has(part.delivery_kind))) errors.push(routeError(stage, contract, region, `composite_parts[${index}] 行为必须是 Phaser 原生/运行时路线`, { expected: "runtime owner + native method/delivery", actual: JSON.stringify(part) }));
-  }
-  if (!roles.has("appearance") || !roles.has("behavior")) errors.push(routeError(stage, contract, region, "composite_parts 必须同时拆出 appearance 与 behavior", { expected: "appearance + behavior", actual: [...roles].join(",") || "missing" }));
-}
-
 /**
  * 校验场景装配方式；该事实只约束整屏捕获与原子装配，不参与视觉来源路线选择。
  */
@@ -390,7 +373,7 @@ export function validateSceneVisualRouteAnalysis(region, contract = {}, options 
   }
   if (!new Set(["simple", "distinctive", "mixed"]).has(analysis.visual_complexity)) errors.push(routeError(stage, contract, region, "visual_complexity 只能是 simple/distinctive/mixed", { expected: "simple|distinctive|mixed", actual: String(analysis.visual_complexity ?? "missing") }));
   if (!ELEMENT_TYPES.has(analysis.element_type)) errors.push(routeError(stage, contract, region, "element_type 不在视觉区域分类枚举中", { expected: [...ELEMENT_TYPES].join("|"), actual: String(analysis.element_type ?? "missing") }));
-  if (!new Set(["asset-first", "native-allowed", "composite-required"]).has(analysis.asset_first_decision)) errors.push(routeError(stage, contract, region, "asset_first_decision 无效", { expected: "asset-first|native-allowed|composite-required", actual: String(analysis.asset_first_decision ?? "missing") }));
+  if (!new Set(["asset-first", "native-allowed"]).has(analysis.asset_first_decision)) errors.push(routeError(stage, contract, region, "asset_first_decision 无效", { expected: "asset-first|native-allowed", actual: String(analysis.asset_first_decision ?? "missing") }));
   if (!Object.values(SCENE_VISUAL_ROUTES).includes(analysis.selected_route)) errors.push(routeError(stage, contract, region, "selected_route 无效", { expected: Object.values(SCENE_VISUAL_ROUTES).join("|"), actual: String(analysis.selected_route ?? "missing") }));
   if (!PLAN_MODES.has(analysis.implementation_plan_mode)) errors.push(routeError(stage, contract, region, "implementation_plan_mode 无效", { expected: [...PLAN_MODES].join("|"), actual: String(analysis.implementation_plan_mode ?? "missing") }));
   if (!isObject(analysis.dynamic_requirements) || typeof analysis.dynamic_requirements.is_dynamic !== "boolean" || !nonEmptyString(analysis.dynamic_requirements.description)) errors.push(routeError(stage, contract, region, "dynamic_requirements 必须声明 is_dynamic 和 description", { missing: "dynamic_requirements.is_dynamic/description" }));
@@ -423,6 +406,11 @@ export function validateSceneVisualRouteAnalysis(region, contract = {}, options 
   const owner = analysis.final_owner;
   const method = analysis.production_method;
   const delivery = analysis.delivery_kind;
+  const hasCompositeInput = route === COMPOSITE_ROUTE || Object.hasOwn(analysis, "composite_parts");
+  if (hasCompositeInput) {
+    // 无论 selected_route 是否仍写成 composite，遗留 composite_parts 都不能被合法路线忽略。
+    errors.push(compositeRouteError(stage, contract, region, route === COMPOSITE_ROUTE ? COMPOSITE_ROUTE : "composite_parts"));
+  }
   if (route === SCENE_VISUAL_ROUTES.IMAGE_ASSET) {
     // 复用现有 fixed-production-visual 门，保证路线分析不会另造一套图片方法语义。
     errors.push(...validateFixedVisualProductionMethod({
@@ -440,7 +428,7 @@ export function validateSceneVisualRouteAnalysis(region, contract = {}, options 
     if (!FIXED_OWNERS.has(owner) || !FIXED_METHODS.has(method) || !FIXED_DELIVERIES.has(delivery)) errors.push(routeError(stage, contract, region, "图片资产路线必须由 fixed-production-visual 和固定图片生产/交付承载", { expected: "fixed-production-visual + image-generation/authored-raster/reuse + raster-image/existing-asset", actual: JSON.stringify({ owner, method, delivery }) }));
     if (method === "reuse" && analysis.reuse_suitability?.eligible !== true) errors.push(routeError(stage, contract, region, "reuse 图片资产必须有精确身份和视觉兼容证据", { expected: "reuse_suitability.eligible=true", actual: String(analysis.reuse_suitability?.eligible ?? "missing") }));
     if (method === "reuse" && analysis.implementation_plan_mode !== "reuse-existing") errors.push(routeError(stage, contract, region, "reuse 图片资产必须绑定 reuse-existing 实施计划", { expected: "reuse-existing", actual: analysis.implementation_plan_mode }));
-    if (method !== "reuse" && !new Set(["generate-now", "asset-and-scene"]).has(analysis.implementation_plan_mode)) errors.push(routeError(stage, contract, region, "非复用图片资产必须绑定生成或资产装配计划", { expected: "generate-now|asset-and-scene", actual: analysis.implementation_plan_mode }));
+    if (method !== "reuse" && analysis.implementation_plan_mode !== "generate-now") errors.push(routeError(stage, contract, region, "非复用图片资产必须绑定独立生成计划", { expected: "generate-now", actual: analysis.implementation_plan_mode }));
   } else if (route === SCENE_VISUAL_ROUTES.PHASER_NATIVE) {
     if (analysis.asset_first_decision !== "native-allowed") errors.push(routeError(stage, contract, region, "Phaser 原生路线必须声明 native-allowed", { expected: "native-allowed", actual: String(analysis.asset_first_decision) }));
     if (!NATIVE_OWNERS.has(owner) || !NATIVE_METHODS.has(method) || !NATIVE_DELIVERIES.has(delivery)) errors.push(routeError(stage, contract, region, "Phaser 原生路线只能用于 runtime owner 和原生生产/交付", { expected: "runtime-data/runtime-rendered/runtime-program + phaser-graphics/runtime-program", actual: JSON.stringify({ owner, method, delivery }) }));
@@ -448,9 +436,6 @@ export function validateSceneVisualRouteAnalysis(region, contract = {}, options 
     if (distinctive && analysis.native_suitability?.eligible === true && !hasEvidence(analysis.native_suitability?.equivalence_evidence)) {
       errors.push(routeError(stage, contract, region, "特色视觉不得无等价证据降级为 Phaser 原生路线", { expected: "等价性证据 + tolerance/exception", actual: "missing" }));
     }
-  } else if (route === SCENE_VISUAL_ROUTES.COMPOSITE) {
-    if (analysis.asset_first_decision !== "composite-required") errors.push(routeError(stage, contract, region, "复合路线必须声明 composite-required", { expected: "composite-required", actual: String(analysis.asset_first_decision) }));
-    validateCompositeParts(analysis, region, contract, stage, errors);
   }
 
   const regionOwner = region.implementation_owner;

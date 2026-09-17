@@ -47,7 +47,7 @@ function contract() {
         native_suitability: { eligible: false, primitive_basis: ["not-applicable"], evidence: ["evidence/route/native-not-applicable.json"] },
         reuse_suitability: { eligible: false, exact_asset_identity: "not-applicable", evidence: ["evidence/route/reuse-not-applicable.json"] },
         final_owner: "fixed-production-visual",
-        implementation_plan_mode: "asset-and-scene",
+        implementation_plan_mode: "generate-now",
         production_method: "authored-raster",
         delivery_kind: "raster-image",
       }
@@ -88,7 +88,7 @@ function contract() {
     clipping_cropping_facts: { clipping: "none", crop: "forbid" },
     responsive_behavior: { target: "exact", other: "preserve-relative-anchors" },
     implementation_owner: owner,
-    implementation_plan: { mode: owner.startsWith("runtime") ? "runtime-program" : "asset-and-scene" },
+    implementation_plan: { mode: owner.startsWith("runtime") ? "runtime-program" : "generate-now" },
     assembly_analysis: { strategy: "atomic-scene-composition", uses_full_screen_capture: false, allows_atomic_image_assets: true, evidence: [`evidence/scene/${id}-assembly.json`] },
     visual_route_analysis: visualRouteAnalysis,
     applicable_states: ["default"],
@@ -1041,7 +1041,7 @@ test("纯色几何、动态进度填充和纹理 Sprite/NineSlice 分别走正�
   assert.deepEqual(validateSceneReconstructionContract(nineSliceAsset, effectImageManifest(nineSliceAsset), { stage: "V3" }), []);
 });
 
-test("语义相似图标没有精确身份时不得 reuse，复合区域必须继续拆分", () => {
+test("语义相似图标没有精确身份时不得 reuse，混合区域必须退回 V1 重新拆分", () => {
   const similar = effectImageContract();
   const region = similar.coverage_regions[1];
   region.visual_route_analysis = {
@@ -1057,6 +1057,10 @@ test("语义相似图标没有精确身份时不得 reuse，复合区域必须�
   const similarErrors = validateSceneReconstructionContract(similar, effectImageManifest(similar), { stage: "V3" });
   assert(similarErrors.some((item) => item.includes("精确资产身份") && item.includes("语义相似")), similarErrors.join("\n"));
 
+  // 独立 image-asset 与 phaser-native region 仍是合法混合场景合同，两者不再包装为单一区域路线。
+  const independentRoutes = effectImageContract();
+  assert.deepEqual(validateSceneReconstructionContract(independentRoutes, effectImageManifest(independentRoutes), { stage: "V3" }), []);
+
   const composite = effectImageContract();
   composite.coverage_regions[1].visual_route_analysis = {
     ...composite.coverage_regions[1].visual_route_analysis,
@@ -1070,13 +1074,17 @@ test("语义相似图标没有精确身份时不得 reuse，复合区域必须�
   composite.coverage_regions[1].implementation_owner = "runtime-program";
   composite.coverage_regions[1].fidelity_obligations = { geometry: "target-bound" };
   const compositeErrors = validateSceneReconstructionContract(composite, effectImageManifest(composite), { stage: "V3" });
-  assert(compositeErrors.some((item) => item.includes("混合视觉区域未拆分")), compositeErrors.join("\n"));
+  assert(compositeErrors.some((item) => item.includes("程序逻辑与独立视觉资产必须重新拆解")), compositeErrors.join("\n"));
+  assert(compositeErrors.some((item) => item.includes("禁止单一 composite region 继续生产或验收")), compositeErrors.join("\n"));
+  assert(compositeErrors.some((item) => item.includes("应退回阶段=V1/PROPOSAL")), compositeErrors.join("\n"));
 
   composite.coverage_regions[1].visual_route_analysis.composite_parts = [
     { part_id: "board-appearance", part_role: "appearance", selected_route: "image-asset", final_owner: "fixed-production-visual", production_method: "authored-raster", delivery_kind: "raster-image", evidence: ["evidence/route/board-appearance.json"] },
     { part_id: "board-behavior", part_role: "behavior", selected_route: "phaser-native", final_owner: "runtime-program", production_method: "runtime-program", delivery_kind: "runtime-program", evidence: ["evidence/route/board-behavior.json"] },
   ];
-  assert.deepEqual(validateSceneReconstructionContract(composite, effectImageManifest(composite), { stage: "V3" }), []);
+  const completeCompositeErrors = validateSceneReconstructionContract(composite, effectImageManifest(composite), { stage: "V3" });
+  assert(completeCompositeErrors.some((item) => item.includes("程序逻辑与独立视觉资产必须重新拆解")), completeCompositeErrors.join("\n"));
+  assert(completeCompositeErrors.some((item) => item.includes("禁止单一 composite region 继续生产或验收")), completeCompositeErrors.join("\n"));
 
   composite.coverage_regions[1].visual_route_analysis.composite_parts[0] = {
     ...composite.coverage_regions[1].visual_route_analysis.composite_parts[0],
@@ -1085,8 +1093,17 @@ test("语义相似图标没有精确身份时不得 reuse，复合区域必须�
     production_method: "phaser-graphics",
     delivery_kind: "runtime-drawing",
   };
-  const wrappedNative = validateSceneReconstructionContract(composite, effectImageManifest(composite), { stage: "V3" });
-  assert(wrappedNative.some((item) => item.includes("appearance 必须选择 image-asset")), wrappedNative.join("\n"));
+  const stillBlocked = validateSceneReconstructionContract(composite, effectImageManifest(composite), { stage: "V3" });
+  assert(stillBlocked.some((item) => item.includes("程序逻辑与独立视觉资产必须重新拆解")), stillBlocked.join("\n"));
+
+  for (const [index, route] of [[1, "image-asset"], [0, "phaser-native"]]) {
+    const legalRouteWithLegacyParts = effectImageContract();
+    legalRouteWithLegacyParts.coverage_regions[index].visual_route_analysis.composite_parts = structuredClone(composite.coverage_regions[1].visual_route_analysis.composite_parts);
+    const errors = validateSceneReconstructionContract(legalRouteWithLegacyParts, effectImageManifest(legalRouteWithLegacyParts), { stage: "V3" });
+    assert(errors.some((item) => item.includes("程序逻辑与独立视觉资产必须重新拆解")), `${route}: ${errors.join("\n")}`);
+    assert(errors.some((item) => item.includes("禁止单一区域闭环")), `${route}: ${errors.join("\n")}`);
+    assert(errors.some((item) => item.includes("应退回阶段=V1/PROPOSAL")), `${route}: ${errors.join("\n")}`);
+  }
 });
 
 test("文本视觉路线委托 text_decomposition，普通非 effect-image 合同仍不受新路线门影响", () => {
@@ -1134,4 +1151,8 @@ test("三份场景 Schema 同步分离 assembly_analysis 与 visual_route_analys
   assert(schemas.every((schema) => schema.$defs.sceneCoverageRegion.properties.assembly_analysis.$ref === "#/$defs/assemblyAnalysis"));
   assert(schemas.every((schema) => !schema.$defs.sceneVisualRouteAnalysis.required.includes("is_full_screen_capture")));
   assert(schemas.every((schema) => !Object.hasOwn(schema.$defs.sceneVisualRouteAnalysis.properties, "is_full_screen_capture")));
+  assert(schemas.every((schema) => !schema.$defs.sceneVisualRouteAnalysis.properties.asset_first_decision.enum.includes("composite-required")));
+  assert(schemas.every((schema) => !schema.$defs.sceneVisualRouteAnalysis.properties.selected_route.enum.includes("composite")));
+  assert(schemas.every((schema) => !schema.$defs.sceneVisualRouteAnalysis.properties.implementation_plan_mode.enum.includes("asset-and-scene")));
+  assert(schemas.every((schema) => !Object.hasOwn(schema.$defs.sceneVisualRouteAnalysis.properties, "composite_parts")));
 });

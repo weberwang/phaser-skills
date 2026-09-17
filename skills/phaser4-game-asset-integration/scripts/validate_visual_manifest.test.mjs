@@ -647,6 +647,31 @@ test("visual manifest 独立入口拒绝伪造父子相对几何", () => { for (
 test("不保留 visual-assets 1.4 兼容", () => { const manifest = validManifest(); manifest.schema_version = "1.4"; assert(validateManifest(manifest).some((item) => item.includes("schema_version 必须为 1.5"))); });
 test("非效果图 1.5 清单通过", () => assert.deepEqual(validateManifest(validOrdinaryManifest()), []));
 test("effect-image V2-ready 允许 fidelity case 尚未产生", () => { const manifest = validManifest(); manifest.effect_image_reconstruction.lifecycle = "v2-ready"; manifest.fidelity_cases = []; assert.deepEqual(validateManifest(manifest), []); });
+test("validateManifest 高层硬阻断单一区域 composite，即使 composite_parts 完整也必须退回 V1", () => {
+  const manifest = validManifest();
+  assert.deepEqual(validateManifest(manifest, STRUCTURAL_FILE_GATE_OPTIONS), []);
+  const region = manifest.scene_reconstruction_contract.coverage_regions.find((item) => item.region_id === "region-hero");
+  Object.assign(region, {
+    implementation_owner: "runtime-program",
+    implementation_plan: { mode: "asset-and-scene" },
+  });
+  Object.assign(region.visual_route_analysis, {
+    selected_route: "composite",
+    asset_first_decision: "composite-required",
+    implementation_plan_mode: "asset-and-scene",
+    final_owner: "runtime-program",
+    production_method: "runtime-program",
+    delivery_kind: "runtime-program",
+    composite_parts: [
+      { part_id: "hero-appearance", part_role: "appearance", selected_route: "image-asset", final_owner: "fixed-production-visual", production_method: "authored-raster", delivery_kind: "raster-image", evidence: ["evidence/route/hero-appearance.json"] },
+      { part_id: "hero-behavior", part_role: "behavior", selected_route: "phaser-native", final_owner: "runtime-program", production_method: "runtime-program", delivery_kind: "runtime-program", evidence: ["evidence/route/hero-behavior.json"] },
+    ],
+  });
+  const errors = validateManifest(manifest, STRUCTURAL_FILE_GATE_OPTIONS);
+  assert(errors.some((item) => item.includes("程序逻辑与独立视觉资产必须重新拆解")), errors.join("\n"));
+  assert(errors.some((item) => item.includes("禁止单一 composite region 继续生产或验收")), errors.join("\n"));
+  assert(errors.some((item) => item.includes("应退回阶段=V1/PROPOSAL")), errors.join("\n"));
+});
 test("显示层合同拒绝默认主图中的瞬态层和孤立上下文图", () => {
   const transient = validManifest();
   const planning = transient.scene_reconstruction_contract.display_layer_planning;
