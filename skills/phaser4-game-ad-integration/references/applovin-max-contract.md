@@ -8,7 +8,7 @@
 - iOS 与 Android 仅通过 AppLovin 官方 `cordova-plugin-applovin-max` 调用 MAX；Capacitor 使用其 Cordova 兼容层加载插件。Phaser 场景只能调用共享 TypeScript 门面，不能直接触碰官方插件全局对象、Activity、ViewController、MAX 原生对象或任何网络 SDK。
 - 项目不得改用社区广告插件、自建 Capacitor 原生广告插件或直接集成 Android/iOS MAX SDK。实施前核对官方插件版本与当前 Capacitor、Android Gradle、iOS CocoaPods/Swift Package Manager 路径的兼容性；任一目标平台不兼容时标记阻断并回到 Work Item 决策，不静默切换实现路线。
 - 所有已启用广告位都在初始化成功后后台静默预加载；加载、重试和展示回调均走后台/事件驱动路径。游戏主循环、输入、场景切换和结算不得等待广告加载、网络响应、CMP、展示或隐藏；展示触发只读取当前状态并快速返回，不能在触发路径临时 load。
-- 任何平台只允许一个广告服务实例和一个官方插件接入实例。每个广告位持有独立业务状态和至多一个加载重试 timer，格式匹配的 MAX 原生对象由官方插件内部管理；所有广告位只共用全屏展示仲裁器等服务级门，不共用加载重试 timer。插页不维护任何展示冷却状态。重复初始化、预加载、展示请求或插件回调不能造成同广告位并发 load、递归回调或多套退避机制。
+- 任何平台只允许一个广告服务实例和一个官方插件接入实例。每个广告位持有独立业务状态和至多一个加载重试 timer，格式匹配的 MAX 原生对象由官方插件内部管理；所有广告位只共用全屏展示仲裁器和激励视频结束后的插页保护截止时间等服务级状态，不共用加载重试 timer。重复初始化、预加载、展示请求或插件回调不能造成同广告位并发 load、递归回调或多套退避机制。
 - 加载失败、无填充和后台重试始终静默，不弹 Toast。视频广告触发时已不可用，或展示请求发出后收到 `displayFailed`，必须由共享 UI 层显示一次本地化“视频广告暂不可用，请稍后再试”Toast；重复和迟到事件不得重复提示。
 - Banner 使用原生 MAX ad view，创建后默认隐藏并静默加载。只有收到 `loaded` 且布局已确认安全时才能显示；未 ready、加载失败或布局不可用时保持隐藏并立即返回，不弹 Toast，也不让空白广告位阻塞或覆盖游戏。
 
@@ -139,6 +139,7 @@ interface ShowResult extends AdResult {
   operation: "tryShow";
   accepted: boolean;
   showRequestId?: string;
+  interstitialDelayRemainingMs?: number; // 激励视频结束后的插页保护期剩余时间
   noticeCode?: "video-ad-unavailable"; // UI 层本地化并显示一次 Toast
   noticeDedupeKey?: string;             // 立即拒绝时每次触发唯一
 }
@@ -184,7 +185,7 @@ interface AdUiNoticeEvent {
 }
 ```
 
-服务首次创建时从 `instanceGeneration=0` 开始；实例重建（原生 SDK 重启、宿主切换或配置变更）必须先使旧实例失效，再将 `instanceGeneration` 加一；每次实际展示尝试生成进程内唯一 `showRequestId`。全屏事件按 generation/slot/request 关联：第一次 `rewarded` 才发放奖励，第一次 `displayFailed` 或 `hidden` 才释放展示锁；迟到、重复或跨实例事件不得改变新实例 phase、奖励或计数。激励请求另存于幂等的奖励待决账本，`hidden` 只释放全屏锁，不能删除尚未结算的奖励资格。
+服务首次创建时从 `instanceGeneration=0` 开始；实例重建（原生 SDK 重启、宿主切换或配置变更）必须先使旧实例失效，再将 `instanceGeneration` 加一；每次实际展示尝试生成进程内唯一 `showRequestId`。全屏事件按 generation/slot/request 关联：第一次 `rewarded` 才发放奖励，第一次 `displayFailed` 或 `hidden` 才释放展示锁；迟到、重复或跨实例事件不得改变新实例 phase、奖励或计数。激励请求另存于幂等的奖励待决账本，`hidden` 只释放全屏锁，不能删除尚未结算的奖励资格。`interstitialBlockedUntilMonotonicMs` 放在不随 `instanceGeneration` 重建的进程内服务策略状态中；完整销毁广告服务或进程重启时可重新初始化为 `0`，无需跨进程持久化。
 
 所有原生回调另带稳定 `eventId`，同一回调跨桥重投时不得重新生成，以此去重传输层重复。应用主动 load 的回调必须匹配当前 `loadOperationId`；Banner auto-refresh 的回调必须匹配当前活动 `refreshEpoch`。同一 refresh epoch 可以产生多轮合法 `loaded`，不能仅因 generation/slot 相同而丢弃；停止 auto-refresh 时立即使该 epoch 失效，之后到达的旧回调不得进入重试或改变可见性。上述类型中的 `phase` 只描述对应广告位自身，所有 gates 由原生服务依赖计算，不能镜像到 Phaser 场景状态。
 
@@ -197,6 +198,7 @@ interface AdUiNoticeEvent {
 - `not-ready`、`loading`、`already-showing`：当前没有可立即展示的缓存广告，或已有展示请求。
 - `background`、`offline`、`no-host`：当前生命周期或网络不适合展示。
 - `not-natural-break`：调用点不是明确的自然中断点，不发起展示。
+- `rewarded-interstitial-delay`：匹配的激励视频结束后 30 秒内跳过插页展示；返回剩余毫秒数，不产生 UI 提示。
 - `request-dispatched`：已向原生 MAX 发起展示请求；这不是展示成功确认。
 - `load-started`、`load-in-flight`、`retry-scheduled`：预加载已发起、已有加载或已登记退避。
 - `banner-shown`、`banner-hidden`：Banner 已按当前状态立即显示或隐藏；这两个结果不会触发加载。
@@ -207,7 +209,7 @@ interface AdUiNoticeEvent {
 
 ## 多广告位状态与单一服务
 
-每个广告位使用独立业务 `phase`、加载失败计数、retry deadline 和加载重试 timer；官方插件内部持有格式匹配的 MAX 原生对象，Banner 另有独立 `bannerVisibility`。不能把“已加载”和“当前可见”混成一个 phase。服务级只统一持有实例代次、全屏展示仲裁与 Banner 可见性仲裁。广告服务仍是业务状态的单一所有者；每个广告位的加载重试独立定时，插页不保存 `lastDisplayedAt`/`cooldownUntil`，不得复制另一套退避算法。
+每个广告位使用独立业务 `phase`、加载失败计数、retry deadline 和加载重试 timer；官方插件内部持有格式匹配的 MAX 原生对象，Banner 另有独立 `bannerVisibility`。不能把“已加载”和“当前可见”混成一个 phase。服务级统一持有实例代次、全屏展示仲裁、Banner 可见性仲裁和 `interstitialBlockedUntilMonotonicMs`。该截止时间只表达激励视频结束后的 30 秒跨格式保护，不是广告位加载重试 deadline，也不创建 timer。广告服务仍是业务状态的单一所有者；每个广告位的加载重试独立定时，不得复制另一套退避算法。
 
 ### phase 与原生 gates 分离
 
@@ -224,13 +226,13 @@ Phaser 场景只提供 `slotId` 与自然中断点上下文并消费结构化结
 1. `new → initializing` 只由首次有效 `initialize` 触发；相同配置的重复初始化复用原请求或返回当前 phase，不再次创建 SDK/广告对象。
 2. MAX 初始化和隐私前置完成后，通过官方插件为每个启用广告位创建或加载正确格式的广告并进入 `idle`，随后分别通过各广告位的服务入口静默投递一次预加载，不等待调用方再触发；官方插件初始化失败转为 `failed`。隐私未决或被阻断时由 privacy gate 和结果码表达，不能假装已初始化。
 3. 每个广告位的 `idle → loading → ready` 是一次独立加载生命周期；加载中或 ready 时的重复 `preload(slotId)` 只返回当前 phase。`loaded`/`ready` 表示 MAX 已确认该广告位可展示，不表示刚刚请求成功。
-4. 全屏广告的 `ready → showing` 只由所有 gates open、自然中断点且满足格式策略的 `tryShow` 触发；插页不检查任何展示冷却。`already-showing` 和 `not-ready` 不能调用 MAX 的 show，也不能在触发路径补做 load。
-5. `showing → idle` 的 `displayFailed` 立即发起一次去重后的后台预加载；只有这次加载失败后才进入指数退避。`showing → idle` 的 `hidden` 也必须后台预加载。全屏锁释放后，任何 ready 且 gates open 的插页广告位都可以在下一个自然中断点发起展示。
+4. 全屏广告的 `ready → showing` 只由所有 gates open、自然中断点且满足格式策略的 `tryShow` 触发。插页还必须满足当前单调时间不早于 `interstitialBlockedUntilMonotonicMs`；保护期内返回 `rewarded-interstitial-delay`，不能调用 MAX 的 show，也不能在触发路径补做 load。
+5. `showing → idle` 的 `displayFailed` 立即发起一次去重后的后台预加载；只有这次加载失败后才进入指数退避。`showing → idle` 的 `hidden` 也必须后台预加载。若该事件属于当前匹配的激励视频展示，请先以事件的 `monotonicAtMs + 30_000` 更新插页保护截止时间，再释放全屏锁；重复、迟到、旧实例或不匹配的 `hidden` 不得延长保护期。激励视频 `displayFailed` 不启动保护期。
 6. 后台、离线、隐私未决或无有效宿主时保留当前 phase 快照，但不发起新的 load/show；恢复到前台且网络可用后重新计算 gates，并按保留的退避 deadline 最多恢复一次调度。
 7. 任何销毁、平台切换或配置变更都使旧回调携带的实例代次失效；旧事件不得把新实例推进到 `ready` 或重置新实例的计数。
 8. Banner 创建时 `bannerVisibility=hidden`；`loaded` 只把 phase 置为 `ready`，不会自动显示。`setBannerVisibility(true)` 只有在 ready、前台、宿主有效且布局安全时才立即显示；否则保持 hidden 并返回原因，不触发 load。`setBannerVisibility(false)` 总是尽快隐藏并立即返回。
 
-每广告位的 deadline、失败计数、加载重试 timer 和正在加载标记，以及共享的正在展示标记、奖励待决账本和实例代次，都属于广告服务这个单一状态所有者。独立表示加载重试 timer 按 `slotId` 隔离，不表示由 Phaser 场景或组件自行创建；不得让场景、多个组件或多个原生回调各自维护另一份重试或奖励状态。
+每广告位的 deadline、失败计数、加载重试 timer 和正在加载标记，以及共享的正在展示标记、奖励待决账本、插页保护截止时间和实例代次，都属于广告服务这个单一状态所有者。独立表示加载重试 timer 按 `slotId` 隔离，不表示由 Phaser 场景或组件自行创建；不得让场景、多个组件或多个原生回调各自维护另一份重试、保护时间或奖励状态。
 
 ### 初始化失败与显式重试
 
@@ -313,14 +315,14 @@ n = consecutiveLoadFailures（本次失败递增后的值，n >= 1）
 
 插页只放在用户自然停顿处，例如关卡完成、结算页进入前或明确的主视图切换后；激励视频只由明确的用户操作触发。不得在启动、首屏加载、输入手势中间、战斗关键帧、失败即时反馈、连续点击处理或网络请求等待期间强行打断。
 
-- `tryShow` 必须只读检查 `slotId`、格式、平台、前台状态、privacy、宿主、该广告位 `phase=ready` 和全屏仲裁。插页不读取或计算距上一次展示的时间；不满足任一现有条件就立即返回，并由调用方继续自然流程，不得在这个调用中等待或补做 load。
-- 插页展示节奏只由业务选择的自然中断点和实时 gates/phase/全屏仲裁决定。合同不定义最短展示间隔、展示冷却时间戳、冷却 timer、`cooldown` 结果码或 `cooldownRemainingMs` 字段。
+- `tryShow` 先检查平台、`slotId`/格式和 `naturalBreak`；这些基础条件无效时返回各自结果。对基础条件有效的插页请求，随后优先用单调时钟检查 `interstitialBlockedUntilMonotonicMs`，再检查前台状态、privacy、宿主、该广告位 `phase=ready` 和全屏仲裁。当前时间早于截止时间时固定返回 `rewarded-interstitial-delay` 和向上取整且不小于 1 的 `interstitialDelayRemainingMs`，即使资源同时未 ready 或某个运行 gate 关闭也不改报其他错误；不得调用 MAX show、等待或补做 load。
+- 只在当前匹配的激励视频 `hidden` 事件到达时，将截止时间更新为 `max(现有截止时间, event.monotonicAtMs + 30_000)`。这 30 秒从视频关闭/结束回调起算，只阻断插页，不阻断 Banner、下一次激励视频、奖励结算或任何后台预加载；保护期自然过期，不创建 timer，也不因进程内 SDK 实例重建而提前清空。
 
 最小调用方式应类似“发起展示尝试后立即结束当前同步处理”；禁止 `await ad.load()`、`await ad.showUntilHidden()` 或为了广告结果暂停 Phaser 更新。激励 show 受理时以 generation/slot/request 建立奖励待决记录；`rewarded` 事件可以在 `hidden` 前后到达，只要匹配一条仍有效且未失败的待决记录就异步发奖并原子标记已结算。`hidden` 不发奖也不删除待决记录，下一次展示不能覆盖上一条记录；`displayFailed` 将对应记录标为不可发奖。待决记录只能在发奖、明确展示失败或经过项目基于平台测试确定的有界结算窗口后清理，超时必须记录 `reward-settlement-timeout`。高价值或跨进程奖励应采用 MAX S2S rewarded callback 与服务端幂等账本。
 
 ### 视频广告不可用 Toast
 
-- `tryShow` 因 `unknown-slot`、`not-initialized`、`privacy-pending`、`not-ready`、`loading`、`already-showing`、`background`、`offline`、`no-host` 或其他不可展示状态立即拒绝时，`ShowResult.noticeCode` 返回 `video-ad-unavailable`，并携带本次触发唯一的 `noticeDedupeKey`。共享 UI 层必须立即显示一次本地化 Toast，默认中文语义为“视频广告暂不可用，请稍后再试”。
+- `tryShow` 因 `unknown-slot`、`not-initialized`、`privacy-pending`、`not-ready`、`loading`、`already-showing`、`background`、`offline`、`no-host` 或其他不可展示状态立即拒绝时，`ShowResult.noticeCode` 返回 `video-ad-unavailable`，并携带本次触发唯一的 `noticeDedupeKey`。共享 UI 层必须立即显示一次本地化 Toast，默认中文语义为“视频广告暂不可用，请稍后再试”。`rewarded-interstitial-delay` 是预期的插页静默跳过策略，不返回 `noticeCode` 或 `noticeDedupeKey`。
 - 原生 show 已受理后若收到匹配当前 generation/slot/request 的 `displayFailed`，桥接层发布一个 `AdUiNoticeEvent`；UI 层按 `dedupeKey` 只显示一次相同 Toast。迟到、重复或旧实例回调不提示。
 - 后台预加载失败、no-fill、退避重试、恢复调度和被动状态变化不产生 Toast；只有实际展示触发失败才提示，避免后台错误打扰用户。
 - Toast 是 UI 反馈，不改变加载计数、奖励和游戏流程。官方插件适配层只发送稳定 `noticeCode`，不直接操作 Phaser UI，也不把插件原始错误文本展示给用户。
@@ -328,7 +330,7 @@ n = consecutiveLoadFailures（本次失败递增后的值，n >= 1）
 ## 展示失败、生命周期与断网
 
 - MAX `displayFailed` 要记录脱敏原因码、结束当前展示锁、清除对应广告位失效 ready 标记、发布一次去重的 `video-ad-unavailable` UI 提示事件，并通过对应广告位的服务入口静默预加载；不得立即递归 show。
-- MAX `hidden` 要释放展示锁并静默预加载同一广告位的下一条；如果用户快速离开场景，预加载请求仍不得持有已销毁的 Phaser/Activity/ViewController。
+- MAX `hidden` 要释放展示锁并静默预加载同一广告位的下一条；匹配当前激励视频展示的事件还要先更新 30 秒插页保护截止时间。如果用户快速离开场景，预加载请求仍不得持有已销毁的 Phaser/Activity/ViewController。
 - App 进入后台时禁止新的 show，并暂停 retry timer；回到前台后检查宿主、隐私和网络，再恢复一次预加载。不要因为前后台切换重置成功加载计数或重复注册 MAX listener。
 - 网络不可用时不发起新 load/show，保留退避 attempt；网络恢复后按当前 attempt 恢复一次。离线期间调用 `tryShow` 必须快速返回 `offline`。
 - 原生宿主暂不可用、旋转/导航期间 ViewController 不合法、Android Activity 被销毁或已有其他全屏广告时，立即返回 `no-host`/`already-showing`；不阻塞等待宿主出现。
@@ -354,7 +356,7 @@ n = consecutiveLoadFailures（本次失败递增后的值，n >= 1）
 
 ## 遥测与安全
 
-允许记录聚合且脱敏的事件：`initialize_started`、`initialize_completed`、`preload_requested`、`load_succeeded`、`load_failed`、`retry_scheduled`、`show_requested`、`ad_displayed`、`display_failed`、`ad_hidden`、`banner_shown`、`banner_hidden`、`banner_expanded`、`banner_collapsed`、`banner_size_changed`、`reward_granted`、`ui_notice_requested`、`paused`、`resumed`。每条事件只保留事件名、平台、业务广告位、广告格式、稳定原因码、`consecutiveLoadFailures`、延迟/耗时、phase 和可选的 canonical 网络别名。
+允许记录聚合且脱敏的事件：`initialize_started`、`initialize_completed`、`preload_requested`、`load_succeeded`、`load_failed`、`retry_scheduled`、`show_requested`、`show_skipped_rewarded_delay`、`ad_displayed`、`display_failed`、`ad_hidden`、`banner_shown`、`banner_hidden`、`banner_expanded`、`banner_collapsed`、`banner_size_changed`、`reward_granted`、`ui_notice_requested`、`paused`、`resumed`。每条事件只保留事件名、平台、业务广告位、广告格式、稳定原因码、`consecutiveLoadFailures`、保护期剩余毫秒数、延迟/耗时、phase 和可选的 canonical 网络别名。
 
 禁止记录或上传 SDK key、MAX ad unit ID、网络 placement/账号凭证、IDFA/AAID、设备标识、用户标识、IP、完整插件错误消息、完整 waterfall、竞价凭证、CMP 原文或可反推出个人的自由文本。官方插件错误对象只取稳定分类/数值码；原始日志仅限受控本地 debug，发布构建关闭敏感日志。
 
@@ -375,8 +377,8 @@ n = consecutiveLoadFailures（本次失败递增后的值，n >= 1）
 - Banner 只有 MAX auto-refresh 一个正常刷新所有者；隐藏/后台时停止，重新显示时恢复；load failure 先停止 auto-refresh，再向该 Banner 广告位自己的 `RetryState` 只登记一次，避免 SDK 与手动恢复双重 load。
 - 连续 Banner auto-refresh 成功回调在同一 `refreshEpoch` 内均被处理；重复桥接事件按 `eventId` 去重。refresh failure 使旧 epoch 失效，随后旧回调不改变状态；该广告位的 retry timer 恢复 load 时使用新的 `loadOperationId`。
 - 未 ready、已经展示、非自然时机、其他全屏广告占用和 display failure 都立即返回并继续业务流程。
-- 插页不创建或读取展示冷却状态；验证最近刚展示过广告不会单独阻断下一次满足自然中断点、ready、gates open 且全屏仲裁空闲的插页展示。加载重试 timer 只服务于 load failure，不得被当作展示冷却。
-- 所有 preload/load failure/retry 路径不产生 Toast；`tryShow` 立即拒绝时返回 `video-ad-unavailable`，异步 display failure 发布一次同码 UI 事件，重复/迟到回调按 dedupeKey 不重复提示。
+- 匹配的激励视频 `hidden` 后第 0–29,999 毫秒内，基础条件有效的插页 `tryShow` 均优先返回 `rewarded-interstitial-delay`、准确剩余毫秒数且不调用 MAX show、不产生 Toast，即使广告未 ready 或运行 gate 关闭也保持该结果；第 30,000 毫秒恢复正常判定。重复/迟到/旧实例 `hidden`、激励 `displayFailed` 和插页 `hidden` 不得启动或延长保护期；保护期不影响 Banner、激励视频和后台预加载，不创建 timer，不随进程内 `instanceGeneration` 重建而清空。
+- 所有 preload/load failure/retry 路径不产生 Toast；除 `rewarded-interstitial-delay` 按节奏静默跳过外，`tryShow` 立即拒绝时返回 `video-ad-unavailable`，异步 display failure 发布一次同码 UI 事件，重复/迟到回调按 dedupeKey 不重复提示。
 - Banner 未 ready、布局失败、加载失败和显隐冲突均保持隐藏且不产生视频 Toast，不使用激励账本。
 - hidden 和 display failure 都静默重新预加载对应广告位；销毁后的旧回调不会污染新实例。
 - 激励视频只在匹配奖励待决账本的 `rewarded` 事件到达时发奖，同一 `showRequestId` 最多发放一次；覆盖 hidden→rewarded、开始新展示后旧 rewarded、display failure 后 rewarded、重复 rewarded 和结算超时，确保不漏发、不串单、不重复发奖。
