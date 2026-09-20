@@ -109,7 +109,7 @@ function makeMeasuredEvidence(width, height, rawDpr, overrides = {}) {
   });
 }
 
-test('响应式合同覆盖 17 个字段、运行时 DPR 和生产 1.5 DPR 分离', () => {
+test('响应式合同覆盖 17 个字段、运行时 DPR 和生产 2 DPR 分离', () => {
   const contract = makeContract();
   assert.equal(RESPONSIVE_CONTRACT_FIELDS.length, 17);
   assert.deepEqual(validateResponsiveContract(contract, { stage: 'V1' }), []);
@@ -131,8 +131,14 @@ test('合同拒绝缺失矩阵、DPR 上限和生产 DPR 混写', () => {
   assert.match(validateResponsiveContract(badCap).join('\n'), /maxRuntimeDpr/);
 
   const mixed = makeContract();
-  mixed.assetResolutionPolicy.productionDpr = 2;
+  mixed.assetResolutionPolicy.productionDpr = 1.5;
   assert.match(validateResponsiveContract(mixed).join('\n'), /生产 DPR/);
+
+  for (const shorthand of ['12', '1.25', '2.5', 'productionDpr=3']) {
+    const unstructured = makeContract();
+    unstructured.assetResolutionPolicy = shorthand;
+    assert.match(validateResponsiveContract(unstructured).join('\n'), /生产 DPR/, `未结构化生产声明不得放行：${shorthand}`);
+  }
 });
 
 test('V4 证据验证 CSS/backing、动态 DPR、矩阵和候选身份', () => {

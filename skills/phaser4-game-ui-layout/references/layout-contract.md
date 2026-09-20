@@ -14,7 +14,7 @@ schema 1.2.0 根对象包含 `fidelity`、`frozen_visual_target`、`layout_nodes
 
 `logicalViewportSpace` 的单位固定为 CSS 逻辑像素（`css-px`/`css-logical-px`）。布局、safe area、断点、点击区域、`gameSize`、Camera viewport、Camera zoom 和程序化文字排版都在该空间计算。`canvasBackingPolicy` 必须明确 `backingWidth = ceil(cssWidth × effectiveDPR)`、`backingHeight = ceil(cssHeight × effectiveDPR)`，并声明 backing 是物理像素；物理 backing 像素不得直接作为布局坐标或命中坐标。CSS display 尺寸、逻辑尺寸和 backing 尺寸必须分别记录，不能把一个数值重复贴到三种空间。
 
-`runtimeDprPolicy` 必须从设备动态读取，非法、零、负数、非有限或字符串值回退为 1，有效值严格位于 `(0, 2]`，原始值大于 2 时有效值封顶为 2。DPR 不是启动常量：resize、横竖屏切换和显示密度变化都要重新读取并清理监听器。`maxRuntimeDpr` 固定为数字 `2`。资源生产基线另由 `assetResolutionPolicy.productionDpr=1.5` 声明，和运行时 DPR 分离；1.5 只表示生成/生产清晰度，不代表运行时固定使用 1.5。
+`runtimeDprPolicy` 必须从设备动态读取，非法、零、负数、非有限或字符串值回退为 1，有效值严格位于 `(0, 2]`，原始值大于 2 时有效值封顶为 2。DPR 不是启动常量：resize、横竖屏切换和显示密度变化都要重新读取并清理监听器。`maxRuntimeDpr` 固定为数字 `2`。资源生产基线另由 `assetResolutionPolicy.productionDpr=2` 声明，和运行时 DPR 分离；2 只表示生成/生产清晰度，不代表运行时固定使用 2。运行时代表性矩阵仍必须覆盖 DPR `1.25/1.5`。
 
 工作流不指定唯一 Phaser `ScaleMode`，`scaleMode` 可以选择 `FIT`、`RESIZE`、`NONE` 或项目定义的 `custom`，但必须同时证明逻辑尺寸、CSS 尺寸、物理 backing、`gameSize`、Camera viewport/zoom/origin 和输入映射之间的关系。单独声明 `FIT`、`RESIZE`、`NONE`、Canvas 存在、Canvas 不溢出或构建成功，都不是高分屏兼容证明。
 

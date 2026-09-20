@@ -219,7 +219,7 @@ function attachSceneReconstructionContract(manifest) {
         scene_asset_usage: {
           target_display_size: { width: region.bounds.width, height: region.bounds.height },
           intended_scale_range: { min: 1, max: 1 },
-          max_dpr: 1.5,
+          max_dpr: 2,
           padding_policy: "none",
           origin: { x: 0.5, y: 0.5 },
           anchor: "target-bound",

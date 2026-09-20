@@ -250,7 +250,7 @@
               "substitution_policy": {"const": "user-change-request-only"},
               "component_inventory": {"required": ["delivery_mode", "atlas_allowed"], "properties": {"delivery_mode": {"const": "individual"}, "atlas_allowed": {"const": false}}},
               "expected_assets": {"items": {"$ref": "#/$defs/imageGenerationExpectedAsset"}},
-              "scene_asset_usage": {"required": ["target_display_size", "intended_scale_range", "max_dpr", "padding_policy"], "properties": {"max_dpr": {"const": 1.5, "description": "图片生产基线 DPR 固定为 1.5；运行时实际 DPR 动态取值并封顶为 2。"}, "padding_policy": {"const": "none"}}}
+              "scene_asset_usage": {"required": ["target_display_size", "intended_scale_range", "max_dpr", "padding_policy"], "properties": {"max_dpr": {"const": 2, "description": "图片生产基线 DPR 固定为 2；运行时实际 DPR 仍动态取值并封顶为 2。"}, "padding_policy": {"const": "none"}}}
             }
           }
         },
@@ -266,7 +266,7 @@
               "substitution_policy": {"const": "user-change-request-only"},
               "component_inventory": {"required": ["delivery_mode", "atlas_allowed"], "properties": {"delivery_mode": {"const": "individual"}, "atlas_allowed": {"const": false}}},
               "expected_assets": {"items": {"$ref": "#/$defs/imageGenerationExpectedAsset"}},
-              "scene_asset_usage": {"required": ["target_display_size", "intended_scale_range", "max_dpr", "padding_policy"], "properties": {"max_dpr": {"const": 1.5, "description": "图片生产基线 DPR 固定为 1.5；运行时实际 DPR 动态取值并封顶为 2。"}, "padding_policy": {"const": "none"}}}
+              "scene_asset_usage": {"required": ["target_display_size", "intended_scale_range", "max_dpr", "padding_policy"], "properties": {"max_dpr": {"const": 2, "description": "图片生产基线 DPR 固定为 2；运行时实际 DPR 仍动态取值并封顶为 2。"}, "padding_policy": {"const": "none"}}}
             }
           }
         },
@@ -924,7 +924,7 @@
       "properties": {
         "target_display_size": {"type": "object", "required": ["width", "height"], "properties": {"width": {"type": "number", "exclusiveMinimum": 0}, "height": {"type": "number", "exclusiveMinimum": 0}}},
         "intended_scale_range": {"type": "object", "required": ["min", "max"], "properties": {"min": {"type": "number", "exclusiveMinimum": 0}, "max": {"type": "number", "exclusiveMinimum": 0}}},
-         "max_dpr": {"const": 1.5, "description": "图片生产基线 DPR 固定为 1.5；图像生成单图尺寸计算使用图片生产基线 1.5，运行时实际 DPR 动态封顶为 2。"},
+         "max_dpr": {"const": 2, "description": "图片生产基线 DPR 固定为 2；图像生成单图尺寸计算使用图片生产基线 2，运行时实际 DPR 仍动态封顶为 2。"},
          "padding_policy": {"type": "string", "description": "图像生成 individual 必须为 none；非图像生成可不声明该字段。"},
         "origin": {"type": "object"},
         "anchor": {"type": ["string", "object"], "minLength": 1},

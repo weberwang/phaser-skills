@@ -6,7 +6,7 @@
 
 适配器必须消费布局合同的 `logicalViewportSpace`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr` 和 `scaleMode`。CSS client rect 是唯一的逻辑视口输入；Canvas backing 由 `ceil(CSS 宽高 × effectiveDPR)` 得到，物理 backing 像素不可直接参与 UI 布局或输入命中。`FIT`、`RESIZE`、`NONE` 和 `custom` 都可以使用，但必须在 `cameraViewportPolicy` 与 `inputCoordinatePolicy` 中证明坐标关系。
 
-运行时 DPR 每次 resize、横竖屏变化和显示密度变化都从设备重新读取：非法值回退 1，正有限值封顶 2。适配器应同时更新 CSS/display 尺寸和 backing 尺寸，并记录 raw/effective DPR；监听器必须在 Scene 销毁、休眠和重新进入时清理。图片生产 1.5 倍基线只属于 `assetResolutionPolicy`，不能作为运行时 DPR 或降级理由。
+运行时 DPR 每次 resize、横竖屏变化和显示密度变化都从设备重新读取：非法值回退 1，正有限值封顶 2。适配器应同时更新 CSS/display 尺寸和 backing 尺寸，并记录 raw/effective DPR；监听器必须在 Scene 销毁、休眠和重新进入时清理。图片生产 2 倍基线只属于 `assetResolutionPolicy`，不能作为运行时 DPR 或降级理由。
 
 ## 坐标空间
 

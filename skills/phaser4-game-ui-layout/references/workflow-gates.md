@@ -17,7 +17,7 @@ effect-image 例外：V1–V3 必须先验证 `scene_reconstruction_contract`、
 ## 高分屏与响应式阶段门
 
 - V1：Implementation Package/布局合同必须填写 `logicalViewportSpace`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr=2`、`scaleMode`、Camera viewport/zoom/origin、输入坐标、安全区、resize、方向、文字/资源分辨率和性能预算。必须说明 CSS 逻辑尺寸、物理 backing、`gameSize`、弹窗宿主继承、监听清理及显式降级策略。
-- V2：机器门确认布局节点使用逻辑 CSS 像素，不能依赖物理像素硬编码；确认 HUD/弹窗与宿主 Scene、Camera/输入合同的关系；确认资源生产 DPR=1.5 与运行时 DPR 动态封顶 2 分离，资源生产分辨率覆盖 intended scale。
+- V2：机器门确认布局节点使用逻辑 CSS 像素，不能依赖物理像素硬编码；确认 HUD/弹窗与宿主 Scene、Camera/输入合同的关系；确认资源生产 DPR=2 与运行时 DPR 动态封顶 2 分离，资源生产分辨率覆盖 intended scale。
 - V3：每项资源登记逻辑显示范围、最大 intended scale、生产分辨率、source/runtime 尺寸、代表性视口放大风险和资源不足阻断条件；简单插值放大不能作为清晰度修复，性能预算必须绑定机器/结果证据。
 - V4：必须提交真实运行证据，记录 `requiredRuntimeEvidence` 全部字段、raw/effective DPR、CSS/backing 尺寸、Camera、输入命中、resize 轨迹和候选身份。默认 usability 覆盖四类代表性视口、DPR 1/1.25或1.5/2/大于2封顶、连续 resize、DPR 降至1、同 DPR 再 resize，以及独立 DISPLAY_LAYER 的打开/交互/resize/关闭/宿主恢复；缺测量为 `unverified`。
 

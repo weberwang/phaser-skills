@@ -84,7 +84,7 @@ test("默认代表性矩阵覆盖视口、DPR 封顶和 DISPLAY_LAYER 运行证�
 });
 test("图片生产 DPR 与运行时 DPR 必须分离", () => {
   const mixed = copy(); mixed.runtimeDprPolicy.productionDpr = 1.5; assertFailed(mixed, "运行时与资源生产必须分离");
-  const wrongProduction = copy(); wrongProduction.assetResolutionPolicy.productionDpr = 2; assertFailed(wrongProduction, "assetResolutionPolicy.productionDpr 必须严格为图片生产基线 1.5");
+  const wrongProduction = copy(); wrongProduction.assetResolutionPolicy.productionDpr = 1.5; assertFailed(wrongProduction, "assetResolutionPolicy.productionDpr 必须严格为图片生产基线 2");
   const quiet = copy(); quiet.assetResolutionPolicy.upscaleAsClarityFix = "allowed"; assertFailed(quiet, "插值放大不是清晰度修复");
 });
 test("关键对齐与 parity ID 必须唯一", () => { const alignment = fidelityContract(); alignment.critical_alignments.push(structuredClone(alignment.critical_alignments[0])); assertFailed(alignment, "id 重复"); const parity = fidelityContract(); parity.parity_cases.push(structuredClone(parity.parity_cases[0])); assertFailed(parity, "id 重复"); });

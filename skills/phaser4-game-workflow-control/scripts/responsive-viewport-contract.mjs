@@ -237,7 +237,7 @@ export function validateResponsiveContract(value, options = {}) {
   for (const fieldName of ['cameraViewportPolicy', 'cameraZoomPolicy', 'cameraOriginPolicy', 'inputCoordinatePolicy', 'safeAreaPolicy', 'resizePolicy', 'orientationPolicy', 'textResolutionPolicy']) if (!hasFact(contract[fieldName])) errors.push(contractError(stage, scope, `必须明确 ${fieldName}`, fieldName));
   const assets = contract.assetResolutionPolicy;
   const productionDpr = isObject(assets) ? field(assets, 'productionDpr', 'production_dpr', 'assetProductionDpr', 'asset_production_dpr', 'maxDpr', 'max_dpr') : null;
-  if (!(isImageProductionDpr(productionDpr) || (typeof assets === 'string' && /1\.5|production/.test(assets)))) errors.push(contractError(stage, scope, `资源生产 DPR 必须独立固定为 ${IMAGE_PRODUCTION_DPR}，不得代替运行时 DPR`, 'assetResolutionPolicy.productionDpr=1.5'));
+  if (!isImageProductionDpr(productionDpr)) errors.push(contractError(stage, scope, `资源生产 DPR 必须独立固定为 ${IMAGE_PRODUCTION_DPR}，不得代替运行时 DPR`, `assetResolutionPolicy.productionDpr=${IMAGE_PRODUCTION_DPR}`));
   const budget = contract.performanceBudget;
   if (!isObject(budget)) errors.push(contractError(stage, scope, 'performanceBudget 必须记录 backing、像素、RenderTexture、滤镜、透明层和设备结果', 'performanceBudget'));
   else {

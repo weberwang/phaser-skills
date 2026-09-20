@@ -141,7 +141,7 @@ export function validateImageGenerationSizeContract(asset, contract, context = {
   const minimum = { width: Math.ceil(display.displaySize.width * scale.max * IMAGE_PRODUCTION_DPR), height: Math.ceil(display.displaySize.height * scale.max * IMAGE_PRODUCTION_DPR) };
   const expectedSize = { width: expectedAsset.width, height: expectedAsset.height };
   if (expectedAsset.width !== minimum.width || expectedAsset.height !== minimum.height) {
-    errors.push(sizeError(local, "expected_assets 必须精确使用机器计算的最小尺寸（按逻辑像素×最大缩放×图片生产基线 1.5 向上取整）", { expected: minimum, actual: expectedSize }));
+    errors.push(sizeError(local, `expected_assets 必须精确使用机器计算的最小尺寸（按逻辑像素×最大缩放×图片生产基线 ${IMAGE_PRODUCTION_DPR} 向上取整）`, { expected: minimum, actual: expectedSize }));
   }
   const metadata = resolveOutputMetadata(asset ?? {});
   if (asset && (metadata.width !== minimum.width || metadata.height !== minimum.height)) {
