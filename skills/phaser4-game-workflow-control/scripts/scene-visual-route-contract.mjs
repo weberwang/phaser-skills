@@ -55,7 +55,7 @@ const NATIVE_PRIMITIVES = new Set([
   "text",
   "not-applicable",
 ]);
-/** 默认先考虑图片资产的视觉元素类别；是否最终使用原生仍需证据判定。 */
+/** 默认先考虑图片资产的视觉元素类别；静态非文本元素不得直接降级为原生绘制。 */
 const ASSET_CANDIDATE_ELEMENT_TYPES = new Set([
   "button",
   "button-skin",
@@ -406,10 +406,18 @@ export function validateSceneVisualRouteAnalysis(region, contract = {}, options 
   const owner = analysis.final_owner;
   const method = analysis.production_method;
   const delivery = analysis.delivery_kind;
+  const isTextElement = TEXT_ELEMENT_TYPES.has(analysis.element_type);
   const hasCompositeInput = route === COMPOSITE_ROUTE || Object.hasOwn(analysis, "composite_parts");
   if (hasCompositeInput) {
     // 无论 selected_route 是否仍写成 composite，遗留 composite_parts 都不能被合法路线忽略。
     errors.push(compositeRouteError(stage, contract, region, route === COMPOSITE_ROUTE ? COMPOSITE_ROUTE : "composite_parts"));
+  }
+  if (!isTextElement && route === SCENE_VISUAL_ROUTES.PHASER_NATIVE && analysis.dynamic_requirements?.is_dynamic !== true) {
+    // 拆解默认把静态非文本外观交给图片资产；原生路线只保留给文本或确有运行时变化的逻辑。
+    errors.push(routeError(stage, contract, region, "除文本外的静态视觉元素必须优先使用图片资产；只有确有运行时变化的非文本逻辑才能选择 Phaser 原生路线", {
+      expected: "selected_route=image-asset，或 dynamic_requirements.is_dynamic=true",
+      actual: JSON.stringify({ element_type: analysis.element_type, selected_route: route, is_dynamic: analysis.dynamic_requirements?.is_dynamic }),
+    }));
   }
   if (route === SCENE_VISUAL_ROUTES.IMAGE_ASSET) {
     // 复用现有 fixed-production-visual 门，保证路线分析不会另造一套图片方法语义。
@@ -445,7 +453,7 @@ export function validateSceneVisualRouteAnalysis(region, contract = {}, options 
   if (hasField(region, "production_method") && region.production_method !== method) errors.push(routeError(stage, contract, region, "visual_route_analysis.production_method 与 coverage production_method 不一致", { expected: method, actual: region.production_method }));
   if (hasField(region, "delivery_kind") && region.delivery_kind !== delivery) errors.push(routeError(stage, contract, region, "visual_route_analysis.delivery_kind 与 coverage delivery_kind 不一致", { expected: delivery, actual: region.delivery_kind }));
 
-  if (TEXT_ELEMENT_TYPES.has(analysis.element_type)) {
+  if (isTextElement) {
     if (!nonEmptyString(analysis.text_decomposition_ref)) errors.push(routeError(stage, contract, region, "文本区域必须明确委托 text_decomposition，不能由通用视觉路线吞掉字形合同", { missing: "text_decomposition_ref" }));
     const textNodes = contract?.text_decomposition?.text_nodes ?? [];
     if (nonEmptyString(analysis.text_decomposition_ref) && Array.isArray(textNodes) && textNodes.length > 0 && !textNodes.some((node) => node?.text_node_id === analysis.text_decomposition_ref || node?.region_id === region.region_id)) errors.push(routeError(stage, contract, region, "text_decomposition_ref 未绑定当前文本节点/区域", { actual: analysis.text_decomposition_ref }));

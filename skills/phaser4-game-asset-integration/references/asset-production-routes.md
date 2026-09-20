@@ -22,12 +22,12 @@ V3 为每个资源选择一条主路线，并在机器清单记录场景或 shar
 
 `effect-image` 的忠实还原以美术资产为视觉事实来源，以 Phaser 负责装配、布局、交互和状态行为；这不是把普通游戏 UI 全部图片化，也不改变非效果图工作流的默认开发路线。每个 `scene_reconstruction_contract.coverage_regions[]` 必须填写唯一的 `visual_route_analysis`，在 V1/V2/V3+ 逐阶段回对以下字段：元素类别、观察到的材质/轮廓/光影/装饰特征、是否独特美术、动态要求、原生适用性证据、复用适用性证据、最终 owner、`implementation_plan.mode`、生产方式和交付类型。
 
-视觉来源与场景装配是两个独立决策。每个 coverage region 只能根据冻结参考图的可观察事实选择 `image-asset` 或 `phaser-native`，再用独立的 `assembly_analysis` 证明正式 Scene 采用原子装配且没有整屏捕获。`uses_full_screen_capture=false` 不得推导 `runtime-program`；原子 Sprite、NineSlice、独立背景块和其他图片部件仍是结构化实现。若同一视觉事实同时包含程序逻辑与独立视觉资产，必须退回 V1/PROPOSAL 重新划分 coverage/annotation：图片外观进入独立 image-asset region，程序行为进入独立 phaser-native/runtime region，并分别进入各自的生产合同和运行逻辑合同。禁止单一 `composite` region 或 `composite_parts` 在一个区域内闭环；该输入无条件阻断生产与验收。全部区域都选择 `phaser-native` 时，场景合同必须提供绑定冻结目标、完整 region 集合和独立 JSON 工件 SHA 的 `all_native_justification`；文件门会复算 SHA 并逐区核对资格事实，不能由同一拆解提案用“均为简单视觉”的自声明自行闭环。
+视觉来源与场景装配是两个独立决策。每个 coverage region 只能根据冻结参考图的可观察事实选择 `image-asset` 或 `phaser-native`，再用独立的 `assembly_analysis` 证明正式 Scene 采用原子装配且没有整屏捕获。拆解判定采用“文本单独处理、其余静态视觉优先图片”的顺序：文本交给 `text_decomposition` 决定运行时字体或固定字图；非文本且 `dynamic_requirements.is_dynamic=false` 的区域必须选择 `image-asset`，不能因为外观简单、可用 Graphics 绘制或不是整屏贴图而降级为程序绘制。只有确有运行时变化的非文本逻辑才可在完整 `native_suitability` 证据下选择 `phaser-native`。`uses_full_screen_capture=false` 不得推导 `runtime-program`；原子 Sprite、NineSlice、独立背景块和其他图片部件仍是结构化实现。若同一视觉事实同时包含程序逻辑与独立视觉资产，必须退回 V1/PROPOSAL 重新划分 coverage/annotation：图片外观进入独立 image-asset region，程序行为进入独立 phaser-native/runtime region，并分别进入各自的生产合同和运行逻辑合同。禁止单一 `composite` region 或 `composite_parts` 在一个区域内闭环；该输入无条件阻断生产与验收。全部区域都选择 `phaser-native` 时，场景合同必须提供绑定冻结目标、完整 region 集合和独立 JSON 工件 SHA 的 `all_native_justification`；文件门会复算 SHA 并逐区核对资格事实，不能由同一拆解提案用“均为简单视觉”的自声明自行闭环。
 
 | 来源路线 | 适用范围 | 必须满足的硬门 |
 | --- | --- | --- |
 | `image-asset` | 按钮皮肤、panel/background frame、特色图标、插画、角色、道具、背景、装饰和其他有独特视觉的原子部件 | `fixed-production-visual`；`image-generation`/`authored-raster`/`reuse`；`raster-image`/`existing-asset`。Sprite、NineSlice、atlas slice 仍属于图片资产路线，因为视觉来源是纹理 |
-| `phaser-native` | 纯色块、基础几何、规则线/渐变、遮罩、进度填充、布局/交互结构、动态数据、粒子/Shader/程序特效 | `runtime-data`/`runtime-rendered`/`runtime-program`；`phaser-graphics`/`runtime-program`；必须列出原语和可审计资格证据。独特视觉只有在等价性证据绑定预声明容差或精确例外时才可作原生例外 |
+| `phaser-native` | 文本，或确有运行时变化的进度填充、布局/交互逻辑、动态数据、粒子/Shader/程序特效；静态纯色块、基础几何、规则线/渐变、遮罩也优先转为图片资产 | 文本必须委托 `text_decomposition`；非文本必须 `dynamic_requirements.is_dynamic=true`；`runtime-data`/`runtime-rendered`/`runtime-program`；`phaser-graphics`/`runtime-program`；必须列出原语和可审计资格证据。独特视觉只有在等价性证据绑定预声明容差或精确例外时才可作原生例外 |
 | 混合路线重新拆解 | 同一视觉事实同时包含图片外观与程序逻辑 | 回到 V1/PROPOSAL，拆成独立 image-asset coverage region 与独立 phaser-native/runtime coverage region；两者分别生产、运行和验收，禁止单一区域 composite 闭环 |
 
 复用不是“看起来相似”或“语义相同”：`reuse` 必须登记精确资产身份或通过既有 `asset-reuse-snapshot/1.0` 的 target/candidate 保真比较，并提供视觉和兼容性证据；缺失时直接回退方案阶段。整屏截图不得作为交互场景来源，必须交付原子部件并由正式 Scene 装配；这里禁止的是整屏捕获交付，不是独立图片资产。
