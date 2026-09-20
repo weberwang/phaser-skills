@@ -2,17 +2,27 @@
 
 本参考定义 Phaser 运行时边界，不要求所有项目采用同一 Scale API。先审计现有 Scale、Camera 和 Scene 结构，再把项目选择写入合同。
 
+## 统一高分屏边界
+
+适配器必须消费布局合同的 `logicalViewportSpace`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr` 和 `scaleMode`。CSS client rect 是唯一的逻辑视口输入；Canvas backing 由 `ceil(CSS 宽高 × effectiveDPR)` 得到，物理 backing 像素不可直接参与 UI 布局或输入命中。`FIT`、`RESIZE`、`NONE` 和 `custom` 都可以使用，但必须在 `cameraViewportPolicy` 与 `inputCoordinatePolicy` 中证明坐标关系。
+
+运行时 DPR 每次 resize、横竖屏变化和显示密度变化都从设备重新读取：非法值回退 1，正有限值封顶 2。适配器应同时更新 CSS/display 尺寸和 backing 尺寸，并记录 raw/effective DPR；监听器必须在 Scene 销毁、休眠和重新进入时清理。图片生产 1.5 倍基线只属于 `assetResolutionPolicy`，不能作为运行时 DPR 或降级理由。
+
 ## 坐标空间
 
-必须显式区分游戏画布、Camera viewport、世界空间、屏幕空间、Scene/UI 根 Container、局部 Container、滚动内容空间和 DOM Overlay。`setScrollFactor(0)` 只说明相机滚动行为，不会自动建立布局关系；Camera 偏移、Container 局部坐标和 CSS/DOM 坐标必须在适配器中转换，禁止跨空间直接比较。
+必须显式区分 CSS 逻辑视口、游戏画布、Canvas backing、`gameSize`、Camera viewport、世界空间、屏幕空间、Scene/UI 根 Container、局部 Container、滚动内容空间和 DOM Overlay。`setScrollFactor(0)` 只说明相机滚动行为，不会自动建立布局关系；Camera 偏移、Container 局部坐标和 CSS/DOM 坐标必须在适配器中转换，禁止跨空间直接比较。
+
+`cameraViewportPolicy`、`cameraZoomPolicy` 和 `cameraOriginPolicy` 必须分别说明 viewport 的逻辑空间、zoom 是否独立于 DPR、origin 以及物理映射。`gameSize` 使用逻辑 CSS 像素；Camera 负责逻辑 viewport 到 backing 的渲染映射，不得把 backing 宽高伪装成 gameSize。`inputCoordinatePolicy` 必须说明 CSS client → 逻辑 → Camera/World 的逆映射，命中测试使用逻辑坐标；物理像素事件和未经 Camera 转换的 `x/y` 均不合格。
 
 资源 origin/纹理原点、布局锚点和动画反馈偏移分别存储。`x/y` 或 `setPosition` 只能表达相对合同参照物的局部距离；固定值没有合同依据时必须退回 F1。
 
 ## 唯一入口与幂等重排
 
-建立一个可识别的布局入口，例如 `reflowUi(input)`；初始创建、Scene 唤醒/恢复、resize、方向切换、安全区变化、键盘变化、文本/成员变化和状态切换都调用同一入口。入口输入至少包含逻辑视口、安全区、方向、内容尺寸、运行时有效 DPR 和 UI 状态；DPR 通过统一设备解析器动态封顶为 2。
+建立一个可识别的布局入口，例如 `reflowUi(input)`；初始创建、Scene 唤醒/恢复、resize、方向切换、安全区变化、键盘变化、文本/成员变化、DPR 变化和状态切换都调用同一入口。入口输入至少包含 CSS 逻辑视口、安全区、方向、内容尺寸、raw/effective DPR、Camera 合同和 UI 状态；DPR 通过统一设备解析器动态封顶为 2。弹窗或 `DISPLAY_LAYER` 必须继承宿主视口、有效 DPR 和输入合同，独立 Camera 必须单独声明并采集证据。
 
 纯布局计算尽量先返回几何结果，再由 Phaser GameObject 写入，以便确定性测试。每次计算从合同值重新推导，不能在上一次坐标上累加偏移或缩放；相同输入重复调用必须产生相同结果。
+
+resize 处理必须在同一页面完成，不能通过 reload 清空问题；DPR 变化时 CSS/display 与 backing 两者都要重算。性能预算超出时只能执行合同中已披露的滤镜、RenderTexture 或透明层降级，不能静默降低 DPR、资源生产分辨率或文字字号。
 
 屏幕空间装饰性满幅背景必须在该入口调用
 [`calculateFullBleedCoverTransform`](../../phaser4-game-asset-integration/scripts/full-bleed-background-adapter.mjs)，

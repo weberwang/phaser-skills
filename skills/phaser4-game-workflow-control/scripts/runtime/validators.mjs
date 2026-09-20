@@ -1,4 +1,5 @@
 import { schemaContract, schemaEnum, schemaRequired } from './schema-contract.mjs';
+import { hasResponsiveDeclaration, isResponsiveWorkItem, validateResponsiveContract, validateResponsiveEvidenceManifest } from '../responsive-viewport-contract.mjs';
 
 const APPROVAL_FIELDS = schemaRequired('approval-ledger.schema.json', ['properties', 'approvals', 'items']);
 const DELEGATION_SCHEMA = schemaContract('delegation-package.schema.json');
@@ -9,6 +10,7 @@ const APPROVAL_ACTION_LEVELS = schemaEnum('approval-ledger.schema.json', ['prope
 const DELEGATION_ACTION_LEVELS = schemaEnum('delegation-package.schema.json', ['properties', 'actionLevel']);
 const EVIDENCE_VERDICTS = schemaEnum('evidence-manifest.schema.json', ['properties', 'verdict']);
 const CHANGE_STATUSES = schemaEnum('change-request.schema.json', ['properties', 'status']);
+const STAGE_PATTERN = /^V[1-4]$/;
 
 /** 创建控制面记录校验器，集中维护审批、委派、证据、实施包和变更请求边界。 */
 export function createRecordValidators({
@@ -64,6 +66,11 @@ export function createRecordValidators({
     if (!EVIDENCE_VERDICTS.includes(evidence.verdict)) fail('Evidence.verdict 无效');
     if (!evidence.fileHashes || typeof evidence.fileHashes !== 'object' || Array.isArray(evidence.fileHashes)) fail('Evidence.fileHashes 必须为对象');
     requireFields(evidence.gateResults, gates.slice(0, 4), 'Evidence.gateResults');
+    const evidenceStage = String(evidence.currentStage ?? evidence.current_stage ?? '').toUpperCase();
+    if (evidenceStage === 'V4' || evidence.responsiveEvidence !== undefined || evidence.responsiveRuntimeEvidence !== undefined) {
+      const responsiveErrors = validateResponsiveEvidenceManifest(evidence, evidence.responsiveViewportContract ?? evidence.responsiveContract, { stage: evidenceStage || 'V4', candidateSha256: evidence.candidateSha256 });
+      if (responsiveErrors.length) fail(responsiveErrors[0]);
+    }
     return evidence;
   }
 
@@ -89,6 +96,19 @@ export function createRecordValidators({
     const visualFields = ['visualContractVersion', 'candidateVersion', 'visualManifestFile', 'visualManifestSha256', 'visualProductionUnits'];
     if (visualFields.some((field) => Object.hasOwn(pkg, field)) && visualFields.some((field) => pkg[field] === undefined)) fail('视觉 Implementation Package 必须同时绑定 visualContractVersion、visualManifestFile、visualManifestSha256、visualProductionUnits');
     if (!pkg.packageId || !pkg.workItemId || !pkg.baselineVersion || !pkg.compatibilityStrategy || !pkg.approvedArchitecture) fail('Implementation Package 标识、版本、兼容策略或架构结论不能为空');
+    const packageStage = String(options.stage ?? pkg.currentStage ?? pkg.current_stage ?? '').toUpperCase();
+    const responsiveRequired = options.requireResponsive === true || STAGE_PATTERN.test(packageStage) || hasResponsiveDeclaration(pkg);
+    if (responsiveRequired) {
+      const identityFields = ['responsiveContractVersion', 'layoutContractVersion', 'visualBaselineVersion'];
+      requireFields(pkg, identityFields, 'Implementation Package 响应式身份');
+      if (identityFields.some((field) => typeof pkg[field] !== 'string' || !pkg[field].trim())) fail('Implementation Package 响应式合同、布局合同和视觉基线版本必须为非空字符串');
+      const responsiveErrors = validateResponsiveContract(pkg, { stage: packageStage || 'V1', scope: pkg.packageId });
+      if (responsiveErrors.length) fail(responsiveErrors[0]);
+      for (const unit of pkg.executionUnits.filter((item) => ['SCENE', 'DISPLAY_LAYER'].includes(item?.unitType) && hasResponsiveDeclaration(item))) {
+        const unitErrors = validateResponsiveContract(unit.responsiveContract ?? unit.responsiveViewportContract ?? unit, { stage: packageStage || 'V1', scope: unit.displayLayerId ?? unit.sceneId ?? unit.unitId });
+        if (unitErrors.length) fail(unitErrors[0]);
+      }
+    }
     return pkg;
   }
 
@@ -111,5 +131,12 @@ export function createRecordValidators({
     return change;
   }
 
-  return { validateApproval, validateDelegation, validateEvidence, validateImplementationPackageShape, validateChangeRequestShape, validateChangeRequest };
+  /** 为 evidence-check 提供绑定当前 Work Item/实施单元的二次响应式门。 */
+  function validateResponsiveEvidence(evidence, contract = null, options = {}) {
+    const errors = validateResponsiveEvidenceManifest(evidence, contract, options);
+    if (errors.length) fail(errors[0]);
+    return evidence;
+  }
+
+  return { validateApproval, validateDelegation, validateEvidence, validateResponsiveEvidence, validateImplementationPackageShape, validateChangeRequestShape, validateChangeRequest };
 }

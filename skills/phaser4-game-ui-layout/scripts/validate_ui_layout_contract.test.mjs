@@ -49,15 +49,43 @@ test("布局 parity DPR 允许动态有效值并拒绝越界或隐式值", () =>
   for (const dpr of [0.5, 1, 1.25, 1.5, 2]) { const document = fidelityContract(); document.parity_cases[0].dpr = dpr; assert.equal(validateContract(document).status, "passed", `dpr=${dpr}`); }
   for (const dpr of [0, -1, 2.0001, 3, "2", NaN, Infinity]) { const document = fidelityContract(); document.parity_cases[0].dpr = dpr; assertFailed(document, "必须是正有限数字且不超过 2"); }
 });
-test("布局 targets.scale 使用动态封顶策略并保留运行时上限", () => {
-  const invalidPolicy = copy(); invalidPolicy.targets.scale.dpr_policy = "fixed-2"; assertFailed(invalidPolicy, "dpr_policy 必须为 dynamic-capped-2");
-  const invalidMax = copy(); invalidMax.targets.scale.max_dpr = 1.5; assertFailed(invalidMax, "max_dpr 必须严格为 2");
-  const legacyDpr = copy(); legacyDpr.targets.scale.dpr = 2.0001; assertFailed(legacyDpr, "targets.scale.dpr 必须是正有限数字且不超过 2");
-  const valid = copy(); valid.targets.scale.dpr = 2; assert.equal(validateContract(valid).status, "passed");
+test("响应式合同使用动态封顶策略并保留运行时上限", () => {
+  const invalidPolicy = copy(); invalidPolicy.runtimeDprPolicy.policy = "fixed-2"; assertFailed(invalidPolicy, "runtimeDprPolicy.policy 必须为 dynamic-capped-2");
+  const invalidMax = copy(); invalidMax.maxRuntimeDpr = 1.5; assertFailed(invalidMax, "maxRuntimeDpr 必须严格为 2");
+  const legacyDpr = copy(); legacyDpr.representativeViewports[0].effectiveDpr = 2.0001; assertFailed(legacyDpr, "必须是正有限数字且不超过 2");
+  const valid = copy(); valid.representativeViewports[0].effectiveDpr = 1; assert.equal(validateContract(valid).status, "passed");
 });
 test("布局 evidence matrix 扩展 case 的 DPR 允许有效值但拒绝非法值", () => {
   const valid = copy(); valid.evidence_matrix.cases = [{ dpr: 1 }, { deviceScaleFactor: 1.5 }]; assert.equal(validateContract(valid).status, "passed");
   const invalid = copy(); invalid.evidence_matrix.cases = [{ dpr: 0 }, { deviceScaleFactor: "2" }]; assertFailed(invalid, "evidence_matrix");
+});
+test("高分屏响应式根合同字段不可缺失", () => {
+  for (const field of ["logicalViewportSpace", "canvasBackingPolicy", "runtimeDprPolicy", "maxRuntimeDpr", "scaleMode", "cameraViewportPolicy", "cameraZoomPolicy", "cameraOriginPolicy", "inputCoordinatePolicy", "safeAreaPolicy", "resizePolicy", "orientationPolicy", "textResolutionPolicy", "assetResolutionPolicy", "performanceBudget", "representativeViewports", "requiredRuntimeEvidence"]) {
+    const document = copy(); delete document[field]; assertFailed(document, `缺少根字段：${field}`);
+  }
+});
+test("布局只能使用 CSS 逻辑像素，backing 必须绑定有效 DPR", () => {
+  const physical = copy(); physical.logicalViewportSpace.layoutSpace = "physical-px"; assertFailed(physical, "logicalViewportSpace.layoutSpace 必须为 css-logical-px");
+  const hardcoded = copy(); hardcoded.canvasBackingPolicy.physicalPixelLayout = "allowed"; assertFailed(hardcoded, "不能用物理像素硬编码布局");
+  const relation = copy(); relation.canvasBackingPolicy.widthFormula = "cssWidth * 2"; assertFailed(relation, "必须表达 backing=CSS逻辑尺寸×effectiveDPR");
+});
+test("Camera、zoom、origin 和输入坐标合同必须完整", () => {
+  const camera = copy(); delete camera.cameraViewportPolicy.physicalMapping; assertFailed(camera, "cameraViewportPolicy 缺少字段：physicalMapping");
+  const zoom = copy(); zoom.cameraZoomPolicy.dprIndependent = false; assertFailed(zoom, "cameraZoomPolicy.dprIndependent 必须为 true");
+  const origin = copy(); origin.cameraOriginPolicy.implicitOrigin = "allowed"; assertFailed(origin, "cameraOriginPolicy.implicitOrigin 必须为 forbidden");
+  const input = copy(); input.inputCoordinatePolicy.mapping = "physical pixels"; assertFailed(input, "inputCoordinatePolicy.mapping 必须完整声明");
+});
+test("默认代表性矩阵覆盖视口、DPR 封顶和 DISPLAY_LAYER 运行证据", () => {
+  const missingViewport = copy(); missingViewport.representativeViewports = missingViewport.representativeViewports.slice(0, 3); assertFailed(missingViewport, "缺少代表性视口：desktop-wide");
+  const invalidRaw = copy(); invalidRaw.representativeViewports[0].rawDpr = "1"; assertFailed(invalidRaw, "rawDpr 必须是正有限数字");
+  const invalidCap = copy(); invalidCap.representativeViewports[3].effectiveDpr = 1.5; assertFailed(invalidCap, "必须封顶为 2");
+  const missingEvidence = copy(); missingEvidence.requiredRuntimeEvidence.requiredFields = missingEvidence.requiredRuntimeEvidence.requiredFields.filter((field) => field !== "inputHitResults"); assertFailed(missingEvidence, "requiredRuntimeEvidence.requiredFields 缺少必需项：inputHitResults");
+  const sharedEvidence = copy(); sharedEvidence.requiredRuntimeEvidence.displayLayerTrajectory.independentEvidence = false; assertFailed(sharedEvidence, "DISPLAY_LAYER 轨迹的 independentEvidence 必须为 true");
+});
+test("图片生产 DPR 与运行时 DPR 必须分离", () => {
+  const mixed = copy(); mixed.runtimeDprPolicy.productionDpr = 1.5; assertFailed(mixed, "运行时与资源生产必须分离");
+  const wrongProduction = copy(); wrongProduction.assetResolutionPolicy.productionDpr = 2; assertFailed(wrongProduction, "assetResolutionPolicy.productionDpr 必须严格为图片生产基线 1.5");
+  const quiet = copy(); quiet.assetResolutionPolicy.upscaleAsClarityFix = "allowed"; assertFailed(quiet, "插值放大不是清晰度修复");
 });
 test("关键对齐与 parity ID 必须唯一", () => { const alignment = fidelityContract(); alignment.critical_alignments.push(structuredClone(alignment.critical_alignments[0])); assertFailed(alignment, "id 重复"); const parity = fidelityContract(); parity.parity_cases.push(structuredClone(parity.parity_cases[0])); assertFailed(parity, "id 重复"); });
 test("缺少坐标空间失败", () => { const document = copy(); document.coordinate_spaces = []; assertFailed(document, "coordinate_spaces 必须是非空数组"); });

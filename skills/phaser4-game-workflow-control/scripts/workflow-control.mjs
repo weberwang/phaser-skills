@@ -24,6 +24,7 @@ import { schemaEnum, schemaRequired } from './runtime/schema-contract.mjs';
 import { approvalMatchesPending, approvalMatchesQuery, approvalSnapshotFromWork } from './runtime/approval-contract.mjs';
 import { validateActionState, validateChangeRequests as validateChangeRequestRules } from './runtime/workflow-state-contract.mjs';
 import { prepareImplementationPackageActivation, prepareSceneStageTransition } from './scene-stage-transition.mjs';
+import { hasResponsiveDeclaration, isResponsiveWorkItem, validateResponsiveContract } from './responsive-viewport-contract.mjs';
 const STATES = schemaEnum('work-item.schema.json', ['properties', 'globalState']);
 const LEVELS = schemaEnum('work-item.schema.json', ['properties', 'pendingApprovalActionLevel']);
 const GATES = schemaEnum('work-item.schema.json', ['properties', 'nextGate']);
@@ -73,7 +74,7 @@ const recordValidators = createRecordValidators({
   actionLevelFor: (action) => PHASER_ACTION_LEVEL.get(action), validateExecutionPlan,
   validateVisualImplementationPackage, validateVisualChangeRequest, pathMatches, fail,
 });
-const { validateApproval, validateDelegation, validateEvidence, validateImplementationPackageShape, validateChangeRequestShape, validateChangeRequest } = recordValidators;
+const { validateApproval, validateDelegation, validateEvidence, validateResponsiveEvidence, validateImplementationPackageShape, validateChangeRequestShape, validateChangeRequest } = recordValidators;
 /** 校验工作项的核心结构、枚举与控制字段。 */
 function validateWorkItem(work) {
   // outOfScope 只是范围说明；缺失按空数组处理，工作项身份、目标、路径和证据字段仍必须显式提供。
@@ -86,6 +87,14 @@ function validateWorkItem(work) {
   }
   const visualReferenceErrors = validateVisualConfirmationReferences(work);
   if (visualReferenceErrors.length) fail(visualReferenceErrors[0]);
+  // V1 或已明确声明可见响应式合同的工作项必须先冻结逻辑坐标和 DPR 事实，不能把 stageId 当作运行证明。
+  if (isResponsiveWorkItem(work)) {
+    const identityFields = ['responsiveContractVersion', 'layoutContractVersion', 'visualBaselineVersion'];
+    requireFields(work, identityFields, 'Work Item 响应式身份');
+    if (identityFields.some((field) => typeof work[field] !== 'string' || !work[field].trim())) fail('Work Item 响应式合同、布局合同和视觉基线版本必须为非空字符串');
+    const responsiveErrors = validateResponsiveContract(work, { stage: work.visualStage ?? work.stageId, scope: work.workItemId });
+    if (responsiveErrors.length) fail(responsiveErrors[0]);
+  }
   requireStringArray(work.moduleIds, 'Work Item.moduleIds');
   if (!work.moduleIds.length || new Set(work.moduleIds).size !== work.moduleIds.length || JSON.stringify(work.moduleIds) !== JSON.stringify([...work.moduleIds].sort())) fail('Work Item.moduleIds 必须为非空、唯一且已排序数组');
   if (!STATES.includes(work.globalState)) fail(`未知全局状态 ${work.globalState}`);
@@ -132,6 +141,14 @@ function validateImplementationPackage(pkg, work, repo = process.cwd(), delegati
   validateImplementationPackageShape(pkg, { projectRoot: repo, checkFiles: true, authority, deferVisualValidation: true });
   const visualBindingErrors = validateVisualImplementationPackageBinding(pkg, { projectRoot: repo, allowedPaths: work.allowedPaths, pathMatches, requireVisual: isVisualProductionWork(work), authority, manifestSnapshot });
   if (visualBindingErrors.length) fail(visualBindingErrors[0]);
+  if (isResponsiveWorkItem(work, pkg)) {
+    const responsiveErrors = validateResponsiveContract(pkg, { stage: work.visualStage ?? work.stageId, scope: pkg.packageId });
+    if (responsiveErrors.length) fail(responsiveErrors[0]);
+    for (const unit of pkg.executionUnits.filter((item) => ['SCENE', 'DISPLAY_LAYER'].includes(item?.unitType) && hasResponsiveDeclaration(item))) {
+      const unitErrors = validateResponsiveContract(unit.responsiveContract ?? unit.responsiveViewportContract ?? unit, { stage: work.visualStage ?? work.stageId, scope: unit.displayLayerId ?? unit.sceneId ?? unit.unitId });
+      if (unitErrors.length) fail(unitErrors[0]);
+    }
+  }
   if (pkg.workItemId !== work.workItemId || pkg.baselineVersion !== work.baselineVersion || pkg.baselineHash !== work.baselineHash) fail('Implementation Package 未绑定当前工作项与基线');
   if (JSON.stringify(pkg.approvedRequirements) !== JSON.stringify(work.approvedRequirements) || JSON.stringify(pkg.allowedPaths) !== JSON.stringify(work.allowedPaths) || JSON.stringify(pkg.forbiddenPaths) !== JSON.stringify(work.forbiddenPaths) || JSON.stringify(pkg.outOfScope) !== JSON.stringify(work.outOfScope)) fail('Implementation Package 与工作项范围不一致');
   if (pkg.executionUnits.some((unit) => !work.moduleIds.includes(unit.moduleId))) fail('Implementation Package execution unit.moduleId 不属于 Work Item.moduleIds');
@@ -699,6 +716,12 @@ function evidenceCheck(args, silent = false, validationContextOverride = null) {
   if (!f0MatchesWork || evidence.gateResults.F3.evidenceId !== evidence.evidenceId || (!visualMachineValidation && !reviewer)) fail('F0 范围、F2 审查或 F3 证据绑定不完整');
   let visualManifest = null;
   if (visualPackage) { const snapshot = validationContext.loadVisualManifestSnapshot(visualPackage); if (snapshot?.errors?.length) fail(snapshot.errors[0]); visualManifest = snapshot?.manifest ?? null; }
+  // V4 可见单元必须逐条提交真实响应式运行证据；宿主场景通过不能替代独立 DISPLAY_LAYER 轨迹。
+  if (isResponsiveWorkItem(work, executionPackage ?? visualPackage) && (String(work.visualStage ?? work.stageId).toUpperCase() === 'V4' || evidence.responsiveEvidence !== undefined || evidence.responsiveRuntimeEvidence !== undefined)) {
+    const candidateSha256 = visualManifest?.candidate_identity?.sha256 ?? visualManifest?.candidateSha256 ?? evidence.candidateSha256;
+    const requiredUnits = (executionPackage?.executionUnits ?? visualPackage?.executionUnits ?? []).filter((unit) => ['SCENE', 'DISPLAY_LAYER'].includes(unit?.unitType));
+    validateResponsiveEvidence(evidence, executionPackage ?? visualPackage ?? work, { stage: 'V4', candidateSha256, requiredUnits });
+  }
   visualStageGate({ ...work, implementationPackage: visualPackage, visualManifest }, { command: 'evidence-check', actionLevel: audit.actionLevel, projectRoot: repo, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, evidence });
   const visualEvidenceErrors = validateVisualEvidence(evidence, visualPackage, { manifest: visualManifest, projectRoot: repo, diffFingerprint: evidence.diffFingerprint, implementationPackage: visualPackage, authority: visualPackage ? validationContext.authorityFor(visualPackage, work) : null });
   if (visualEvidenceErrors.length) fail(visualEvidenceErrors[0]);

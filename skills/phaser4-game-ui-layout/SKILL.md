@@ -15,6 +15,12 @@ description: 为 Phaser 4 游戏建立可验证的 UI 布局合同、坐标空�
 
 将 UI 布局从页面坐标修补转换为可追踪的布局合同，并把合同、实现、运行时证据接入全局控制面。仅负责布局关系、坐标空间、尺寸策略、响应式重排和布局证据；不拥有全局状态、审批、玩法规则、资源生产、视觉方向或发布放行。
 
+## 全局视口与高分屏合同
+
+所有可见 Scene、HUD、弹窗和 `DISPLAY_LAYER` 都必须在布局合同中填写 `logicalViewportSpace`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr`、`scaleMode`、`cameraViewportPolicy`、`cameraZoomPolicy`、`cameraOriginPolicy`、`inputCoordinatePolicy`、`safeAreaPolicy`、`resizePolicy`、`orientationPolicy`、`textResolutionPolicy`、`assetResolutionPolicy`、`performanceBudget`、`representativeViewports` 和 `requiredRuntimeEvidence`。统一使用 CSS 逻辑像素；Canvas backing 由 CSS 尺寸乘有效 DPR（向上取整）得到，物理像素不得直接用于布局或命中。
+
+运行时 DPR 从设备动态读取，非法输入回退 1，正有限值封顶 2，且必须覆盖 resize、横竖屏和显示密度变化并清理监听器。资源生产 DPR 固定基线为 1.5，必须与运行时 DPR 分离。工作流不强制单一 Phaser ScaleMode，但实施包必须证明 `gameSize`、Camera viewport/zoom/origin 和 CSS/物理映射；`FIT`/`RESIZE`/`NONE` 或构建成功不能单独作为高分屏证据。弹窗默认继承宿主逻辑视口、DPR、安全区、Camera 和输入合同，V4 必须独立记录其运行轨迹。
+
 ## 视觉语言默认原则
 
 UI 设计与实现优先用符合全局视觉基线且含义清晰、熟悉的图标、形状、层级、位置、颜色和动效表达功能；图标含义已明显时，不并列放置永久可见的重复文字说明。图标有歧义或首次学习成本高、高风险或不可逆操作、必须精确表达的状态或数值仍应使用文字；无障碍可访问名称必须保留，但不要求成为重复的可见标签。F2 应检查图标与文字重复、通用图标堆叠，以及界面脱离说明文字后是否仍足够自解释。
@@ -26,10 +32,10 @@ UI 设计与实现优先用符合全局视觉基线且含义清晰、熟悉的�
 ## 核心流程
 
 1. 读取项目的 GDD/TDD、当前候选、总控审核漏斗和适用视觉阶段；确定稳定 UI ID、坐标空间、参照物、状态与平台输入。
-2. 复制 schema 1.2.0 [合同模板](assets/ui-layout-contract-template.yaml)。普通布局使用 `not-applicable` 并保持 `layout_nodes: []`；冻结视觉目标先用 `frozen-target/specified`。V2 先生成拆解图、技术 JSON 和 `decomposition_elements`，人工修改并确认；确认后由智能视觉判断生成逐元素 `left/center/right × top/center/bottom` 决策，再由同一入口同步生成布局 PNG、`layout-nodes.json`、`layout-decision.json`、离线 `review.html` 和 `generation-result.json`。随后登记由确认元素和视觉决策共同推导的非空 `layout_nodes` 与关键对齐合同。
+2. 复制 schema 1.2.0 [合同模板](assets/ui-layout-contract-template.yaml)。普通布局使用 `not-applicable` 并保持 `layout_nodes: []`；冻结视觉目标先用 `frozen-target/specified`。同时冻结上述根级视口/DPR/Camera/Input/性能字段，禁止使用旧 `targets.scale` 字段绕过新门禁。V2 先生成拆解图、技术 JSON 和 `decomposition_elements`，人工修改并确认；确认后由智能视觉判断生成逐元素 `left/center/right × top/center/bottom` 决策，再由同一入口同步生成布局 PNG、`layout-nodes.json`、`layout-decision.json`、离线 `review.html` 和 `generation-result.json`。随后登记由确认元素和视觉决策共同推导的非空 `layout_nodes` 与关键对齐合同。
 3. 用 [Phaser 适配器](references/phaser-adapter.md) 设计唯一布局入口：把视口、安全区、方向、内容尺寸和状态作为输入，分离资源 origin、布局停靠点和动画偏移，保证重排幂等。
 4. specified 阶段运行结构检查 `node scripts/validate_ui_layout_contract.mjs <contract>`；verified 正式验收必须运行 `node scripts/validate_ui_layout_contract.mjs <contract> --check-files --project-root .`，复算冻结原图 SHA 并检查目标/运行/parity 证据文件。
-5. 按 [证据矩阵](references/evidence-matrix.md) 生成代表性视口、关键状态和窄高度证据；关键 UI/HUD 记录稳定 element/reference ID、双轴关系、目标/运行测量、实际测试 ID/状态、视觉证据和项目定义容差。`exact` 或明确的全覆盖需求才扩展到完整矩阵和严格 delta。
+5. 按 [证据矩阵](references/evidence-matrix.md) 生成代表性视口、关键状态和窄高度证据；关键 UI/HUD 记录稳定 element/reference ID、双轴关系、目标/运行测量、实际测试 ID/状态、视觉证据和项目定义容差。V4 还必须记录 CSS/backing 尺寸、raw/effective DPR、Camera、输入命中、同页 resize 和独立 DISPLAY_LAYER 轨迹。`exact` 或明确的全覆盖需求才扩展到完整矩阵和严格 delta。
 6. 按 [工作流门禁](references/workflow-gates.md) 接入 V0–V4、F0–F4 和 G0–G3；只有布局结构、父子归属或参照关系真实变化才退回 V1，普通位置/尺寸调整更新计划并重验受影响区域，F3 只接受绑定当前候选的工程证据。
 
 ## effect-image 场景绑定

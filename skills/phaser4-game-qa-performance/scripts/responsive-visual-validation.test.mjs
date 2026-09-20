@@ -7,8 +7,9 @@ import {
   classifyRootCause,
   computeCoverage,
   computeEdgeGaps,
-  evaluateViewport,
-  summarizeReport
+  evaluateViewport as evaluateViewportRaw,
+  summarizeReport,
+  validateRepresentativeMatrix
 } from "./responsive-visual-validation.mjs";
 import { computeLayoutContractIdentityHash } from "../../phaser4-game-ui-layout/scripts/validate_ui_layout_contract.mjs";
 
@@ -25,8 +26,23 @@ const hook = {
     fitMode: "cover-v1"
   },
   safeArea: { top: 0, right: 0, bottom: 0, left: 0, rect: { x: 0, y: 0, width: 360, height: 800 } },
-  keyUiRects: { score: { x: 8, y: 8, width: 80, height: 24 } }
+  keyUiRects: { score: { x: 8, y: 8, width: 80, height: 24 } },
+  cameraViewport: { x: 0, y: 0, width: 360, height: 800 },
+  cameraZoom: 1,
+  cameraOrigin: { x: 0, y: 0 },
+  inputHitResults: [{ id: "score", hit: true }]
 };
+
+/** 为既有几何用例补齐真实 Canvas backing；专门的缺证/错配用例直接调用原函数。 */
+function evaluateViewport(input) {
+  const dpr = typeof input.devicePixelRatio === "number" && Number.isFinite(input.devicePixelRatio) && input.devicePixelRatio > 0
+    ? Math.min(input.devicePixelRatio, 2)
+    : 1;
+  const backingSize = input.canvasRect
+    ? { width: input.canvasRect.width * dpr, height: input.canvasRect.height * dpr }
+    : null;
+  return evaluateViewportRaw({ backingSize, ...input });
+}
 
 /** 构造具备四层 Hook 数据的最小响应式契约，供纯计算测试复用。 */
 function contract(overrides = {}) {
@@ -256,6 +272,43 @@ test("响应式验证拒绝非法原始设备 DPR", () => {
   }
 });
 
+test("新响应式合同直接核对真实 backing、Camera 与输入证据", () => {
+  const strictContract = contract({ responsiveViewportContract: { applicability: "SCENE" } });
+  const strictHook = {
+    ...structuredClone(hook),
+    cameraViewport: { x: 0, y: 0, width: 360, height: 800 },
+    cameraZoom: 1,
+    cameraOrigin: { x: 0, y: 0 },
+    inputHitResults: [{ id: "score", hit: true }]
+  };
+  const result = evaluateViewportRaw({
+    viewportRect: { x: 0, y: 0, width: 360, height: 800 },
+    canvasRect: { x: 0, y: 0, width: 360, height: 800 },
+    backingSize: { width: 360, height: 800 },
+    hookSnapshot: strictHook,
+    contract: strictContract,
+    devicePixelRatio: 2,
+    screenshot
+  });
+  assert.equal(result.status, "fail");
+  assert(result.failures.some((item) => item.includes("backing")));
+});
+
+test("usability 代表矩阵覆盖视口、DPR、连续 resize 与弹窗轨迹", () => {
+  const phases = ["open", "interact", "resize", "close", "restore"].map((phase) => ({ phase }));
+  const measurements = [
+    { contextId: "page-a", viewportRect: { width: 360, height: 800 }, rawDevicePixelRatio: 3, effectiveDevicePixelRatio: 2, displayLayerTrajectory: phases },
+    { contextId: "page-a", samePageWithPrevious: true, pageReloaded: false, viewportRect: { width: 390, height: 844 }, rawDevicePixelRatio: 1, effectiveDevicePixelRatio: 1 },
+    { contextId: "page-a", samePageWithPrevious: true, pageReloaded: false, viewportRect: { width: 844, height: 390 }, rawDevicePixelRatio: 1, effectiveDevicePixelRatio: 1 },
+    { contextId: "page-b", viewportRect: { width: 900, height: 400 }, rawDevicePixelRatio: 1.5, effectiveDevicePixelRatio: 1.5 },
+    { contextId: "page-c", viewportRect: { width: 1440, height: 900 }, rawDevicePixelRatio: 2, effectiveDevicePixelRatio: 2 }
+  ];
+  assert.deepEqual(validateRepresentativeMatrix(measurements, { requireDisplayLayer: true }), { status: "pass", missing: [] });
+  const incomplete = validateRepresentativeMatrix(measurements.slice(0, 1), { requireDisplayLayer: true });
+  assert.equal(incomplete.status, "unverified");
+  assert(incomplete.missing.includes("桌面宽屏"));
+});
+
 test("响应式合同声明允许动态有效值并拒绝非法有效声明", () => {
   for (const dpr of [0.5, 1, 1.25, 1.5, 2]) {
     const report = summarizeReport([], { ...contract(), dpr, resize: { required: false }, viewports: [] }, identity);
@@ -280,6 +333,6 @@ test("响应式入口复用效果图父子停靠几何合同", () => { const { d
 
 test("报告身份必须与原始 UI 合同交叉绑定", () => { for (const [field, value, message] of [["scene_id", "other", "scope.scenes"], ["state_id", "paused", "scope.states"], ["layout_contract_version", "9.0.0", "contract_version"], ["candidate_sha256", `sha256:${"d".repeat(64)}`, "code_candidate"], ["visual_baseline_version", "2.0.0", "视觉基线"]]) { const report = summarizeReport([], { ...contract(), resize: { required: false }, viewports: [] }, { ...identity, [field]: value }); assert(report.identityErrors.some((item) => item.includes(message)), field); } });
 
-test("调用方伪造 identityContract 不能自证可信身份", () => { const forged = { resize: { required: false }, viewports: [], identityContract: { schemaVersion: "1.1.0", contractVersion: identity.layout_contract_version, scenes: [identity.scene_id], states: [identity.state_id], codeCandidate: identity.candidate_sha256, visualBaselineVersion: identity.visual_baseline_version } }; const report = summarizeReport([], forged, identity); assert.equal(report.responsivePass, false); assert(report.identityErrors.some((item) => item.includes("原始 UI schema 1.1.0"))); });
+test("调用方伪造 identityContract 不能自证可信身份", () => { const forged = { resize: { required: false }, viewports: [], identityContract: { schemaVersion: "1.1.0", contractVersion: identity.layout_contract_version, scenes: [identity.scene_id], states: [identity.state_id], codeCandidate: identity.candidate_sha256, visualBaselineVersion: identity.visual_baseline_version } }; const report = summarizeReport([], forged, identity); assert.equal(report.responsivePass, false); assert(report.identityErrors.some((item) => item.includes("原始 UI 合同"))); });
 
 test("残缺原始合同即使根身份匹配也不能自证", () => { const incomplete = { schema_version: "1.1.0", contract_version: identity.layout_contract_version, scope: { scenes: [identity.scene_id], states: [identity.state_id], bindings: { code_candidate: identity.candidate_sha256, visual_baseline: identity.visual_baseline_version } }, resize: { required: false }, viewports: [] }; const report = summarizeReport([], incomplete, identity); assert.equal(report.responsivePass, false); assert(report.identityErrors.some((item) => item.includes("完整布局合同校验"))); });

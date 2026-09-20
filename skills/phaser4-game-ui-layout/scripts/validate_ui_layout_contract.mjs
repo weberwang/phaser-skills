@@ -4,14 +4,16 @@ import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { DPR_POLICY, RUNTIME_MAX_DPR, isDeviceDprInput, isWorkflowDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
+import { DPR_POLICY, IMAGE_PRODUCTION_DPR, RUNTIME_MAX_DPR, isDeviceDprInput, isImageProductionDpr, isWorkflowDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
 import { layoutNodeIdentityProjection, validateEffectImageParentChildLayoutNodes } from "../../phaser4-game-workflow-control/scripts/layout-node-parent-geometry.mjs";
 import { resolveVisualValidationMode, validateVisualValidationPolicy } from "../../phaser4-game-workflow-control/scripts/visual-validation-policy.mjs";
 
-const ROOT_REQUIRED = ["schema_version", "contract_id", "contract_version", "scope", "fidelity", "frozen_visual_target", "targets", "coordinate_spaces", "regions", "layout_nodes", "content", "platform_insets", "scrolling", "dynamic_content", "overlay_rules", "breakpoints", "invariants", "critical_alignments", "parity_cases", "evidence_matrix"];
+const ROOT_REQUIRED = ["schema_version", "contract_id", "contract_version", "scope", "fidelity", "frozen_visual_target", "logicalViewportSpace", "canvasBackingPolicy", "runtimeDprPolicy", "maxRuntimeDpr", "scaleMode", "cameraViewportPolicy", "cameraZoomPolicy", "cameraOriginPolicy", "inputCoordinatePolicy", "safeAreaPolicy", "resizePolicy", "orientationPolicy", "textResolutionPolicy", "assetResolutionPolicy", "performanceBudget", "representativeViewports", "requiredRuntimeEvidence", "targets", "coordinate_spaces", "regions", "layout_nodes", "content", "platform_insets", "scrolling", "dynamic_content", "overlay_rules", "breakpoints", "invariants", "critical_alignments", "parity_cases", "evidence_matrix"];
 const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const REQUIRED_EVIDENCE_AXES = new Set(["breakpoint-neighbors", "width", "height", "orientation", "text-scale", "localization", "safe-area", "action-state", "dpr", "dynamic-values", "scene-lifecycle", "overlay-keyboard-scroll"]);
 const REQUIRED_PROGRAMMATIC_TEXT_LANGUAGES = ["en", "zh-CN", "ja", "ru", "es"];
+const REQUIRED_RUNTIME_EVIDENCE_FIELDS = ["viewportRect", "canvasRect", "logicalSize", "backingSize", "cssDisplaySize", "rawDevicePixelRatio", "effectiveDevicePixelRatio", "logicalToCssScale", "cssToPhysicalScale", "cameraViewport", "cameraZoom", "cameraOrigin", "safeArea", "edgeGaps", "backgroundCoverage", "keyUiRects", "inputHitResults", "resizeTrajectory", "pageReloaded", "screenshot", "sceneId", "stateId", "candidateSha256", "layoutContractVersion", "visualBaselineVersion"];
+const REPRESENTATIVE_VIEWPORT_KINDS = ["narrow-portrait", "standard-portrait", "landscape", "desktop-wide"];
 
 /** 判断值是否为合同允许的对象类型。 */
 function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
@@ -95,8 +97,8 @@ function validateRoot(document, errors) {
   for (const field of ROOT_REQUIRED) if (!(field in document)) errors.push(`缺少根字段：${field}`);
   for (const field of ["schema_version", "contract_id", "contract_version"]) if (field in document && !isString(document[field])) errors.push(`字段 ${field} 必须是非空字符串`);
   if (document.schema_version !== "1.2.0") errors.push("schema_version 必须为 1.2.0");
-  for (const field of ["coordinate_spaces", "regions", "layout_nodes", "overlay_rules", "breakpoints", "invariants", "critical_alignments", "parity_cases"]) if (field in document && !Array.isArray(document[field])) errors.push(`字段 ${field} 必须是数组`);
-  for (const field of ["scope", "fidelity", "targets", "content", "platform_insets", "scrolling", "dynamic_content", "evidence_matrix"]) if (field in document && !isObject(document[field])) errors.push(`字段 ${field} 必须是对象`);
+  for (const field of ["coordinate_spaces", "regions", "layout_nodes", "overlay_rules", "breakpoints", "invariants", "critical_alignments", "parity_cases", "representativeViewports"]) if (field in document && !Array.isArray(document[field])) errors.push(`字段 ${field} 必须是数组`);
+  for (const field of ["scope", "fidelity", "targets", "content", "platform_insets", "scrolling", "dynamic_content", "evidence_matrix", "logicalViewportSpace", "canvasBackingPolicy", "runtimeDprPolicy", "cameraViewportPolicy", "cameraZoomPolicy", "cameraOriginPolicy", "inputCoordinatePolicy", "safeAreaPolicy", "resizePolicy", "orientationPolicy", "textResolutionPolicy", "assetResolutionPolicy", "performanceBudget", "requiredRuntimeEvidence"]) if (field in document && !isObject(document[field])) errors.push(`字段 ${field} 必须是对象`);
 }
 
 /** 验证布局忠实度的适用范围和 specified/verified 生命周期。 */
@@ -244,18 +246,219 @@ function validateScopeRegionIds(scope, regionIds, errors) {
   if (missing.length) errors.push(`scope.ui_ids 缺少 regions ID：${missing.join(", ")}`); if (extra.length) errors.push(`scope.ui_ids 包含未声明 regions ID：${extra.join(", ")}`);
 }
 
-/** 验证目标视口、方向策略和动态封顶 DPR 合同。 */
+/** 验证目标视口和方向范围；缩放、DPR 与相机关系由响应式合同统一验证。 */
 function validateTargets(targets, errors) {
   if (!isObject(targets)) return;
   for (const name of ["min", "preferred", "max"]) { const target = targets[name]; if (!isObject(target)) { errors.push(`targets.${name} 必须是对象`); continue; } for (const dimension of ["width", "height"]) if (!isNumber(target[dimension]) || target[dimension] <= 0) errors.push(`targets.${name}.${dimension} 必须是正数`); if (!isString(target.orientation)) errors.push(`targets.${name}.orientation 必须是非空字符串`); }
   if (!Array.isArray(targets.orientations) || targets.orientations.length === 0) errors.push("targets.orientations 必须是非空数组");
   if (!isObject(targets.aspect_ratio)) errors.push("targets.aspect_ratio 必须是对象"); else { const { min, max } = targets.aspect_ratio; if (!isNumber(min) || min <= 0) errors.push("targets.aspect_ratio.min 必须是正数"); if (!isNumber(max) || max <= 0) errors.push("targets.aspect_ratio.max 必须是正数"); if (isNumber(min) && isNumber(max) && min > max) errors.push("targets.aspect_ratio.min 不能大于 max"); }
-  if (!isObject(targets.scale)) errors.push("targets.scale 必须是对象"); else {
-    for (const field of ["mode", "canvas", "css_size", "render_resolution", "dpr_policy"]) if (!isString(targets.scale[field])) errors.push(`targets.scale.${field} 必须是非空字符串`);
-    if (targets.scale.dpr !== undefined && !isWorkflowDpr(targets.scale.dpr)) errors.push(`targets.scale.${workflowDprError("dpr", targets.scale.dpr)}`);
-    if (targets.scale.dpr_policy !== DPR_POLICY) errors.push(`targets.scale.dpr_policy 必须为 ${DPR_POLICY}`);
-    if (targets.scale.max_dpr !== RUNTIME_MAX_DPR || typeof targets.scale.max_dpr !== "number") errors.push(`targets.scale.max_dpr 必须严格为 ${RUNTIME_MAX_DPR}`);
+}
+
+/** 校验对象必填字段并返回对象状态，确保缺字段诊断稳定且可定位。 */
+function requireObjectFields(value, label, fields, errors) {
+  if (!isObject(value)) { errors.push(`${label} 必须是对象`); return false; }
+  for (const field of fields) if (!(field in value)) errors.push(`${label} 缺少字段：${field}`);
+  return true;
+}
+
+/** 校验数组是否覆盖一组不可省略的响应式事件或证据字段。 */
+function requireArrayIncludes(value, label, required, errors) {
+  if (!Array.isArray(value) || value.length === 0 || !value.every(isString)) { errors.push(`${label} 必须是非空字符串数组`); return false; }
+  const missing = required.filter((item) => !value.includes(item));
+  if (missing.length) errors.push(`${label} 缺少必需项：${missing.join(", ")}`);
+  return missing.length === 0;
+}
+
+/** 验证高分屏布局的统一坐标、DPR、Camera、输入和 resize 合同。 */
+function validateResponsiveContract(document, errors) {
+  const logical = document.logicalViewportSpace;
+  if (requireObjectFields(logical, "logicalViewportSpace", ["unit", "layoutSpace", "gameSizeSpace", "safeAreaSpace", "source", "coordinateOrigin"], errors)) {
+    if (logical.unit !== "css-px") errors.push("logicalViewportSpace.unit 必须为 css-px，布局合同禁止使用物理像素");
+    for (const field of ["layoutSpace", "gameSizeSpace", "safeAreaSpace"]) if (logical[field] !== "css-logical-px") errors.push(`logicalViewportSpace.${field} 必须为 css-logical-px`);
+    if (logical.source !== "canvas-css-client-rect") errors.push("logicalViewportSpace.source 必须来自 CSS 逻辑尺寸而非 backing 像素");
+    if (logical.coordinateOrigin !== "top-left") errors.push("logicalViewportSpace.coordinateOrigin 必须明确为 top-left");
   }
+
+  const backing = document.canvasBackingPolicy;
+  if (requireObjectFields(backing, "canvasBackingPolicy", ["cssSpace", "backingSpace", "relation", "widthFormula", "heightFormula", "effectiveDprSource", "rounding", "updatesOn", "physicalPixelLayout", "maxBackingSource"], errors)) {
+    if (backing.cssSpace !== "css-logical-px") errors.push("canvasBackingPolicy.cssSpace 必须为 css-logical-px");
+    if (backing.backingSpace !== "physical-px") errors.push("canvasBackingPolicy.backingSpace 必须明确为 physical-px");
+    for (const field of ["relation", "widthFormula", "heightFormula"]) if (!isString(backing[field]) || !/css|logical/i.test(backing[field]) || !/effective(?:devicepixelratio|dpr)/i.test(backing[field])) errors.push(`canvasBackingPolicy.${field} 必须表达 backing=CSS逻辑尺寸×effectiveDPR`);
+    if (backing.effectiveDprSource !== "runtimeDprPolicy") errors.push("canvasBackingPolicy.effectiveDprSource 必须引用 runtimeDprPolicy");
+    if (backing.rounding !== "ceil") errors.push("canvasBackingPolicy.rounding 必须为 ceil");
+    requireArrayIncludes(backing.updatesOn, "canvasBackingPolicy.updatesOn", ["resize", "orientation-change", "dpr-change"], errors);
+    if (backing.physicalPixelLayout !== "forbidden") errors.push("canvasBackingPolicy.physicalPixelLayout 必须为 forbidden，不能用物理像素硬编码布局");
+    if (backing.maxBackingSource !== "performanceBudget.maxCanvasBacking") errors.push("canvasBackingPolicy.maxBackingSource 必须引用 performanceBudget.maxCanvasBacking");
+  }
+
+  const runtimeDpr = document.runtimeDprPolicy;
+  if (requireObjectFields(runtimeDpr, "runtimeDprPolicy", ["policy", "source", "invalidInput", "invalidFallback", "minExclusive", "maxInclusive", "refreshOn", "notStartupOnly", "listenerCleanup"], errors)) {
+    if (runtimeDpr.policy !== DPR_POLICY) errors.push(`runtimeDprPolicy.policy 必须为 ${DPR_POLICY}`);
+    if (runtimeDpr.source !== "device-dynamic") errors.push("runtimeDprPolicy.source 必须为 device-dynamic，禁止只在启动时读取");
+    if (runtimeDpr.invalidInput !== "fallback-to-1" || runtimeDpr.invalidFallback !== 1) errors.push("runtimeDprPolicy 必须声明非法 DPR 回退为 1");
+    if (runtimeDpr.minExclusive !== 0 || runtimeDpr.maxInclusive !== RUNTIME_MAX_DPR) errors.push(`runtimeDprPolicy 必须限制在 (0, ${RUNTIME_MAX_DPR}]`);
+    requireArrayIncludes(runtimeDpr.refreshOn, "runtimeDprPolicy.refreshOn", ["resize", "orientation-change", "display-density-change"], errors);
+    if (runtimeDpr.notStartupOnly !== true) errors.push("runtimeDprPolicy.notStartupOnly 必须为 true");
+    if (runtimeDpr.listenerCleanup !== "required") errors.push("runtimeDprPolicy.listenerCleanup 必须为 required");
+    for (const legacyField of ["productionDpr", "imageProductionDpr", "assetDpr"]) if (legacyField in runtimeDpr) errors.push(`runtimeDprPolicy.${legacyField} 不得混入图片生产 DPR，运行时与资源生产必须分离`);
+  }
+  if (document.maxRuntimeDpr !== RUNTIME_MAX_DPR || typeof document.maxRuntimeDpr !== "number") errors.push(`maxRuntimeDpr 必须严格为 ${RUNTIME_MAX_DPR}`);
+
+  if (!isString(document.scaleMode) || !["FIT", "RESIZE", "NONE", "custom"].includes(document.scaleMode)) errors.push("scaleMode 必须明确为 FIT、RESIZE、NONE 或 custom；不强制单一 ScaleMode");
+
+  const cameraViewport = document.cameraViewportPolicy;
+  if (requireObjectFields(cameraViewport, "cameraViewportPolicy", ["coordinateSpace", "gameSizeSpace", "physicalMapping", "requiresExplicitViewport", "popupInheritance"], errors)) {
+    if (cameraViewport.coordinateSpace !== "css-logical-px" || cameraViewport.gameSizeSpace !== "css-logical-px") errors.push("cameraViewportPolicy 必须在 css-logical-px 中声明 viewport 与 gameSize");
+    if (!/logical/i.test(cameraViewport.physicalMapping) || !/physical/i.test(cameraViewport.physicalMapping)) errors.push("cameraViewportPolicy.physicalMapping 必须明确逻辑坐标到物理 backing 的映射");
+    if (cameraViewport.requiresExplicitViewport !== true) errors.push("cameraViewportPolicy.requiresExplicitViewport 必须为 true");
+    if (cameraViewport.popupInheritance !== "inherit-host-viewport") errors.push("cameraViewportPolicy.popupInheritance 必须声明 DISPLAY_LAYER 继承宿主视口");
+  }
+
+  const cameraZoom = document.cameraZoomPolicy;
+  if (requireObjectFields(cameraZoom, "cameraZoomPolicy", ["coordinateSpace", "defaultZoom", "dprIndependent", "resizeBehavior", "popupInheritance"], errors)) {
+    if (cameraZoom.coordinateSpace !== "css-logical-px") errors.push("cameraZoomPolicy.coordinateSpace 必须为 css-logical-px");
+    if (!isNumber(cameraZoom.defaultZoom) || cameraZoom.defaultZoom <= 0) errors.push("cameraZoomPolicy.defaultZoom 必须为正数");
+    if (cameraZoom.dprIndependent !== true) errors.push("cameraZoomPolicy.dprIndependent 必须为 true，zoom 不得偷换 DPR");
+    if (cameraZoom.resizeBehavior !== "preserve-logical-size") errors.push("cameraZoomPolicy.resizeBehavior 必须保持逻辑尺寸");
+    if (cameraZoom.popupInheritance !== "inherit-host-zoom") errors.push("cameraZoomPolicy.popupInheritance 必须声明 DISPLAY_LAYER 的宿主继承关系");
+  }
+
+  const cameraOrigin = document.cameraOriginPolicy;
+  if (requireObjectFields(cameraOrigin, "cameraOriginPolicy", ["uiOrigin", "worldOrigin", "popupOrigin", "implicitOrigin"], errors)) {
+    if (cameraOrigin.uiOrigin !== "top-left") errors.push("cameraOriginPolicy.uiOrigin 必须明确为 top-left");
+    if (!isString(cameraOrigin.worldOrigin) || cameraOrigin.worldOrigin === "implicit") errors.push("cameraOriginPolicy.worldOrigin 必须显式声明场景原点");
+    if (cameraOrigin.popupOrigin !== "inherit-host-origin") errors.push("cameraOriginPolicy.popupOrigin 必须声明 DISPLAY_LAYER 继承宿主原点");
+    if (cameraOrigin.implicitOrigin !== "forbidden") errors.push("cameraOriginPolicy.implicitOrigin 必须为 forbidden");
+  }
+
+  const input = document.inputCoordinatePolicy;
+  if (requireObjectFields(input, "inputCoordinatePolicy", ["source", "mapping", "hitTestSpace", "dprAware", "cameraAware", "physicalPixelInput", "popupInheritance"], errors)) {
+    if (input.source !== "css-client-pixels") errors.push("inputCoordinatePolicy.source 必须为 css-client-pixels");
+    if (!/css/i.test(input.mapping) || !/logical/i.test(input.mapping) || !/camera|world/i.test(input.mapping)) errors.push("inputCoordinatePolicy.mapping 必须完整声明 CSS→逻辑→Camera/World 映射");
+    if (input.hitTestSpace !== "css-logical-px") errors.push("inputCoordinatePolicy.hitTestSpace 必须为 css-logical-px");
+    if (input.dprAware !== true || input.cameraAware !== true) errors.push("inputCoordinatePolicy 必须同时声明 dprAware 和 cameraAware");
+    if (input.physicalPixelInput !== "forbidden") errors.push("inputCoordinatePolicy.physicalPixelInput 必须为 forbidden");
+    if (input.popupInheritance !== "inherit-host-input-contract") errors.push("inputCoordinatePolicy.popupInheritance 必须声明 DISPLAY_LAYER 输入合同继承");
+  }
+
+  const safeArea = document.safeAreaPolicy;
+  if (requireObjectFields(safeArea, "safeAreaPolicy", ["coordinateSpace", "source", "zeroCase", "refreshOn", "popupInheritance"], errors)) {
+    if (safeArea.coordinateSpace !== "css-logical-px") errors.push("safeAreaPolicy.coordinateSpace 必须为 css-logical-px");
+    if (safeArea.source !== "runtime-insets") errors.push("safeAreaPolicy.source 必须为 runtime-insets");
+    if (!isString(safeArea.zeroCase)) errors.push("safeAreaPolicy.zeroCase 必须声明零安全区策略");
+    requireArrayIncludes(safeArea.refreshOn, "safeAreaPolicy.refreshOn", ["resize", "orientation-change", "safe-area-change"], errors);
+    if (safeArea.popupInheritance !== "inherit-host-safe-area") errors.push("safeAreaPolicy.popupInheritance 必须声明 DISPLAY_LAYER 继承安全区");
+  }
+
+  const resize = document.resizePolicy;
+  if (requireObjectFields(resize, "resizePolicy", ["samePage", "pageReloaded", "events", "recompute", "listenerCleanup", "idempotent", "dprChangeUpdatesCssAndBacking"], errors)) {
+    if (resize.samePage !== true || resize.pageReloaded !== false) errors.push("resizePolicy 必须在同一页面完成且 pageReloaded=false");
+    requireArrayIncludes(resize.events, "resizePolicy.events", ["resize", "orientation-change", "dpr-change", "safe-area-change"], errors);
+    requireArrayIncludes(resize.recompute, "resizePolicy.recompute", ["logicalViewportSpace", "canvasBackingPolicy", "safeAreaPolicy", "cameraViewportPolicy", "inputCoordinatePolicy"], errors);
+    if (resize.listenerCleanup !== "required") errors.push("resizePolicy.listenerCleanup 必须为 required");
+    if (resize.idempotent !== true) errors.push("resizePolicy.idempotent 必须为 true");
+    if (resize.dprChangeUpdatesCssAndBacking !== true) errors.push("resizePolicy.dprChangeUpdatesCssAndBacking 必须为 true");
+  }
+
+  const orientation = document.orientationPolicy;
+  if (requireObjectFields(orientation, "orientationPolicy", ["allowed", "source", "reflow", "resizeRequired", "popupInheritance"], errors)) {
+    requireArrayIncludes(orientation.allowed, "orientationPolicy.allowed", ["portrait", "landscape"], errors);
+    if (orientation.source !== "runtime-viewport") errors.push("orientationPolicy.source 必须来自 runtime-viewport");
+    if (!isString(orientation.reflow)) errors.push("orientationPolicy.reflow 必须声明横竖屏重排策略");
+    if (orientation.resizeRequired !== true) errors.push("orientationPolicy.resizeRequired 必须为 true");
+    if (orientation.popupInheritance !== "inherit-host-orientation") errors.push("orientationPolicy.popupInheritance 必须声明 DISPLAY_LAYER 继承方向");
+  }
+
+  const text = document.textResolutionPolicy;
+  if (requireObjectFields(text, "textResolutionPolicy", ["coordinateSpace", "fontSizeUnit", "dprIndependent", "reflowOn", "clarityDegradation"], errors)) {
+    if (text.coordinateSpace !== "css-logical-px" || text.fontSizeUnit !== "logical-px") errors.push("textResolutionPolicy 必须使用 CSS 逻辑像素和 logical-px 字号");
+    if (text.dprIndependent !== true) errors.push("textResolutionPolicy.dprIndependent 必须为 true");
+    requireArrayIncludes(text.reflowOn, "textResolutionPolicy.reflowOn", ["resize", "orientation-change", "dpr-change", "locale-change"], errors);
+    if (text.clarityDegradation !== "forbid-silent") errors.push("textResolutionPolicy.clarityDegradation 必须禁止静默降低文字清晰度");
+  }
+
+  const asset = document.assetResolutionPolicy;
+  if (requireObjectFields(asset, "assetResolutionPolicy", ["productionDpr", "runtimeDprSource", "runtimeProductionSeparated", "sourceResolution", "upscaleAsClarityFix", "insufficientAsset", "degradationDisclosure"], errors)) {
+    if (!isImageProductionDpr(asset.productionDpr)) errors.push(`assetResolutionPolicy.productionDpr 必须严格为图片生产基线 ${IMAGE_PRODUCTION_DPR}`);
+    if (asset.runtimeDprSource !== "runtimeDprPolicy") errors.push("assetResolutionPolicy.runtimeDprSource 必须引用 runtimeDprPolicy");
+    if (asset.runtimeProductionSeparated !== true) errors.push("assetResolutionPolicy.runtimeProductionSeparated 必须为 true，生产 DPR 与运行时 DPR 不得混用");
+    if (!isString(asset.sourceResolution)) errors.push("assetResolutionPolicy.sourceResolution 必须声明资源生产清晰度范围");
+    if (asset.upscaleAsClarityFix !== "forbidden") errors.push("assetResolutionPolicy.upscaleAsClarityFix 必须为 forbidden，插值放大不是清晰度修复");
+    if (!isString(asset.insufficientAsset)) errors.push("assetResolutionPolicy.insufficientAsset 必须声明资源不足时的阻断或降级");
+    if (asset.degradationDisclosure !== "required") errors.push("assetResolutionPolicy.degradationDisclosure 必须为 required");
+  }
+
+  const budget = document.performanceBudget;
+  if (requireObjectFields(budget, "performanceBudget", ["maxCanvasBacking", "maxCanvasPixels", "renderTexturePixels", "fullscreenFilterPasses", "transparentFullscreenLayers", "representativeDevices", "measuredResults", "degradationPolicy"], errors)) {
+    if (!isObject(budget.maxCanvasBacking) || !isNumber(budget.maxCanvasBacking.width) || !isNumber(budget.maxCanvasBacking.height) || budget.maxCanvasBacking.width <= 0 || budget.maxCanvasBacking.height <= 0) errors.push("performanceBudget.maxCanvasBacking 必须包含正数 width/height");
+    for (const field of ["maxCanvasPixels", "renderTexturePixels"]) if (!isNumber(budget[field]) || budget[field] <= 0) errors.push(`performanceBudget.${field} 必须为正数`);
+    for (const field of ["fullscreenFilterPasses", "transparentFullscreenLayers"]) if (!isNumber(budget[field]) || budget[field] < 0) errors.push(`performanceBudget.${field} 必须为非负数`);
+    if (!Array.isArray(budget.representativeDevices) || budget.representativeDevices.length === 0 || !budget.representativeDevices.every(isString)) errors.push("performanceBudget.representativeDevices 必须是非空字符串数组");
+    if (!isString(budget.measuredResults)) errors.push("performanceBudget.measuredResults 必须绑定代表性设备运行结果");
+    if (!isString(budget.degradationPolicy) || !/explicit|never silently/i.test(budget.degradationPolicy)) errors.push("performanceBudget.degradationPolicy 必须声明显式降级且禁止静默降低清晰度");
+  }
+
+  validateRepresentativeViewports(document.representativeViewports, errors);
+  validateRequiredRuntimeEvidence(document.requiredRuntimeEvidence, errors);
+}
+
+/** 验证默认 usability 必须覆盖四类代表性视口及 DPR 封顶样本。 */
+function validateRepresentativeViewports(viewports, errors) {
+  if (!Array.isArray(viewports) || viewports.length === 0) { errors.push("representativeViewports 必须是非空数组"); return; }
+  const ids = new Set(); const kinds = new Set(); const dprs = new Set(); let hasCap = false;
+  viewports.forEach((viewport, index) => {
+    const label = `representativeViewports[${index}]`;
+    if (!isObject(viewport)) { errors.push(`${label} 必须是对象`); return; }
+    for (const field of ["id", "kind", "orientation"]) if (!isString(viewport[field])) errors.push(`${label}.${field} 必须是非空字符串`);
+    if (isString(viewport.id)) { if (ids.has(viewport.id)) errors.push(`${label}.id 重复：${viewport.id}`); ids.add(viewport.id); }
+    if (isString(viewport.kind)) kinds.add(viewport.kind);
+    for (const field of ["width", "height"]) if (!isNumber(viewport[field]) || viewport[field] <= 0) errors.push(`${label}.${field} 必须是正数`);
+    if (!["portrait", "landscape"].includes(viewport.orientation)) errors.push(`${label}.orientation 必须为 portrait 或 landscape`);
+    if (!isDeviceDprInput(viewport.rawDpr)) errors.push(`${label}.rawDpr 必须是正有限数字`);
+    if (!isWorkflowDpr(viewport.effectiveDpr)) errors.push(`${label}.effectiveDpr ${workflowDprError("必须是正有限数字且不超过 2", viewport.effectiveDpr)}`);
+    if (isDeviceDprInput(viewport.rawDpr) && isWorkflowDpr(viewport.effectiveDpr)) {
+      dprs.add(viewport.effectiveDpr);
+      if (viewport.rawDpr > RUNTIME_MAX_DPR) { hasCap = true; if (viewport.effectiveDpr !== RUNTIME_MAX_DPR) errors.push(`${label}.rawDpr 大于 ${RUNTIME_MAX_DPR} 时 effectiveDpr 必须封顶为 ${RUNTIME_MAX_DPR}`); }
+      else if (viewport.rawDpr !== viewport.effectiveDpr) errors.push(`${label}.rawDpr 未超过上限时 effectiveDpr 必须等于原始值`);
+    }
+  });
+  const missingKinds = REPRESENTATIVE_VIEWPORT_KINDS.filter((kind) => !kinds.has(kind));
+  if (missingKinds.length) errors.push(`representativeViewports 缺少代表性视口：${missingKinds.join(", ")}`);
+  if (![1, 2].every((dpr) => dprs.has(dpr)) || ![1.25, 1.5].some((dpr) => dprs.has(dpr))) errors.push("representativeViewports 必须覆盖 DPR 1、1.25/1.5 和 2");
+  if (!hasCap) errors.push(`representativeViewports 必须包含 rawDpr>${RUNTIME_MAX_DPR} 且 effectiveDpr=${RUNTIME_MAX_DPR} 的封顶证据`);
+}
+
+/** 验证 V4 真实运行证据字段、resize 轨迹和独立 DISPLAY_LAYER 轨迹。 */
+function validateRequiredRuntimeEvidence(evidence, errors) {
+  if (!requireObjectFields(evidence, "requiredRuntimeEvidence", ["mode", "requiredFields", "dprAssertions", "resizeAssertions", "displayLayerTrajectory", "evidenceBinding", "missingMeasurement"], errors)) return;
+  if (!["usability", "exact"].includes(evidence.mode)) errors.push("requiredRuntimeEvidence.mode 必须为 usability 或 exact");
+  requireArrayIncludes(evidence.requiredFields, "requiredRuntimeEvidence.requiredFields", REQUIRED_RUNTIME_EVIDENCE_FIELDS, errors);
+  const dpr = evidence.dprAssertions;
+  if (requireObjectFields(dpr, "requiredRuntimeEvidence.dprAssertions", ["runtimeMeasured", "invalidFallback", "maxRuntimeDpr", "rawAboveTwoEffectiveTwo", "productionDpr", "productionDprSeparate"], errors)) {
+    if (dpr.runtimeMeasured !== true) errors.push("requiredRuntimeEvidence.dprAssertions.runtimeMeasured 必须为 true，禁止用命令行声明值代替实测");
+    if (dpr.invalidFallback !== 1) errors.push("requiredRuntimeEvidence.dprAssertions.invalidFallback 必须为 1");
+    if (dpr.maxRuntimeDpr !== RUNTIME_MAX_DPR) errors.push(`requiredRuntimeEvidence.dprAssertions.maxRuntimeDpr 必须为 ${RUNTIME_MAX_DPR}`);
+    if (dpr.rawAboveTwoEffectiveTwo !== true) errors.push("requiredRuntimeEvidence.dprAssertions 必须记录原始 DPR 大于 2 时封顶为 2");
+    if (!isImageProductionDpr(dpr.productionDpr)) errors.push(`requiredRuntimeEvidence.dprAssertions.productionDpr 必须为图片生产基线 ${IMAGE_PRODUCTION_DPR}`);
+    if (dpr.productionDprSeparate !== true) errors.push("requiredRuntimeEvidence.dprAssertions.productionDprSeparate 必须为 true");
+  }
+  const resize = evidence.resizeAssertions;
+  if (requireObjectFields(resize, "requiredRuntimeEvidence.resizeAssertions", ["samePage", "cssAndBackingUpdateOnDprChange", "dprDecreaseToOne", "sameDprResize"], errors)) {
+    if (resize.samePage !== true) errors.push("requiredRuntimeEvidence.resizeAssertions.samePage 必须为 true");
+    for (const field of ["cssAndBackingUpdateOnDprChange", "dprDecreaseToOne", "sameDprResize"]) if (resize[field] !== true) errors.push(`requiredRuntimeEvidence.resizeAssertions.${field} 必须为 true`);
+  }
+  const display = evidence.displayLayerTrajectory;
+  if (requireObjectFields(display, "requiredRuntimeEvidence.displayLayerTrajectory", ["required", "steps", "hostSceneState", "independentEvidence", "inheritCssLogicalViewport", "sameEffectiveDpr", "hostPassDoesNotImplyPass"], errors)) {
+    if (display.required !== true) errors.push("DISPLAY_LAYER 轨迹必须为 required");
+    requireArrayIncludes(display.steps, "requiredRuntimeEvidence.displayLayerTrajectory.steps", ["open", "interact", "resize", "close", "host-restore"], errors);
+    for (const field of ["hostSceneState", "independentEvidence", "inheritCssLogicalViewport", "sameEffectiveDpr", "hostPassDoesNotImplyPass"]) if (display[field] !== true) errors.push(`DISPLAY_LAYER 轨迹的 ${field} 必须为 true`);
+  }
+  const binding = evidence.evidenceBinding;
+  if (requireObjectFields(binding, "requiredRuntimeEvidence.evidenceBinding", ["candidate", "layoutContractVersion", "scene", "state"], errors)) {
+    if (binding.candidate !== "scope.bindings.code_candidate") errors.push("requiredRuntimeEvidence.evidenceBinding.candidate 必须绑定当前候选身份");
+    if (binding.layoutContractVersion !== "contract_version") errors.push("requiredRuntimeEvidence.evidenceBinding.layoutContractVersion 必须绑定当前布局合同版本");
+  }
+  if (evidence.missingMeasurement !== "unverified") errors.push("requiredRuntimeEvidence.missingMeasurement 必须为 unverified");
 }
 
 /** 对单父级图执行循环检测。 */
@@ -484,7 +687,7 @@ function validateProgrammaticTextEvidence(document, errors) {
 export function validateContract(document) {
   const errors = []; const warnings = []; const specialized = []; validateRoot(document, errors); if (!isObject(document)) return { status: "failed", errors, warnings, specialized_review: specialized };
   const mode = resolveVisualValidationMode(document); validateVisualValidationPolicy(errors, "visual_validation", document);
-  validateScope(document.scope, errors); const fidelity = validateFidelityLifecycle(document, errors); const requiresFrozenLayout = fidelity?.applicability === "frozen-target" || isEffectImageContract(document); if (requiresFrozenLayout) validateFrozenVisualTarget(document.frozen_visual_target, errors); const binding = validateSceneReconstructionBinding(document, fidelity, errors); validateTargets(document.targets, errors); const spaces = validateCoordinateSpaces(document.coordinate_spaces, errors); const ids = validateRegions(document, spaces, errors, specialized); validateScopeRegionIds(document.scope, ids, errors); validateReferenceGraph(document, ids, errors); const layoutNodes = validateLayoutNodes(document, fidelity, binding, spaces, ids, errors); validateLayoutAnnotationBinding(document, binding, layoutNodes, errors); validateLayoutContractIdentity(document, binding, errors); validateContent(document.content, errors); validateBreakpoints(document.breakpoints, errors); validatePlatformAndScrolling(document, ids, errors); validateDynamicContent(document.dynamic_content, ids, errors); validateOverlays(document.overlay_rules, ids, errors, specialized); validateOverlayCoverage(document, ids, errors); validateInvariants(document.invariants, ids, errors, mode);
+  validateScope(document.scope, errors); const fidelity = validateFidelityLifecycle(document, errors); const requiresFrozenLayout = fidelity?.applicability === "frozen-target" || isEffectImageContract(document); if (requiresFrozenLayout) validateFrozenVisualTarget(document.frozen_visual_target, errors); const binding = validateSceneReconstructionBinding(document, fidelity, errors); validateTargets(document.targets, errors); validateResponsiveContract(document, errors); const spaces = validateCoordinateSpaces(document.coordinate_spaces, errors); const ids = validateRegions(document, spaces, errors, specialized); validateScopeRegionIds(document.scope, ids, errors); validateReferenceGraph(document, ids, errors); const layoutNodes = validateLayoutNodes(document, fidelity, binding, spaces, ids, errors); validateLayoutAnnotationBinding(document, binding, layoutNodes, errors); validateLayoutContractIdentity(document, binding, errors); validateContent(document.content, errors); validateBreakpoints(document.breakpoints, errors); validatePlatformAndScrolling(document, ids, errors); validateDynamicContent(document.dynamic_content, ids, errors); validateOverlays(document.overlay_rules, ids, errors, specialized); validateOverlayCoverage(document, ids, errors); validateInvariants(document.invariants, ids, errors, mode);
   if (requiresFrozenLayout) {
     validateCriticalAlignments(document.critical_alignments, ids, layoutNodes, document.frozen_visual_target, document.scope?.bindings?.code_candidate, fidelity?.status, errors, mode);
     if (fidelity?.status === "verified") {

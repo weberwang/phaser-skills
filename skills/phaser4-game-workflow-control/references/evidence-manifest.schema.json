@@ -34,9 +34,14 @@
     "completedUnitIds": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
     "satisfiedExitCriteria": {"type": "array", "items": {"type": "string"}},
     "visualDecompositionConfirmations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/visualDecompositionConfirmationIdentity"}},
-    "visualConfirmationAuthorityRefs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/visualConfirmationAuthorityRef"}}
+    "visualConfirmationAuthorityRefs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/visualConfirmationAuthorityRef"}},
+    "responsiveContractVersion": {"type": "string", "minLength": 1},
+    "candidateSha256": {"$ref": "#/$defs/sha256"},
+    "responsiveEvidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/responsiveEvidenceRecord"}},
+    "responsiveRuntimeEvidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/responsiveEvidenceRecord"}}
   },
   "allOf": [
+    {"if": {"anyOf": [{"required": ["current_stage"], "properties": {"current_stage": {"const": "V4"}}}, {"required": ["currentStage"], "properties": {"currentStage": {"const": "V4"}}}]}, "then": {"required": ["responsiveEvidence"]}},
     {"if": {"required": ["current_stage"], "properties": {"current_stage": {"const": "V4"}}}, "then": {"required": ["fidelity_cases"]}},
     {"if": {"required": ["currentStage"], "properties": {"currentStage": {"const": "V4"}}}, "then": {"required": ["fidelity_cases"]}},
     {"if": {"required": ["current_stage"], "properties": {"current_stage": {"enum": ["V3", "V4"]}}}, "then": {"properties": {"scene_reconstruction_contract": {"required": ["combination_preacceptance"]}}}},
@@ -49,6 +54,8 @@
   ],
   "$defs": {
     "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "responsiveEvidenceRecord": {"type": "object", "required": ["viewportRect", "canvasRect", "logicalSize", "backingSize", "cssDisplaySize", "rawDevicePixelRatio", "effectiveDevicePixelRatio", "logicalToCssScale", "cssToPhysicalScale", "gameSize", "cameraViewport", "cameraZoom", "cameraOrigin", "safeArea", "edgeGaps", "backgroundCoverage", "keyUiRects", "inputHitResults", "resizeTrajectory", "pageReloaded", "screenshot", "sceneId", "stateId", "candidateSha256", "layoutContractVersion", "visualBaselineVersion"], "properties": {"viewportRect": {"type": "object", "minProperties": 1}, "canvasRect": {"type": "object", "minProperties": 1}, "logicalSize": {"type": "object", "required": ["width", "height"]}, "backingSize": {"type": "object", "required": ["width", "height"]}, "cssDisplaySize": {"type": "object", "required": ["width", "height"]}, "rawDevicePixelRatio": {"type": "number", "exclusiveMinimum": 0}, "effectiveDevicePixelRatio": {"type": "number", "exclusiveMinimum": 0, "maximum": 2}, "logicalToCssScale": {"$ref": "#/$defs/responsiveScale"}, "cssToPhysicalScale": {"$ref": "#/$defs/responsiveScale"}, "gameSize": {"type": "object", "required": ["width", "height"]}, "cameraViewport": {"type": "object", "required": ["width", "height"]}, "cameraZoom": {"type": ["number", "object"]}, "cameraOrigin": {"type": "object", "required": ["x", "y"]}, "safeArea": {"type": "object", "minProperties": 1}, "edgeGaps": {"type": "object", "minProperties": 1}, "backgroundCoverage": {"type": ["object", "boolean", "number"]}, "keyUiRects": {"type": "array", "minItems": 1}, "inputHitResults": {"type": "array", "minItems": 1}, "resizeTrajectory": {"type": "array", "minItems": 1}, "pageReloaded": {"const": false}, "screenshot": {"type": ["string", "object"]}, "sceneId": {"type": "string", "minLength": 1}, "stateId": {"type": "string", "minLength": 1}, "candidateSha256": {"$ref": "#/$defs/sha256"}, "layoutContractVersion": {"type": "string", "minLength": 1}, "visualBaselineVersion": {"type": "string", "minLength": 1}, "displayLayerId": {"type": "string", "minLength": 1}, "hostSceneId": {"type": "string", "minLength": 1}, "hostSceneState": {"type": ["string", "object"]}, "runtimeMeasured": {"const": true}, "measuredAt": {"type": "string", "format": "date-time"}, "verificationStatus": {"enum": ["verified", "PASS"]}, "matrixCases": {"type": "array", "minItems": 1}}, "additionalProperties": true},
+    "responsiveScale": {"oneOf": [{"type": "number", "exclusiveMinimum": 0}, {"type": "object", "required": ["x", "y"], "properties": {"x": {"type": "number", "exclusiveMinimum": 0}, "y": {"type": "number", "exclusiveMinimum": 0}}, "additionalProperties": false}]},
     "imageNormalizationRecord": {
       "type": "object",
       "required": ["schema", "status", "operation", "source_file", "source_sha256", "source_width", "source_height", "target_width", "target_height", "output_file", "output_sha256", "output_width", "output_height", "preserve_alpha", "tool", "tool_version", "completed_at"],

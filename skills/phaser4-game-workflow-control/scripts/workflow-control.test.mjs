@@ -11,10 +11,13 @@ import { createExecutionState, executionStatePath, scopedDiffFingerprint } from 
 import { parallelBatchFingerprint } from './parallel-batch-control.mjs';
 import { createReturnRecord } from './return-disposition.mjs';
 import { registerRelaxedWorkflowTests } from './workflow-control-relaxed-cases.mjs';
+import { RESPONSIVE_CONTRACT_FIELDS } from './responsive-viewport-contract.mjs';
 
 const CLI = resolve(import.meta.dirname, 'workflow-control.mjs');
 const INITIALIZER = resolve(import.meta.dirname, '..', '..', 'phaser4-game-orchestrator', 'scripts', 'initialize_project_docs.mjs');
 const HASH = `sha256:${'a'.repeat(64)}`; const CANDIDATE_HASH = `sha256:${'b'.repeat(64)}`; const VISUAL_DIFF = `sha256:${'c'.repeat(64)}`;
+const RESPONSIVE_TEMPLATE = JSON.parse(readFileSync(resolve(import.meta.dirname, '..', '..', 'phaser4-game-ui-layout', 'assets', 'ui-layout-contract-template.yaml'), 'utf8'));
+const RESPONSIVE_FIXTURE = Object.fromEntries(RESPONSIVE_CONTRACT_FIELDS.map((field) => [field, structuredClone(RESPONSIVE_TEMPLATE[field])]));
 
 /** 写入格式稳定的 JSON 测试工件。 */
 function writeJson(path, value) {
@@ -67,13 +70,15 @@ function makeWork(head, overrides = {}) {
     pendingApprovalId: 'PENDING-1', pendingApprovalObject: 'core implementation', pendingApprovalStage: 'G1', pendingApprovalActionLevel: 'A3', pendingApprovalGate: 'F0', pendingApprovalState: 'IMPLEMENTING', pendingApprovalContext: 'implementation', pendingApprovalActionType: 'phaser-code-change', pendingApprovalImpactSummary: [], pendingApprovalFileScope: ['src'], pendingApprovalServices: [], pendingApprovalAllowServiceStart: false, pendingApprovalAllowDelete: false, pendingApprovalExternalWrite: false, pendingApprovalDestructive: false, pendingApprovalPhysicalDevice: false, pendingApprovalRelease: false, pendingApprovalExternalTargets: [], pendingApprovalPreparedAt: '2026-08-11T00:00:00.000Z', pendingApprovalPresentedId: null, pendingApprovalPresentedAt: null,
     validationBatchId: 'BATCH-1', changeRequestFiles: [], moduleGateRequired: false, substantiveTradeoffRequired: false, visualDecisionRequired: false, releaseWorkItem: false,
     visualStage: 'V4', visualStageState: 'v4-runtime-integration-candidate', visualStageEvidenceRefs: { V2: { path: 'docs/high-fidelity-scene.json', sha256: '', workItemId: 'WI-1' }, V3: { path: 'docs/v3-acceptance.json', sha256: '', workItemId: 'WI-1' }, V4: { path: 'docs/v4-runtime-candidate.json', sha256: '', workItemId: 'WI-1' } },
+    responsiveContractVersion: 'responsive-viewport/1.0', layoutContractVersion: 'layout/1.0', visualBaselineVersion: 'visual-baseline/1.0',
+    ...structuredClone(RESPONSIVE_FIXTURE),
     ...overrides
   };
 }
 
 /** 构造直接绑定 Work Item 而非审批记录的 Implementation Package。 */
 function makePackage(overrides = {}) {
-  return { packageId: 'PKG-1', workItemId: 'WI-1', baselineVersion: '1', baselineHash: HASH, approvedRequirements: ['REQ-1'], approvedArchitecture: 'ARCH-FACT', fileOwnership: { 'src/main.js': 'implementer', 'src/module': 'implementer', 'src/scene': 'implementer' }, executionUnits: [
+  return { packageId: 'PKG-1', workItemId: 'WI-1', baselineVersion: '1', baselineHash: HASH, approvedRequirements: ['REQ-1'], approvedArchitecture: 'ARCH-FACT', responsiveContractVersion: 'responsive-viewport/1.0', layoutContractVersion: 'layout/1.0', visualBaselineVersion: 'visual-baseline/1.0', ...structuredClone(RESPONSIVE_FIXTURE), fileOwnership: { 'src/main.js': 'implementer', 'src/module': 'implementer', 'src/scene': 'implementer' }, executionUnits: [
     { unitId: 'SHARED-1', unitType: 'SHARED', scopeId: 'runtime-contract', moduleId: 'core', sceneId: null, displayLayerId: null, hostSceneId: null, owner: 'implementer', parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: ['src/main.js'], stateOwnership: ['runtime-contract'], acceptanceCommands: ['node --test'], serializationReason: '先冻结共享契约', highFidelityPrerequisite: null },
     { unitId: 'MODULE-1', unitType: 'MODULE', scopeId: 'core-module', moduleId: 'core', sceneId: null, displayLayerId: null, hostSceneId: null, owner: 'implementer', parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: ['src/module'], stateOwnership: ['core-state'], acceptanceCommands: ['node --test'], serializationReason: '等待共享契约冻结', highFidelityPrerequisite: null },
     { unitId: 'SCENE-1', unitType: 'SCENE', scopeId: 'play-scene', moduleId: 'scene', sceneId: 'play', displayLayerId: null, hostSceneId: null, owner: 'implementer', parallelMode: 'SERIAL', parallelGroup: null, ownedPaths: ['src/scene'], stateOwnership: ['scene-state'], acceptanceCommands: ['node --test'], serializationReason: '等待全部模块完成', highFidelityPrerequisite: { workItemId: 'WI-1', status: 'COMPLETE', stage: 'V2', frozen: true, sceneId: 'play', displayLayerId: null, hostSceneId: null, targetSha256: HASH, candidateSha256: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF, evidenceFile: 'docs/high-fidelity-scene.json', evidenceSha256: '' } }
@@ -268,7 +273,22 @@ function makeEvidence(fixture, audit) {
   writeFileSync(output, 'tests passed\n');
   const rel = '.workflow-control/evidence/WI-1/test-output.txt';
   const common = { status: 'PASS', baselineHash: HASH, diffFingerprint: audit.diffFingerprint };
-  return { evidenceId: 'EV-1', batchId: 'BATCH-1', workItemId: 'WI-1', baselineHash: HASH, codeFingerprint: `git:${fixture.head}`, diffFingerprint: audit.diffFingerprint, recordedAt: new Date(Date.parse(audit.recordedAt) + 1000).toISOString(), commands: [{ command: 'node --test', exitCode: 0, outputFile: rel, outputHash: hashFile(output) }], environment: { node: process.version }, dataSources: ['git diff'], files: [rel], fileHashes: { [rel]: hashFile(output) }, gateResults: { F0: { ...common, workItemId: 'WI-1', authorizationBasis: 'TASK_SCOPE' }, F1: { ...common }, F2: { ...common, reviewer: 'independent-reviewer', reviewMode: 'INDEPENDENT' }, F3: { ...common, evidenceId: 'EV-1' } }, verdict: 'PASS', uncoveredItems: [], completedOutputs: ['src/main.js'], completedUnitIds: JSON.parse(readFileSync(fixture.packagePath, 'utf8')).executionUnits.map((unit) => unit.unitId), satisfiedExitCriteria: ['tests pass'] };
+  // V4 门禁现在先验证响应式实测事实；夹具必须覆盖完整矩阵，才能继续断言后续证据门。
+  const responsiveBase = {
+    verificationStatus: 'verified', runtimeMeasured: true, measuredAt: '2026-08-11T00:02:00.000Z', viewportRect: { width: 320, height: 800 }, canvasRect: { width: 320, height: 800 }, logicalSize: { width: 320, height: 800 }, backingSize: { width: 640, height: 1600 }, cssDisplaySize: { width: 320, height: 800 }, rawDevicePixelRatio: 2, effectiveDevicePixelRatio: 2, logicalToCssScale: 1, cssToPhysicalScale: 2, gameSize: { width: 320, height: 800 }, cameraViewport: { width: 320, height: 800 }, cameraZoom: 1, cameraOrigin: { x: 0, y: 0 }, safeArea: { top: 0, right: 0, bottom: 0, left: 0 }, edgeGaps: { top: 0, right: 0, bottom: 0, left: 0 }, backgroundCoverage: { covered: true }, keyUiRects: [{ id: 'play', x: 20, y: 20, width: 100, height: 48 }], inputHitResults: [{ id: 'play', logicalPoint: { x: 30, y: 30 }, hit: true }], resizeTrajectory: [{ event: 'same-page-resize' }, { event: 'orientation-change' }, { event: 'dpr-drop-to-1' }, { event: 'dpr-unchanged-resize' }], pageReloaded: false, screenshot: 'evidence/scene.png', sceneId: 'play', stateId: 'default', candidateSha256: CANDIDATE_HASH, layoutContractVersion: 'layout/1.0', visualBaselineVersion: 'visual-baseline/1.0', matrixCases: ['dpr-1', 'dpr-1.25-1.5', 'dpr-2', 'dpr-above-2-cap', 'same-page-resize', 'orientation-change', 'dpr-drop-to-1', 'same-dpr-resize']
+  };
+  const measured = (width, height, rawDpr, extra = {}) => {
+    const effectiveDpr = Math.min(rawDpr, 2);
+    return { ...structuredClone(responsiveBase), viewportRect: { width, height }, canvasRect: { width, height }, logicalSize: { width, height }, backingSize: { width: Math.ceil(width * effectiveDpr), height: Math.ceil(height * effectiveDpr) }, cssDisplaySize: { width, height }, rawDevicePixelRatio: rawDpr, effectiveDevicePixelRatio: effectiveDpr, cssToPhysicalScale: { x: effectiveDpr, y: effectiveDpr }, gameSize: { width, height }, cameraViewport: { width, height }, ...extra };
+  };
+  const responsiveEvidence = [
+    measured(360, 800, 1.5, { contextId: 'page-a' }),
+    measured(390, 844, 1, { contextId: 'page-a', samePageWithPrevious: true }),
+    measured(844, 390, 1, { contextId: 'page-a', samePageWithPrevious: true }),
+    measured(1366, 768, 2, { contextId: 'page-b' }),
+    measured(1280, 720, 3, { contextId: 'page-b', samePageWithPrevious: true }),
+  ];
+  return { evidenceId: 'EV-1', batchId: 'BATCH-1', workItemId: 'WI-1', baselineHash: HASH, codeFingerprint: `git:${fixture.head}`, diffFingerprint: audit.diffFingerprint, recordedAt: new Date(Date.parse(audit.recordedAt) + 1000).toISOString(), commands: [{ command: 'node --test', exitCode: 0, outputFile: rel, outputHash: hashFile(output) }], environment: { node: process.version }, dataSources: ['git diff'], files: [rel], fileHashes: { [rel]: hashFile(output) }, gateResults: { F0: { ...common, workItemId: 'WI-1', authorizationBasis: 'TASK_SCOPE' }, F1: { ...common }, F2: { ...common, reviewer: 'independent-reviewer', reviewMode: 'INDEPENDENT' }, F3: { ...common, evidenceId: 'EV-1' } }, responsiveEvidence, verdict: 'PASS', uncoveredItems: [], completedOutputs: ['src/main.js'], completedUnitIds: JSON.parse(readFileSync(fixture.packagePath, 'utf8')).executionUnits.map((unit) => unit.unitId), satisfiedExitCriteria: ['tests pass'] };
 }
 
 registerRelaxedWorkflowTests({ assert, test, setup, makeFoundationPackage, makePackage, writeBoundPackage, run, rejects, readFileSync, writeJson, join, rmSync, existsSync, makeEvidence, hash: HASH });
@@ -305,6 +325,17 @@ test('正式场景执行：V3 未完成时拒绝创建执行状态', () => {
     () => setup({ visualStage: 'V2', visualStageState: 'v2-production-planning-complete' }),
     /V3 前置门|V3/,
   );
+});
+
+test('响应式身份：Work Item 或 Implementation Package 缺版本时 fail closed', () => {
+  const missingWorkVersion = setup({ layoutContractVersion: undefined });
+  rejects(run('preflight', ['--work-item', missingWorkVersion.workPath, '--implementation-package', missingWorkVersion.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], missingWorkVersion.repo), /响应式身份|layoutContractVersion/);
+
+  const missingPackageVersion = setup();
+  const pkg = JSON.parse(readFileSync(missingPackageVersion.packagePath, 'utf8'));
+  delete pkg.visualBaselineVersion;
+  writeJson(missingPackageVersion.packagePath, pkg);
+  rejects(run('preflight', ['--work-item', missingPackageVersion.workPath, '--implementation-package', missingPackageVersion.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], missingPackageVersion.repo), /响应式身份|visualBaselineVersion/);
 });
 
 test('A0-A2：只读、文档和隔离原型依 Work Item 范围直接通过', () => {

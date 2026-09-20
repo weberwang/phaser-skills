@@ -198,7 +198,7 @@ JSON 文件或内联 JSON；`--identity` 必须传 JSON 文件或内联 JSON，�
 `frozen_visual_target.visual_baseline_version` 绑定。
 缺失、漂移或无效身份只能形成决策缺口。布局 parity/fidelity case 必须引用这份报告，
 上游事实或当前受影响候选身份变化后对应旧报告失效，其他单元报告继续有效。工作流使用运行时动态 DPR，在同一 context/page 调用 `setViewportSize` 完成动态轨迹；
-`dpr` 必须是已解析的有效值，原始 `deviceScaleFactor` 通过统一解析器封顶到 2，非法输入在验证前失败，绝不把错误
+`dpr` 必须是已解析的有效值；原始 `deviceScaleFactor` 原样进入设备环境，报告同时保留原始实测值，并用统一解析器得到封顶为 2 的有效值。非法输入在验证前失败，绝不把错误
 设备像素比记录计为同页 resize。Playwright 未
 安装时只报告安装/运行缺口，不改变纯计算结论。
 
@@ -211,3 +211,23 @@ node --test skills/phaser4-game-qa-performance/scripts/responsive-visual-validat
 测试至少覆盖 `360x800` 与 `[0,80,360,640]` 满视口失败、未定义留白 `decision_gap`、
 FIT 不等于响应式通过和 resize 轨迹；严格满视口断言仅作为 `exact` 模式或明确精确需求的覆盖。
 类、函数和复杂分支均应保留简体中文注释。
+
+## 统一高分屏运行证据
+
+新响应式合同的每个正式 Scene 和独立 `DISPLAY_LAYER` 必须从同一次真实运行采集
+`viewportRect`、`canvasRect`、`logicalSize`、`backingSize`、`cssDisplaySize`、
+`rawDevicePixelRatio`、`effectiveDevicePixelRatio`、`logicalToCssScale`、
+`cssToPhysicalScale`、`cameraViewport`、`cameraZoom`、`cameraOrigin`、`safeArea`、
+`edgeGaps`、`backgroundCoverage`、`keyUiRects`、`inputHitResults`、
+`resizeTrajectory`、`pageReloaded` 和页面截图。Canvas backing 直接读取元素的
+`width/height` 属性，不能用 CSS 尺寸乘声明 DPR 推导后冒充实测值。
+
+有效 DPR 必须等于原始正有限设备值封顶 2；非法、字符串、零和负值失败。布局、
+安全区、程序化文字和命中区域均使用 CSS 逻辑像素，backing 与 CSS 显示尺寸按有效
+DPR 对应。ScaleMode 由项目选择，但 `FIT`、`RESIZE`、`NONE`、Canvas 存在、构建成功、
+源码含 DPR 计算或单张静态截图都不能单独驱动通过。
+
+每个正式 Scene 和独立 `DISPLAY_LAYER` 的默认 `usability` 都必须至少覆盖窄竖屏、标准竖屏、横屏、桌面宽屏、DPR 1、
+DPR 1.25 或 1.5、DPR 2、原始 DPR 大于 2 的封顶、同页连续 resize、DPR 降至 1、
+DPR 不变时再次 resize。独立 `DISPLAY_LAYER` 另需 `open → interact → resize → close → restore`
+轨迹和宿主同屏状态；宿主已通过不能替代该层证据。缺少真实测量统一为 `unverified`。

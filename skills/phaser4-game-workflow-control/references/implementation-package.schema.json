@@ -37,17 +37,19 @@
     "visualManifestFile": {"type": "string", "minLength": 1},
     "visualManifestSha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
     "visualDecompositionConfirmations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/visualDecompositionConfirmationGroup"}},
-    "current_stage": {"enum": ["V2", "V3", "V4"]},
-    "currentStage": {"enum": ["V2", "V3", "V4"]},
+    "current_stage": {"enum": ["V1", "V2", "V3", "V4"]},
+    "currentStage": {"enum": ["V1", "V2", "V3", "V4"]},
     "scene_reconstruction_contract": {"$ref": "#/$defs/sceneReconstructionContract"},
     "sceneReconstructionContract": {"$ref": "#/$defs/sceneReconstructionContract"},
     "visualProductionUnits": {
       "type": "array",
       "minItems": 1,
       "items": {"$ref": "#/$defs/visualProductionUnit"}
-    }
+    },
+    "responsiveContractVersion": {"type": "string", "minLength": 1}, "layoutContractVersion": {"type": "string", "minLength": 1}, "visualBaselineVersion": {"type": "string", "minLength": 1}, "logicalViewportSpace": {"$ref": "#/$defs/responsiveContractFact"}, "canvasBackingPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "runtimeDprPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "maxRuntimeDpr": {"$ref": "#/$defs/responsiveContractFact"}, "scaleMode": {"$ref": "#/$defs/responsiveContractFact"}, "cameraViewportPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "cameraZoomPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "cameraOriginPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "inputCoordinatePolicy": {"$ref": "#/$defs/responsiveContractFact"}, "safeAreaPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "resizePolicy": {"$ref": "#/$defs/responsiveContractFact"}, "orientationPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "textResolutionPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "assetResolutionPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "performanceBudget": {"$ref": "#/$defs/responsiveContractFact"}, "representativeViewports": {"$ref": "#/$defs/responsiveContractFact"}, "requiredRuntimeEvidence": {"$ref": "#/$defs/responsiveContractFact"}, "responsiveViewportContract": {"$ref": "#/$defs/responsiveViewportContract"}, "responsiveContract": {"$ref": "#/$defs/responsiveViewportContract"}
   },
   "allOf": [
+    {"if": {"anyOf": [{"required": ["current_stage"]}, {"required": ["currentStage"]}, {"required": ["responsiveViewportContract"]}, {"required": ["responsiveContract"]}]}, "then": {"required": ["responsiveContractVersion", "layoutContractVersion", "visualBaselineVersion", "logicalViewportSpace", "canvasBackingPolicy", "runtimeDprPolicy", "maxRuntimeDpr", "scaleMode", "cameraViewportPolicy", "cameraZoomPolicy", "cameraOriginPolicy", "inputCoordinatePolicy", "safeAreaPolicy", "resizePolicy", "orientationPolicy", "textResolutionPolicy", "assetResolutionPolicy", "performanceBudget", "representativeViewports", "requiredRuntimeEvidence"]}},
     {
       "if": {"anyOf": [{"required": ["visualContractVersion"]}, {"required": ["candidateVersion"]}, {"required": ["visualManifestFile"]}, {"required": ["visualManifestSha256"]}, {"required": ["visualProductionUnits"]}]},
       "then": {"required": ["visualContractVersion", "candidateVersion", "visualManifestFile", "visualManifestSha256", "visualProductionUnits"]}
@@ -56,17 +58,11 @@
       "if": {"required": ["visualProductionUnits"], "properties": {"visualProductionUnits": {"minItems": 1}}},
       "then": {"required": ["visualDecompositionConfirmations"]}
     },
-    {
-      "if": {"anyOf": [{"required": ["current_stage"], "properties": {"current_stage": {"enum": ["V3", "V4"]}}}, {"required": ["currentStage"], "properties": {"currentStage": {"enum": ["V3", "V4"]}}}]},
-      "then": {
-        "allOf": [
-          {"anyOf": [{"required": ["scene_reconstruction_contract"], "properties": {"scene_reconstruction_contract": {"required": ["combination_preacceptance"]}}}, {"required": ["sceneReconstructionContract"], "properties": {"sceneReconstructionContract": {"required": ["combination_preacceptance"]}}}]},
-          {"properties": {"visualProductionUnits": {"items": {"required": ["scene_asset_usage"]}}}}
-        ]
-      }
-    }
+    {"if": {"anyOf": [{"required": ["current_stage"], "properties": {"current_stage": {"enum": ["V3", "V4"]}}}, {"required": ["currentStage"], "properties": {"currentStage": {"enum": ["V3", "V4"]}}}]}, "then": {"allOf": [{"anyOf": [{"required": ["scene_reconstruction_contract"], "properties": {"scene_reconstruction_contract": {"required": ["combination_preacceptance"]}}}, {"required": ["sceneReconstructionContract"], "properties": {"sceneReconstructionContract": {"required": ["combination_preacceptance"]}}}]}, {"properties": {"visualProductionUnits": {"items": {"required": ["scene_asset_usage"]}}}}]}}
   ],
   "$defs": {
+    "responsiveContractFact": {"oneOf": [{"type": "object", "minProperties": 1}, {"type": "array", "minItems": 1}, {"type": "string", "minLength": 1}, {"type": "number", "exclusiveMinimum": 0}]},
+    "responsiveViewportContract": {"type": "object", "required": ["logicalViewportSpace", "canvasBackingPolicy", "runtimeDprPolicy", "maxRuntimeDpr", "scaleMode", "cameraViewportPolicy", "cameraZoomPolicy", "cameraOriginPolicy", "inputCoordinatePolicy", "safeAreaPolicy", "resizePolicy", "orientationPolicy", "textResolutionPolicy", "assetResolutionPolicy", "performanceBudget", "representativeViewports", "requiredRuntimeEvidence"], "properties": {"logicalViewportSpace": {"$ref": "#/$defs/responsiveContractFact"}, "canvasBackingPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "runtimeDprPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "maxRuntimeDpr": {"$ref": "#/$defs/responsiveContractFact"}, "scaleMode": {"$ref": "#/$defs/responsiveContractFact"}, "cameraViewportPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "cameraZoomPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "cameraOriginPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "inputCoordinatePolicy": {"$ref": "#/$defs/responsiveContractFact"}, "safeAreaPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "resizePolicy": {"$ref": "#/$defs/responsiveContractFact"}, "orientationPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "textResolutionPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "assetResolutionPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "performanceBudget": {"$ref": "#/$defs/responsiveContractFact"}, "representativeViewports": {"$ref": "#/$defs/responsiveContractFact"}, "requiredRuntimeEvidence": {"$ref": "#/$defs/responsiveContractFact"}}, "additionalProperties": false},
     "executionUnit": {
       "type": "object",
       "additionalProperties": false,
@@ -86,7 +82,8 @@
         "stateOwnership": {"$ref": "#/$defs/nonEmptyStrings"},
         "acceptanceCommands": {"$ref": "#/$defs/nonEmptyStrings"},
         "serializationReason": {"type": ["string", "null"], "minLength": 1},
-        "highFidelityPrerequisite": {"type": ["object", "null"]}
+        "highFidelityPrerequisite": {"type": ["object", "null"]},
+        "responsiveContract": {"$ref": "#/$defs/responsiveViewportContract"}
       },
       "allOf": [
         {

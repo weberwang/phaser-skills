@@ -69,7 +69,14 @@ export function readHookData(snapshot) {
       backgroundFitMode: null,
       safeArea: null,
       keyUiRects: null,
-      cssScale: null
+      cssScale: null,
+      backingSize: null,
+      gameSize: null,
+      cameraViewport: null,
+      cameraZoom: null,
+      cameraOrigin: null,
+      inputHitResults: null,
+      displayLayerTrajectory: null
     };
   }
   const logical = snapshot.logicalCanvas ?? snapshot.logicalSize;
@@ -100,6 +107,13 @@ export function readHookData(snapshot) {
     safeArea,
     keyUiRects: snapshot.keyUiRects ?? snapshot.uiRects ?? null,
     cssScale: snapshot.cssScale ?? null,
+    backingSize: snapshot.backingSize ?? null,
+    gameSize: snapshot.gameSize ?? null,
+    cameraViewport: normalizeRect(snapshot.cameraViewport),
+    cameraZoom: snapshot.cameraZoom ?? null,
+    cameraOrigin: snapshot.cameraOrigin ?? null,
+    inputHitResults: snapshot.inputHitResults ?? null,
+    displayLayerTrajectory: snapshot.displayLayerTrajectory ?? null,
     raw: snapshot
   };
 }
@@ -190,6 +204,13 @@ export function normalizeContract(raw = {}) {
       targetSha256: trustedUiContract ? source.frozen_visual_target?.target_sha256 ?? null : null
     },
     viewports: source.viewports ?? source.viewportMatrix ?? null,
+    responsiveViewportContract: source.logicalViewportSpace
+      ? {
+          applicability: source.requiredRuntimeEvidence?.displayLayerTrajectory?.required === true ? "DISPLAY_LAYER" : "SCENE",
+          representativeViewports: source.representativeViewports,
+          requiredRuntimeEvidence: source.requiredRuntimeEvidence
+        }
+      : source.responsiveViewportContract ?? source.responsive_viewport_contract ?? null,
     dprErrors: collectDprErrors(source)
   };
   // UI 合同和响应式脚本共享同一视觉模式；非法模式沿用 usability 计算，但在报告中明确暴露错误。
@@ -219,8 +240,8 @@ export function classifyRootCause({ failures = [], decisionGaps = [], acceptance
   return { primary: causes[0]?.code ?? null, secondary: causes.slice(1).map((cause) => cause.code), details: causes };
 }
 
-/** 依据逻辑尺寸和 Hook 缩放计算 CSS、物理像素比例。 */
-function deriveScaling(canvasRect, logicalSize, dpr, hookScale) {
+/** 依据逻辑、CSS 与真实 backing 尺寸计算两段比例，不用 DPR 推导伪造 backing。 */
+function deriveScaling(canvasRect, backingSize, logicalSize, dpr, hookScale) {
   const canvas = normalizeRect(canvasRect);
   const physicalDpr = parseDeviceDpr(dpr, DEFAULT_DPR);
   const cssScale = hookScale && typeof hookScale === "object"
@@ -230,12 +251,16 @@ function deriveScaling(canvasRect, logicalSize, dpr, hookScale) {
       : { x: null, y: null };
   return {
     css: cssScale,
-    physical: { dpr: physicalDpr, width: canvas ? canvas.width * physicalDpr : null, height: canvas ? canvas.height * physicalDpr : null }
+    physical: { dpr: physicalDpr, width: backingSize?.width ?? null, height: backingSize?.height ?? null },
+    logicalToCssScale: cssScale,
+    cssToPhysicalScale: canvas && backingSize
+      ? { x: backingSize.width / canvas.width, y: backingSize.height / canvas.height }
+      : { x: null, y: null }
   };
 }
 
 /** 评估一个 viewport；失败优先于 decision_gap，避免几何硬失败被缺字段掩盖。 */
-export function evaluateViewport({ viewportRect, canvasRect, hookSnapshot, contract, devicePixelRatio, screenshot = null }) {
+export function evaluateViewport({ viewportRect, canvasRect, backingSize = null, hookSnapshot, contract, devicePixelRatio, screenshot = null }) {
   const normalized = normalizeContract(contract);
   const exact = isExactVisualValidation(normalized);
   const viewport = normalizeRect(viewportRect);
@@ -248,6 +273,7 @@ export function evaluateViewport({ viewportRect, canvasRect, hookSnapshot, contr
   const failures = [];
   const decisionGaps = [];
   const unverified = [];
+  const strictRuntimeEvidence = normalized.responsiveViewportContract !== null;
   let backgroundFit = null;
 
   if (normalized.dprErrors.length > 0) failures.push(...normalized.dprErrors);
@@ -255,6 +281,17 @@ export function evaluateViewport({ viewportRect, canvasRect, hookSnapshot, contr
   const measuredDpr = parseDeviceDpr(devicePixelRatio, DEFAULT_DPR);
   if (devicePixelRatio !== undefined && !isDeviceDprInput(devicePixelRatio)) failures.push(workflowDprError("实际测得原始设备 DPR", devicePixelRatio));
   if (!viewport || !canvas) unverified.push("viewportRect 或 canvasRect 缺失");
+  const backing = backingSize ?? hook.backingSize;
+  const normalizedBacking = backing && finiteNumber(backing.width) !== null && finiteNumber(backing.height) !== null
+    ? { width: Number(backing.width), height: Number(backing.height) }
+    : null;
+  if (strictRuntimeEvidence && !normalizedBacking) unverified.push("缺少 Canvas 真实 backing 尺寸");
+  if (canvas && normalizedBacking) {
+    const expectedWidth = canvas.width * measuredDpr;
+    const expectedHeight = canvas.height * measuredDpr;
+    // 浏览器最终 backing 是整数像素，允许最多 1 像素的量化误差。
+    if (Math.abs(normalizedBacking.width - expectedWidth) > 1 || Math.abs(normalizedBacking.height - expectedHeight) > 1) failures.push("Canvas backing 不符合 CSS 显示尺寸 × 有效 DPR");
+  }
   if (fullViewport && edgeGaps && (edgeGaps.left < -tolerance || edgeGaps.top < -tolerance || edgeGaps.right < -tolerance || edgeGaps.bottom < -tolerance)) {
     failures.push("Canvas 溢出 viewport");
   }
@@ -318,9 +355,13 @@ export function evaluateViewport({ viewportRect, canvasRect, hookSnapshot, contr
   if (normalized.hook.required && (uiRects.length === 0 || uiRects.some((rect) => { const normalizedRect = normalizeRect(rect); return !normalizedRect || normalizedRect.width <= 0 || normalizedRect.height <= 0; }))) unverified.push("Hook 缺少非空有效 keyUiRects");
   if (normalized.hook.required && (!screenshot || !screenshot.path)) unverified.push("缺少当前 viewport 截图证据");
   if (!hook.logicalSize) unverified.push("缺少逻辑画布尺寸 Hook");
+  if (strictRuntimeEvidence && (!hook.cameraViewport || finiteNumber(hook.cameraZoom) === null || !hook.cameraOrigin)) unverified.push("缺少 Camera viewport/zoom/origin 运行测量");
+  if (strictRuntimeEvidence && (!Array.isArray(hook.inputHitResults) || hook.inputHitResults.length === 0)) unverified.push("缺少输入命中映射结果");
+  if (strictRuntimeEvidence && Array.isArray(hook.inputHitResults) && hook.inputHitResults.some((item) => item?.hit !== true && item?.passed !== true)) failures.push("输入命中映射存在失败结果");
 
   let status = failures.length > 0 ? "fail" : decisionGaps.length > 0 ? "decision_gap" : unverified.length > 0 ? "unverified" : "pass";
   if (status === "pass" && normalized.viewport.strategy === "FIT") status = "fit_only";
+  const scaling = deriveScaling(canvas, normalizedBacking, hook.logicalSize, measuredDpr, hook.cssScale);
   return {
     status,
     responsivePass: status === "pass",
@@ -330,12 +371,24 @@ export function evaluateViewport({ viewportRect, canvasRect, hookSnapshot, contr
     viewportRect: viewport,
     canvasRect: canvas,
     logicalSize: hook.logicalSize,
+    backingSize: normalizedBacking,
+    cssDisplaySize: canvas ? { width: canvas.width, height: canvas.height } : null,
+    rawDevicePixelRatio: devicePixelRatio ?? null,
+    effectiveDevicePixelRatio: measuredDpr,
     edgeGaps,
     backgroundCoverage,
     backgroundFit,
     safeArea: hook.safeArea,
     keyUiRects: hook.keyUiRects,
-    scaling: deriveScaling(canvas, hook.logicalSize, measuredDpr, hook.cssScale),
+    inputHitResults: hook.inputHitResults,
+    displayLayerTrajectory: hook.displayLayerTrajectory,
+    cameraViewport: hook.cameraViewport,
+    cameraZoom: hook.cameraZoom,
+    cameraOrigin: hook.cameraOrigin,
+    gameSize: hook.gameSize,
+    logicalToCssScale: scaling.logicalToCssScale,
+    cssToPhysicalScale: scaling.cssToPhysicalScale,
+    scaling,
     hook: { present: hook.present, version: hook.version ?? null },
     rootCause: classifyRootCause({ failures, decisionGaps }),
     screenshot
@@ -380,6 +433,39 @@ export function buildResizeRecords(measurements, contract = {}) {
   return { records, required, status: trajectoryStatus };
 }
 
+/** 校验默认 usability 的最小真实运行矩阵；每一项都来自测量而不是命令行声明。 */
+export function validateRepresentativeMatrix(measurements, { requireDisplayLayer = false } = {}) {
+  const missing = [];
+  const viewport = (item) => item?.viewportRect ?? {};
+  const effective = (item) => item?.effectiveDevicePixelRatio ?? item?.scaling?.physical?.dpr;
+  const raw = (item) => item?.rawDevicePixelRatio;
+  if (!measurements.some((item) => viewport(item).height > viewport(item).width && viewport(item).width <= 375)) missing.push("窄竖屏");
+  if (!measurements.some((item) => viewport(item).height > viewport(item).width && viewport(item).width >= 390)) missing.push("标准竖屏");
+  if (!measurements.some((item) => viewport(item).width > viewport(item).height)) missing.push("横屏");
+  if (!measurements.some((item) => viewport(item).width >= 1024)) missing.push("桌面宽屏");
+  if (!measurements.some((item) => effective(item) === 1)) missing.push("DPR 1");
+  if (!measurements.some((item) => [1.25, 1.5].includes(effective(item)))) missing.push("DPR 1.25 或 1.5");
+  if (!measurements.some((item) => effective(item) === 2)) missing.push("DPR 2");
+  if (!measurements.some((item) => typeof raw(item) === "number" && raw(item) > 2 && effective(item) === 2)) missing.push("DPR 大于 2 的封顶证据");
+  const samePageResize = measurements.some((item, index) => index > 0 && item.samePageWithPrevious === true && stableStringify(viewport(item)) !== stableStringify(viewport(measurements[index - 1])));
+  if (!samePageResize) missing.push("同页面连续 resize");
+  const downToOne = measurements.some((item, index) => index > 0
+    && item.samePageWithPrevious === true
+    && item.pageReloaded !== true
+    && item.contextId !== undefined
+    && item.contextId === measurements[index - 1].contextId
+    && effective(item) === 1
+    && effective(measurements[index - 1]) > 1);
+  if (!downToOne) missing.push("DPR 降至 1");
+  const sameDprResize = measurements.some((item, index) => index > 0 && item.samePageWithPrevious === true && effective(item) === effective(measurements[index - 1]) && stableStringify(viewport(item)) !== stableStringify(viewport(measurements[index - 1])));
+  if (!sameDprResize) missing.push("DPR 不变时再次 resize");
+  if (requireDisplayLayer) {
+    const phases = new Set(measurements.flatMap((item) => Array.isArray(item.displayLayerTrajectory) ? item.displayLayerTrajectory.map((step) => step?.phase) : []));
+    for (const phase of ["open", "interact", "resize", "close", "restore"]) if (!phases.has(phase)) missing.push(`DISPLAY_LAYER ${phase}`);
+  }
+  return { status: missing.length ? "unverified" : "pass", missing };
+}
+
 /** 检查运行矩阵是否覆盖契约声明的命名视口，缺项不能默认为通过。 */
 export function evaluateMatrixCoverage(measurements, contract = {}) {
   const normalized = normalizeContract(contract);
@@ -401,11 +487,14 @@ export function evaluateMatrixCoverage(measurements, contract = {}) {
     const expectedDpr = declaredDpr === undefined ? DEFAULT_DPR : wanted?.deviceScaleFactor !== undefined ? parseDeviceDpr(declaredDpr) : declaredDpr;
     if (actualWidth !== finiteNumber(wanted?.width) || actualHeight !== finiteNumber(wanted?.height) || !isWorkflowDpr(expectedDpr) || !isWorkflowDpr(actualDpr) || actualDpr !== expectedDpr) mismatched.push(name);
   }
-  // usability 只需要至少一个代表性实测视口；完整声明矩阵和逐项尺寸/DPR 对齐留给 exact。
+  const representative = normalized.responsiveViewportContract
+    ? validateRepresentativeMatrix(measurements, { requireDisplayLayer: normalized.responsiveViewportContract.applicability === "DISPLAY_LAYER" })
+    : { status: "pass", missing: [] };
+  // 新合同的 usability 也必须覆盖默认代表矩阵；旧合同只读迁移时仍按既有语义报告。
   const status = exact
     ? expected.length === 0 || missing.length > 0 ? "decision_gap" : mismatched.length > 0 ? "fail" : "pass"
-    : measurements.length === 0 ? "unverified" : "pass";
-  return { expected, observed: [...observed], missing, mismatched, status, mode: normalized.visual_validation.mode ?? DEFAULT_VISUAL_VALIDATION_MODE };
+    : measurements.length === 0 ? "unverified" : representative.status;
+  return { expected, observed: [...observed], missing, mismatched, representativeMissing: representative.missing, status, mode: normalized.visual_validation.mode ?? DEFAULT_VISUAL_VALIDATION_MODE };
 }
 
 /** 验证响应式报告的不可变候选与视觉身份。 */
@@ -416,7 +505,7 @@ export function validateEvidenceIdentity(identity, { requireTarget = false, cont
   if (requireTarget && (typeof value.target_sha256 !== "string" || !SHA_PATTERN.test(value.target_sha256))) errors.push("效果图还原的 identity.target_sha256 必须是合法 SHA-256");
   if (value.target_sha256 !== undefined && (typeof value.target_sha256 !== "string" || !SHA_PATTERN.test(value.target_sha256))) errors.push("identity.target_sha256 格式无效");
   const binding = contract?.identityContract;
-  if (!binding?.trusted || binding.schemaVersion !== "1.1.0" || !nonEmptyBinding(binding.contractVersion) || !Array.isArray(binding.scenes) || binding.scenes.length === 0 || !Array.isArray(binding.states) || binding.states.length === 0 || !nonEmptyBinding(binding.codeCandidate) || !nonEmptyBinding(binding.visualBaselineVersion)) errors.push("原始 UI schema 1.1.0 合同未通过完整布局合同校验，不能建立权威身份");
+  if (!binding?.trusted || !nonEmptyBinding(binding.schemaVersion) || !nonEmptyBinding(binding.contractVersion) || !Array.isArray(binding.scenes) || binding.scenes.length === 0 || !Array.isArray(binding.states) || binding.states.length === 0 || !nonEmptyBinding(binding.codeCandidate) || !nonEmptyBinding(binding.visualBaselineVersion)) errors.push("原始 UI 合同未通过完整布局合同校验，不能建立权威身份");
   else {
     if (!binding.scenes.includes(value.scene_id)) errors.push("identity.scene_id 不在 UI 合同 scope.scenes 中");
     if (!binding.states.includes(value.state_id)) errors.push("identity.state_id 不在 UI 合同 scope.states 中");
@@ -445,7 +534,14 @@ export function summarizeReport(measurements, contract = {}, identity = null) {
     responsivePass: status === "pass",
     viewportCount: measurements.length,
     measurements,
+    sceneId: identity?.scene_id ?? null,
+    stateId: identity?.state_id ?? null,
+    candidateSha256: identity?.candidate_sha256 ?? null,
+    layoutContractVersion: identity?.layout_contract_version ?? null,
+    visualBaselineVersion: identity?.visual_baseline_version ?? null,
     resize: resize.records,
+    resizeTrajectory: resize.records,
+    pageReloaded: resize.records.some((record) => record.pageReloaded),
     resizeStatus: resize.status,
     matrix,
     identity,
@@ -527,13 +623,16 @@ async function readPageHook(page, hookName) {
   }
 }
 
-/** 通过真实 DOM 矩形读取 Canvas，而不是读取逻辑坐标。 */
-async function readCanvasRect(page, selector) {
+/** 同时读取 Canvas CSS 矩形和 width/height backing，禁止用 DPR 反推物理尺寸。 */
+async function readCanvasMetrics(page, selector) {
   return page.evaluate((query) => {
     const element = document.querySelector(query);
     if (!element) return null;
     const rect = element.getBoundingClientRect();
-    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    return {
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      backingSize: { width: element.width, height: element.height }
+    };
   }, selector);
 }
 
@@ -576,14 +675,14 @@ async function runBrowserValidation(options) {
   try {
     for (let index = 0; index < viewports.length; index += 1) {
       const viewport = viewports[index];
-      // Playwright 只接收统一解析后的有效 DPR，设备值超过 2 时在 context 创建前封顶。
+      // deviceScaleFactor 模拟原始设备值，页面内仍必须动态封顶；dpr 则是已解析的有效值。
       const rawDpr = viewport.deviceScaleFactor ?? viewport.dpr;
-      const requestedDpr = viewport.deviceScaleFactor !== undefined ? parseDeviceDpr(rawDpr, DEFAULT_DPR) : rawDpr === undefined ? DEFAULT_DPR : rawDpr;
-      const contextChanged = context === null || requestedDpr !== activeDpr;
+      const contextDpr = rawDpr === undefined ? DEFAULT_DPR : rawDpr;
+      const contextChanged = context === null || contextDpr !== activeDpr;
       if (contextChanged) {
         if (context) await context.close();
-        contextId += 1; activeDpr = requestedDpr; navigationCount = 0;
-        context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height }, deviceScaleFactor: requestedDpr, isMobile: Boolean(viewport.isMobile), hasTouch: Boolean(viewport.hasTouch) });
+        contextId += 1; activeDpr = contextDpr; navigationCount = 0;
+        context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height }, deviceScaleFactor: contextDpr, isMobile: Boolean(viewport.isMobile), hasTouch: Boolean(viewport.hasTouch) });
         page = await context.newPage();
         page.on("framenavigated", (frame) => { if (frame === page.mainFrame()) navigationCount += 1; });
         await page.goto(String(options.url), { waitUntil: "networkidle", timeout: Number(options.timeout ?? 30000) });
@@ -596,13 +695,15 @@ async function runBrowserValidation(options) {
       await waitStableFrame(page);
       const pageReloaded = !contextChanged && navigationCount > navigationBefore;
       const viewportRect = await page.evaluate(() => ({ x: 0, y: 0, width: window.innerWidth, height: window.innerHeight }));
-      const canvasRect = await readCanvasRect(page, String(options["canvas-selector"] ?? options.canvasSelector ?? "canvas"));
+      const canvasMetrics = await readCanvasMetrics(page, String(options["canvas-selector"] ?? options.canvasSelector ?? "canvas"));
+      const canvasRect = canvasMetrics?.rect ?? null;
       const hookSnapshot = await readPageHook(page, contract.hook.name);
       const screenshotPath = path.join(outputDir, `${String(index + 1).padStart(2, "0")}-${safeName(viewport.name)}-${viewport.width}x${viewport.height}.png`);
       await page.screenshot({ path: screenshotPath, fullPage: true });
       const evaluated = evaluateViewport({
         viewportRect,
         canvasRect,
+        backingSize: canvasMetrics?.backingSize ?? null,
         hookSnapshot: hookSnapshot?.__hookError ? null : hookSnapshot,
         contract,
         devicePixelRatio: await page.evaluate(() => window.devicePixelRatio),
