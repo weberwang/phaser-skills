@@ -5,7 +5,7 @@ description: 为 Phaser 4 游戏建立可验证的 UI 布局合同、坐标空�
 
 # Phaser 4 游戏 UI 布局
 
-效果图 V2 拆解与布局遵守[功能语义分组约束](references/functional-semantic-grouping.md)：先人工确认功能归属与理由，再生成停靠方案；禁止按文字类型或几何最小包含关系自动归父级。
+效果图 V2 拆解与布局遵守[功能语义分组约束](references/functional-semantic-grouping.md)：先人工确认位置依赖与信息分组，再生成停靠方案；位置依赖方必须成为被依赖元素所对应布局容器的子元素，共同表达同一信息且彼此无位置依赖的元素列为同组同级项。禁止按文字类型或几何最小包含关系自动归父级。
 
 ## 全局控制接入
 
@@ -32,7 +32,7 @@ UI 设计与实现优先用符合全局视觉基线且含义清晰、熟悉的�
 ## 核心流程
 
 1. 读取项目的 GDD/TDD、当前候选、总控审核漏斗和适用视觉阶段；确定稳定 UI ID、坐标空间、参照物、状态与平台输入。
-2. 复制 schema 1.2.0 [合同模板](assets/ui-layout-contract-template.yaml)。普通布局使用 `not-applicable` 并保持 `layout_nodes: []`；冻结视觉目标先用 `frozen-target/specified`。同时冻结上述根级视口/DPR/Camera/Input/性能字段，禁止使用旧 `targets.scale` 字段绕过新门禁。V2 先生成拆解图、技术 JSON 和 `decomposition_elements`，人工修改并确认；确认后由智能视觉判断生成逐元素 `left/center/right × top/center/bottom` 决策，再由同一入口同步生成布局 PNG、`layout-nodes.json`、`layout-decision.json`、离线 `review.html` 和 `generation-result.json`。随后登记由确认元素和视觉决策共同推导的非空 `layout_nodes` 与关键对齐合同。
+2. 复制 schema 1.2.0 [合同模板](assets/ui-layout-contract-template.yaml)。普通布局使用 `not-applicable` 并保持 `layout_nodes: []`；冻结视觉目标先用 `frozen-target/specified`。同时冻结上述根级视口/DPR/Camera/Input/性能字段，禁止使用旧 `targets.scale` 字段绕过新门禁。V2 先按位置依赖建立父子、按共同信息建立同级分组，再生成拆解图、技术 JSON 和 `decomposition_elements`，人工修改并确认；确认后由智能视觉判断生成逐元素 `left/center/right × top/center/bottom` 决策，再由同一入口同步生成布局 PNG、`layout-nodes.json`、`layout-decision.json`、离线 `review.html` 和 `generation-result.json`。随后登记由确认元素和视觉决策共同推导的非空 `layout_nodes` 与关键对齐合同。
 3. 用 [Phaser 适配器](references/phaser-adapter.md) 设计唯一布局入口：把视口、安全区、方向、内容尺寸和状态作为输入，分离资源 origin、布局停靠点和动画偏移，保证重排幂等。
 4. specified 阶段运行结构检查 `node scripts/validate_ui_layout_contract.mjs <contract>`；verified 正式验收必须运行 `node scripts/validate_ui_layout_contract.mjs <contract> --check-files --project-root .`，复算冻结原图 SHA 并检查目标/运行/parity 证据文件。
 5. 按 [证据矩阵](references/evidence-matrix.md) 生成代表性视口、关键状态和窄高度证据；关键 UI/HUD 记录稳定 element/reference ID、双轴关系、目标/运行测量、实际测试 ID/状态、视觉证据和项目定义容差。V4 还必须记录 CSS/backing 尺寸、raw/effective DPR、Camera、输入命中、同页 resize 和独立 DISPLAY_LAYER 轨迹。`exact` 或明确的全覆盖需求才扩展到完整矩阵和严格 delta。

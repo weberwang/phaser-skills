@@ -48,7 +48,7 @@ F2 必须由确定性机器验证执行，并绑定当前 baseline/diff 身份�
 
 ## V2 拆解确认与生产方案
 
-功能分组遵守[功能语义分组约束](../../phaser4-game-ui-layout/references/functional-semantic-grouping.md)。阶段 A 为每个元素明确 `parent_element_id` 和 `semantic_grouping.kind/rationale`，将区域组织与功能组件内部部件区分开；文字独立登记但归属对应功能组件，不按元素类型集中归组。语义歧义留在拆解审阅，机器不根据距离或最小包含矩形补父级。阶段 B 只继承已确认归属；新增容器或修改归属、理由必须重新拆解确认，不能复用旧布局身份。
+功能分组遵守[功能语义分组约束](../../phaser4-game-ui-layout/references/functional-semantic-grouping.md)。阶段 A 为每个元素明确 `parent_element_id` 和 `semantic_grouping.kind/rationale`：位置依赖决定父子层级，依赖方必须成为被依赖元素所对应布局容器的子元素；共同表达同一信息但互不依赖位置的元素进入同一个功能组件并保持同级。文字独立登记但归属对应信息组，不按元素类型集中归组。语义歧义留在拆解审阅，机器不根据距离或最小包含矩形补父级。阶段 B 只继承已确认归属；新增容器或修改归属、理由必须重新拆解确认，不能复用旧布局身份。
 
 当前场景 Work Item 的 V1 冻结目标和初步还原草案有效后进入 V2。V2 把 V1 的视觉事实细化为可确认、可执行的还原方案，并按两个串行硬门完成：阶段 A 先冻结拆解图、技术 JSON、按序 `decomposition_elements`、功能归属与理由、component×state 和资源生产事实；阶段 B 仅在拆解确认后继承功能父子归属，补充停靠/对齐关系、布局测量、显示层关系和布局容差，冻结后置布局标注图。
 

@@ -183,7 +183,7 @@
 - 输入：N13 状态分析和冻结原图。
 - 执行：拆出唯一可复用 component、required state、重复 placements、交互热区；区分 generate-now / reuse-existing / runtime-program，并声明 bitmap-decomposition 或 independent-production 等路线。
 - 产物：按序 decomposition_elements、component_inventory、component×state 清单、区域生产合同和资源预期。
-- 分组：每个元素登记显式 `parent_element_id` 和 `semantic_grouping.kind/rationale`，区分区域、功能组件、组件部件和独立元素。图标、底板和对应文字按共同功能归属组合；侧栏等区域先组织各入口组件，禁止按“全部文字”或最小包含矩形归组。独立标题、装饰和整体品牌美术不强制套容器。字段及边界见[功能语义分组约束](../skills/phaser4-game-ui-layout/references/functional-semantic-grouping.md)。
+- 分组：每个元素登记显式 `parent_element_id` 和 `semantic_grouping.kind/rationale`，区分区域、功能组件、组件部件和独立元素。元素的位置、偏移或响应式移动依赖另一个元素时，依赖方划为被依赖元素所对应布局容器的子元素；多个元素共同表达同一个信息但彼此无位置依赖时，列入同一功能组件并保持同级。图标、底板和对应文字按实际依赖与共同信息归属组合；侧栏等区域先组织各入口组件，禁止按“全部文字”或最小包含矩形归组。独立标题、装饰和整体品牌美术不强制套容器。字段及边界见[功能语义分组约束](../skills/phaser4-game-ui-layout/references/functional-semantic-grouping.md)。
 - 人工点：这里先提出拆解事实，等待 N16 确认；不预先冻结后置 layout_nodes。
 - 放行：component_count 是唯一部件数，不是可见实例数；重复实例用 placements；热区不计视觉资产。每区域显式声明 production_origin、production_method、delivery_kind、image_generation_required、generation_record_required、substitution_policy、expected_assets。
 - 失败：数量/编号/格式/路径冲突原地修复；不能把一个编号当一张资产，或把“独立生产”自动等同具体生成器。
@@ -207,7 +207,7 @@
 ### N17 从已确认拆解推导唯一布局
 
 - 输入：N16 最终确认的 decomposition_elements、冻结原图及响应式合同。
-- 执行：按原顺序将已确认 `parent_element_id` 映射为布局父级，再为每个元素做 left/center/right × top/center/bottom 视觉对齐决策，计算停靠和工程布局参数。中心选项在两个轴上均有效；几何只复核包含与偏移，缺少归属不自动选择父容器。
+- 执行：按原顺序将已确认 `parent_element_id` 映射为布局父级，保持“位置依赖为父子、共同信息为同组同级”的拆解结果，再为每个元素做 left/center/right × top/center/bottom 视觉对齐决策，计算停靠和工程布局参数。中心选项在两个轴上均有效；几何只复核包含与偏移，缺少归属不自动选择父容器。
 - 产物：自动布局决策、唯一后置布局节点、元素到节点的可追溯映射。
 - 人工点：允许人工编辑决策；人工已提供的关系也必须依附当前已确认拆解，不构成独立重设计入口。
 - 放行：不读取旧 layout_nodes 作为来源，不重排、不擅改原图位置尺寸、不重新生成视觉参考、不产出多个布局候选；测量只支撑参数与校验。

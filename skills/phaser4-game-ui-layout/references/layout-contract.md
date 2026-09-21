@@ -26,7 +26,7 @@ Camera 合同必须说明逻辑 viewport 如何映射到物理 backing，zoom �
 
 ## V2 串行拆解与布局标注
 
-拆解先按[功能语义分组约束](functional-semantic-grouping.md)确认区域、功能组件、部件和独立元素。最终元素必须包含显式 `parent_element_id` 与 `semantic_grouping.kind/rationale`；布局父级严格继承该归属，不按几何包含自动挑父容器。文字保持独立节点并归属对应功能组件，不按类型集中归组。新增容器或归属变化必须回到拆解确认。
+拆解先按[功能语义分组约束](functional-semantic-grouping.md)确认区域、功能组件、部件和独立元素。最终元素必须包含显式 `parent_element_id` 与 `semantic_grouping.kind/rationale`；位置依赖方必须成为被依赖元素所对应布局容器的子元素，共同表达同一信息且互不依赖位置的元素必须列入同一个功能组件并保持同级。布局父级严格继承该归属，不按几何包含自动挑父容器。文字保持独立节点并归属对应信息组，不按类型集中归组。新增容器或归属变化必须回到拆解确认。
 
 冻结目标进入 V2 后，机器门固定执行两个串行阶段：阶段 A 先从冻结原图、区域与组件事实生成拆解标注图及技术 JSON，并产出有序 `decomposition_elements`；人工可以修改这两项，修改后必须重新生成最终产物，并以 `visual-decomposition-confirmation/1.0` 确认。阶段 B 只有在阶段 A 的最终确认通过后才能启动，布局入口必须按原顺序消费该确认绑定的 `proposal.decomposition_elements`，再推导后置布局节点，不得从预存 `layout_nodes`、未确认清单草案或原图自行识别元素。
 

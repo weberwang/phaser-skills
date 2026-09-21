@@ -98,7 +98,7 @@ Work Item 保存用户原始请求、目标、当前范围、实施计划、路�
 
 ## 实施顺序状态硬门
 
-effect-image 的 V2 功能归属是拆解确认的一部分，遵守[功能语义分组约束](../../phaser4-game-ui-layout/references/functional-semantic-grouping.md)。最终元素必须显式声明 `parent_element_id` 与 `semantic_grouping.kind/rationale`；布局严格继承，不以几何包含兜底。机器检查归属结构和身份，语义判断由人工确认；新增容器、归属或理由变化返回拆解确认并使旧布局身份失效，不自动改写已冻结的项目工件。
+effect-image 的 V2 功能归属是拆解确认的一部分，遵守[功能语义分组约束](../../phaser4-game-ui-layout/references/functional-semantic-grouping.md)。最终元素必须显式声明 `parent_element_id` 与 `semantic_grouping.kind/rationale`；位置依赖决定父子归属，共同表达同一信息且没有位置依赖的元素列为同组同级项，布局严格继承，不以几何包含兜底。机器检查归属结构和身份，语义判断由人工确认；新增容器、归属或理由变化返回拆解确认并使旧布局身份失效，不自动改写已冻结的项目工件。
 
 同一命令内，`loadExecutionState` 完整复核绑定 Result 后，READY 与完成证据只消费该已校验状态；独立命令入口仍重新读取并校验，不能跨命令缓存。
 全局实施顺序先建立任务范围、工程基线和必要的全局视觉基线，再完成 foundation-only 的 `SHARED`/`MODULE`。随后 SCENE Work Item 与 DISPLAY_LAYER Work Item 分别完成自己的 V1→V4。正式代码包顺序为 `SHARED`→`MODULE`→`SCENE`→`INTEGRATION`，或 `SHARED`→`MODULE`→`DISPLAY_LAYER`→`INTEGRATION`；两类视觉单元不得混在同一包。每个单元只读取所属 Work Item 的 V2/V3 结果，弹窗的 `hostSceneId` 只绑定宿主上下文和公开接口。
