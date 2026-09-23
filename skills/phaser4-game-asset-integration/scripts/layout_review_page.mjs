@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { deriveAutomaticLayoutFacts } from "./layout_annotation_contract.mjs";
 import { readPngDimensions } from "./validate_visual_manifest.mjs";
+import { validateUiLayout } from "./ui-layout-organization.mjs";
 
 export const LAYOUT_REVIEW_SCHEMA = "phaser-layout-review/1.0";
 export const LAYOUT_REVIEW_STATUS = "candidate-awaiting-layout-confirmation";
@@ -138,6 +139,9 @@ export function validateReviewNodesDocument(nodesDocument) {
     if (nodeIds.has(node.layout_node_id) || ROOT_IDS.has(node.layout_node_id)) throw new Error(`nodesDocument.layout_nodes 存在重复或根节点身份：${node.layout_node_id}`);
     nodeIds.add(node.layout_node_id);
     if (node.is_root_container === true) throw new Error(`nodesDocument.layout_nodes[${index}] 必须是非 root 节点`);
+    const uiErrors = [];
+    validateUiLayout(node.ui_layout, { rootParent: ROOT_IDS.has(node.parent_layout_node_id), container: node.is_container === true, emptyContainer: node.empty_container === true }, uiErrors, `nodesDocument.layout_nodes[${index}].ui_layout`);
+    if (uiErrors.length > 0) throw new Error(uiErrors[0]);
     if (node.scene_id !== undefined && node.scene_id !== nodesDocument.scene_id) throw new Error(`布局节点 ${node.layout_node_id} 的 scene_id 与文档不一致`);
     if (node.state_id !== undefined && node.state_id !== nodesDocument.state_id) throw new Error(`布局节点 ${node.layout_node_id} 的 state_id 与文档不一致`);
     const target = targetBoundsOf(node);
@@ -171,7 +175,7 @@ export function validateReviewNodesDocument(nodesDocument) {
     "layout_node_id", "element_id", "display_name", "layout_role", "parent_layout_node_id", "parent_target_bounds",
     "target_bounds", "bounds", "depth", "color", "is_container", "empty_container", "child_layout_node_ids",
     "relative_position", "axis_alignment", "offset", "self_anchor", "reference_anchor", "docking",
-    "is_root_container", "scene_id", "state_id", "marker_id", "parent_marker_id"
+    "is_root_container", "scene_id", "state_id", "marker_id", "parent_marker_id", "ui_layout"
   ];
   const compareFact = (fact, derived, label) => {
     for (const field of comparableFields) if (fact[field] !== undefined && canonicalJson(fact[field]) !== canonicalJson(derived[field])) throw new Error(`${label}.${field} 与既有自动布局事实不一致`);

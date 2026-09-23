@@ -301,6 +301,14 @@
     "offset": {"x": 0, "y": 32},
     "target_bounds": {"x": 115, "y": 32, "width": 160, "height": 48},
     "size_policy": "fixed-at-target",
+    "ui_layout": {
+      "grouping_basis": ["POSITION"],
+      "layout_owner": "SELF",
+      "size_policy": "CONTENT",
+      "overflow_policy": "KEEP_VISIBLE",
+      "safe_area_policy": "INSIDE_SAFE_AREA",
+      "interaction_policy": "NONE"
+    },
     "z_order": 10,
     "clip_policy": "none",
     "responsive_rule": "preserve-center-and-top-gap",

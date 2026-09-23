@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { checkContractFiles, computeLayoutContractIdentityHash, main, validateContract } from "./validate_ui_layout_contract.mjs";
+import { validateUiInteractionTree, validateUiLayout } from "../../phaser4-game-asset-integration/scripts/ui-layout-organization.mjs";
 
 const templatePath = resolve(dirname(new URL(import.meta.url).pathname.replace(/^\/(.:)/, "$1")), "../assets/ui-layout-contract-template.yaml");
 const base = JSON.parse(await readFile(templatePath, "utf8"));
@@ -17,7 +18,7 @@ function fidelityContract(status = "verified") {
   document.fidelity = { applicability: "frozen-target", status }; document.effect_image_reconstruction = { applicability: "effect-image" };
   document.frozen_visual_target = { candidate_id: "mockup-a", original_file: "evidence/target.png", target_sha256: targetSha, visual_baseline_version: "ui-v1", status: "frozen" };
   document.scene_reconstruction_binding = { target_sha256: targetSha, scene_id: "MainScene", state_id: "default", visual_baseline_version: "ui-v1", reconstruction_contract_version: "1.0.0", layout_contract_sha256: "pending", layout_decomposition_version: "layout-v1", target_viewport: { width: 390, height: 844 } };
-  document.layout_nodes = [{ layout_node_id: "hud.title", region_id: "title", coordinate_space: "ui-space", reference_id: "safe-area", parent_layout_node_id: "safe-area", parent_target_bounds: { x: 0, y: 0, width: 390, height: 844 }, relative_position: { left: 115, right: 115, top: 32, bottom: 764 }, axis_alignment: { horizontal: "center", vertical: "top" }, self_anchor: "top-center", reference_anchor: "top-center", offset: { x: 0, y: 32 }, target_bounds: { x: 115, y: 32, width: 160, height: 48 }, size_policy: "fixed-at-target", z_order: 10, clip_policy: "none", responsive_rule: "preserve-center-and-top-gap", planned_test_id: "tests/layout/title-center" }];
+  document.layout_nodes = [{ layout_node_id: "hud.title", region_id: "title", coordinate_space: "ui-space", reference_id: "safe-area", parent_layout_node_id: "safe-area", parent_target_bounds: { x: 0, y: 0, width: 390, height: 844 }, relative_position: { left: 115, right: 115, top: 32, bottom: 764 }, axis_alignment: { horizontal: "center", vertical: "top" }, self_anchor: "top-center", reference_anchor: "top-center", offset: { x: 0, y: 32 }, target_bounds: { x: 115, y: 32, width: 160, height: 48 }, ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, size_policy: "fixed-at-target", z_order: 10, clip_policy: "none", responsive_rule: "preserve-center-and-top-gap", planned_test_id: "tests/layout/title-center" }];
   document.layout_annotation = { layout_annotation_file: "evidence/layout-annotation.png", layout_annotation_sha256: targetSha, layout_annotation_width: 390, layout_annotation_height: 844, layout_annotation_schema: "layout-annotation/png/1", layout_annotation_layout: "image-plus-right-panel", layout_annotation_metadata_sha256: targetSha, layout_annotation_identity_sha256: targetSha, layout_review_file: "evidence/layout-review.html", layout_review_sha256: targetSha, layout_review_identity_sha256: targetSha, layout_nodes_file: "evidence/layout-nodes.json", layout_nodes_sha256: targetSha, decomposition_confirmation_id: "v2-confirmation", decomposition_confirmation_sha256: targetSha, proposal_sha256: targetSha, layout_decision_file: "evidence/automatic-layout-decision.json", layout_decision_sha256: targetSha, layout_decision_id: "layout-decision-1", target_sha256: targetSha, scene_id: "MainScene", state_id: "default", layout_node_ids: ["hud.title"] };
   document.scene_reconstruction_binding.layout_contract_sha256 = computeLayoutContractIdentityHash(document);
   document.critical_alignments = [{ id: "title-center", layout_node_id: "hud.title", element_id: "title", reference_id: "safe-area", horizontal: { type: "center-aligned", element_anchor: "center", reference_anchor: "center" }, vertical: { type: "top-offset", element_anchor: "top", reference_anchor: "top" }, target_measurement: { x: 115, y: 32, width: 160, height: 48 }, planned_test_id: "tests/layout/title-center", target_evidence: ["evidence/target-title.png"], target_sha256: targetSha, candidate_sha256: candidateSha, tolerance: { unit: "logical-px", value: 2 } }];
@@ -42,6 +43,55 @@ test("布局节点 ID 和稳定参照必须唯一且无环", () => { const dupli
 test("关键对齐必须绑定节点几何，禁止目标漂移", () => { const document = fidelityContract("specified"); document.critical_alignments[0].target_measurement.x += 1; assertFailed(document, "目标几何漂移"); const missingNode = fidelityContract("specified"); missingNode.critical_alignments[0].layout_node_id = "missing-node"; assertFailed(missingNode, "引用未知布局节点"); });
 test("布局合同身份哈希包含节点原顺序并拒绝节点篡改后的旧身份", () => { const document = fidelityContract("specified"); assert.equal(document.scene_reconstruction_binding.layout_contract_sha256, computeLayoutContractIdentityHash(document)); const second = { ...structuredClone(document.layout_nodes[0]), layout_node_id: "hud.second", reference_id: "hud.title", parent_layout_node_id: "hud.title", parent_target_bounds: { x: 115, y: 32, width: 160, height: 48 }, relative_position: { left: 0, right: 0, top: 0, bottom: 0 }, axis_alignment: { horizontal: "center", vertical: "center" }, self_anchor: "center-center", reference_anchor: "center-center", offset: { x: 0, y: 0 } }; const ordered = structuredClone(document); ordered.layout_nodes.push(second); const reordered = structuredClone(ordered); reordered.layout_nodes.reverse(); assert.notEqual(computeLayoutContractIdentityHash(reordered), computeLayoutContractIdentityHash(ordered)); const tampered = fidelityContract("specified"); tampered.layout_nodes[0].target_bounds.x += 1; assertFailed(tampered, "布局合同身份不一致"); });
 test("布局合同身份哈希包含父子关系、相对距离和视觉对齐字段", () => { const document = fidelityContract("specified"); const identity = document.scene_reconstruction_binding.layout_contract_sha256; for (const field of ["parent_layout_node_id", "parent_target_bounds", "relative_position", "axis_alignment"]) { const tampered = fidelityContract("specified"); if (field === "parent_layout_node_id") tampered.layout_nodes[0][field] = "viewport"; else if (field === "parent_target_bounds") tampered.layout_nodes[0][field].width -= 1; else if (field === "relative_position") tampered.layout_nodes[0][field].left += 1; else tampered.layout_nodes[0][field].horizontal = "right"; assert.notEqual(computeLayoutContractIdentityHash(tampered), identity, field); } });
+test("布局合同身份哈希包含节点职责字段", () => { const document = fidelityContract("specified"); const identity = document.scene_reconstruction_binding.layout_contract_sha256; const changed = fidelityContract("specified"); changed.layout_nodes[0].ui_layout.safe_area_policy = "FULL_BLEED"; assert.notEqual(computeLayoutContractIdentityHash(changed), identity); assertFailed(changed, "布局合同身份不一致"); });
+
+test("节点职责要求合法枚举、非根分组依据和空容器职责", () => {
+  const valid = { grouping_basis: ["LAYOUT"], layout_owner: "SELF", size_policy: "FLEX", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" };
+  const cases = [
+    [undefined, { rootParent: false, container: false }, "必须显式声明"],
+    [{ ...valid, grouping_basis: ["UNKNOWN"] }, { rootParent: false, container: false }, "不重复的 POSITION/LAYOUT"],
+    [{ ...valid, layout_owner: "CHILD" }, { rootParent: false, container: false }, "layout_owner"],
+    [{ ...valid, grouping_basis: [] }, { rootParent: false, container: false }, "必须说明与实际父节点的依赖"],
+    [{ ...valid, grouping_basis: ["POSITION"] }, { rootParent: false, container: true, emptyContainer: true }, "空容器必须有可解释的布局、状态或复用职责"],
+    [{ ...valid, minimum_size: { width: 0, height: 12 } }, { rootParent: false, container: false }, "minimum_size 必须包含正数"],
+    [{ ...valid, overflow_policy: "SCROLL", grouping_basis: ["POSITION"] }, { rootParent: false, container: true }, "SCROLL 必须由负责布局的容器承接"],
+  ];
+  for (const [uiLayout, options, expected] of cases) {
+    const errors = []; validateUiLayout(uiLayout, options, errors, "node.ui_layout");
+    assert(errors.some((message) => message.includes(expected)), `${expected}: ${errors.join("；")}`);
+  }
+  const rootWithoutDependency = { ...valid, grouping_basis: [] }; const rootErrors = [];
+  validateUiLayout(rootWithoutDependency, { rootParent: true, container: false }, rootErrors, "root.ui_layout");
+  assert.deepEqual(rootErrors, []);
+});
+
+test("输入委托必须命中唯一的 HIT_TARGET 祖先", () => {
+  const delegatedChild = { grouping_basis: ["INTERACTION"], layout_owner: "PARENT", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "DELEGATE_TO_PARENT" };
+  const ordinaryParent = { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" };
+  const missingTarget = [];
+  validateUiInteractionTree([{ element_id: "icon", parent_element_id: "button", ui_layout: delegatedChild }, { element_id: "button", parent_element_id: "viewport", ui_layout: ordinaryParent }], missingTarget);
+  assert(missingTarget.some((message) => message.includes("缺少接收输入的 HIT_TARGET 祖先")), missingTarget.join("；"));
+
+  const nestedTargets = [];
+  validateUiInteractionTree([{ element_id: "button", parent_element_id: "viewport", ui_layout: { ...ordinaryParent, interaction_policy: "HIT_TARGET" } }, { element_id: "icon", parent_element_id: "button", ui_layout: { ...delegatedChild, interaction_policy: "HIT_TARGET" } }], nestedTargets);
+  assert(nestedTargets.some((message) => message.includes("不能嵌套另一个 HIT_TARGET")), nestedTargets.join("；"));
+});
+
+test("独立布局合同拒绝没有 HIT_TARGET 祖先的委托节点", () => {
+  const document = fidelityContract("specified");
+  const parent = document.layout_nodes[0];
+  document.layout_nodes.push({
+    ...structuredClone(parent), layout_node_id: "hud.title-icon", reference_id: "hud.title", parent_layout_node_id: "hud.title",
+    parent_target_bounds: { ...parent.target_bounds }, relative_position: { left: 4, right: 140, top: 4, bottom: 32 },
+    target_bounds: { x: 119, y: 36, width: 16, height: 12 }, offset: { x: 4, y: 4 },
+    ui_layout: { ...parent.ui_layout, grouping_basis: ["INTERACTION"], layout_owner: "PARENT", interaction_policy: "DELEGATE_TO_PARENT" },
+  });
+  document.layout_annotation.layout_node_ids.push("hud.title-icon");
+  document.scene_reconstruction_binding.layout_contract_sha256 = computeLayoutContractIdentityHash(document);
+  const result = validateContract(document);
+  assert.equal(result.status, "failed", JSON.stringify(result));
+  assert(result.errors.some((message) => message.includes("缺少接收输入的 HIT_TARGET 祖先")), JSON.stringify(result));
+});
 test("verified 关键对齐必须记录实际 bounds、delta 和运行证据", () => { const missingDelta = fidelityContract(); delete missingDelta.critical_alignments[0].delta; assertFailed(missingDelta, "delta 必须"); const wrongDelta = fidelityContract(); wrongDelta.critical_alignments[0].delta.x = 1; assertFailed(wrongDelta, "必须等于 runtime_measurement"); const missingBindingIdentity = fidelityContract("specified"); delete missingBindingIdentity.scene_reconstruction_binding.layout_contract_sha256; assertFailed(missingBindingIdentity, "layout_contract_sha256 必须"); });
 test("目标和代码候选 SHA 格式固定", () => { const code = copy(); code.scope.bindings.code_candidate = "git:abc"; assertFailed(code, "code_candidate 必须是 sha256"); const target = fidelityContract("specified"); target.frozen_visual_target.target_sha256 = "sha256:BAD"; assertFailed(target, "target_sha256 格式无效"); });
 test("verified parity 必须全部通过且身份完整", () => { const target = fidelityContract(); target.parity_cases[0].target_sha256 = `sha256:${"e".repeat(64)}`; assertFailed(target, "与冻结目标不一致"); const failed = fidelityContract(); failed.parity_cases[0].conclusion = "failed"; assertFailed(failed, "必须全部 passed"); const evidence = fidelityContract(); evidence.parity_cases[0].candidate_evidence = []; assertFailed(evidence, "candidate_evidence 必须是非空字符串数组"); });

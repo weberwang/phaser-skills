@@ -102,6 +102,7 @@ export function layoutNodeIdentityProjection(node) {
     clip_policy: readLayoutNodeField(node, "clip_policy", "clipPolicy"),
     responsive_rule: readLayoutNodeField(node, "responsive_rule", "responsiveRule"),
     planned_test_id: readLayoutNodeField(node, "planned_test_id", "plannedTestId"),
+    ui_layout: readLayoutNodeField(node, "ui_layout"),
   };
 }
 

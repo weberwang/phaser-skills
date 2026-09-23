@@ -124,8 +124,8 @@ function validateLayoutNodesAgainstProposal(proposal, nodesDocument, context, er
     const expectedBounds = element.bounds;
     const expectedContainer = element.element_type === "container";
     const expectedEmpty = expectedContainer && element.empty_container === true;
-    if (!node || node.layout_node_id !== element.element_id || node.element_id !== element.element_id || node.element_type !== element.element_type || node.is_container !== expectedContainer || node.empty_container !== expectedEmpty || node.parent_layout_node_id !== element.parent_element_id || node.parent_element_id !== element.parent_element_id || canonicalJson(nodeBounds(node)) !== canonicalJson(expectedBounds) || node.scene_id !== element.scene_id || node.state_id !== element.state_id || node.component_id !== element.component_id || node.placement_id !== element.placement_id || canonicalJson(node.semantic_grouping) !== canonicalJson(element.semantic_grouping)) {
-      errors.push(`${label}.layout_nodes[${index}] 未逐项继承 proposal 的元素、bounds、semantic_grouping 或 parent_element_id`);
+    if (!node || node.layout_node_id !== element.element_id || node.element_id !== element.element_id || node.element_type !== element.element_type || node.is_container !== expectedContainer || node.empty_container !== expectedEmpty || node.parent_layout_node_id !== element.parent_element_id || node.parent_element_id !== element.parent_element_id || canonicalJson(nodeBounds(node)) !== canonicalJson(expectedBounds) || node.scene_id !== element.scene_id || node.state_id !== element.state_id || node.component_id !== element.component_id || node.placement_id !== element.placement_id || canonicalJson(node.semantic_grouping) !== canonicalJson(element.semantic_grouping) || canonicalJson(node.ui_layout) !== canonicalJson(element.ui_layout)) {
+      errors.push(`${label}.layout_nodes[${index}] 未逐项继承 proposal 的元素、bounds、semantic_grouping、ui_layout 或 parent_element_id`);
     }
   }
 }

@@ -264,6 +264,12 @@
       const grouping = node.semantic_grouping;
       addDetailRow("功能分组", grouping?.kind ? `${SEMANTIC_GROUPING_LABELS[grouping.kind] || grouping.kind}（kind=${grouping.kind}）` : "—");
       addDetailRow("分组理由", grouping?.rationale || "—");
+      const uiLayout = node.ui_layout;
+      addDetailRow("父子依赖", uiLayout?.grouping_basis?.join("、") || "同级根节点");
+      addDetailRow("布局控制 / 尺寸", uiLayout ? `${uiLayout.layout_owner} / ${uiLayout.size_policy}` : "—");
+      addDetailRow("溢出 / 安全区", uiLayout ? `${uiLayout.overflow_policy} / ${uiLayout.safe_area_policy}` : "—");
+      addDetailRow("输入命中", uiLayout?.interaction_policy || "—");
+      if (uiLayout?.minimum_size) addDetailRow("最小尺寸", `${uiLayout.minimum_size.width} × ${uiLayout.minimum_size.height}`);
       addDetailRow("子节点", relationNames(node.child_layout_node_ids));
       addDetailRow("水平 / 垂直对齐", formatAlignment(node.axis_alignment));
       addDetailRow("偏移", node.offset ? `x=${node.offset.x ?? "—"}，y=${node.offset.y ?? "—"}` : "—");

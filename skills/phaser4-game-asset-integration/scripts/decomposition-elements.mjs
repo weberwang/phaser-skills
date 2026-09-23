@@ -6,6 +6,7 @@
  */
 
 import { normalizeSemanticGrouping, semanticGroupingOf, validateSemanticGrouping } from "./semantic-grouping-contract.mjs";
+import { normalizeUiLayout, validateUiInteractionTree, validateUiLayout } from "./ui-layout-organization.mjs";
 
 const CONTAINER_ROLES = new Set(["container", "parent", "group", "layout-container", "empty-container"]);
 
@@ -32,7 +33,8 @@ function normalizeElement(element, region, index = 0) {
   const placementId = field(element, "placement_id", "placementId") ?? `${componentId}-placement-${index + 1}`;
   const bounds = field(element, "bounds", "target_bounds", "targetBounds");
   const semanticGrouping = field(element, "semantic_grouping");
-  return { element_id: field(element, "element_id", "elementId") ?? `${region.id}-element-${index + 1}`, element_type: elementType, role: field(element, "role", "layout_role", "layoutRole", "node_type", "nodeType") ?? (nonEmptyString(declaredType) ? declaredType : elementType), bounds: validBounds(bounds) ? copyBounds(bounds) : bounds, scene_id: region.scene_id, state_id: region.state_id, region_id: region.id, component_id: componentId, placement_id: placementId, ...(nonEmptyString(parentElementId(element)) ? { parent_element_id: parentElementId(element) } : {}), ...(semanticGrouping !== undefined ? { semantic_grouping: normalizeSemanticGrouping(semanticGrouping) } : {}), empty_container: field(element, "empty_container", "emptyContainer") === true };
+  const uiLayout = field(element, "ui_layout");
+  return { element_id: field(element, "element_id", "elementId") ?? `${region.id}-element-${index + 1}`, element_type: elementType, role: field(element, "role", "layout_role", "layoutRole", "node_type", "nodeType") ?? (nonEmptyString(declaredType) ? declaredType : elementType), bounds: validBounds(bounds) ? copyBounds(bounds) : bounds, scene_id: region.scene_id, state_id: region.state_id, region_id: region.id, component_id: componentId, placement_id: placementId, ...(nonEmptyString(parentElementId(element)) ? { parent_element_id: parentElementId(element) } : {}), ...(semanticGrouping !== undefined ? { semantic_grouping: normalizeSemanticGrouping(semanticGrouping) } : {}), ...(uiLayout !== undefined ? { ui_layout: normalizeUiLayout(uiLayout) } : {}), empty_container: field(element, "empty_container", "emptyContainer") === true };
 }
 
 /** 从当前区域生成稳定元素；显式 decomposition_elements 优先，支持人工声明空容器。 */
@@ -42,14 +44,14 @@ function buildRegionElements(region) {
   const components = componentList(region); const elements = [];
   for (const [index, component] of components.entries()) {
     const componentId = field(component, "component_id", "componentId") ?? `${region.id}-component-${index + 1}`; const role = field(component, "role", "layout_role", "layoutRole", "node_type", "nodeType") ?? "component"; const placements = Array.isArray(component?.placements) ? component.placements : []; const container = explicitlyContainer(component); const containerId = `container:${componentId}`;
-    if (container) elements.push(normalizeElement({ element_id: containerId, element_type: "container", role, bounds: field(component, "bounds", "target_bounds", "targetBounds") ?? region.bounds, component_id: componentId, placement_id: `${componentId}-container`, parent_element_id: parentElementId(component), semantic_grouping: semanticGroupingOf(component), empty_container: placements.length === 0 }, region, index));
+    if (container) elements.push(normalizeElement({ element_id: containerId, element_type: "container", role, bounds: field(component, "bounds", "target_bounds", "targetBounds") ?? region.bounds, component_id: componentId, placement_id: `${componentId}-container`, parent_element_id: parentElementId(component), semantic_grouping: semanticGroupingOf(component), ui_layout: field(component, "ui_layout"), empty_container: placements.length === 0 }, region, index));
     // 显式容器没有 placements 时只保留容器本身；只有普通叶子才需要合成默认子元素。
     const sourcePlacements = placements.length > 0 || container ? placements : [null];
     for (const [placementIndex, placement] of sourcePlacements.entries()) {
       const placementId = field(placement, "placement_id", "placementId") ?? `${componentId}-placement-${placementIndex + 1}`; const elementId = field(placement, "element_id", "elementId") ?? field(placement, "layout_node_id", "layoutNodeId") ?? `${componentId}:${placementId}`; const bounds = field(placement, "bounds", "target_bounds", "targetBounds") ?? field(component, "bounds", "target_bounds", "targetBounds") ?? region.bounds;
       // 没有 placement 的单实例直接继承 component 自身的显式声明；多实例不按共享资源身份补归属。
       const source = placement ?? component;
-      elements.push(normalizeElement({ element_id: elementId, element_type: "component", role: field(component, "role", "element_type", "elementType") ?? "component", bounds, component_id: componentId, placement_id: placementId, semantic_grouping: semanticGroupingOf(source), parent_element_id: parentElementId(source) }, region, placementIndex));
+      elements.push(normalizeElement({ element_id: elementId, element_type: "component", role: field(component, "role", "element_type", "elementType") ?? "component", bounds, component_id: componentId, placement_id: placementId, semantic_grouping: semanticGroupingOf(source), ui_layout: field(source, "ui_layout"), parent_element_id: parentElementId(source) }, region, placementIndex));
     }
   }
   if (elements.length === 0) elements.push(normalizeElement({ element_id: region.id, element_type: "component", role: "component", bounds: region.bounds, component_id: `${region.id}-component`, placement_id: `${region.id}-placement` }, region));
@@ -73,11 +75,13 @@ export function validateDecompositionElements(elements, regions = [], canvas = n
     if (!validBounds(element.bounds)) errors.push(`${itemLabel}.bounds 必须是有效正尺寸矩形`);
     if (element.element_type === "container" && typeof element.empty_container !== "boolean") errors.push(`${itemLabel}.empty_container 必须是布尔值`);
     if (element.element_type === "component" && element.empty_container === true) errors.push(`${itemLabel} 普通 component 不得标记 empty_container`);
+    validateUiLayout(element.ui_layout, { rootParent: ["viewport", "safe-area"].includes(element.parent_element_id), container: element.element_type === "container", emptyContainer: element.element_type === "container" && element.empty_container === true }, errors, `${itemLabel}.ui_layout`);
     if (ids.has(element.element_id)) errors.push(`${itemLabel}.element_id 重复：${element.element_id}`); else { ids.add(element.element_id); elementById.set(element.element_id, element); }
     const region = regionById.get(element.region_id); if (!region) errors.push(`${itemLabel}.region_id 未绑定当前 scene/state 区域`); else { regionIds.add(element.region_id); if (element.scene_id !== region.scene_id || element.state_id !== region.state_id) errors.push(`${itemLabel} scene/state 未绑定所属区域`); if (validBounds(region.bounds) && validBounds(element.bounds) && !containsBounds(region.bounds, element.bounds)) errors.push(`${itemLabel}.bounds 超出所属区域`); }
     if (isObject(canvas) && Number.isFinite(canvas.width) && Number.isFinite(canvas.height) && validBounds(element.bounds) && !containsBounds({ x: 0, y: 0, width: canvas.width, height: canvas.height }, element.bounds)) errors.push(`${itemLabel}.bounds 超出目标画布`);
   }
   validateSemanticGrouping(elements, { canvas }, errors, label);
+  validateUiInteractionTree(elements, errors, label);
   const expectedRegionIds = [...regionById.keys()].filter(nonEmptyString).sort(); const actualRegionIds = [...regionIds].sort(); if (JSON.stringify(actualRegionIds) !== JSON.stringify(expectedRegionIds)) errors.push(`${label} 未完整覆盖当前 scene/state 区域`);
   return elementById;
 }

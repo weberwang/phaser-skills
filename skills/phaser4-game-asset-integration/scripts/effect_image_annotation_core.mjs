@@ -3,6 +3,7 @@ import { deriveAtomicImageRequirements, normalizeAtomicComponents } from "../../
 import { annotationProductionContract, renderRasterAnnotation } from "./effect_image_raster.mjs";
 import { buildDecompositionElements, decompositionElementIds } from "./decomposition-elements.mjs";
 import { semanticGroupingDefinition } from "./semantic-grouping-contract.mjs";
+import { normalizeUiLayout } from "./ui-layout-organization.mjs";
 
 /** 标注图使用的固定计划颜色，机器值与展示标签分离，便于审计和人工阅读。 */
 export const PLAN_COLORS = { "generate-now": "#ef4444", "reuse-existing": "#22c55e", "runtime-program": "#3b82f6" };
@@ -24,10 +25,63 @@ function normalizePathForDefinition(value) { if (typeof value !== "string") retu
 function canonicalStateForDefinition(value) { if (typeof value !== "string") return value; const normalized = value.trim().toLowerCase().replaceAll("_", "-"); return STATE_ALIASES.get(normalized) ?? normalized; }
 function firstDefined(value, aliases, fallback = null) { if (!isObject(value)) return fallback; for (const alias of aliases) if (Object.hasOwn(value, alias)) return value[alias]; return fallback; }
 function normalizeStateAnalysisDefinition(value) { if (!isObject(value)) return value ?? null; const states = Array.isArray(value.states) ? value.states.map((state) => ({ state_id: canonicalStateForDefinition(firstDefined(state, ["state_id", "stateId"], "")), requirement: firstDefined(state, ["requirement", "applicability"], ""), reason: firstDefined(state, ["reason", "rationale"], "") })).sort((left, right) => String(left.state_id).localeCompare(String(right.state_id))) : []; return { status: firstDefined(value, ["status", "analysis_status"], ""), phase: firstDefined(value, ["phase", "analysis_phase"], ""), evidence: firstDefined(value, ["evidence", "analysis_evidence"], ""), evidence_sha256: firstDefined(value, ["evidence_sha256", "evidenceSha256"], ""), reference_target_sha256: firstDefined(value, ["reference_target_sha256", "referenceTargetSha256"], ""), analysis_id: firstDefined(value, ["analysis_id", "analysisId"], ""), completed_at: firstDefined(value, ["completed_at", "completedAt"], ""), states }; }
-/** 规范化拆解元素身份，保留原元素顺序及显式语义/父级声明。 */
-function normalizeDecompositionElementDefinition(value) { if (!isObject(value)) return value ?? null; const bounds = isObject(value.bounds ?? value.target_bounds ?? value.targetBounds) ? (value.bounds ?? value.target_bounds ?? value.targetBounds) : null; return { element_id: firstDefined(value, ["element_id", "elementId"], ""), element_type: firstDefined(value, ["element_type", "elementType", "type"], ""), role: firstDefined(value, ["role", "layout_role", "layoutRole", "node_type", "nodeType"], ""), bounds: bounds ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } : null, scene_id: firstDefined(value, ["scene_id", "sceneId"], ""), state_id: firstDefined(value, ["state_id", "stateId"], ""), region_id: firstDefined(value, ["region_id", "regionId"], ""), component_id: firstDefined(value, ["component_id", "componentId"], ""), placement_id: firstDefined(value, ["placement_id", "placementId"], ""), parent_element_id: firstDefined(value, ["parent_element_id", "parentElementId"], null), semantic_grouping: semanticGroupingDefinition(firstDefined(value, ["semantic_grouping"], undefined)), empty_container: firstDefined(value, ["empty_container", "emptyContainer"], false) }; }
+/** 规范化拆解元素身份，保留原序、父级、语义和 UI 职责以绑定确认哈希。 */
+function normalizeDecompositionElementDefinition(value) {
+  if (!isObject(value)) return value ?? null;
+  const bounds = isObject(value.bounds ?? value.target_bounds ?? value.targetBounds) ? (value.bounds ?? value.target_bounds ?? value.targetBounds) : null;
+  return {
+    element_id: firstDefined(value, ["element_id", "elementId"], ""),
+    element_type: firstDefined(value, ["element_type", "elementType", "type"], ""),
+    role: firstDefined(value, ["role", "layout_role", "layoutRole", "node_type", "nodeType"], ""),
+    bounds: bounds ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } : null,
+    scene_id: firstDefined(value, ["scene_id", "sceneId"], ""),
+    state_id: firstDefined(value, ["state_id", "stateId"], ""),
+    region_id: firstDefined(value, ["region_id", "regionId"], ""),
+    component_id: firstDefined(value, ["component_id", "componentId"], ""),
+    placement_id: firstDefined(value, ["placement_id", "placementId"], ""),
+    parent_element_id: firstDefined(value, ["parent_element_id", "parentElementId"], null),
+    semantic_grouping: semanticGroupingDefinition(firstDefined(value, ["semantic_grouping"], undefined)),
+    ui_layout: normalizeUiLayout(firstDefined(value, ["ui_layout"], undefined)) ?? null,
+    empty_container: firstDefined(value, ["empty_container", "emptyContainer"], false),
+  };
+}
 /** 归一化组件清单中的 placement 布局身份，使布局节点变化参与确认哈希。 */
-function normalizeComponentInventoryDefinition(value) { if (!isObject(value)) return value ?? null; const components = Array.isArray(value.components) ? value.components.map((component) => ({ component_id: firstDefined(component, ["component_id", "componentId"], ""), atomic_visual_key: firstDefined(component, ["atomic_visual_key", "atomicVisualKey"], ""), role: firstDefined(component, ["role", "component_role"], ""), reusable: component?.reusable, parent_element_id: firstDefined(component, ["parent_element_id", "parentElementId"], null), semantic_grouping: semanticGroupingDefinition(firstDefined(component, ["semantic_grouping"], undefined)), state_coverage: (Array.isArray(component?.state_coverage) ? component.state_coverage : (Array.isArray(component?.stateCoverage) ? component.stateCoverage : [])).map((state) => ({ state_id: canonicalStateForDefinition(firstDefined(state, ["state_id", "stateId"], "")), requirement: firstDefined(state, ["requirement", "applicability"], ""), reason: firstDefined(state, ["reason", "rationale"], "") })).sort((left, right) => String(left.state_id).localeCompare(String(right.state_id))), placements: (Array.isArray(component?.placements) ? component.placements : []).map((placement) => ({ placement_id: firstDefined(placement, ["placement_id", "placementId"], ""), element_id: firstDefined(placement, ["element_id", "elementId"], null), layout_node_id: firstDefined(placement, ["layout_node_id", "layoutNodeId"], ""), parent_element_id: firstDefined(placement, ["parent_element_id", "parentElementId"], null), semantic_grouping: semanticGroupingDefinition(firstDefined(placement, ["semantic_grouping"], undefined)), interaction_required: firstDefined(placement, ["interaction_required", "interactionRequired"]), bounds: isObject(placement?.bounds) ? { x: placement.bounds.x, y: placement.bounds.y, width: placement.bounds.width, height: placement.bounds.height } : null })).sort((left, right) => String(left.placement_id).localeCompare(String(right.placement_id))) })).sort((left, right) => String(left.component_id).localeCompare(String(right.component_id))) : []; return { granularity: firstDefined(value, ["granularity", "asset_granularity"], ""), component_count: firstDefined(value, ["component_count", "componentCount"]), visible_instance_count: firstDefined(value, ["visible_instance_count", "visibleInstanceCount"]), delivery_mode: firstDefined(value, ["delivery_mode", "deliveryMode", "asset_delivery_mode"], ""), atlas_allowed: firstDefined(value, ["atlas_allowed", "atlasAllowed"]), created_at: firstDefined(value, ["created_at", "createdAt"], ""), components }; }
+function normalizeComponentInventoryDefinition(value) {
+  if (!isObject(value)) return value ?? null;
+  const components = (Array.isArray(value.components) ? value.components : []).map((component) => ({
+    component_id: firstDefined(component, ["component_id", "componentId"], ""),
+    atomic_visual_key: firstDefined(component, ["atomic_visual_key", "atomicVisualKey"], ""),
+    role: firstDefined(component, ["role", "component_role"], ""),
+    reusable: component?.reusable,
+    parent_element_id: firstDefined(component, ["parent_element_id", "parentElementId"], null),
+    semantic_grouping: semanticGroupingDefinition(firstDefined(component, ["semantic_grouping"], undefined)),
+    ui_layout: normalizeUiLayout(firstDefined(component, ["ui_layout"], undefined)) ?? null,
+    state_coverage: (Array.isArray(component?.state_coverage) ? component.state_coverage : (Array.isArray(component?.stateCoverage) ? component.stateCoverage : [])).map((state) => ({
+      state_id: canonicalStateForDefinition(firstDefined(state, ["state_id", "stateId"], "")),
+      requirement: firstDefined(state, ["requirement", "applicability"], ""),
+      reason: firstDefined(state, ["reason", "rationale"], ""),
+    })).sort((left, right) => String(left.state_id).localeCompare(String(right.state_id))),
+    placements: (Array.isArray(component?.placements) ? component.placements : []).map((placement) => ({
+      placement_id: firstDefined(placement, ["placement_id", "placementId"], ""),
+      element_id: firstDefined(placement, ["element_id", "elementId"], null),
+      layout_node_id: firstDefined(placement, ["layout_node_id", "layoutNodeId"], ""),
+      parent_element_id: firstDefined(placement, ["parent_element_id", "parentElementId"], null),
+      semantic_grouping: semanticGroupingDefinition(firstDefined(placement, ["semantic_grouping"], undefined)),
+      ui_layout: normalizeUiLayout(firstDefined(placement, ["ui_layout"], undefined)) ?? null,
+      interaction_required: firstDefined(placement, ["interaction_required", "interactionRequired"]),
+      bounds: isObject(placement?.bounds) ? { x: placement.bounds.x, y: placement.bounds.y, width: placement.bounds.width, height: placement.bounds.height } : null,
+    })).sort((left, right) => String(left.placement_id).localeCompare(String(right.placement_id))),
+  })).sort((left, right) => String(left.component_id).localeCompare(String(right.component_id)));
+  return {
+    granularity: firstDefined(value, ["granularity", "asset_granularity"], ""),
+    component_count: firstDefined(value, ["component_count", "componentCount"]),
+    visible_instance_count: firstDefined(value, ["visible_instance_count", "visibleInstanceCount"]),
+    delivery_mode: firstDefined(value, ["delivery_mode", "deliveryMode", "asset_delivery_mode"], ""),
+    atlas_allowed: firstDefined(value, ["atlas_allowed", "atlasAllowed"]),
+    created_at: firstDefined(value, ["created_at", "createdAt"], ""),
+    components,
+  };
+}
 function normalizeAtlasSliceDefinition(value) { if (!isObject(value)) return value ?? null; const rect = isObject(value.rect) ? value.rect : value; const size = isObject(value.atlas_size ?? value.atlasSize) ? (value.atlas_size ?? value.atlasSize) : {}; return { atlas_asset_id: firstDefined(value, ["atlas_asset_id", "atlasAssetId"], ""), slice_id: firstDefined(value, ["slice_id", "sliceId"], ""), atlas_size: { width: size.width, height: size.height }, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } }; }
 function normalizeExpectedAssetDefinition(value) { if (typeof value === "string") return { asset_id: value }; if (!isObject(value)) return { asset_id: "" }; return { asset_id: firstDefined(value, ["asset_id", "id", "name", "file", "path"], ""), component_id: firstDefined(value, ["component_id", "componentId"], ""), state_id: canonicalStateForDefinition(firstDefined(value, ["state_id", "stateId"], "")), asset_kind: firstDefined(value, ["asset_kind", "assetKind", "kind"], "visual"), asset_scope: firstDefined(value, ["asset_scope", "assetScope"], ""), atomic_visual_key: firstDefined(value, ["atomic_visual_key", "atomicVisualKey"], ""), source_file: normalizePathForDefinition(firstDefined(value, ["source_file", "sourceFile", "file"], "")), runtime_file: normalizePathForDefinition(firstDefined(value, ["runtime_file", "runtimeFile", "runtime_output_file", "runtimeOutputFile"], "")), mime_type: firstDefined(value, ["mime_type", "mimeType"]), width: value.width, height: value.height, alpha: value.alpha, sha256: firstDefined(value, ["sha256", "file_sha256"]), share_id: firstDefined(value, ["share_id", "shareId"]), atlas_slice: normalizeAtlasSliceDefinition(value.atlas_slice ?? value.atlasSlice) }; }
 function normalizeHotspotDefinition(value) { if (!isObject(value)) return { hotspot_id: "", component_id: "", bounds: null }; const bounds = isObject(value.bounds) ? value.bounds : {}; return { hotspot_id: firstDefined(value, ["hotspot_id", "hotspotId"], ""), component_id: firstDefined(value, ["component_id", "componentId"], ""), placement_id: firstDefined(value, ["placement_id", "placementId"], ""), bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } }; }

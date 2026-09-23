@@ -13,9 +13,9 @@ function sha256(bytes) { return `sha256:${createHash("sha256").update(bytes).dig
 /** 构造同时包含普通叶子和显式空容器的已确认节点集合。 */
 function confirmedNodes() {
   return [
-    { layout_node_id: "panel", element_id: "panel", element_type: "container", parent_layout_node_id: "viewport", parent_element_id: "viewport", semantic_grouping: { kind: "component", rationale: "面板内元素需要共同停靠" }, layout_role: "container", axis_alignment: { horizontal: "center", vertical: "top" }, target_bounds: { x: 8, y: 6, width: 48, height: 34 } },
-    { layout_node_id: "empty-slot", element_id: "empty-slot", element_type: "container", parent_layout_node_id: "panel", parent_element_id: "panel", semantic_grouping: { kind: "component", rationale: "预留一个明确用途的空功能容器" }, node_type: "container", axis_alignment: { horizontal: "left", vertical: "top" }, target_bounds: { x: 12, y: 10, width: 12, height: 10 } },
-    { layout_node_id: "icon", element_id: "icon", element_type: "component", parent_layout_node_id: "panel", parent_element_id: "panel", semantic_grouping: { kind: "part", rationale: "图标属于面板功能组件" }, node_type: "element", axis_alignment: { horizontal: "center", vertical: "center" }, target_bounds: { x: 30, y: 20, width: 10, height: 10 } },
+    { layout_node_id: "panel", element_id: "panel", element_type: "container", parent_layout_node_id: "viewport", parent_element_id: "viewport", semantic_grouping: { kind: "component", rationale: "面板内元素需要共同停靠" }, ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, layout_role: "container", axis_alignment: { horizontal: "center", vertical: "top" }, target_bounds: { x: 8, y: 6, width: 48, height: 34 } },
+    { layout_node_id: "empty-slot", element_id: "empty-slot", element_type: "container", parent_layout_node_id: "panel", parent_element_id: "panel", semantic_grouping: { kind: "component", rationale: "预留一个明确用途的空功能容器" }, ui_layout: { grouping_basis: ["LAYOUT"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, node_type: "container", axis_alignment: { horizontal: "left", vertical: "top" }, target_bounds: { x: 12, y: 10, width: 12, height: 10 } },
+    { layout_node_id: "icon", element_id: "icon", element_type: "component", parent_layout_node_id: "panel", parent_element_id: "panel", semantic_grouping: { kind: "part", rationale: "图标属于面板功能组件" }, ui_layout: { grouping_basis: ["POSITION"], layout_owner: "PARENT", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, node_type: "element", axis_alignment: { horizontal: "center", vertical: "center" }, target_bounds: { x: 30, y: 20, width: 10, height: 10 } },
   ];
 }
 
@@ -42,6 +42,16 @@ test("布局事实按深度稳定着色，普通叶子不冒充空容器", () =>
   assert.deepEqual(panel.child_layout_node_ids, ["empty-slot", "icon"]);
 });
 
+test("布局职责字段改变会使节点身份和标注 metadata SHA 失效", () => {
+  const canvas = { width: 96, height: 80 };
+  const context = { targetSha256: ORIGINAL_SHA, sceneId: "main", stateId: "default", decompositionConfirmationId: "decomp-1", decompositionConfirmationSha256: SHA, decompositionProposalSha256: SHA };
+  const original = renderLayoutAnnotation(originalPng(), canvas, deriveAutomaticLayoutFacts(confirmedNodes(), canvas, context), context);
+  const changedNodes = confirmedNodes(); changedNodes[2].ui_layout.safe_area_policy = "FULL_BLEED";
+  const changed = renderLayoutAnnotation(originalPng(), canvas, deriveAutomaticLayoutFacts(changedNodes, canvas, context), context);
+  assert.notEqual(changed.metadata.node_identity_sha256, original.metadata.node_identity_sha256);
+  assert.notEqual(changed.metadata.metadata_sha256, original.metadata.metadata_sha256);
+});
+
 test("一次自动生成独立布局 PNG，右栏包含父子距离和空容器", () => {
   const canvas = { width: 96, height: 80 };
   const context = { targetSha256: ORIGINAL_SHA, sceneId: "main", stateId: "default", decompositionConfirmationId: "decomp-1", decompositionConfirmationSha256: SHA, decompositionProposalSha256: SHA };
@@ -66,14 +76,14 @@ test("高分辨率布局图的 scale=2/3 字形和右栏边界可被复核", () 
 });
 
 test("布局生成拒绝缺失父节点或越界节点，不能从草案补父级", () => {
-  assert.throws(() => deriveAutomaticLayoutFacts([{ layout_node_id: "orphan", parent_layout_node_id: "unconfirmed", target_bounds: { x: 0, y: 0, width: 4, height: 4 } }], { width: 64, height: 48 }), /未确认的父容器/);
+  assert.throws(() => deriveAutomaticLayoutFacts([{ layout_node_id: "orphan", parent_layout_node_id: "unconfirmed", ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, target_bounds: { x: 0, y: 0, width: 4, height: 4 } }], { width: 64, height: 48 }), /未确认的父容器/);
   const nodes = confirmedNodes();
   nodes[1].target_bounds.x = 60;
   assert.throws(() => deriveAutomaticLayoutFacts(nodes, { width: 64, height: 48 }), /超出已确认父容器 bounds/);
 });
 
 test("显式空容器不合成普通子元素，叶子组件不进入父容器说明", () => {
-  const region = { id: "empty-region", scene_id: "main", state_id: "default", bounds: { x: 4, y: 4, width: 20, height: 16 }, component_inventory: { components: [{ component_id: "slot", role: "container", bounds: { x: 5, y: 5, width: 8, height: 6 }, parent_element_id: "viewport", semantic_grouping: { kind: "component", rationale: "预留有明确用途的空状态槽位" }, placements: [] }] } };
+  const region = { id: "empty-region", scene_id: "main", state_id: "default", bounds: { x: 4, y: 4, width: 20, height: 16 }, component_inventory: { components: [{ component_id: "slot", role: "container", bounds: { x: 5, y: 5, width: 8, height: 6 }, parent_element_id: "viewport", semantic_grouping: { kind: "component", rationale: "预留有明确用途的空状态槽位" }, ui_layout: { grouping_basis: ["LAYOUT"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, placements: [] }] } };
   const elements = buildDecompositionElements([region]);
   assert.equal(elements.length, 1);
   assert.equal(elements[0].element_type, "container");
@@ -84,7 +94,7 @@ test("显式空容器不合成普通子元素，叶子组件不进入父容器�
 });
 
 test("同一几何允许不同视觉对齐决策，中心选项不由测量反推", () => {
-  const element = { element_id: "visual-item", element_type: "component", role: "component", bounds: { x: 10, y: 8, width: 8, height: 6 }, scene_id: "main", state_id: "default", region_id: "region", component_id: "item", placement_id: "item-placement", parent_element_id: "viewport", semantic_grouping: { kind: "standalone", rationale: "完整独立美术无需功能组件容器" }, empty_container: false };
+  const element = { element_id: "visual-item", element_type: "component", role: "component", bounds: { x: 10, y: 8, width: 8, height: 6 }, scene_id: "main", state_id: "default", region_id: "region", component_id: "item", placement_id: "item-placement", parent_element_id: "viewport", semantic_grouping: { kind: "standalone", rationale: "完整独立美术无需功能组件容器" }, ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, empty_container: false };
   const canvas = { width: 40, height: 30 };
   const makeFact = (horizontal, vertical) => deriveAutomaticLayoutFacts(deriveLayoutNodesFromDecompositionElements([element], canvas, { alignmentDecisions: new Map([[element.element_id, { horizontal, vertical }]]) }), canvas).find((item) => item.element_id === element.element_id);
   const centered = makeFact("center", "center");
@@ -111,20 +121,20 @@ test("每个节点拥有可追溯短编号，父容器和空容器都有自身�
 
 test("长技术 ID 和负小数停靠偏移完整换行，物理行不越过右栏", () => {
   const canvas = { width: 96, height: 64 }; const longId = "container:home-top-status-very-long-confirmed-element-id-0123456789"; const childId = "child-with-a-negative-offset-and-a-long-id-987654321"; const nodes = [
-    { layout_node_id: longId, element_id: longId, parent_layout_node_id: "viewport", layout_role: "container", axis_alignment: { horizontal: "center", vertical: "top" }, target_bounds: { x: 2, y: 2, width: 70, height: 48 } },
-    { layout_node_id: childId, element_id: childId, parent_layout_node_id: longId, node_type: "element", axis_alignment: { horizontal: "center", vertical: "center" }, target_bounds: { x: 4, y: 4, width: 9, height: 9 } },
+    { layout_node_id: longId, element_id: longId, parent_layout_node_id: "viewport", ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, layout_role: "container", axis_alignment: { horizontal: "center", vertical: "top" }, target_bounds: { x: 2, y: 2, width: 70, height: 48 } },
+    { layout_node_id: childId, element_id: childId, parent_layout_node_id: longId, ui_layout: { grouping_basis: ["LAYOUT"], layout_owner: "PARENT", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, node_type: "element", axis_alignment: { horizontal: "center", vertical: "center" }, target_bounds: { x: 4, y: 4, width: 9, height: 9 } },
   ];
   const source = solidPng(canvas.width, canvas.height, 220); const context = { targetSha256: sha256(source), sceneId: "main", stateId: "default", decompositionConfirmationId: "decomp-1", decompositionConfirmationSha256: SHA, decompositionProposalSha256: SHA }; const facts = deriveAutomaticLayoutFacts(nodes, canvas, context); const rendered = renderLayoutAnnotation(source, canvas, facts, context); const rows = rendered.metadata.visible_rows; const longFact = facts.find((fact) => fact.layout_node_id === longId); const longText = rows.filter((row) => row.marker_id === longFact.marker_id).sort((a, b) => a.line_index - b.line_index).map((row) => row.text).join("");
   assert(longText.includes(longId)); assert(rendered.metadata.visible_row_count > deriveLayoutAnnotationRows(facts).length); assert(rows.every((row) => row.bounds.x >= canvas.width && row.bounds.x + row.bounds.width <= rendered.width && row.bounds.y >= 0 && row.bounds.y + row.bounds.height <= rendered.height)); const childFact = rendered.metadata.nodes.find((fact) => fact.layout_node_id === childId); assert(childFact.offset.x < 0 && !Number.isInteger(childFact.offset.x)); assert(childFact.offset.y < 0 && !Number.isInteger(childFact.offset.y));
 });
 
 test("密集小框的编号标签确定性避让且不互相重叠", () => {
-  const canvas = { width: 180, height: 100 }; const nodes = Array.from({ length: 6 }, (_, index) => ({ layout_node_id: `small-${index + 1}`, element_id: `small-${index + 1}`, parent_layout_node_id: "viewport", node_type: "element", axis_alignment: { horizontal: index % 2 ? "right" : "left", vertical: index % 3 ? "center" : "top" }, target_bounds: { x: 8 + (index % 3) * 54, y: 8 + Math.floor(index / 3) * 42, width: 8, height: 8 } })); const facts = deriveAutomaticLayoutFacts(nodes, canvas, {}); const source = solidPng(canvas.width, canvas.height); const rendered = renderLayoutAnnotation(source, canvas, facts, {}); const placements = rendered.metadata.marker_layouts;
+  const canvas = { width: 180, height: 100 }; const nodes = Array.from({ length: 6 }, (_, index) => ({ layout_node_id: `small-${index + 1}`, element_id: `small-${index + 1}`, parent_layout_node_id: "viewport", ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, node_type: "element", axis_alignment: { horizontal: index % 2 ? "right" : "left", vertical: index % 3 ? "center" : "top" }, target_bounds: { x: 8 + (index % 3) * 54, y: 8 + Math.floor(index / 3) * 42, width: 8, height: 8 } })); const facts = deriveAutomaticLayoutFacts(nodes, canvas, {}); const source = solidPng(canvas.width, canvas.height); const rendered = renderLayoutAnnotation(source, canvas, facts, {}); const placements = rendered.metadata.marker_layouts;
   assert.deepEqual(placements, computeLayoutMarkerPlacements(facts, canvas, rendered.metadata.text_scale)); assert.equal(new Set(placements.map((item) => item.marker_id)).size, placements.length); for (let index = 0; index < placements.length; index += 1) for (let next = index + 1; next < placements.length; next += 1) { const left = placements[index].bounds; const right = placements[next].bounds; assert(left.x + left.width <= right.x || right.x + right.width <= left.x || left.y + left.height <= right.y || right.y + right.height <= left.y); }
 });
 
 test("编号没有可见位置时显式失败，不静默绘制重叠标签", () => {
-  const canvas = { width: 10, height: 10 }; const nodes = [{ layout_node_id: "tiny", element_id: "tiny", parent_layout_node_id: "viewport", node_type: "element", axis_alignment: { horizontal: "left", vertical: "top" }, target_bounds: { x: 1, y: 1, width: 8, height: 8 } }]; const facts = deriveAutomaticLayoutFacts(nodes, canvas, {});
+  const canvas = { width: 10, height: 10 }; const nodes = [{ layout_node_id: "tiny", element_id: "tiny", parent_layout_node_id: "viewport", ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, node_type: "element", axis_alignment: { horizontal: "left", vertical: "top" }, target_bounds: { x: 1, y: 1, width: 8, height: 8 } }]; const facts = deriveAutomaticLayoutFacts(nodes, canvas, {});
   assert.throws(() => renderLayoutAnnotation(solidPng(canvas.width, canvas.height), canvas, facts, {}), /超出原图可见尺寸/);
 });
 

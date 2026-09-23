@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { DPR_POLICY, IMAGE_PRODUCTION_DPR, RUNTIME_MAX_DPR, isDeviceDprInput, isImageProductionDpr, isWorkflowDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
 import { layoutNodeIdentityProjection, validateEffectImageParentChildLayoutNodes } from "../../phaser4-game-workflow-control/scripts/layout-node-parent-geometry.mjs";
 import { resolveVisualValidationMode, validateVisualValidationPolicy } from "../../phaser4-game-workflow-control/scripts/visual-validation-policy.mjs";
+import { validateUiInteractionTree, validateUiLayout } from "../../phaser4-game-asset-integration/scripts/ui-layout-organization.mjs";
 
 const ROOT_REQUIRED = ["schema_version", "contract_id", "contract_version", "scope", "fidelity", "frozen_visual_target", "logicalViewportSpace", "canvasBackingPolicy", "runtimeDprPolicy", "maxRuntimeDpr", "scaleMode", "cameraViewportPolicy", "cameraZoomPolicy", "cameraOriginPolicy", "inputCoordinatePolicy", "safeAreaPolicy", "resizePolicy", "orientationPolicy", "textResolutionPolicy", "assetResolutionPolicy", "performanceBudget", "representativeViewports", "requiredRuntimeEvidence", "targets", "coordinate_spaces", "regions", "layout_nodes", "content", "platform_insets", "scrolling", "dynamic_content", "overlay_rules", "breakpoints", "invariants", "critical_alignments", "parity_cases", "evidence_matrix"];
 const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
@@ -550,6 +551,7 @@ function validateLayoutNodes(document, fidelity, binding, spaces, regionIds, err
       if (!scopedIds.has(node.region_id)) errors.push(`${label}.region_id 未绑定 scope.ui_ids：${node.region_id}`);
     }
     if (isString(node.coordinate_space) && !spaces.has(node.coordinate_space)) errors.push(`${label}.coordinate_space 引用不存在的坐标空间：${node.coordinate_space}`);
+    if (requiresLayoutNodes) validateUiLayout(node.ui_layout, { rootParent: ["viewport", "safe-area"].includes(node.parent_layout_node_id), container: node.is_container === true || node.element_type === "container", emptyContainer: node.empty_container === true }, errors, `${label}.ui_layout`);
     validateLayoutOffset(node.offset, label, errors);
     if (!isNumber(node.z_order)) errors.push(`${label}.z_order 必须是有限数值`);
     validateMeasurement(node.target_bounds, `${label}.target_bounds`, errors);
@@ -558,6 +560,7 @@ function validateLayoutNodes(document, fidelity, binding, spaces, regionIds, err
       if (bounds.x < 0 || bounds.y < 0 || bounds.x + bounds.width > viewport.width || bounds.y + bounds.height > viewport.height) errors.push(`${label}.target_bounds 必须完全位于 scene_reconstruction_binding.target_viewport 内`);
     }
   });
+  if (requiresLayoutNodes) validateUiInteractionTree(nodes.map((node) => ({ element_id: node?.layout_node_id, parent_element_id: node?.parent_layout_node_id, ui_layout: node?.ui_layout })), errors, "layout_nodes");
   if (isEffectImageContract(document)) {
     // 父容器、相对测量和显式视觉对齐必须与场景拆解入口使用同一规则。
     for (const issue of validateEffectImageParentChildLayoutNodes(nodes, viewport, { label: "layout_nodes" })) errors.push(issue.message);

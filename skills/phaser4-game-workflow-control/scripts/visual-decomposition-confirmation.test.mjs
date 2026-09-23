@@ -41,7 +41,7 @@ function decompositionRegion(overrides = {}) {
     delivery_kind: "raster-image",
     image_generation_required: true,
     bounds: { x: 0, y: 0, width: 2, height: 1 },
-    decomposition_elements: [{ element_id: "button-element", element_type: "component", role: "button", bounds: { x: 0, y: 0, width: 2, height: 1 }, parent_element_id: "viewport", semantic_grouping: { kind: "standalone", rationale: "完整按钮图形在该区域独立布局" }, component_id: "button-1", placement_id: "button-placement", empty_container: false }],
+    decomposition_elements: [{ element_id: "button-element", element_type: "component", role: "button", bounds: { x: 0, y: 0, width: 2, height: 1 }, parent_element_id: "viewport", semantic_grouping: { kind: "standalone", rationale: "完整按钮图形在该区域独立布局" }, ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "HIT_TARGET" }, component_id: "button-1", placement_id: "button-placement", empty_container: false }],
     implementation_plan: { mode: "generate-now" },
     component_inventory: {
       components: [{ component_id: "button-1", state_coverage: [{ state_id: "default" }] }],
