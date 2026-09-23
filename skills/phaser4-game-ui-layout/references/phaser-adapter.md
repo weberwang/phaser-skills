@@ -1,10 +1,12 @@
 # Phaser 4 布局适配器
 
-本参考定义 Phaser 运行时边界，不要求所有项目采用同一 Scale API。先审计现有 Scale、Camera 和 Scene 结构，再把项目选择写入合同。
+本参考定义 Phaser 运行时边界。先审计现有 Scale、Camera 和 Scene 结构，再把填满 CSS 视口的实现写入合同。
 
 ## 统一高分屏边界
 
-适配器必须消费布局合同的 `logicalViewportSpace`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr` 和 `scaleMode`。CSS client rect 是唯一的逻辑视口输入；Canvas backing 由 `ceil(CSS 宽高 × effectiveDPR)` 得到，物理 backing 像素不可直接参与 UI 布局或输入命中。`FIT`、`RESIZE`、`NONE` 和 `custom` 都可以使用，但必须在 `cameraViewportPolicy` 与 `inputCoordinatePolicy` 中证明坐标关系。
+适配器必须消费布局合同的 `logicalViewportSpace`、`designResolutionPolicy`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr` 和 `scaleMode`。CSS client rect 是唯一的运行视口输入；Canvas backing 由 `ceil(CSS 宽高 × effectiveDPR)` 得到，物理 backing 像素不可直接参与 UI 布局或输入命中。Canvas 必须铺满 CSS 视口；使用 `RESIZE` 或具备同等行为的 `custom`，并在 `cameraViewportPolicy` 与 `inputCoordinatePolicy` 中证明坐标关系。
+
+调用 [`calculateFixedDesignViewport`](../scripts/fixed-design-viewport.mjs) 由 CSS 视口得到固定设计基准、缩放比例和可见逻辑区域。竖屏按 1080×1920 的高度缩放，横屏按 1920×1080 的宽度缩放；另一轴从设计区域中心展开或裁切。设计坐标到 CSS 坐标按 `(designX + offsetX) × scale`、`(designY + offsetY) × scale` 映射，输入命中执行逆变换。初始布局和每次 resize、方向变化都重新计算，Camera 与输入映射使用相同的比例和可见区域，并将运行结果写入 `designTransform` 证据，避免画布黑边及触点偏移。
 
 运行时 DPR 每次 resize、横竖屏变化和显示密度变化都从设备重新读取：非法值回退 1，正有限值封顶 2。适配器应同时更新 CSS/display 尺寸和 backing 尺寸，并记录 raw/effective DPR；监听器必须在 Scene 销毁、休眠和重新进入时清理。图片生产 2 倍基线只属于 `assetResolutionPolicy`，不能作为运行时 DPR 或降级理由。
 
@@ -25,9 +27,8 @@
 resize 处理必须在同一页面完成，不能通过 reload 清空问题；DPR 变化时 CSS/display 与 backing 两者都要重算。性能预算超出时只能执行合同中已披露的滤镜、RenderTexture 或透明层降级，不能静默降低 DPR、资源生产分辨率或文字字号。
 
 屏幕空间装饰性满幅背景必须在该入口调用
-[`calculateFullBleedCoverTransform`](../../phaser4-game-asset-integration/scripts/full-bleed-background-adapter.mjs)，
-使用同一 scale 完成双轴等比 `cover`。横竖屏判断只用于选择可选方向资源，不能决定按宽或按高
-缩放；Canvas 的 `FIT`/`RESIZE` 策略也不能替代背景 GameObject 的 cover 计算。
+[`calculateFixedDesignBackground`](../scripts/fixed-design-viewport.mjs)，
+以 `calculateFixedDesignViewport` 返回的可见逻辑宽高为目标，使用同一 scale 完成双轴等比 `cover`。此函数将可见区域原点转换到设计坐标：写入带设计偏移的背景层时直接使用返回的 `x/y`；独立无偏移的屏幕背景层则直接使用底层 [`calculateFullBleedCoverTransform`](../../phaser4-game-asset-integration/scripts/full-bleed-background-adapter.mjs) 的坐标。前景布局的横竖屏主轴适配和背景 cover 是独立计算；背景不能仅按主轴缩放，否则额外展开的一轴可能露出黑边。Canvas 的填屏策略也不能替代背景 GameObject 的 cover 计算。
 
 ## Phaser 专项审查模式
 

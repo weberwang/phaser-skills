@@ -10,19 +10,21 @@ schema 1.2.0 根对象包含 `fidelity`、`frozen_visual_target`、`layout_nodes
 
 ## 全局响应式视口合同
 
-任何可见 Scene、HUD、弹窗或 `DISPLAY_LAYER` 都必须在根对象声明以下字段：`logicalViewportSpace`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr`、`scaleMode`、`cameraViewportPolicy`、`cameraZoomPolicy`、`cameraOriginPolicy`、`inputCoordinatePolicy`、`safeAreaPolicy`、`resizePolicy`、`orientationPolicy`、`textResolutionPolicy`、`assetResolutionPolicy`、`performanceBudget`、`representativeViewports` 和 `requiredRuntimeEvidence`。这些字段是事实合同，不绑定某个临时函数名；缺失、用旧字段替代或只写一句说明均不能通过。
+任何可见 Scene、HUD、弹窗或 `DISPLAY_LAYER` 都必须在根对象声明以下字段：`logicalViewportSpace`、`designResolutionPolicy`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr`、`scaleMode`、`cameraViewportPolicy`、`cameraZoomPolicy`、`cameraOriginPolicy`、`inputCoordinatePolicy`、`safeAreaPolicy`、`resizePolicy`、`orientationPolicy`、`textResolutionPolicy`、`assetResolutionPolicy`、`performanceBudget`、`representativeViewports` 和 `requiredRuntimeEvidence`。这些字段是事实合同，不绑定某个临时函数名；缺失、用旧字段替代或只写一句说明均不能通过。
 
 `logicalViewportSpace` 的单位固定为 CSS 逻辑像素（`css-px`/`css-logical-px`）。布局、safe area、断点、点击区域、`gameSize`、Camera viewport、Camera zoom 和程序化文字排版都在该空间计算。`canvasBackingPolicy` 必须明确 `backingWidth = ceil(cssWidth × effectiveDPR)`、`backingHeight = ceil(cssHeight × effectiveDPR)`，并声明 backing 是物理像素；物理 backing 像素不得直接作为布局坐标或命中坐标。CSS display 尺寸、逻辑尺寸和 backing 尺寸必须分别记录，不能把一个数值重复贴到三种空间。
 
 `runtimeDprPolicy` 必须从设备动态读取，非法、零、负数、非有限或字符串值回退为 1，有效值严格位于 `(0, 2]`，原始值大于 2 时有效值封顶为 2。DPR 不是启动常量：resize、横竖屏切换和显示密度变化都要重新读取并清理监听器。`maxRuntimeDpr` 固定为数字 `2`。资源生产基线另由 `assetResolutionPolicy.productionDpr=2` 声明，和运行时 DPR 分离；2 只表示生成/生产清晰度，不代表运行时固定使用 2。运行时代表性矩阵仍必须覆盖 DPR `1.25/1.5`。
 
-工作流不指定唯一 Phaser `ScaleMode`，`scaleMode` 可以选择 `FIT`、`RESIZE`、`NONE` 或项目定义的 `custom`，但必须同时证明逻辑尺寸、CSS 尺寸、物理 backing、`gameSize`、Camera viewport/zoom/origin 和输入映射之间的关系。单独声明 `FIT`、`RESIZE`、`NONE`、Canvas 存在、Canvas 不溢出或构建成功，都不是高分屏兼容证明。
+`designResolutionPolicy` 固定竖屏设计基准为 1080×1920、按高度适配，横屏设计基准为 1920×1080、按宽度适配。实际 CSS 视口为 `W×H` 时，竖屏比例 `s=H/1920`、可见逻辑区域为 `(W/s)×1920`；横屏比例 `s=W/1920`、可见逻辑区域为 `1920×(H/s)`。设计区域在可见区域中居中，另一轴可以展开或裁切；安全区、UI 锚点和输入命中必须使用实际可见区域。横竖屏以运行时视口宽高判断，宽高相等时按横屏处理。
+
+Canvas 必须填满真实 CSS 视口，`scaleMode` 采用 `RESIZE` 或能证明同等行为的 `custom`，不能用 `FIT` 留黑边。逻辑尺寸、CSS 尺寸、物理 backing、`gameSize`、Camera viewport/zoom/origin 和输入映射之间的关系仍需实证；单独声明模式或构建成功都不是高分屏兼容证明。
 
 Camera 合同必须说明逻辑 viewport 如何映射到物理 backing，zoom 不得偷换 DPR，origin 必须显式声明；输入合同必须说明 CSS client 坐标如何经过逻辑 viewport、Camera 再到世界/命中空间。弹窗和 `DISPLAY_LAYER` 默认继承宿主的 CSS 逻辑视口、有效 DPR、Camera/输入合同和 safe area；若使用独立 Camera，必须在自身合同声明并单独验证。
 
 `resizePolicy` 必须在同一页面完成，不得用刷新页面掩盖重排；resize、横竖屏、safe area 和 DPR 变化后至少重新计算逻辑视口、Canvas backing、safe area、Camera viewport、输入映射和文字排版，监听器必须可清理且重复计算幂等。允许在超预算时显式减少滤镜、RenderTexture 或透明全屏层，但不得静默降低 DPR、资源质量或文字清晰度。
 
-`performanceBudget` 至少记录最大 Canvas backing、最大像素总量、RenderTexture、全屏滤镜、透明全屏层、代表性设备和真实测量结果。`representativeViewports` 默认 usability 必须覆盖窄竖屏、标准竖屏、横屏、桌面宽屏、DPR 1、1.25/1.5、2 和原始 DPR 大于 2 的封顶样本。`requiredRuntimeEvidence` 必须要求 `viewportRect`、`canvasRect`、`logicalSize`、`backingSize`、`cssDisplaySize`、原始/有效 DPR、两段缩放、Camera、safe area、边距、背景覆盖、关键 UI、输入命中、resize 轨迹、`pageReloaded`、截图及 scene/state、候选 SHA、合同/基线版本；缺少真实运行测量只能标记 `unverified`。
+`performanceBudget` 至少记录最大 Canvas backing、最大像素总量、RenderTexture、全屏滤镜、透明全屏层、代表性设备和真实测量结果。`representativeViewports` 默认 usability 必须覆盖窄竖屏、标准竖屏、横屏、桌面宽屏、DPR 1、1.25/1.5、2 和原始 DPR 大于 2 的封顶样本。`requiredRuntimeEvidence` 必须要求 `viewportRect`、`canvasRect`、`designTransform`、`logicalSize`、`backingSize`、`cssDisplaySize`、原始/有效 DPR、两段缩放、Camera、safe area、边距、背景覆盖、关键 UI、输入命中、resize 轨迹、`pageReloaded`、截图及 scene/state、候选 SHA、合同/基线版本；`designTransform` 记录实际方向、设计宽高、适配轴、比例、可见逻辑区域及居中偏移，必须与当前 CSS 视口一致。缺少真实运行测量只能标记 `unverified`。
 
 ## V2 串行拆解与布局标注
 
@@ -69,12 +71,12 @@ Camera 合同必须说明逻辑 viewport 如何映射到物理 backing，zoom �
 
 ## 目标与尺寸
 
-`targets` 只定义最小、首选和最大逻辑宽高、方向和宽高比；`scale` 旧嵌套字段不再承担 DPR 或 backing 合同，相关事实统一写在根级响应式字段。`aspect_ratio.min/max` 必须是正数且顺序合理。`content` 定义 `max_width`、`columns`、`gaps` 和 `margins`；断点和布局关系仍必须使用逻辑像素，不能使用参考截图的物理像素直接硬编码。
+`targets` 只定义代表性设备视口的最小、首选和最大逻辑宽高、方向和宽高比，不能覆盖固定设计基准。`scale` 旧嵌套字段不再承担 DPR 或 backing 合同，相关事实统一写在根级响应式字段。`aspect_ratio.min/max` 必须是正数且顺序合理。`content` 定义 `max_width`、`columns`、`gaps` 和 `margins`；断点和布局关系仍必须使用逻辑像素，不能使用参考截图的物理像素直接硬编码。
 
 尺寸策略可以是 `fixed`、`content`、`proportional`、`stretch`、`contain`、`cover` 或 `nine_slice`，但必须同时给出最小、首选和最大值；三档宽高须为正数或非空表达式，数值最小值不能大于最大值。固定尺寸、绝对定位和悬浮元素是可审查模式，不是格式错误；缺少参照、策略或证据才退回。
 
-装饰性满幅背景的 `cover` 必须进一步在响应式合同冻结 `backgroundFit.mode=cover-v1`、
-`sourceFocalPoint` 和 `targetPoint`，算法与运行时证据遵循
+装饰性满幅背景的 `cover` 必须在 `designResolutionPolicy.backgroundFit` 中冻结 `mode=cover-v1`、
+`sourceFocalPoint` 和 `targetPoint`，并将同一组事实传给 QA 的 `viewport.backgroundFit`。算法与运行时证据遵循
 [`装饰性满幅背景`](../../phaser4-game-asset-integration/references/full-bleed-background.md)。
 这里的背景 cover 与根级 `scaleMode` 的 Canvas 缩放是两层独立职责。
 

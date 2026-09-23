@@ -8,7 +8,7 @@
 
 ## 默认高分屏运行矩阵
 
-`representativeViewports` 在 `usability` 下至少包含窄竖屏、标准竖屏、横屏和桌面宽屏，并覆盖有效 DPR 1、1.25 或 1.5、2，以及 raw DPR 大于 2 且 effective DPR 封顶为 2 的样本。每个正式 Scene 和独立 `DISPLAY_LAYER` 都必须独立完成该矩阵，不能借用其他单元的样本。`requiredRuntimeEvidence` 必须记录真实测量而非命令行声明：`viewportRect`、`canvasRect`、`logicalSize`、`backingSize`、`cssDisplaySize`、raw/effective DPR、`logicalToCssScale`、`cssToPhysicalScale`、Camera viewport/zoom/origin、safe area、edge gaps、背景覆盖、关键 UI 边界、输入命中、截图和候选/合同/基线身份。
+`representativeViewports` 在 `usability` 下至少包含窄竖屏、标准竖屏、横屏和桌面宽屏，并覆盖有效 DPR 1、1.25 或 1.5、2，以及 raw DPR 大于 2 且 effective DPR 封顶为 2 的样本。每个正式 Scene 和独立 `DISPLAY_LAYER` 都必须独立完成该矩阵，不能借用其他单元的样本。`requiredRuntimeEvidence` 必须记录真实测量而非命令行声明：`viewportRect`、`canvasRect`、`designTransform`（方向、设计尺寸、适配轴、比例、可见逻辑区域和偏移）、`logicalSize`、`backingSize`、`cssDisplaySize`、raw/effective DPR、`logicalToCssScale`、`cssToPhysicalScale`、Camera viewport/zoom/origin、safe area、edge gaps、背景覆盖、关键 UI 边界、输入命中、截图和候选/合同/基线身份。
 
 同一页面必须执行连续 resize、DPR 降至 1、DPR 不变时再次 resize，并证明 CSS 尺寸与 backing 尺寸同步更新且页面未 reload。缺少真实运行测量时标记 `unverified`；源码存在 DPR 计算、Canvas 存在、Canvas 未溢出、构建/类型/单测通过、单张截图或 AI 审查都不能单独驱动 V4 PASS。
 

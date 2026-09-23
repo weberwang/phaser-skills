@@ -5,15 +5,16 @@ import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { DPR_POLICY, IMAGE_PRODUCTION_DPR, RUNTIME_MAX_DPR, isDeviceDprInput, isImageProductionDpr, isWorkflowDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
+import { DESIGN_RESOLUTIONS } from "./fixed-design-viewport.mjs";
 import { layoutNodeIdentityProjection, validateEffectImageParentChildLayoutNodes } from "../../phaser4-game-workflow-control/scripts/layout-node-parent-geometry.mjs";
 import { resolveVisualValidationMode, validateVisualValidationPolicy } from "../../phaser4-game-workflow-control/scripts/visual-validation-policy.mjs";
 import { validateUiInteractionTree, validateUiLayout } from "../../phaser4-game-asset-integration/scripts/ui-layout-organization.mjs";
 
-const ROOT_REQUIRED = ["schema_version", "contract_id", "contract_version", "scope", "fidelity", "frozen_visual_target", "logicalViewportSpace", "canvasBackingPolicy", "runtimeDprPolicy", "maxRuntimeDpr", "scaleMode", "cameraViewportPolicy", "cameraZoomPolicy", "cameraOriginPolicy", "inputCoordinatePolicy", "safeAreaPolicy", "resizePolicy", "orientationPolicy", "textResolutionPolicy", "assetResolutionPolicy", "performanceBudget", "representativeViewports", "requiredRuntimeEvidence", "targets", "coordinate_spaces", "regions", "layout_nodes", "content", "platform_insets", "scrolling", "dynamic_content", "overlay_rules", "breakpoints", "invariants", "critical_alignments", "parity_cases", "evidence_matrix"];
+const ROOT_REQUIRED = ["schema_version", "contract_id", "contract_version", "scope", "fidelity", "frozen_visual_target", "logicalViewportSpace", "designResolutionPolicy", "canvasBackingPolicy", "runtimeDprPolicy", "maxRuntimeDpr", "scaleMode", "cameraViewportPolicy", "cameraZoomPolicy", "cameraOriginPolicy", "inputCoordinatePolicy", "safeAreaPolicy", "resizePolicy", "orientationPolicy", "textResolutionPolicy", "assetResolutionPolicy", "performanceBudget", "representativeViewports", "requiredRuntimeEvidence", "targets", "coordinate_spaces", "regions", "layout_nodes", "content", "platform_insets", "scrolling", "dynamic_content", "overlay_rules", "breakpoints", "invariants", "critical_alignments", "parity_cases", "evidence_matrix"];
 const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const REQUIRED_EVIDENCE_AXES = new Set(["breakpoint-neighbors", "width", "height", "orientation", "text-scale", "localization", "safe-area", "action-state", "dpr", "dynamic-values", "scene-lifecycle", "overlay-keyboard-scroll"]);
 const REQUIRED_PROGRAMMATIC_TEXT_LANGUAGES = ["en", "zh-CN", "ja", "ru", "es"];
-const REQUIRED_RUNTIME_EVIDENCE_FIELDS = ["viewportRect", "canvasRect", "logicalSize", "backingSize", "cssDisplaySize", "rawDevicePixelRatio", "effectiveDevicePixelRatio", "logicalToCssScale", "cssToPhysicalScale", "cameraViewport", "cameraZoom", "cameraOrigin", "safeArea", "edgeGaps", "backgroundCoverage", "keyUiRects", "inputHitResults", "resizeTrajectory", "pageReloaded", "screenshot", "sceneId", "stateId", "candidateSha256", "layoutContractVersion", "visualBaselineVersion"];
+const REQUIRED_RUNTIME_EVIDENCE_FIELDS = ["viewportRect", "canvasRect", "designTransform", "logicalSize", "backingSize", "cssDisplaySize", "rawDevicePixelRatio", "effectiveDevicePixelRatio", "logicalToCssScale", "cssToPhysicalScale", "cameraViewport", "cameraZoom", "cameraOrigin", "safeArea", "edgeGaps", "backgroundCoverage", "keyUiRects", "inputHitResults", "resizeTrajectory", "pageReloaded", "screenshot", "sceneId", "stateId", "candidateSha256", "layoutContractVersion", "visualBaselineVersion"];
 const REPRESENTATIVE_VIEWPORT_KINDS = ["narrow-portrait", "standard-portrait", "landscape", "desktop-wide"];
 
 /** 判断值是否为合同允许的对象类型。 */
@@ -51,6 +52,7 @@ export function computeLayoutContractSha256(document) {
   const projection = {
     contract_id: document?.contract_id ?? null,
     contract_version: document?.contract_version ?? null,
+    design_resolution_policy: document?.designResolutionPolicy ?? null,
     target_sha256: binding?.target_sha256 ?? null,
     scene_id: binding?.scene_id ?? null,
     state_id: binding?.state_id ?? null,
@@ -99,7 +101,7 @@ function validateRoot(document, errors) {
   for (const field of ["schema_version", "contract_id", "contract_version"]) if (field in document && !isString(document[field])) errors.push(`字段 ${field} 必须是非空字符串`);
   if (document.schema_version !== "1.2.0") errors.push("schema_version 必须为 1.2.0");
   for (const field of ["coordinate_spaces", "regions", "layout_nodes", "overlay_rules", "breakpoints", "invariants", "critical_alignments", "parity_cases", "representativeViewports"]) if (field in document && !Array.isArray(document[field])) errors.push(`字段 ${field} 必须是数组`);
-  for (const field of ["scope", "fidelity", "targets", "content", "platform_insets", "scrolling", "dynamic_content", "evidence_matrix", "logicalViewportSpace", "canvasBackingPolicy", "runtimeDprPolicy", "cameraViewportPolicy", "cameraZoomPolicy", "cameraOriginPolicy", "inputCoordinatePolicy", "safeAreaPolicy", "resizePolicy", "orientationPolicy", "textResolutionPolicy", "assetResolutionPolicy", "performanceBudget", "requiredRuntimeEvidence"]) if (field in document && !isObject(document[field])) errors.push(`字段 ${field} 必须是对象`);
+  for (const field of ["scope", "fidelity", "targets", "content", "platform_insets", "scrolling", "dynamic_content", "evidence_matrix", "logicalViewportSpace", "designResolutionPolicy", "canvasBackingPolicy", "runtimeDprPolicy", "cameraViewportPolicy", "cameraZoomPolicy", "cameraOriginPolicy", "inputCoordinatePolicy", "safeAreaPolicy", "resizePolicy", "orientationPolicy", "textResolutionPolicy", "assetResolutionPolicy", "performanceBudget", "requiredRuntimeEvidence"]) if (field in document && !isObject(document[field])) errors.push(`字段 ${field} 必须是对象`);
 }
 
 /** 验证布局忠实度的适用范围和 specified/verified 生命周期。 */
@@ -270,8 +272,31 @@ function requireArrayIncludes(value, label, required, errors) {
   return missing.length === 0;
 }
 
+/** 固定设计稿只锁定主轴基准；另一轴必须随真实视口变化，背景独立等比铺满。 */
+function validateDesignResolutionPolicy(policy, errors) {
+  if (!requireObjectFields(policy, "designResolutionPolicy", ["portrait", "landscape", "canvasFit", "crossAxis", "backgroundFit"], errors)) return;
+  for (const orientation of ["portrait", "landscape"]) {
+    const actual = policy[orientation];
+    const expected = DESIGN_RESOLUTIONS[orientation];
+    if (!isObject(actual) || actual.width !== expected.width || actual.height !== expected.height || actual.fitAxis !== expected.fitAxis) {
+      errors.push(`designResolutionPolicy.${orientation} 必须为 ${expected.width}×${expected.height} 且按 ${expected.fitAxis} 适配`);
+    }
+  }
+  if (policy.canvasFit !== "fill-viewport") errors.push("designResolutionPolicy.canvasFit 必须为 fill-viewport，禁止画布黑边");
+  if (policy.crossAxis !== "extend-or-crop") errors.push("designResolutionPolicy.crossAxis 必须为 extend-or-crop");
+  const background = policy.backgroundFit;
+  if (!isObject(background) || background.mode !== "cover-v1") errors.push("designResolutionPolicy.backgroundFit.mode 必须为 cover-v1，背景需等比覆盖可见视口");
+  for (const field of ["sourceFocalPoint", "targetPoint"]) {
+    const point = background?.[field];
+    if (!isObject(point) || ![point.x, point.y].every((value) => isNumber(value) && value >= 0 && value <= 1)) {
+      errors.push(`designResolutionPolicy.backgroundFit.${field} 必须包含 [0,1] 内的 x/y`);
+    }
+  }
+}
+
 /** 验证高分屏布局的统一坐标、DPR、Camera、输入和 resize 合同。 */
 function validateResponsiveContract(document, errors) {
+  validateDesignResolutionPolicy(document.designResolutionPolicy, errors);
   const logical = document.logicalViewportSpace;
   if (requireObjectFields(logical, "logicalViewportSpace", ["unit", "layoutSpace", "gameSizeSpace", "safeAreaSpace", "source", "coordinateOrigin"], errors)) {
     if (logical.unit !== "css-px") errors.push("logicalViewportSpace.unit 必须为 css-px，布局合同禁止使用物理像素");
@@ -305,7 +330,7 @@ function validateResponsiveContract(document, errors) {
   }
   if (document.maxRuntimeDpr !== RUNTIME_MAX_DPR || typeof document.maxRuntimeDpr !== "number") errors.push(`maxRuntimeDpr 必须严格为 ${RUNTIME_MAX_DPR}`);
 
-  if (!isString(document.scaleMode) || !["FIT", "RESIZE", "NONE", "custom"].includes(document.scaleMode)) errors.push("scaleMode 必须明确为 FIT、RESIZE、NONE 或 custom；不强制单一 ScaleMode");
+  if (!["RESIZE", "custom"].includes(document.scaleMode)) errors.push("scaleMode 必须为 RESIZE 或 custom，并让 Canvas 填满真实 CSS 视口");
 
   const cameraViewport = document.cameraViewportPolicy;
   if (requireObjectFields(cameraViewport, "cameraViewportPolicy", ["coordinateSpace", "gameSizeSpace", "physicalMapping", "requiresExplicitViewport", "popupInheritance"], errors)) {

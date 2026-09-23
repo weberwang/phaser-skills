@@ -105,12 +105,25 @@ test("响应式合同使用动态封顶策略并保留运行时上限", () => {
   const legacyDpr = copy(); legacyDpr.representativeViewports[0].effectiveDpr = 2.0001; assertFailed(legacyDpr, "必须是正有限数字且不超过 2");
   const valid = copy(); valid.representativeViewports[0].effectiveDpr = 1; assert.equal(validateContract(valid).status, "passed");
 });
+test("固定横竖屏设计分辨率、主轴适配与背景 cover 不可缺失", () => {
+  const portrait = copy(); portrait.designResolutionPolicy.portrait.width = 720; assertFailed(portrait, "portrait 必须为 1080×1920");
+  const landscape = copy(); landscape.designResolutionPolicy.landscape.fitAxis = "height"; assertFailed(landscape, "landscape 必须为 1920×1080");
+  const bars = copy(); bars.scaleMode = "FIT"; assertFailed(bars, "Canvas 填满真实 CSS 视口");
+  const cover = copy(); cover.designResolutionPolicy.backgroundFit.mode = "contain"; assertFailed(cover, "背景需等比覆盖可见视口");
+  const focus = copy(); focus.designResolutionPolicy.backgroundFit.sourceFocalPoint.x = 2; assertFailed(focus, "sourceFocalPoint 必须包含 [0,1]");
+  const crossAxis = copy(); crossAxis.designResolutionPolicy.crossAxis = "fixed"; assertFailed(crossAxis, "crossAxis 必须为 extend-or-crop");
+});
+test("设计分辨率策略变化使布局合同身份失效", () => {
+  const document = fidelityContract("specified");
+  document.designResolutionPolicy.backgroundFit.targetPoint.x = 0.25;
+  assertFailed(document, "layout_contract_sha256");
+});
 test("布局 evidence matrix 扩展 case 的 DPR 允许有效值但拒绝非法值", () => {
   const valid = copy(); valid.evidence_matrix.cases = [{ dpr: 1 }, { deviceScaleFactor: 1.5 }]; assert.equal(validateContract(valid).status, "passed");
   const invalid = copy(); invalid.evidence_matrix.cases = [{ dpr: 0 }, { deviceScaleFactor: "2" }]; assertFailed(invalid, "evidence_matrix");
 });
 test("高分屏响应式根合同字段不可缺失", () => {
-  for (const field of ["logicalViewportSpace", "canvasBackingPolicy", "runtimeDprPolicy", "maxRuntimeDpr", "scaleMode", "cameraViewportPolicy", "cameraZoomPolicy", "cameraOriginPolicy", "inputCoordinatePolicy", "safeAreaPolicy", "resizePolicy", "orientationPolicy", "textResolutionPolicy", "assetResolutionPolicy", "performanceBudget", "representativeViewports", "requiredRuntimeEvidence"]) {
+  for (const field of ["logicalViewportSpace", "designResolutionPolicy", "canvasBackingPolicy", "runtimeDprPolicy", "maxRuntimeDpr", "scaleMode", "cameraViewportPolicy", "cameraZoomPolicy", "cameraOriginPolicy", "inputCoordinatePolicy", "safeAreaPolicy", "resizePolicy", "orientationPolicy", "textResolutionPolicy", "assetResolutionPolicy", "performanceBudget", "representativeViewports", "requiredRuntimeEvidence"]) {
     const document = copy(); delete document[field]; assertFailed(document, `缺少根字段：${field}`);
   }
 });

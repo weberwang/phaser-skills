@@ -16,12 +16,12 @@ effect-image 例外：V1–V3 必须先验证 `scene_reconstruction_contract`、
 
 ## 高分屏与响应式阶段门
 
-- V1：Implementation Package/布局合同必须填写 `logicalViewportSpace`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr=2`、`scaleMode`、Camera viewport/zoom/origin、输入坐标、安全区、resize、方向、文字/资源分辨率和性能预算。必须说明 CSS 逻辑尺寸、物理 backing、`gameSize`、弹窗宿主继承、监听清理及显式降级策略。
+- V1：Implementation Package/布局合同必须填写 `logicalViewportSpace`、`designResolutionPolicy`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr=2`、`scaleMode`、Camera viewport/zoom/origin、输入坐标、安全区、resize、方向、文字/资源分辨率和性能预算。竖屏 1080×1920 按高、横屏 1920×1080 按宽适配，Canvas 填满视口且背景等比 cover；还需说明物理 backing、`gameSize`、弹窗宿主继承、监听清理及显式降级策略。
 - V2：机器门确认布局节点使用逻辑 CSS 像素，不能依赖物理像素硬编码；按[节点组织规则](layout-hierarchy.md)核对 `ui_layout` 与确认拆解的父级、容器职责、尺寸、溢出、安全区和唯一输入目标一致；确认 HUD/弹窗与宿主 Scene、Camera/输入合同的关系；确认资源生产 DPR=2 与运行时 DPR 动态封顶 2 分离，资源生产分辨率覆盖 intended scale。
 - V3：每项资源登记逻辑显示范围、最大 intended scale、生产分辨率、source/runtime 尺寸、代表性视口放大风险和资源不足阻断条件；简单插值放大不能作为清晰度修复，性能预算必须绑定机器/结果证据。
-- V4：必须提交真实运行证据，记录 `requiredRuntimeEvidence` 全部字段、raw/effective DPR、CSS/backing 尺寸、Camera、输入命中、resize 轨迹和候选身份。默认 usability 覆盖四类代表性视口、DPR 1/1.25或1.5/2/大于2封顶、连续 resize、DPR 降至1、同 DPR 再 resize，以及独立 DISPLAY_LAYER 的打开/交互/resize/关闭/宿主恢复；缺测量为 `unverified`。
+- V4：必须提交真实运行证据，记录 `requiredRuntimeEvidence` 全部字段、`designTransform` 主轴比例和可见逻辑区域、raw/effective DPR、CSS/backing 尺寸、Camera、背景完整覆盖、输入命中、resize 轨迹和候选身份。默认 usability 覆盖四类代表性视口、DPR 1/1.25或1.5/2/大于2封顶、连续 resize、DPR 降至1、同 DPR 再 resize，以及独立 DISPLAY_LAYER 的打开/交互/resize/关闭/宿主恢复；缺测量为 `unverified`。
 
-`FIT`、`RESIZE`、`NONE`、构建成功、类型检查、单测、Canvas 存在或静态截图只能作为子证据，不能单独证明高分屏兼容或驱动 V4 PASS。
+`FIT` 和 `NONE` 不满足填屏约束；`RESIZE` 或等效 `custom` 还必须配合实测变换、背景覆盖、输入命中及连续 resize 证据，不能单靠模式名称、构建、单测或静态截图驱动 V4 PASS。
 
 - V1/V2 处于 `PROPOSAL`、`REVIEW`；V2 固定先生成并人工确认拆解图和技术 JSON，再由智能视觉判断生成逐元素双轴对齐决策，最后消费已确认元素与该决策在同一候选目录生成布局标注 PNG、节点 JSON、决策 JSON、离线 `review.html` 和生成结果。布局决策或任一布局产物人工修改后必须重新生成并通过独立 `layout-annotation-confirmation/1.0`；缺失视觉决策时不得按距离兜底。审阅页合同见[离线布局审阅产物](layout-review-artifacts.md)。
 - V3/V4 处于 `IMPLEMENTING`、`VALIDATING`、`PASSED`、`INTEGRATING`。

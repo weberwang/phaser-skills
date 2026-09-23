@@ -13,6 +13,7 @@ import {
   isImageProductionDpr,
   parseDeviceDpr,
 } from './workflow-dpr-contract.mjs';
+import { DESIGN_RESOLUTIONS, calculateFixedDesignViewport } from '../../phaser4-game-ui-layout/scripts/fixed-design-viewport.mjs';
 
 /** 响应式模块复用既有 DPR 单一真源，避免调用方引入第二套常量。 */
 export { DEFAULT_DPR, IMAGE_PRODUCTION_DPR, RUNTIME_MAX_DPR } from './workflow-dpr-contract.mjs';
@@ -20,9 +21,9 @@ export { DEFAULT_DPR, IMAGE_PRODUCTION_DPR, RUNTIME_MAX_DPR } from './workflow-d
 /** 响应式合同的版本；版本变化时旧运行证据必须重新测量。 */
 export const RESPONSIVE_CONTRACT_VERSION = 'responsive-viewport/1.0';
 
-/** Work Item 与 Implementation Package 需要冻结的 17 个合同字段。 */
+/** Work Item 与 Implementation Package 需要冻结的 18 个合同字段。 */
 export const RESPONSIVE_CONTRACT_FIELDS = Object.freeze([
-  'logicalViewportSpace', 'canvasBackingPolicy', 'runtimeDprPolicy', 'maxRuntimeDpr',
+  'logicalViewportSpace', 'designResolutionPolicy', 'canvasBackingPolicy', 'runtimeDprPolicy', 'maxRuntimeDpr',
   'scaleMode', 'cameraViewportPolicy', 'cameraZoomPolicy', 'cameraOriginPolicy',
   'inputCoordinatePolicy', 'safeAreaPolicy', 'resizePolicy', 'orientationPolicy',
   'textResolutionPolicy', 'assetResolutionPolicy', 'performanceBudget',
@@ -31,7 +32,7 @@ export const RESPONSIVE_CONTRACT_FIELDS = Object.freeze([
 
 /** V4 每个 Scene 或 DISPLAY_LAYER 至少要提交的真实运行字段。 */
 export const RUNTIME_EVIDENCE_FIELDS = Object.freeze([
-  'viewportRect', 'canvasRect', 'logicalSize', 'backingSize', 'cssDisplaySize',
+  'viewportRect', 'canvasRect', 'designTransform', 'logicalSize', 'backingSize', 'cssDisplaySize',
   'rawDevicePixelRatio', 'effectiveDevicePixelRatio', 'logicalToCssScale',
   'cssToPhysicalScale', 'cameraViewport', 'cameraZoom', 'cameraOrigin',
   'safeArea', 'edgeGaps', 'backgroundCoverage', 'keyUiRects', 'inputHitResults',
@@ -210,14 +211,65 @@ function validateRepresentativeMatrix(contract, stage, errors) {
   for (const requirement of REPRESENTATIVE_BEHAVIOR_REQUIREMENTS) if (!behaviorCoverage[requirement] && !hasRequirement(matrix, requirement)) errors.push(contractError(stage, '*', `usability 矩阵缺少 ${requirement}`));
 }
 
-/** 校验 17 个响应式合同字段；返回错误数组而不是直接写入任何工件。 */
+/** 校验固定横竖屏设计基准、主轴适配和背景 cover，避免合同把黑边当作适配结果。 */
+function validateDesignResolutionPolicy(policy, stage, scope, errors) {
+  const requiredFields = ['portrait', 'landscape', 'canvasFit', 'crossAxis', 'backgroundFit'];
+  if (!isObject(policy)) {
+    errors.push(contractError(stage, scope, 'designResolutionPolicy 必须声明为对象', 'designResolutionPolicy'));
+    return;
+  }
+  for (const fieldName of requiredFields) {
+    if (policy[fieldName] === undefined || policy[fieldName] === null) errors.push(contractError(stage, scope, `designResolutionPolicy 缺少 ${fieldName}`, `designResolutionPolicy.${fieldName}`));
+  }
+  for (const orientation of ['portrait', 'landscape']) {
+    const actual = policy[orientation];
+    const expected = DESIGN_RESOLUTIONS[orientation];
+    if (!isObject(actual) || actual.width !== expected.width || actual.height !== expected.height || actual.fitAxis !== expected.fitAxis) {
+      errors.push(contractError(stage, scope, `designResolutionPolicy.${orientation} 必须为 ${expected.width}×${expected.height} 且按 ${expected.fitAxis} 适配`));
+    }
+  }
+  if (policy.canvasFit !== 'fill-viewport') errors.push(contractError(stage, scope, 'designResolutionPolicy.canvasFit 必须为 fill-viewport，禁止画布黑边'));
+  if (policy.crossAxis !== 'extend-or-crop') errors.push(contractError(stage, scope, 'designResolutionPolicy.crossAxis 必须为 extend-or-crop'));
+  const background = policy.backgroundFit;
+  if (!isObject(background) || background.mode !== 'cover-v1') errors.push(contractError(stage, scope, 'designResolutionPolicy.backgroundFit.mode 必须为 cover-v1，背景需等比覆盖可见视口'));
+  for (const fieldName of ['sourceFocalPoint', 'targetPoint']) {
+    const point = background?.[fieldName];
+    if (!isObject(point) || ![point.x, point.y].every((value) => Number.isFinite(value) && value >= 0 && value <= 1)) {
+      errors.push(contractError(stage, scope, `designResolutionPolicy.backgroundFit.${fieldName} 必须包含 [0,1] 内的 x/y`));
+    }
+  }
+}
+
+/** 根级与嵌套合同记录同一设计事实，防止工作项和执行单元各取一套背景焦点。 */
+function sameDesignResolutionPolicy(left, right) {
+  const facts = (policy) => [
+    policy?.portrait?.width, policy?.portrait?.height, policy?.portrait?.fitAxis,
+    policy?.landscape?.width, policy?.landscape?.height, policy?.landscape?.fitAxis,
+    policy?.canvasFit, policy?.crossAxis, policy?.backgroundFit?.mode,
+    policy?.backgroundFit?.sourceFocalPoint?.x, policy?.backgroundFit?.sourceFocalPoint?.y,
+    policy?.backgroundFit?.targetPoint?.x, policy?.backgroundFit?.targetPoint?.y,
+  ];
+  const leftFacts = facts(left);
+  const rightFacts = facts(right);
+  return leftFacts.every((value, index) => value === rightFacts[index]);
+}
+
+/** 校验 18 个响应式合同字段；返回错误数组而不是直接写入任何工件。 */
 export function validateResponsiveContract(value, options = {}) {
   const stage = String(options.stage ?? 'V1').toUpperCase();
   const scope = options.scope ?? value?.sceneId ?? value?.scene_id ?? '*';
   const contract = extractResponsiveContract(value);
   const errors = [];
   if (!isObject(contract) || Object.keys(contract).length === 0) return [contractError(stage, scope, '缺少响应式视口合同', 'responsiveViewportContract')];
+  const nestedContract = value?.responsiveViewportContract ?? value?.responsiveContract ?? value?.responsive_contract;
+  if (nestedContract !== undefined && nestedContract !== null) {
+    if (!isObject(nestedContract)) errors.push(contractError(stage, scope, '嵌套 responsiveViewportContract 必须为对象'));
+    if (value?.designResolutionPolicy === undefined || value?.designResolutionPolicy === null) errors.push(contractError(stage, scope, '根字段必须声明 designResolutionPolicy', 'designResolutionPolicy'));
+    if (nestedContract?.designResolutionPolicy === undefined || nestedContract?.designResolutionPolicy === null) errors.push(contractError(stage, scope, '嵌套 responsiveViewportContract 必须声明 designResolutionPolicy', 'responsiveViewportContract.designResolutionPolicy'));
+    if (isObject(value?.designResolutionPolicy) && isObject(nestedContract?.designResolutionPolicy) && !sameDesignResolutionPolicy(value.designResolutionPolicy, nestedContract.designResolutionPolicy)) errors.push(contractError(stage, scope, '根级与嵌套 designResolutionPolicy 必须一致'));
+  }
   for (const fieldName of RESPONSIVE_CONTRACT_FIELDS) if (contract[fieldName] === undefined || contract[fieldName] === null) errors.push(contractError(stage, scope, `响应式合同缺少 ${fieldName}`, fieldName));
+  validateDesignResolutionPolicy(contract.designResolutionPolicy, stage, scope, errors);
   if (contract.maxRuntimeDpr !== RUNTIME_MAX_DPR) errors.push(contractError(stage, scope, `maxRuntimeDpr 必须固定为 ${RUNTIME_MAX_DPR}`, 'maxRuntimeDpr=2'));
   const dprPolicy = contract.runtimeDprPolicy;
   if (!isObject(dprPolicy)) errors.push(contractError(stage, scope, 'runtimeDprPolicy 必须声明设备动态读取和非法回退事实', 'runtimeDprPolicy'));
@@ -234,6 +286,9 @@ export function validateResponsiveContract(value, options = {}) {
   if (!hasFact(contract.logicalViewportSpace) || (isObject(contract.logicalViewportSpace) && !String(field(contract.logicalViewportSpace, 'unit', 'coordinateSpace', 'coordinate_space') ?? '').toLowerCase().includes('css'))) errors.push(contractError(stage, scope, 'logicalViewportSpace 必须明确 CSS 逻辑像素坐标空间', 'logicalViewportSpace'));
   if (!hasFact(contract.canvasBackingPolicy)) errors.push(contractError(stage, scope, 'canvasBackingPolicy 必须明确 CSS→物理 backing 关系', 'canvasBackingPolicy'));
   if (!hasFact(contract.scaleMode)) errors.push(contractError(stage, scope, '必须明确选择 ScaleMode', 'scaleMode'));
+  const scaleMode = isObject(contract.scaleMode) ? field(contract.scaleMode, 'mode', 'scaleMode', 'strategy', 'value') : contract.scaleMode;
+  const normalizedScaleMode = typeof scaleMode === 'string' ? scaleMode.trim().toUpperCase() : '';
+  if (!['RESIZE', 'CUSTOM'].includes(normalizedScaleMode)) errors.push(contractError(stage, scope, 'scaleMode 必须为 RESIZE 或 custom；FIT 会产生黑边，其他模式也必须证明等效填满视口', 'scaleMode=RESIZE|custom'));
   for (const fieldName of ['cameraViewportPolicy', 'cameraZoomPolicy', 'cameraOriginPolicy', 'inputCoordinatePolicy', 'safeAreaPolicy', 'resizePolicy', 'orientationPolicy', 'textResolutionPolicy']) if (!hasFact(contract[fieldName])) errors.push(contractError(stage, scope, `必须明确 ${fieldName}`, fieldName));
   const assets = contract.assetResolutionPolicy;
   const productionDpr = isObject(assets) ? field(assets, 'productionDpr', 'production_dpr', 'assetProductionDpr', 'asset_production_dpr', 'maxDpr', 'max_dpr') : null;
@@ -295,6 +350,34 @@ function validateEvidenceGeometry(record, contract, effectiveDpr, stage, scope, 
   }
 }
 
+/** 对比运行时主轴缩放和可见区域，防止合同正确但实际仍按旧视口布局。 */
+function validateDesignTransform(record, stage, scope, errors) {
+  const viewport = field(record, 'viewportRect', 'viewport_rect');
+  if (!isPositiveSize(viewport)) return;
+  const actual = field(record, 'designTransform', 'design_transform');
+  if (!isObject(actual)) {
+    errors.push(contractError(stage, scope, 'designTransform 必须记录运行时设计坐标变换'));
+    return;
+  }
+  const expected = calculateFixedDesignViewport({ width: viewport.width, height: viewport.height });
+  for (const key of ['orientation', 'designWidth', 'designHeight', 'fitAxis']) {
+    if (actual[key] !== expected[key]) errors.push(contractError(stage, scope, `designTransform.${key} 与固定设计基准不一致`));
+  }
+  for (const key of ['scale', 'visibleWidth', 'visibleHeight', 'offsetX', 'offsetY']) {
+    if (!Number.isFinite(actual[key]) || Math.abs(actual[key] - expected[key]) > 1e-6 * Math.max(1, Math.abs(expected[key]))) {
+      errors.push(contractError(stage, scope, `designTransform.${key} 未按当前视口主轴计算`));
+    }
+  }
+  const canvas = field(record, 'canvasRect', 'canvas_rect');
+  if (isPositiveSize(canvas) && ['x', 'y', 'width', 'height'].some((key) => Math.abs((canvas[key] ?? 0) - (viewport[key] ?? 0)) > 0.01)) {
+    errors.push(contractError(stage, scope, 'Canvas 必须填满真实 CSS 视口，禁止黑边'));
+  }
+  const display = field(record, 'cssDisplaySize', 'css_display_size');
+  if (isPositiveSize(display) && (Math.abs(display.width - viewport.width) > 0.01 || Math.abs(display.height - viewport.height) > 0.01)) {
+    errors.push(contractError(stage, scope, 'CSS 显示尺寸必须填满真实视口，禁止黑边'));
+  }
+}
+
 /** 校验单个 Scene/DISPLAY_LAYER 的真实运行记录。 */
 export function validateResponsiveEvidenceRecord(record, contract = null, options = {}) {
   const stage = String(options.stage ?? 'V4').toUpperCase();
@@ -314,6 +397,7 @@ export function validateResponsiveEvidenceRecord(record, contract = null, option
   if (typeof effective !== 'number' || !Number.isFinite(effective) || effective <= 0 || effective > RUNTIME_MAX_DPR) errors.push(contractError(stage, scope, `effectiveDevicePixelRatio 必须位于 (0,${RUNTIME_MAX_DPR}]`, 'effectiveDevicePixelRatio'));
   if (isDeviceDprInput(raw) && typeof effective === 'number' && effective !== normalizeRuntimeDpr(raw)) errors.push(contractError(stage, scope, 'effectiveDevicePixelRatio 未由 rawDevicePixelRatio 动态归一并封顶'));
   validateEvidenceGeometry(record, contract, effective, stage, scope, errors);
+  validateDesignTransform(record, stage, scope, errors);
   const gameSize = field(record, 'gameSize', 'game_size');
   if (!isPositiveSize(gameSize)) errors.push(contractError(stage, scope, 'gameSize 必须明确逻辑坐标空间中的正数尺寸', 'gameSize'));
   for (const [name, value] of [['viewportRect', field(record, 'viewportRect', 'viewport_rect')], ['canvasRect', field(record, 'canvasRect', 'canvas_rect')], ['cameraViewport', field(record, 'cameraViewport', 'camera_viewport')]]) if (!isPositiveSize(value)) errors.push(contractError(stage, scope, `${name} 必须是正数矩形`, name));

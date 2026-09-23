@@ -17,9 +17,9 @@ description: 为 Phaser 4 游戏建立可验证的 UI 布局合同、坐标空�
 
 ## 全局视口与高分屏合同
 
-所有可见 Scene、HUD、弹窗和 `DISPLAY_LAYER` 都必须在布局合同中填写 `logicalViewportSpace`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr`、`scaleMode`、`cameraViewportPolicy`、`cameraZoomPolicy`、`cameraOriginPolicy`、`inputCoordinatePolicy`、`safeAreaPolicy`、`resizePolicy`、`orientationPolicy`、`textResolutionPolicy`、`assetResolutionPolicy`、`performanceBudget`、`representativeViewports` 和 `requiredRuntimeEvidence`。统一使用 CSS 逻辑像素；Canvas backing 由 CSS 尺寸乘有效 DPR（向上取整）得到，物理像素不得直接用于布局或命中。
+所有可见 Scene、HUD、弹窗和 `DISPLAY_LAYER` 都必须在布局合同中填写 `logicalViewportSpace`、`designResolutionPolicy`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr`、`scaleMode`、`cameraViewportPolicy`、`cameraZoomPolicy`、`cameraOriginPolicy`、`inputCoordinatePolicy`、`safeAreaPolicy`、`resizePolicy`、`orientationPolicy`、`textResolutionPolicy`、`assetResolutionPolicy`、`performanceBudget`、`representativeViewports` 和 `requiredRuntimeEvidence`。竖屏以 1080×1920 为设计基准并按高度适配，横屏以 1920×1080 为设计基准并按宽度适配；另一轴随视口展开或裁切。Canvas 填满 CSS 视口，装饰性背景等比 cover，禁止黑边。Canvas backing 由 CSS 尺寸乘有效 DPR（向上取整）得到，物理像素不得直接用于布局或命中。
 
-运行时 DPR 从设备动态读取，非法输入回退 1，正有限值封顶 2，且必须覆盖 resize、横竖屏和显示密度变化并清理监听器。资源生产 DPR 固定基线为 2，必须与运行时 DPR 分离。工作流不强制单一 Phaser ScaleMode，但实施包必须证明 `gameSize`、Camera viewport/zoom/origin 和 CSS/物理映射；`FIT`/`RESIZE`/`NONE` 或构建成功不能单独作为高分屏证据。弹窗默认继承宿主逻辑视口、DPR、安全区、Camera 和输入合同，V4 必须独立记录其运行轨迹。
+运行时 DPR 从设备动态读取，非法输入回退 1，正有限值封顶 2，且必须覆盖 resize、横竖屏和显示密度变化并清理监听器。资源生产 DPR 固定基线为 2，必须与运行时 DPR 分离。ScaleMode 采用 `RESIZE` 或同等填屏的 `custom`，实施包必须证明 `gameSize`、Camera viewport/zoom/origin 和 CSS/物理映射；声明模式或构建成功不能单独作为高分屏证据。弹窗默认继承宿主逻辑视口、DPR、安全区、Camera 和输入合同，V4 必须独立记录其运行轨迹。
 
 ## 视觉语言默认原则
 

@@ -27,6 +27,13 @@
     "source": "canvas-css-client-rect",
     "coordinateOrigin": "top-left"
   },
+  "designResolutionPolicy": {
+    "portrait": {"width": 1080, "height": 1920, "fitAxis": "height"},
+    "landscape": {"width": 1920, "height": 1080, "fitAxis": "width"},
+    "canvasFit": "fill-viewport",
+    "crossAxis": "extend-or-crop",
+    "backgroundFit": {"mode": "cover-v1", "sourceFocalPoint": {"x": 0.5, "y": 0.5}, "targetPoint": {"x": 0.5, "y": 0.5}}
+  },
   "canvasBackingPolicy": {
     "cssSpace": "css-logical-px",
     "backingSpace": "physical-px",
@@ -51,7 +58,7 @@
     "listenerCleanup": "required"
   },
   "maxRuntimeDpr": 2,
-  "scaleMode": "FIT",
+  "scaleMode": "RESIZE",
   "cameraViewportPolicy": {
     "coordinateSpace": "css-logical-px",
     "gameSizeSpace": "css-logical-px",
@@ -138,7 +145,7 @@
   ],
   "requiredRuntimeEvidence": {
     "mode": "usability",
-    "requiredFields": ["viewportRect", "canvasRect", "logicalSize", "backingSize", "cssDisplaySize", "rawDevicePixelRatio", "effectiveDevicePixelRatio", "logicalToCssScale", "cssToPhysicalScale", "cameraViewport", "cameraZoom", "cameraOrigin", "safeArea", "edgeGaps", "backgroundCoverage", "keyUiRects", "inputHitResults", "resizeTrajectory", "pageReloaded", "screenshot", "sceneId", "stateId", "candidateSha256", "layoutContractVersion", "visualBaselineVersion"],
+    "requiredFields": ["viewportRect", "canvasRect", "designTransform", "logicalSize", "backingSize", "cssDisplaySize", "rawDevicePixelRatio", "effectiveDevicePixelRatio", "logicalToCssScale", "cssToPhysicalScale", "cameraViewport", "cameraZoom", "cameraOrigin", "safeArea", "edgeGaps", "backgroundCoverage", "keyUiRects", "inputHitResults", "resizeTrajectory", "pageReloaded", "screenshot", "sceneId", "stateId", "candidateSha256", "layoutContractVersion", "visualBaselineVersion"],
     "dprAssertions": {"runtimeMeasured": true, "invalidFallback": 1, "maxRuntimeDpr": 2, "rawAboveTwoEffectiveTwo": true, "productionDpr": 2, "productionDprSeparate": true},
     "resizeAssertions": {"samePage": true, "cssAndBackingUpdateOnDprChange": true, "dprDecreaseToOne": true, "sameDprResize": true},
     "displayLayerTrajectory": {"required": true, "steps": ["open", "interact", "resize", "close", "host-restore"], "hostSceneState": true, "independentEvidence": true, "inheritCssLogicalViewport": true, "sameEffectiveDpr": true, "hostPassDoesNotImplyPass": true},
