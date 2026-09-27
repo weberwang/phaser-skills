@@ -34,6 +34,8 @@ UIRoot
 
 `BackgroundRoot` 可超出安全区以覆盖可见 viewport；按钮、关键文字和玩法信息应遵循运行时 `safe_area_policy`。常驻 HUD 与当前页面分别归属明确根节点。`DisplayLayerRoot` 表示宿主场景预留的显示层位置；modal、popup、drawer、toast 等瞬态层仍按现有独立 `DISPLAY_LAYER` Work Item 规则建立，并记录宿主、生命周期、输入阻断和关闭后的恢复。Phaser 的 Scale、Camera、DOM Overlay 和输入坐标细节按[适配器参考](phaser-adapter.md)确定。
 
+上述节点树表达 UI 父子职责，不代替整个场景的绘制前后顺序。背景、世界主体/特效、常驻 HUD 与瞬态层分别建立有名根层，按[显示层分层合同](display-object-layering.md#显示层分层合同)声明合成顺序；各层内部才使用局部 `z_index`/`z_order`。布局停靠在左上角也不改变显示对象默认中心锚点。
+
 ## V2 组织事实
 
 V2 继续严格按现有串行确认顺序执行：先生成人工可修改的拆解图与技术 JSON，人工确认最终 `decomposition_elements`；再由已确认元素生成显式布局决策与布局产物，人工独立确认布局图。未确认的拆解不得进入布局生成，父级不得由几何关系反推，空容器必须出现在确认拆解和布局标注中。

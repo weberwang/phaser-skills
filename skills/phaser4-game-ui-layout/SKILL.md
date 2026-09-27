@@ -5,6 +5,8 @@ description: 为 Phaser 4 游戏建立可验证的 UI 布局合同、坐标空�
 
 # Phaser 4 游戏 UI 布局
 
+正式显示对象、UI 与独立显示层统一遵守[显示对象锚点与显示层分层](references/display-object-layering.md)：可设置原点的对象默认显式使用中心 `(0.5, 0.5)`；例外逐对象记录原因与换算。场景须声明背景、世界、特效、HUD、瞬态层的实际层序、输入和生命周期归属，并在 V3/V4 验证组合与遮挡。
+
 效果图 V2 拆解与布局遵守[功能语义分组约束](references/functional-semantic-grouping.md)和[Phaser UI 节点组织](references/layout-hierarchy.md)：先人工确认位置依赖与信息分组，再生成停靠方案；位置依赖方必须成为被依赖元素所对应布局容器的子元素，共同表达同一信息且彼此无位置依赖的元素列为同组同级项。父容器职责、布局所有者、尺寸、溢出、安全区和输入归属须另行记录；禁止按文字类型或几何最小包含关系自动归父级。
 
 ## 全局控制接入
@@ -52,6 +54,7 @@ V2 的布局决策顺序固定为“自动生成拆解图/技术 JSON → 人工
 
 - 需要字段、关系表达或不变量写法时，读取 [references/layout-contract.md](references/layout-contract.md)。
 - 需要 Phaser Scale、Camera、Container、DOM Overlay、resize 或重排边界时，读取 [references/phaser-adapter.md](references/phaser-adapter.md)。
+- 需要对象默认锚点、例外或跨层合成顺序时，读取 [references/display-object-layering.md](references/display-object-layering.md)。
 - 需要 UI 根节点、父容器职责、`ui_layout` 字段或 V1–V4 节点组织规则时，读取 [references/layout-hierarchy.md](references/layout-hierarchy.md)。
 - 需要 V/F/G 门禁、退回和候选绑定规则时，读取 [references/workflow-gates.md](references/workflow-gates.md)。
 - 需要组合测试、等价类削减或冻结 Golden 条件时，读取 [references/evidence-matrix.md](references/evidence-matrix.md)。

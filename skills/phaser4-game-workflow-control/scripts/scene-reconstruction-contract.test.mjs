@@ -612,6 +612,39 @@ test("requiredString 缺失错误保留完整场景上下文、证据和最早�
   assert(executionError?.includes("验收问题") && executionError.includes("应退回阶段=V2/V3"), executionError);
 });
 
+/** 覆盖中心点默认锚点、非法坐标，以及非中心例外原因与坐标换算必须同时声明的边界。 */
+test("scene_asset_usage 默认使用中心 origin，非中心坐标必须说明原因和换算", () => {
+  const baseRegion = contract().coverage_regions[1];
+  assert.deepEqual(validateSceneAssetUsageContract(baseRegion, {}, "V3"), []);
+
+  const invalidOrigins = [
+    undefined,
+    { x: 0.5 },
+    { x: "0.5", y: 0.5 },
+    { x: NaN, y: 0.5 },
+    { x: 1.01, y: 0.5 },
+    { x: 0.5, y: -0.01 },
+  ];
+  for (const origin of invalidOrigins) {
+    const region = structuredClone(baseRegion);
+    if (origin === undefined) delete region.scene_asset_usage.origin;
+    else region.scene_asset_usage.origin = origin;
+    assert(validateSceneAssetUsageContract(region, {}, "V3").some((error) => error.includes("origin")), `origin=${String(origin)}`);
+  }
+
+  const offCenter = structuredClone(baseRegion);
+  offCenter.scene_asset_usage.origin = { x: 0.25, y: 0.5 };
+  let errors = validateSceneAssetUsageContract(offCenter, {}, "V3");
+  assert(errors.some((error) => error.includes("origin_exception_reason")), errors.join("\n"));
+  assert(errors.some((error) => error.includes("origin_coordinate_conversion")), errors.join("\n"));
+
+  offCenter.scene_asset_usage.origin_exception_reason = "目标美术明确要求从左侧边缘对齐";
+  errors = validateSceneAssetUsageContract(offCenter, {}, "V3");
+  assert(errors.some((error) => error.includes("origin_coordinate_conversion")), errors.join("\n"));
+  offCenter.scene_asset_usage.origin_coordinate_conversion = "按目标边界宽度乘以 x=0.25 换算运行时锚点";
+  assert.deepEqual(validateSceneAssetUsageContract(offCenter, {}, "V3"), []);
+});
+
 test("未绑定 target SHA 的旧布局合同返回 V1", () => {
   const value = structuredClone(contract()); value.responsive_contract.layout_contract_binding.target_sha256 = "sha256:" + "b".repeat(64);
   const errors = validateSceneReconstructionContract(value, manifest(), { stage: "V3" });

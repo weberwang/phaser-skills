@@ -448,6 +448,18 @@ export function validateSceneAssetUsageContract(region, unit, stage = "V3") {
     const valid = Array.isArray(value) ? (value.length > 0 || text === "neighbor relationships") : isObject(value) ? Object.keys(value).length > 0 : nonEmptyString(value) || typeof value === "number" || typeof value === "boolean";
     if (!valid) errors.push(contractError(stage, labelRegion, labelRegion, `V3 场景资源使用合同缺少 ${text}`, { missing: text, returnStage: "V2/V3" }));
   }
+  const origin = field(usage, "origin", "target_origin", "targetOrigin") ?? field(labelRegion, "origin", "target_origin", "targetOrigin");
+  if (origin !== undefined && (!isObject(origin) || !Number.isFinite(origin.x) || !Number.isFinite(origin.y) || origin.x < 0 || origin.x > 1 || origin.y < 0 || origin.y > 1)) {
+    errors.push(contractError(stage, labelRegion, labelRegion, "V3 场景资源 origin 必须是 0..1 范围内的有限数值 x/y", { actual: origin, returnStage: "V2/V3" }));
+  } else if (isObject(origin) && (origin.x !== 0.5 || origin.y !== 0.5)) {
+    // 中心锚点是默认规则；非中心坐标必须同时解释例外原因和坐标换算方式，避免资产放置基准含糊。
+    if (!nonEmptyString(field(usage, "origin_exception_reason", "originExceptionReason"))) {
+      errors.push(contractError(stage, labelRegion, labelRegion, "V3 场景资源 origin 非中心值必须提供非空 origin_exception_reason", { missing: "origin_exception_reason", returnStage: "V2/V3" }));
+    }
+    if (!nonEmptyString(field(usage, "origin_coordinate_conversion", "originCoordinateConversion"))) {
+      errors.push(contractError(stage, labelRegion, labelRegion, "V3 场景资源 origin 非中心值必须提供非空 origin_coordinate_conversion", { missing: "origin_coordinate_conversion", returnStage: "V2/V3" }));
+    }
+  }
   return errors;
 }
 

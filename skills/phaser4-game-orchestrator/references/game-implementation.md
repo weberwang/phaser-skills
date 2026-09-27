@@ -17,6 +17,8 @@
 3. 每个场景 Work Item 先在 V1 冻结功能规格、scene master/reference target、宿主上下文和视觉合同；V2 先完成拆解确认，再完成布局确认；V3 完成正式资源与宿主场景同屏组合预验收。
 4. V3 通过后按冻结 `executionUnits` 实现场景与紧邻从属显示层，V4 完成运行态视觉接入、功能/视觉联合验收和清理；任务范围内场景闭环后才进入跨场景 `INTEGRATION`，无副作用本地集成可按任务执行，外部写入、付费、真机、破坏性或外部删除和发布仍按控制面精确批准规则执行。
 
+场景 V1 同时冻结[显示对象锚点与显示层分层](../../phaser4-game-ui-layout/references/display-object-layering.md)方案：可设置原点的显示对象默认中心 `(0.5, 0.5)`，例外逐对象说明；背景、世界、特效、HUD 和瞬态层按实际职责划分有名根层并明确前后、输入与生命周期。V2 将对象原点和层序映射到布局/显示层合同，V3 检查正式资源同屏组合，V4 验证遮挡、最上层命中及关闭/resize 后恢复。这里的渲染分层不把世界对象或特效变成独立 `DISPLAY_LAYER` Work Item。
+
 ## 单场景完成闭环
 
 每个场景以 `SCENE` 聚合自身完成事实：依次完成 V1 scene master/reference target、视觉合同与初步还原草案，V2 拆解/布局确认与生产方案，V3 正式资源和组合预验收，再实现正式功能并在 V4 做运行态验收。modal/popup 等 `DISPLAY_LAYER` 建立独立 Work Item 和实施包，复核自己的上下文图及 scene/layer/host、V2/V3 身份；其缺图或未完成不扩散为宿主前置失败。

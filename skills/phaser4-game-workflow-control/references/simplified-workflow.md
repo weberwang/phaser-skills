@@ -26,6 +26,8 @@
 
 V2→V3、V3→V4 都在同一场景 Work Item 内通过显式阶段入口推进。V3 入口默认写入 `in-progress`，V3 资源与宿主同屏组合证据闭合后再提交 V3 完成状态；V4 入口同样默认写入 `in-progress`，运行态证据闭合后才可提交 V4 完成状态。V3 的正式资源验收通过后，只有在包含 `SCENE`/`DISPLAY_LAYER` 的场景包进入 `IMPLEMENTING`、`VALIDATING`、`PASSED` 或 `COMPLETE` 时，展示才从“资源与组合验收”切换为“正式实现与运行验收”；V3 未完成、仍处于审查或缺少场景包时继续显示“资源与组合验收”。这只是消费真实控制字段的展示规则，不提前放宽正式代码或 V4 门。
 
+场景路线还需在 V1 确定[显示对象默认中心锚点与渲染分层](../../phaser4-game-ui-layout/references/display-object-layering.md)：对象例外、背景/世界/特效/HUD/瞬态层顺序和每层的坐标、输入、生命周期归属。V2 固化布局与显示层合同，V3 检查同屏合成，V4 用遮挡、命中和恢复轨迹验证；渲染分层不新增全局阶段，也不把普通世界层误记为独立 `DISPLAY_LAYER` Work Item。
+
 例如，V2 完成后可在同一 Work Item 上执行：
 
 ```powershell

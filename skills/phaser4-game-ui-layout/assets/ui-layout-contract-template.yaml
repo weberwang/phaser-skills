@@ -182,7 +182,8 @@
       "scroll": "none",
       "input": "passthrough",
       "clip": "none",
-      "origin": "top-left",
+      "origin_applicability": "layout-only",
+      "origin": "not-applicable",
       "layout_anchor": "top-left",
       "animation_offset": {"x": 0, "y": 0}
     },
@@ -203,7 +204,8 @@
       "scroll": "none",
       "input": "passthrough",
       "clip": "none",
-      "origin": "top-left",
+      "origin_applicability": "layout-only",
+      "origin": "not-applicable",
       "layout_anchor": "top-left",
       "animation_offset": {"x": 0, "y": 0}
     },
@@ -224,6 +226,7 @@
       "scroll": "none",
       "input": "none",
       "clip": "none",
+      "origin_applicability": "display-object",
       "origin": "center",
       "layout_anchor": "center",
       "animation_offset": {"x": 0, "y": 0}
@@ -245,7 +248,8 @@
       "scroll": "vertical-owner",
       "input": "gesture-owner",
       "clip": "content",
-      "origin": "top-left",
+      "origin_applicability": "display-object",
+      "origin": "center",
       "layout_anchor": "top-left",
       "animation_offset": {"x": 0, "y": 0}
     },
@@ -266,7 +270,8 @@
       "scroll": "vertical-content",
       "input": "gesture-owner",
       "clip": "panel",
-      "origin": "top-left",
+      "origin_applicability": "layout-only",
+      "origin": "not-applicable",
       "layout_anchor": "top-left",
       "animation_offset": {"x": 0, "y": 0}
     },
@@ -287,6 +292,7 @@
       "scroll": "none",
       "input": "exclusive",
       "clip": "none",
+      "origin_applicability": "display-object",
       "origin": "center",
       "layout_anchor": "center",
       "animation_offset": {"x": 0, "y": 0}

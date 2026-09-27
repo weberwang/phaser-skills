@@ -155,6 +155,15 @@ test("缺少坐标空间失败", () => { const document = copy(); document.coord
 test("坐标空间循环失败", () => { const document = copy(); document.coordinate_spaces[0].parent = "ui-space"; document.coordinate_spaces[1].parent = "screen-space"; assertFailed(document, "坐标空间存在循环"); });
 test("范围区域 ID 必须一致", () => { const document = copy(); document.scope.ui_ids.splice(document.scope.ui_ids.indexOf("title"), 1); assertFailed(document, "scope.ui_ids 缺少 regions ID"); });
 test("水平和垂直锚点均必需", () => { for (const axis of ["horizontal", "vertical"]) { const document = copy(); delete document.regions[0].anchors[axis]; assertFailed(document, `anchors.${axis} 缺失`); } });
+/** 验证资源原点默认居中，非中心例外必须携带可复核的布局换算依据。 */
+test("显示对象默认中心原点，非中心例外须说明原因与坐标换算", () => {
+  const missing = copy(); missing.regions[2].origin = "top-left"; assertFailed(missing, "origin 非中心时必须声明");
+  const declared = copy(); declared.regions[2].origin = "top-left"; declared.regions[2].origin_exception = { reason: "图集裁切边缘需要固定", coordinate_conversion: "中心位置减去半个显示宽高" }; assert.equal(validateContract(declared).status, "passed");
+  const leftAlignedBoundary = copy(); leftAlignedBoundary.regions[0].layout_anchor = "top-left"; assert.equal(validateContract(leftAlignedBoundary).status, "passed");
+  const layoutOnly = copy(); layoutOnly.regions[0].origin = "center"; assertFailed(layoutOnly, "layout-only 时必须为 not-applicable");
+  const noResourceOrigin = copy(); noResourceOrigin.regions[2].origin = "not-applicable"; assertFailed(noResourceOrigin, "display-object 时必须声明资源原点");
+  const missingKind = copy(); delete missingKind.regions[2].origin_applicability; assertFailed(missingKind, "origin_applicability 必须为");
+});
 test("不存在的参照失败", () => { const document = copy(); document.regions[1].reference_id = "not-found"; assertFailed(document, "不存在的 reference_id"); });
 test("区域参照循环失败", () => { const document = copy(); document.regions[2].reference_id = "content-panel"; document.regions[3].reference_id = "title"; assertFailed(document, "区域参照存在循环"); });
 test("缺少和重复滚动所有者失败", () => { const missing = copy(); delete missing.scrolling.axes; assertFailed(missing, "scrolling.axes 必须是数组"); const duplicate = copy(); duplicate.scrolling.axes.push(structuredClone(duplicate.scrolling.axes[0])); assertFailed(duplicate, "滚动轴存在多个所有者"); });

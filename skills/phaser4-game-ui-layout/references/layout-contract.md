@@ -67,6 +67,8 @@ Camera 合同必须说明逻辑 viewport 如何映射到物理 backing，zoom �
 - `layout_group`、`z_index`、`layout_participation`、`scroll`、`input`、`clip`。
 - `origin`、`layout_anchor`、`animation_offset`，三者不可互相代替。
 
+`regions.origin_applicability` 必须区分 `display-object` 与 `layout-only`：可设置资源原点的对象默认将 `origin` 写为 `center`，运行时对应 `(0.5, 0.5)`；非中心值须在该稳定 ID 的区域中填写 `origin_exception.reason` 与 `origin_exception.coordinate_conversion`。纯布局边界与无资源原点的 Container 使用 `layout-only` 和 `origin=not-applicable`，只表达布局参照，不调用不存在的原点接口。跨层的背景、世界、特效、HUD 和瞬态层顺序按[显示对象锚点与显示层分层](display-object-layering.md)规划；局部 `z_index`/`z_order` 不得替代跨层合成顺序。
+
 `reference_id` 只能指向已声明区域，或保留边界 `viewport`；若使用 `safe-area`，必须先声明同名安全区区域。区域引用形成有向图；不得自引用或形成环。`parent_space` 必须存在于 `coordinate_spaces`，坐标空间 parent 也不得自引用或成环。所有 UI ID 必须唯一，稳定 ID 不使用随机值或运行时显示文本。
 
 ## 目标与尺寸
