@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phaser 场景布局编辑</title>
+  <style>
+    :root { font-family: system-ui, "Microsoft YaHei", sans-serif; color: #e8eef8; background: #101827; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; }
+    header { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 10px 16px; background: #1b2940; }
+    h1 { margin: 0; font-size: 16px; }
+    button { border: 1px solid #7daaf0; border-radius: 6px; padding: 7px 12px; background: #254b80; color: white; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: wait; }
+    #status { font-size: 13px; }
+    #game-host { position: relative; width: 100%; min-height: calc(100vh - 54px); overflow: hidden; }
+    #game-host canvas { display: block; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>场景布局编辑</h1>
+    <button id="open-layout" type="button" disabled>选择正式布局实现 JSON</button>
+    <span id="status" role="status">正在连接游戏预览…</span>
+  </header>
+  <main id="game-host" aria-label="游戏开发预览"></main>
+  <script type="module">
+    import { mountVisualLayoutEditor } from "./visual-layout-editor.mjs";
+    import { pickVisualLayoutFileStore } from "./visual-layout-file-store.mjs";
+    import { createGameEditorAdapter } from "./visual-layout-game-adapter.mjs";
+
+    const host = document.getElementById("game-host");
+    const openButton = document.getElementById("open-layout");
+    const status = document.getElementById("status");
+    let adapter;
+    let editor;
+
+    try {
+      adapter = await createGameEditorAdapter(host);
+      openButton.disabled = false;
+      status.textContent = "游戏预览已连接；选择布局实现文件后开始编辑。";
+    } catch (error) {
+      status.textContent = `游戏预览接入失败：${error.message}`;
+    }
+
+    // 用户选择真实实现文件后才挂载编辑器，避免只在内存中形成假保存结果。
+    openButton.addEventListener("click", async () => {
+      openButton.disabled = true;
+      try {
+        const store = await pickVisualLayoutFileStore(adapter.nodes);
+        if (store.layout.target_sha256 !== adapter.targetSha256 || store.layout.scene_id !== adapter.sceneId || store.layout.state_id !== adapter.stateId) {
+          throw new Error("所选布局文件与当前冻结效果图或 Scene 状态不一致");
+        }
+        // 接入前先验证重排契约，避免异步旧结果在拖动时覆盖新位置。
+        const reflowResult = adapter.reflow(store.layout);
+        if (reflowResult && typeof reflowResult.then === "function") {
+          Promise.resolve(reflowResult).catch(() => {});
+          throw new Error("游戏适配器的 reflow 必须同步完成");
+        }
+        editor?.destroy();
+        editor = mountVisualLayoutEditor({
+          host,
+          referenceUrl: adapter.referenceUrl,
+          viewport: adapter.viewport,
+          nodes: adapter.nodes,
+          layout: store.layout,
+          getBounds: adapter.getBounds,
+          getViewportRect: adapter.getViewportRect,
+          reflow: adapter.reflow,
+          save: store.save,
+        });
+        status.textContent = "布局已连接；拖拽结束会保存到所选 JSON 文件。";
+      } catch (error) {
+        status.textContent = `无法开始编辑：${error.message}`;
+      } finally {
+        openButton.disabled = false;
+      }
+    });
+
+    // 离开开发页时移除编辑器输入和游戏预览，避免热重载后重复绑定。
+    window.addEventListener("pagehide", () => { editor?.destroy(); adapter?.destroy?.(); }, { once: true });
+  </script>
+</body>
+</html>

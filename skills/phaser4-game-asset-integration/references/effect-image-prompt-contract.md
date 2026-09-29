@@ -73,6 +73,10 @@
 
 `generation_record.reference_inputs` 必须包含 `reference_target.original_file` 指向的完整冻结效果图；`style_reference_inputs` 只能补充，不能替代它。`source_file`、`runtime_file`、`output_file` 和实际输出路径/文件身份不得等于冻结图。`crop_reference=true`、`reference_crop=true`、裁切/抠图参考图或复用参考像素作为输出都必须失败。
 
+完整效果图中的小部件往往只占少量像素。生产时应同时提供从同一冻结原图按已确认 region bounds 导出的局部细节参考，作为额外的 `reference_inputs`；完整原图仍须同时发送，以保留构图、尺度和相邻关系。细节参考只供模型观察，不能当作资产输出或可复用素材。记录裁取范围、冻结原图 SHA、细节图路径与 SHA，以及实际发送的输入顺序；不得放大裁图后声称获得了原图中不存在的细节。原图分辨率不足以辨认轮廓或纹饰时，先标记该视觉事实不确定并修正 V1/V2 目标或取得更清晰的参考，不能让模型自由补画。
+
+每个原子部件的 `asset_prompt` 还应明确“完整原图用于全局关系、局部细节图用于当前部件形态”，并把 region bounds、部件在整屏中的相对尺度、相邻对象的排除边界写进实际提示词。禁止把局部裁图单独作为唯一参考；禁止把局部裁图、抠图或原图像素直接交付为生成结果。
+
 记录必须保存实际发送的完整提示词（`full_prompt` 或 `actual_prompt`）和真实 `reference_inputs`，不能在生成后拼一份未实际使用的文本。完整提示词至少可复核地包含 canonical 全局段、当前 region 事实资产段、状态段和 canonical 负向段；生成式透明 `alpha=true` 资产还必须包含纯色背景生产段，并绑定当前 `target_sha256`、`region_id`、候选 `candidate_sha256`/`diff_fingerprint`、候选版本与实际 `record_id`。`generator`/`generator_version` 必须记录系统按提示词、参考输入、材质、透明需求和可用能力实际选择的工具身份；未暴露时写 `not-provided`。
 
 普通非 `effect-image` 生成式位图不要求以上三个重建字段，也不要求冻结效果图作为参考输入；仍须记录实际生成器、版本、提示词、输入、输出和后处理。
