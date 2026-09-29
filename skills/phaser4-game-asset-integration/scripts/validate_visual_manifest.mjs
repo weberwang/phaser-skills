@@ -24,6 +24,7 @@ import { validateImageGenerationSizeManifest } from "../../phaser4-game-workflow
 import { isWorkflowDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
 import { VISUAL_STAGE_IDS, VISUAL_STAGE_STATES } from "../../phaser4-game-workflow-control/scripts/visual-stage-prerequisites.mjs";
 import { validateEffectImageLayoutBindings, validatePngLayoutMetadata, validateTechnicalLayoutNodeIds, validateTechnicalRegionLayout, validateV4LayoutMeasurements } from "./validate_visual_layout_mapping.mjs";
+import { checkFrameAnimationWorkflowFiles, validateFrameAnimationWorkflowContract } from "./frame-animation-workflow-contract.mjs";
 export { computeRegionDefinitionSha256 } from "./effect_image_annotation_core.mjs";
 export { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateEvidenceIdentity, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV4ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
 export { validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "../../phaser4-game-workflow-control/scripts/scene-reconstruction-contract.mjs";
@@ -473,6 +474,9 @@ export function validateManifest(data, options = {}) {
     validateAssetOwnership(asset, label, errors);
     if (nonEmptyString(asset.route) && !ALLOWED_ROUTES.has(asset.route)) errors.push(`${label}.route 不在允许列表中：${asset.route}`);
     if (nonEmptyString(asset.status) && !ALLOWED_STATUSES.has(asset.status)) errors.push(`${label}.status 不在允许列表中：${asset.status}`);
+    // 视频抽帧资源必须绑定提示词、原视频、图集与预览，防止旧候选混入当前资源。
+    if (asset.route === "frame-animation" && asset.status === "accepted") errors.push(...validateFrameAnimationWorkflowContract(asset.frame_animation, { label: `${label}.frame_animation`, workItemId: data.workItemId, candidateVersion: data.candidateVersion }));
+    else if (Object.hasOwn(asset, "frame_animation")) errors.push(`${label}.frame_animation 仅允许用于 route=frame-animation 且 status=accepted 的资源`);
     for (const field of ["id", "texture_key"]) if (nonEmptyString(asset[field])) { if (seen[field].has(asset[field])) errors.push(`${label}.${field} 重复：${asset[field]}`); seen[field].add(asset[field]); }
     if (Array.isArray(asset.runtime_outputs)) for (const output of asset.runtime_outputs) if (nonEmptyString(output)) { const normalizedOutput = normalizeProjectRelativePath(output); if (!normalizedOutput) errors.push(`${label}.runtime_outputs 必须是项目内相对路径：${output}`); else { if (seen.output.has(normalizedOutput)) errors.push(`${label}.runtime_outputs 路径重复：${output}`); seen.output.add(normalizedOutput); } }
     if (BASELINE_BOUND_STATUSES.has(asset.status)) { validateAssetBaselineBinding(asset, baseline, label, errors); if (asset.route === "ai-composite-raster" && resolveProductionContract(asset).image_generation_required === true) validateAiGenerationRecord(asset, label, errors); }
@@ -924,6 +928,18 @@ export async function checkManifestFiles(data, projectRoot, options = {}) {
     if (asset.route === "ai-composite-raster" && BASELINE_BOUND_STATUSES.has(asset.status) && isObject(asset.generation_record) && Array.isArray(asset.generation_record.reference_inputs)) for (const value of asset.generation_record.reference_inputs) if (nonEmptyString(value)) assetPaths.push(["generation_record.reference_inputs", value]);
     for (const [field, path] of assetPaths) { try { if (!isFile(projectPath(projectRoot, path))) errors.push(`assets[${index}].${field} 文件不存在：${path}`); } catch (error) { errors.push(`assets[${index}].${field}：${error.message}`); } }
   });
+  // 序列帧专用文件门读取绑定报告并复算 SHA；报告内的绝对输出路径不参与路径解析。
+  for (const [index, asset] of data.assets.entries()) {
+    if (!isObject(asset) || asset.route !== "frame-animation" || asset.status !== "accepted") continue;
+    errors.push(...await checkFrameAnimationWorkflowFiles(asset, {
+      label: `assets[${index}].frame_animation`,
+      projectRoot,
+      workItemId: data.workItemId,
+      candidateVersion: data.candidateVersion,
+      resolvePath: (path) => projectPath(projectRoot, path),
+      isFile,
+    }));
+  }
   for (const [index, asset] of data.assets.entries()) {
     const contract = isObject(asset) ? resolveProductionContract(asset) : {};
     if (contract.image_generation_required !== true) continue;

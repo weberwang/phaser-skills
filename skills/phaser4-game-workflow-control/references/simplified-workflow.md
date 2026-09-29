@@ -30,6 +30,10 @@ V2→V3、V3→V4 都在同一场景 Work Item 内通过显式阶段入口推进
 
 场景路线还需在 V1 确定[显示对象默认中心锚点与渲染分层](../../phaser4-game-ui-layout/references/display-object-layering.md)：对象例外、背景/世界/特效/HUD/瞬态层顺序和每层的坐标、输入、生命周期归属。V2 固化布局与显示层合同，V3 检查同屏合成，V4 用遮挡、命中和恢复轨迹验证；渲染分层不新增全局阶段，也不把普通世界层误记为独立 `DISPLAY_LAYER` Work Item。
 
+### 序列帧路线映射
+
+帧动画不新增全局状态机。全局 V2 根据主体、动作、镜头、时长、画幅和背景要求生成视频提示词，并等待真实视频文件；全局 V3 接收视频后按目标 FPS、尺寸和是否去背景抽帧，输出图集、报告与网页预览；全局 V4 完成 Phaser 运行接入。重新生成视频或调整抽帧参数后，须重做图集与预览。详见[帧动画工作流接入合同](../../phaser4-frame-animation/references/workflow-integration.md)。
+
 例如，V2 完成后可在同一 Work Item 上执行：
 
 ```powershell

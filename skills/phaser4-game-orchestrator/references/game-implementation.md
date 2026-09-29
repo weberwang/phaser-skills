@@ -19,6 +19,8 @@
 
 场景 V1 同时冻结[显示对象锚点与显示层分层](../../phaser4-game-ui-layout/references/display-object-layering.md)方案：可设置原点的显示对象默认中心 `(0.5, 0.5)`，例外逐对象说明；背景、世界、特效、HUD 和瞬态层按实际职责划分有名根层并明确前后、输入与生命周期。V2 将对象原点和层序映射到布局/显示层合同，V3 检查正式资源同屏组合，V4 验证遮挡、最上层命中及关闭/resize 后恢复。这里的渲染分层不把世界对象或特效变成独立 `DISPLAY_LAYER` Work Item。
 
+帧动画是上述场景路线中的动态资源子路线。全局 V2 根据动作、构图、镜头和背景要求写视频提示词并等待视频文件；全局 V3 接收实际视频，按可调 FPS、目标尺寸和是否去背景抽帧，生成 spritesheet、报告和浏览器预览，并检查动作节奏与循环衔接。全局 V4 才把报告中的 Phaser preload/anims/setOrigin 接入正式 Scene，并采样事件时序、播放态和性能。完整字段见[帧动画工作流接入合同](../../phaser4-frame-animation/references/workflow-integration.md)。
+
 ## 单场景完成闭环
 
 每个场景以 `SCENE` 聚合自身完成事实：依次完成 V1 scene master/reference target、视觉合同与初步还原草案，V2 拆解/布局确认与生产方案，V3 正式资源和组合预验收，再实现正式功能并在 V4 做运行态验收。modal/popup 等 `DISPLAY_LAYER` 建立独立 Work Item 和实施包，复核自己的上下文图及 scene/layer/host、V2/V3 身份；其缺图或未完成不扩散为宿主前置失败。
