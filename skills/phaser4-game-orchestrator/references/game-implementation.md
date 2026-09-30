@@ -12,6 +12,8 @@
 
 ## G1 强制实施序列
 
+基础实施先按[游戏项目目录规范](../../phaser4-game-architecture/references/project-structure.md)冻结入口、基础模块、场景、显示层、平台适配、资源、测试和产物的路径与所有权；按实际需要创建目录，后续实施沿同一映射落盘。
+
 1. 全局基线、foundation-only 边界和项目状态顺序按[控制模型](../../phaser4-game-workflow-control/references/control-model.md)与[状态、阶段与停止门](../../phaser4-game-workflow-control/references/state-gates.md)执行；编排层只建立“需求 → 功能 → 模块 → 场景 → 正式资源 → 测试证据”的追踪。
 2. foundation-only 仅承载 `SHARED` 最小骨架和 `MODULE` 场景无关基础能力；在此阶段完成游戏全屏显示和 Android 启动、运行无标题栏，按下述基础显示约束实施，并按[后台暂停与恢复约束](../../phaser4-game-audio/SKILL.md#后台暂停与恢复约束)实现音频进入后台暂停、返回前台从原位置继续播放；具体场景玩法、UI/布局、正式可见资产消费、Boot→正式可见 Scene 接入和删除旧视觉实现留在场景或集成范围。
 3. 每个场景 Work Item 先在 V1 冻结功能规格、scene master/reference target、宿主上下文和视觉合同；V2 先完成拆解确认，再完成布局确认；V3 完成正式资源与宿主场景同屏组合预验收。
