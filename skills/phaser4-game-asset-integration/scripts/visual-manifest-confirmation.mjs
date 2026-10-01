@@ -6,7 +6,7 @@
  */
 import { buildVisualConfirmationAuthorityByRegion, validateVisualDecompositionConfirmations } from "../../phaser4-game-workflow-control/scripts/visual-decomposition-confirmation.mjs";
 import { validateLayoutAnnotationConfirmation } from "../../phaser4-game-workflow-control/scripts/layout_annotation_confirmation.mjs";
-import { auditProductionContract, resolveProductionContract, validateV4ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
+import { auditProductionContract, resolveProductionContract, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
 
 const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
@@ -149,7 +149,7 @@ export function validateConfirmationGroups(data, options = {}) {
   return [...new Set(errors)];
 }
 
-/** 逐 scene/state 运行 V4 审计，使每组只比较自己的确认文件和编号集合。 */
+/** 逐 scene/state 运行 V3 资源审计，使每组只比较自己的确认文件和编号集合。 */
 export async function auditProductionContractByGroups(data, options = {}) {
   const groups = confirmationRegionGroups(data);
   if (groups.length === 0) return auditProductionContract(data, options);
@@ -167,15 +167,15 @@ export async function auditProductionContractByGroups(data, options = {}) {
   return [...new Set(errors)];
 }
 
-/** 逐 scene/state 运行 V4 总门，避免不同确认文件互相串联。 */
-export function validateV4ProductionGateByGroups(data, options = {}) {
+/** 逐 scene/state 运行 V5 总门，避免不同确认文件互相串联。 */
+export function validateV5ProductionGateByGroups(data, options = {}) {
   const groups = confirmationRegionGroups(data);
-  if (groups.length === 0) return validateV4ProductionGate(data, options);
+  if (groups.length === 0) return validateV5ProductionGate(data, options);
   const errors = [];
   for (const group of groups) {
     const scoped = scopedConfirmationManifest(data, group.regions);
     const base = confirmationAuthorityBase(data, options.projectRoot, options, group);
-    errors.push(...validateV4ProductionGate(scoped, { ...options, ...base, projectRoot: options.projectRoot, checkFiles: options.checkFiles === true || base.checkFiles === true, authorityByRegion: buildVisualConfirmationAuthorityByRegion(scoped, base) }));
+    errors.push(...validateV5ProductionGate(scoped, { ...options, ...base, projectRoot: options.projectRoot, checkFiles: options.checkFiles === true || base.checkFiles === true, authorityByRegion: buildVisualConfirmationAuthorityByRegion(scoped, base) }));
   }
   return [...new Set(errors)];
 }

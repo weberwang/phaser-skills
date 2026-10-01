@@ -19,7 +19,7 @@ export function registerVisualManifestUsabilityCases({ validManifest, validateMa
     region.delta = 8;
     // 这些附件只服务精确像素比对；完整候选画面、确认与生产审计仍保留。
     for (const key of ["side_by_side_evidence", "overlay_evidence", "difference_evidence", "normalization_equivalence", "tolerance_set"]) delete fidelity[key];
-    assert.deepEqual(validateManifest(manifest, { ...options, stage: "V4" }), []);
+    assert.deepEqual(validateManifest(manifest, { ...options, stage: "V5" }), []);
   });
 
   test("manifest 模式：显式 exact 拒绝超出已声明容差的相同微调", () => {
@@ -27,6 +27,16 @@ export function registerVisualManifestUsabilityCases({ validManifest, validateMa
     const hero = manifest.fidelity_cases[0].layout_node_results.find((node) => node.layout_node_id === "hero-component-layout-node");
     hero.candidate_bounds.x += 8;
     hero.delta.x = 8;
-    assert.ok(validateManifest(manifest, { ...options, stage: "V4" }).some((error) => /tolerance|容差/.test(error)));
+    assert.ok(validateManifest(manifest, { ...options, stage: "V5" }).some((error) => /tolerance|容差/.test(error)));
+  });
+
+  test("V5 正式运行门缺少资源消费证据时失败", () => {
+    const manifest = validManifest();
+    delete manifest.visual_production_gate.runtime_consumption;
+    assert(validateManifest(manifest).some((item) => item.includes("runtime_consumption")), "总门必须要求正式 runtime 消费证据");
+
+    const missingAuditConsumption = validManifest();
+    delete missingAuditConsumption.production_contract_audit.units[0].runtime_consumption;
+    assert(validateManifest(missingAuditConsumption).some((item) => item.includes("runtime_consumption")), "V5 生产审计必须绑定逐区域 runtime 消费身份");
   });
 }

@@ -9,10 +9,14 @@ test("在游戏项目新目录生成完整编辑器模板且不覆盖已有目�
   const root = await mkdtemp(join(tmpdir(), "visual-layout-template-"));
   try {
     const files = await generateVisualLayoutEditor(root, "editor");
-    assert.equal(files.length, 4);
+    assert.equal(files.length, 6);
     const html = await readFile(join(root, "editor", "index.html"), "utf8");
-    assert.match(html, /mountVisualLayoutEditor/);
-    assert.match(html, /pickVisualLayoutFileStore/);
+    assert.match(html, /initializePageSketchApplication/);
+    assert.match(html, /page-sketch-project-root/);
+    assert.doesNotMatch(html, /visual-layout-game-adapter/);
+    for (const file of ["visual-layout-editor.mjs", "page-sketch-contract.mjs", "page-sketch-file-store.mjs", "page-sketch-preview.mjs", "page-sketch-editor.mjs"]) {
+      assert.equal(await readFile(join(root, "editor", file), "utf8").then(Boolean), true);
+    }
     await assert.rejects(generateVisualLayoutEditor(root, "editor"), { code: "EEXIST" });
     await assert.rejects(generateVisualLayoutEditor(root, "../escape"), /逃逸/);
   } finally {

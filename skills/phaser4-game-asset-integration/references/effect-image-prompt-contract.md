@@ -26,7 +26,7 @@
 背景必须整片均匀不透明；禁止棋盘格、网格、渐变、纹理、背景阴影、环境景物、边框、说明文字或色值文字。
 ```
 
-生成记录必须记录系统实际选择的 `generator` 与 `generator_version`；`generator` 必须记录实际调用的工具，未暴露的版本、模型参数或种子记录 `not-provided`，不得编造。生成式透明路线固定声明 `transparency_strategy=background-removal`、`source_background_mode=opaque` 和显式 `source_background_color`，并提供 `raw_source_file`、背景处理后的 `source_file` 和两侧 Alpha；源图必须先通过 `--require-solid-background` 校验，失败时重新生成或修正输入。背景处理使用公共 `remove-background-local.mjs`；`background_removal_attempts` 只追加返回报告中的 `report.background_removal_attempt`，不嵌入完整报告；每个 attempt 记录 `operation`、`status`、源/输出路径、完成时间、源/输出 Alpha、背景颜色、失败原因和可审计 evidence。每条成功记录的 `evidence.solid_background_check` 必须证明不透明、边缘全数匹配且检查通过；最终记录还必须与当前源图背景色一致。失败历史必须保留，重试由任务配置设定上限，不能无限重试或自动新增外部调用授权；`normalization_record.source_file` 必须绑定当前透明输入。最终 PNG 由 V4 文件解码复核真实 Alpha。已有真实透明图按资源复用合同接入，不伪造生成去背记录。
+生成记录必须记录系统实际选择的 `generator` 与 `generator_version`；`generator` 必须记录实际调用的工具，未暴露的版本、模型参数或种子记录 `not-provided`，不得编造。生成式透明路线固定声明 `transparency_strategy=background-removal`、`source_background_mode=opaque` 和显式 `source_background_color`，并提供 `raw_source_file`、背景处理后的 `source_file` 和两侧 Alpha；源图必须先通过 `--require-solid-background` 校验，失败时重新生成或修正输入。背景处理使用公共 `remove-background-local.mjs`；`background_removal_attempts` 只追加返回报告中的 `report.background_removal_attempt`，不嵌入完整报告；每个 attempt 记录 `operation`、`status`、源/输出路径、完成时间、源/输出 Alpha、背景颜色、失败原因和可审计 evidence。每条成功记录的 `evidence.solid_background_check` 必须证明不透明、边缘全数匹配且检查通过；最终记录还必须与当前源图背景色一致。失败历史必须保留，重试由任务配置设定上限，不能无限重试或自动新增外部调用授权；`normalization_record.source_file` 必须绑定当前透明输入。最终 PNG 由 V5 文件解码复核真实 Alpha。已有真实透明图按资源复用合同接入，不伪造生成去背记录。
 
 `background_mode`、`direct_generation_attempt` 和旧的策略值均不属于本合同；`postprocess` 必须是字符串数组，背景移除操作以结构化 `background_removal_attempts` 为权威记录。
 
@@ -81,7 +81,7 @@
 
 普通非 `effect-image` 生成式位图不要求以上三个重建字段，也不要求冻结效果图作为参考输入；仍须记录实际生成器、版本、提示词、输入、输出和后处理。
 
-透明单图必须按“生成不透明纯色原图 → 校验纯色背景 → 公共脚本去背景 → 尺寸归一化 → V4/final/runtime”执行；生成式透明路线只能以背景处理输出作为透明输入。归一化使用 Sharp，写入 `normalization_record`，并把 `normalization_record.source_file` 绑定当前透明输入，最终 `actual_output` 绑定归一化后的 PNG。生成失败、纯色校验失败或背景处理失败时保留历史尝试和失败原因，按任务配置的有限上限重试；不因重试自动新增外部调用授权。所有生成式位图首次输出比例不符时最多重生一次；第二次仍不符时，若冻结裁切焦点和安全事实允许，使用 `crop-and-resize-to-contract`，记录 `aspect_ratio_correction` 中两次真实原始生成 attempt、SHA、尺寸、focus 和最大目标比例 `crop_rect`；若裁切会损伤主体、文字、透明轮廓或关键构图，则先由生产流程对原图生成式延展到目标比例，再重新校验纯色背景并执行背景处理和普通归一化。`padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘或裁切冻结 `reference_target`；透明目标归一化前后都必须保留 Alpha。
+透明单图必须按“生成不透明纯色原图 → 校验纯色背景 → 公共脚本去背景 → 尺寸归一化 → V5/final/runtime”执行；生成式透明路线只能以背景处理输出作为透明输入。归一化使用 Sharp，写入 `normalization_record`，并把 `normalization_record.source_file` 绑定当前透明输入，最终 `actual_output` 绑定归一化后的 PNG。生成失败、纯色校验失败或背景处理失败时保留历史尝试和失败原因，按任务配置的有限上限重试；不因重试自动新增外部调用授权。所有生成式位图首次输出比例不符时最多重生一次；第二次仍不符时，若冻结裁切焦点和安全事实允许，使用 `crop-and-resize-to-contract`，记录 `aspect_ratio_correction` 中两次真实原始生成 attempt、SHA、尺寸、focus 和最大目标比例 `crop_rect`；若裁切会损伤主体、文字、透明轮廓或关键构图，则先由生产流程对原图生成式延展到目标比例，再重新校验纯色背景并执行背景处理和普通归一化。`padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘或裁切冻结 `reference_target`；透明目标归一化前后都必须保留 Alpha。
 
 ## 全局视觉基线绑定
 
@@ -89,6 +89,6 @@ effect-image 生成必须在生成前绑定已完成三候选人工选择且由 
 
 实际生成记录至少包含 `origin=generated`、四个基线身份字段、`global_visual_consistency_prompt`、`style_drift_policy=forbid`、实际发送的 `full_prompt`、`target_sha256`、`output_sha256`、`consistency_status=passed` 与路径+SHA 的 `consistency_evidence`。`full_prompt` 必须同时含本文件既有的忠实重建 canonical 段、全局一致性段、asset/state/negative 段；缺少实际发送证明、漏传/多传锚点、允许风格迁移或身份漂移均失败。用户/外部提供图使用 `origin=provided`，不得补写伪生成记录。共享常量和合同位于 `global-visual-consistency-contract.mjs`。
 
-## V4 同屏组合
+## V5 同屏组合
 
-V4 不得只凭文件存在、MIME、尺寸、Alpha、component×state 齐全、运行时登记或 `missing=0` 判定视觉通过。`combination_preacceptance` 必须声明当前正式资产与正式布局结构，并以机器可复核事实确认轮廓、比例、姿态、图标语义和整屏构图未偏离冻结目标；还必须记录无未经批准的重新设计。提示词合同/实际 generation record 的绑定必须同时覆盖当前 target SHA、region ID 和候选身份。提示词合同失败属于执行问题，先在 V3/V4 原地修复或重验当前门并阻止进入 V4；只有冻结 target/方向/候选身份真实变化时才进入必要回退。
+V5 不得只凭文件存在、MIME、尺寸、Alpha、component×state 齐全、运行时登记或 `missing=0` 判定视觉通过。`combination_preacceptance` 必须声明当前正式资产与正式布局结构，并以机器可复核事实确认轮廓、比例、姿态、图标语义和整屏构图未偏离冻结目标；还必须记录无未经批准的重新设计。提示词合同/实际 generation record 的绑定必须同时覆盖当前 target SHA、region ID 和候选身份。提示词合同失败属于执行问题，先在 V3/V5 原地修复或重验当前门并阻止进入 V5；只有冻结 target/方向/候选身份真实变化时才进入必要回退。

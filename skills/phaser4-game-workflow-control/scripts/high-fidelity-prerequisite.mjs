@@ -1,6 +1,8 @@
 import { isAbsolute, relative } from 'node:path';
 import { assertGlobalVisualBaselineSelection } from './global-visual-baseline-contract.mjs';
-import { classifyVisibleVisualProductionIntegration, loadImmutableVisualStageReference } from './visual-stage-prerequisites.mjs';
+import { classifyVisibleVisualProductionIntegration } from './visual-stage-prerequisites.mjs';
+import { assertConfirmedPageSketch } from './page-sketch-prerequisite.mjs';
+import { V2_PLAN_FIELDS } from './v2-reconstruction-plan-contract.mjs';
 
 const SCENE_UNIT_TYPES = new Set(['SCENE', 'DISPLAY_LAYER']);
 const FOUNDATION_UNIT_TYPES = new Set(['SHARED', 'MODULE']);
@@ -8,12 +10,6 @@ const FORMAL_UNIT_TYPES = new Set(['SHARED', 'MODULE', 'SCENE', 'DISPLAY_LAYER',
 const PREREQUISITE_FIELDS = [
   'workItemId', 'status', 'stage', 'frozen', 'sceneId', 'displayLayerId', 'hostSceneId',
   'targetSha256', 'candidateSha256', 'diffFingerprint', 'evidenceFile', 'evidenceSha256',
-];
-const EVIDENCE_FIELDS = [
-  'schemaVersion', 'workItemId', 'status', 'stage', 'frozen', 'sceneId', 'targetSha256',
-  'candidateSha256', 'diffFingerprint', 'sceneMaster', 'sceneReconstructionContract',
-  'decompositionAnnotation', 'technicalDecomposition', 'visualDecompositionConfirmation',
-  'visualProductionContract', 'visualProductionUnits', 'displayLayerContexts',
 ];
 const IMAGE_FIELDS = ['file', 'sha256', 'sceneId'];
 const ARTIFACT_FIELDS = ['file', 'sha256', 'sceneId'];
@@ -23,12 +19,12 @@ const CONTEXT_IMAGE_FIELDS = ['file', 'sha256', 'sceneId', 'displayLayerId', 'ho
 const CONFIRMATION_FIELDS = ['confirmationId', 'confirmationMode', 'status', 'targetSha256', 'candidateSha256', 'diffFingerprint', 'evidenceFile', 'evidenceSha256'];
 const EVIDENCE_SCHEMA = 'phaser4-scene-v2-reconstruction-plan/1.0';
 const SHA256 = /^sha256:[a-f0-9]{64}$/;
-const VISUAL_STAGES = ['V0', 'V1', 'V2', 'V3', 'V4'];
-const V3_ACCEPTANCE_EVIDENCE_TYPE = 'v3-formal-acceptance';
+const VISUAL_STAGES = ['V0', 'V1', 'V2', 'V3', 'V4', 'V5'];
 const PACKAGE_VISUAL_FIELDS = Object.freeze([
   'visualContractVersion', 'candidateVersion', 'visualManifestFile', 'visualManifestSha256',
   'visualDecompositionConfirmations', 'current_stage',
   'currentStage', 'scene_reconstruction_contract', 'sceneReconstructionContract', 'visualProductionUnits',
+  'pageSketchFile', 'pageSketchSha256',
 ]);
 
 /** 判断值是否为不带数组的普通对象。 */
@@ -76,9 +72,9 @@ function prerequisiteError(unit, detail) {
   return new Error(`视觉 V2 前置门拒绝 ${unit?.unitId ?? '<package>'}：${detail}；应回到当前 Work Item 的 V2 拆解方案确认`);
 }
 
-/** 生成正式执行 V3 门失败信息，避免把资源验收问题误导回 V2。 */
+/** 生成正式执行 V4 门失败信息，指出需要先确认当前页面草图。 */
 function executionGateError(detail) {
-  return new Error(`正式功能执行 V3 前置门拒绝：${detail}；应回到当前场景 Work Item 的 V3 正式资源与宿主场景同屏组合预验收`);
+  return new Error(`V5 正式功能执行前置门拒绝：${detail}；应回到当前场景 Work Item 的 V4 页面草图确认`);
 }
 
 /**
@@ -138,31 +134,21 @@ export function assertFormalImplementationAfterV2(work, pkg, repo, io) {
 }
 
 /**
- * 判断正式执行是否已经越过 V3 资源与组合预验收边界。
- * V2 允许创建和校验实施包；只有执行状态、委派和 READY 才能调用本门。
+ * 判断正式执行是否已经越过 V4 页面草图人工确认边界。
+ * V2/V3 可准备资源与实施计划；正式 SCENE/DISPLAY_LAYER 单元只允许在 V5 执行。
  */
-export function assertFormalExecutionAfterV3(work, pkg, repo, io) {
+export function assertFormalExecutionAfterV4(work, pkg, repo, io) {
   const foundationMode = foundationGateMode(work, pkg);
   if (foundationMode === 'none') return true;
   if (foundationMode === 'global-baseline') return assertFoundationBaselineFrozen(work, repo, io);
   const formalUnits = (pkg?.executionUnits ?? []).filter((unit) => FORMAL_UNIT_TYPES.has(unit?.unitType));
   if (!formalUnits.length) return true;
   const stage = String(work?.visualStage ?? '').trim().toUpperCase();
-  const stageIndex = VISUAL_STAGES.indexOf(stage);
-  const v3Approved = stageIndex > VISUAL_STAGES.indexOf('V3') || (stage === 'V3' && work?.visualStageState === 'v3-formal-acceptance-complete');
-  if (!v3Approved) throw executionGateError('正式功能单元只能在 V3 正式视觉资源与宿主场景同屏组合预验收完成后执行；V2 仅允许规划 Implementation Package');
-  if (!repo || !io) throw executionGateError('缺少 V3 不可变证据读取能力');
-  const refs = work?.visualStageEvidenceRefs ?? work?.visual_stage_evidence_refs ?? {};
-  const reference = refs.V3 ?? refs.v3 ?? refs.V3Evidence ?? refs.v3Evidence ?? refs.v3_evidence;
-  const loaded = loadImmutableVisualStageReference(reference, 'V3 formal acceptance', { projectRoot: repo });
-  if (!loaded || typeof loaded.value !== 'object' || Array.isArray(loaded.value)) throw executionGateError('V3 必须绑定有效的不可变视觉验收引用');
-  const evidence = loaded.value;
-  const status = String(evidence.status ?? evidence.verdict ?? evidence.result ?? '').trim().toUpperCase();
-  if (evidence.evidenceType !== V3_ACCEPTANCE_EVIDENCE_TYPE || status !== 'PASS' || evidence.workItemId !== work?.workItemId) throw executionGateError('V3 不可变证据必须是当前 Work Item 的 v3-formal-acceptance PASS');
-  const candidate = evidence.candidateIdentity ?? evidence.candidate_identity;
-  const candidateHash = evidence.contentHash ?? evidence.content_hash ?? evidence.candidateHash ?? evidence.candidate_sha256;
-  const diffFingerprint = evidence.diffFingerprint ?? evidence.diff_fingerprint ?? candidate?.diffFingerprint ?? candidate?.diff_fingerprint;
-  if (!isRecord(candidate) || !SHA256.test(candidate.sha256 ?? '') || !SHA256.test(candidate.diffFingerprint ?? candidate.diff_fingerprint ?? '') || candidateHash !== candidate.sha256 || diffFingerprint !== (candidate.diffFingerprint ?? candidate.diff_fingerprint)) throw executionGateError('V3 不可变证据缺少一致的 candidate/diff 身份');
+  if (stage !== 'V5') throw executionGateError(`正式功能单元只能在 V4 草图确认并推进到 V5 后执行，当前阶段为 ${stage || 'unknown'}`);
+  if (!repo || !io) throw executionGateError('缺少 V4 页面草图不可变证据读取能力');
+  let sketch;
+  try { sketch = assertConfirmedPageSketch(work, repo); } catch (error) { throw executionGateError(error.message); }
+  if (pkg?.pageSketchFile !== sketch.reference.path || pkg?.pageSketchSha256 !== sketch.sha256) throw executionGateError('Implementation Package 必须绑定当前 V4 页面草图 path/SHA，防止正式实现消费其他草图版本');
   return true;
 }
 
@@ -216,8 +202,8 @@ export function assertHighFidelityPrerequisite(unit, work, pkg, repo, io) {
   let evidence;
   try { evidence = JSON.parse(io.readFileSync(evidencePath, 'utf8')); } catch (error) { throw prerequisiteError(unit, `evidenceFile 不是有效 JSON：${error.message}`); }
   if (!isRecord(evidence)) throw prerequisiteError(unit, 'V2 拆解方案必须为对象');
-  const missing = EVIDENCE_FIELDS.filter((field) => evidence[field] === undefined);
-  const extra = Object.keys(evidence).filter((field) => !EVIDENCE_FIELDS.includes(field));
+  const missing = V2_PLAN_FIELDS.filter((field) => evidence[field] === undefined);
+  const extra = Object.keys(evidence).filter((field) => !V2_PLAN_FIELDS.includes(field));
   if (missing.length || extra.length) throw prerequisiteError(unit, `V2 拆解方案字段不严格：缺少 ${missing.join('、') || '无'}；多余 ${extra.join('、') || '无'}`);
   const expected = unitContext(unit);
   const identity = { targetSha256: reference.targetSha256, candidateSha256: reference.candidateSha256, diffFingerprint: reference.diffFingerprint };
@@ -227,7 +213,7 @@ export function assertHighFidelityPrerequisite(unit, work, pkg, repo, io) {
   assertArtifact(evidence.decompositionAnnotation, ARTIFACT_FIELDS, expected, repo, io, unit, 'decompositionAnnotation');
   assertArtifact(evidence.technicalDecomposition, ARTIFACT_FIELDS, expected, repo, io, unit, 'technicalDecomposition');
   assertReviewEvidence(evidence.visualDecompositionConfirmation, CONFIRMATION_FIELDS, identity, repo, io, unit, 'visualDecompositionConfirmation');
-  if (evidence.visualDecompositionConfirmation.confirmationMode !== 'manual' || !['PASS', 'passed', 'APPROVED', 'accepted', 'COMPLETE'].includes(evidence.visualDecompositionConfirmation.status)) throw prerequisiteError(unit, 'visualDecompositionConfirmation 必须是 manual accepted/PASS 的拆解图确认');
+  if (evidence.visualDecompositionConfirmation.confirmationMode !== 'manual' || !['PASS', 'accepted'].includes(evidence.visualDecompositionConfirmation.status)) throw prerequisiteError(unit, 'visualDecompositionConfirmation 必须是 manual PASS/accepted 的拆解图确认');
   if (!Array.isArray(evidence.visualProductionUnits) || evidence.visualProductionUnits.length === 0) throw prerequisiteError(unit, 'V2 拆解方案必须包含 visualProductionUnits');
   if (!isRecord(evidence.visualProductionContract)) throw prerequisiteError(unit, 'V2 拆解方案必须包含 visualProductionContract');
   if (!Array.isArray(evidence.displayLayerContexts)) throw prerequisiteError(unit, 'V2 拆解方案必须包含 displayLayerContexts 数组');

@@ -3,82 +3,53 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Phaser 场景布局编辑</title>
+  <meta name="page-sketch-project-root" content="/">
+  <title>V4 页面还原草图</title>
   <style>
-    :root { font-family: system-ui, "Microsoft YaHei", sans-serif; color: #e8eef8; background: #101827; }
+    :root { color-scheme: dark; font-family: system-ui, "Microsoft YaHei", sans-serif; color: #edf3fb; background: #0c1420; }
     * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; }
-    header { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 10px 16px; background: #1b2940; }
-    h1 { margin: 0; font-size: 16px; }
-    button { border: 1px solid #7daaf0; border-radius: 6px; padding: 7px 12px; background: #254b80; color: white; cursor: pointer; }
-    button:disabled { opacity: .5; cursor: wait; }
-    #status { font-size: 13px; }
-    #game-host { position: relative; width: 100%; min-height: calc(100vh - 54px); overflow: hidden; }
-    #game-host canvas { display: block; }
+    body { margin: 0; min-width: 720px; min-height: 100vh; display: grid; grid-template-rows: auto 1fr auto; }
+    header { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 12px 16px; background: #172438; border-bottom: 1px solid #344861; }
+    h1 { margin: 0 auto 0 0; font-size: 17px; }
+    button, input { font: inherit; }
+    button { padding: 7px 11px; color: #fff; background: #28598d; border: 1px solid #6d9fd1; border-radius: 5px; cursor: pointer; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    input[type=text] { width: 160px; padding: 7px 8px; color: #f5f8fc; background: #0d1828; border: 1px solid #58718e; border-radius: 5px; }
+    #page-status { min-width: 230px; font-size: 13px; color: #c7d5e5; }
+    main { min-height: 0; display: grid; grid-template-columns: minmax(0,1fr) 300px; gap: 12px; padding: 12px; }
+    #stage-frame { position: relative; min-width: 0; min-height: 360px; overflow: hidden; display: grid; place-items: center; background-color: #172536; background-image: linear-gradient(45deg,#1f3043 25%,transparent 25%),linear-gradient(-45deg,#1f3043 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#1f3043 75%),linear-gradient(-45deg,transparent 75%,#1f3043 75%); background-size: 28px 28px; background-position: 0 0,0 14px,14px -14px,-14px 0; border: 1px solid #405670; }
+    #stage-surface { position: absolute; left: 0; top: 0; transform-origin: top left; background: #101827; overflow: hidden; }
+    #resource-errors { max-height: 45vh; overflow: auto; padding: 10px; background: #182538; border: 1px solid #465a72; border-radius: 6px; font-size: 13px; }
+    #resource-errors h2 { margin: 0 0 8px; font-size: 14px; }
+    #resource-errors ul { margin: 0; padding-left: 20px; color: #ffb3a9; }
+    #resource-errors:empty { display: none; }
+    footer { padding: 8px 14px; color: #aabbd0; font-size: 12px; background: #121d2c; border-top: 1px solid #344861; }
+    @media (max-width: 980px) { main { grid-template-columns: 1fr; } #resource-errors { max-height: 22vh; } }
   </style>
 </head>
 <body>
   <header>
-    <h1>场景布局编辑</h1>
-    <button id="open-layout" type="button" disabled>选择正式布局实现 JSON</button>
-    <span id="status" role="status">正在连接游戏预览…</span>
+    <h1>V4 页面还原草图</h1>
+    <button id="open-sketch" type="button">打开 page-sketch.json</button>
+    <button id="toggle-preview" type="button" disabled aria-pressed="false">预览正式效果</button>
+    <button id="save-sketch" type="button" disabled>保存草图</button>
+    <label for="confirmed-by">确认人</label>
+    <input id="confirmed-by" type="text" autocomplete="name" placeholder="填写你的名字或身份" disabled>
+    <button id="confirm-sketch" type="button" disabled>确认草图</button>
+    <span id="page-status" role="status" aria-live="polite">请从游戏项目开发服务打开此页面并加载草图。</span>
   </header>
-  <main id="game-host" aria-label="游戏开发预览"></main>
+  <main>
+    <section id="stage-frame" aria-label="正式资源草图预览画布">
+      <div id="stage-surface"></div>
+    </section>
+    <aside id="resource-errors" aria-live="polite"></aside>
+  </main>
+  <footer>拖动节点框或输入父级相对坐标微调；点击“预览正式效果”可隐藏参考图和编辑面板无遮挡查看组合。所有源文件 SHA 与确认内容都会复核；无法预览的正式资源会阻止确认。</footer>
   <script type="module">
-    import { mountVisualLayoutEditor } from "./visual-layout-editor.mjs";
-    import { pickVisualLayoutFileStore } from "./visual-layout-file-store.mjs";
-    import { createGameEditorAdapter } from "./visual-layout-game-adapter.mjs";
+    import { initializePageSketchApplication } from "./page-sketch-editor.mjs";
 
-    const host = document.getElementById("game-host");
-    const openButton = document.getElementById("open-layout");
-    const status = document.getElementById("status");
-    let adapter;
-    let editor;
-
-    try {
-      adapter = await createGameEditorAdapter(host);
-      openButton.disabled = false;
-      status.textContent = "游戏预览已连接；选择布局实现文件后开始编辑。";
-    } catch (error) {
-      status.textContent = `游戏预览接入失败：${error.message}`;
-    }
-
-    // 用户选择真实实现文件后才挂载编辑器，避免只在内存中形成假保存结果。
-    openButton.addEventListener("click", async () => {
-      openButton.disabled = true;
-      try {
-        const store = await pickVisualLayoutFileStore(adapter.nodes);
-        if (store.layout.target_sha256 !== adapter.targetSha256 || store.layout.scene_id !== adapter.sceneId || store.layout.state_id !== adapter.stateId) {
-          throw new Error("所选布局文件与当前冻结效果图或 Scene 状态不一致");
-        }
-        // 接入前先验证重排契约，避免异步旧结果在拖动时覆盖新位置。
-        const reflowResult = adapter.reflow(store.layout);
-        if (reflowResult && typeof reflowResult.then === "function") {
-          Promise.resolve(reflowResult).catch(() => {});
-          throw new Error("游戏适配器的 reflow 必须同步完成");
-        }
-        editor?.destroy();
-        editor = mountVisualLayoutEditor({
-          host,
-          referenceUrl: adapter.referenceUrl,
-          viewport: adapter.viewport,
-          nodes: adapter.nodes,
-          layout: store.layout,
-          getBounds: adapter.getBounds,
-          getViewportRect: adapter.getViewportRect,
-          reflow: adapter.reflow,
-          save: store.save,
-        });
-        status.textContent = "布局已连接；拖拽结束会保存到所选 JSON 文件。";
-      } catch (error) {
-        status.textContent = `无法开始编辑：${error.message}`;
-      } finally {
-        openButton.disabled = false;
-      }
-    });
-
-    // 离开开发页时移除编辑器输入和游戏预览，避免热重载后重复绑定。
-    window.addEventListener("pagehide", () => { editor?.destroy(); adapter?.destroy?.(); }, { once: true });
+    const rootPath = document.querySelector('meta[name="page-sketch-project-root"]')?.content || "/";
+    await initializePageSketchApplication({ document, projectRootUrl: new URL(rootPath, location.href) });
   </script>
 </body>
 </html>

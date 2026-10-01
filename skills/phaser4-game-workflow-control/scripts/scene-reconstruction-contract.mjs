@@ -3,7 +3,7 @@
  *
  * 资源生产合同只能说明“文件如何产出”，不能说明资源在正式 Scene 中
  * 应该呈现成什么画面。本模块把冻结效果图的构图、区域事实、运行时事实
- * 和比较证据收敛成独立的机器门，供 V1-V4 入口共享。
+ * 和比较证据收敛成独立的机器门，供 V1-V5 入口共享。
  */
 
 import { validateVisualPostApprovalReviewFields } from "./visual-human-review-contract.mjs";
@@ -88,7 +88,7 @@ function contractError(stage, contract, region, message, details = {}) {
   const expected = details.expected ?? "完整冻结场景合同与对应证据";
   const actual = details.actual ?? "missing";
   const returnStage = details.returnStage ?? (stage === "V1" || stage === "V2" ? "V1/PROPOSAL" : stage);
-  const rootCause = details.rootCause ?? (returnStage === "V1/PROPOSAL" ? "方案缺失" : stage === "V3" ? "执行问题" : stage === "V4" || stage === "VALIDATING" ? "验收问题" : "方案缺失");
+  const rootCause = details.rootCause ?? (returnStage === "V1/PROPOSAL" ? "方案缺失" : stage === "V3" ? "执行问题" : stage === "V4" || stage === "V5" || stage === "VALIDATING" ? "验收问题" : "方案缺失");
   return `[${stage}] scene/state=${scene}/${state} annotation_number=${annotation} region_id=${regionId} 根因=${rootCause} ${message}${missing} 预期证据=${expected} 实际证据=${actual} 应退回阶段=${returnStage}`;
 }
 
@@ -383,9 +383,12 @@ function validateEffectImageCombinationFacts(contract, preacceptance, stage, err
   }
 }
 
-/** 验证 V3 同屏组合预验收必须使用正式 Scene 结构。 */
-export function validateSceneCombinationPreacceptance(contract, stage = "V3", options = {}) {
+/** 验证 V5 同屏组合预验收必须使用正式 Scene 结构。 */
+export function validateSceneCombinationPreacceptance(contract, stage = "V5", options = {}) {
   const errors = [];
+  if (String(stage).toUpperCase() !== "V5") {
+    return [contractError(stage, contract, null, "同屏正式 Scene 组合只允许在 V5 运行验收，不属于 V3 资源或 V4 草图门", { returnStage: "V5", rootCause: "验收问题" })];
+  }
   const mode = resolveVisualValidationMode(options, options.manifest, contract);
   validateVisualValidationPolicy(errors, "visual_validation", options, options.manifest, contract);
   const preacceptance = field(contract, "combination_preacceptance", "combinationPreacceptance", "same_screen_preacceptance", "sameScreenPreacceptance");
@@ -425,8 +428,10 @@ export function validateSceneCombinationPreacceptance(contract, stage = "V3", op
   return errors;
 }
 
-/** 校验 V3 资源是否带有目标 Scene 中的显示和组合条件。 */
-export function validateSceneAssetUsageContract(region, unit, stage = "V3") {
+/** 校验 V5 正式 Scene 中的资源显示、组合和运行消费条件。 */
+export function validateSceneAssetUsageContract(region, unit, stage = "V5") {
+  // V3/V4 不存在正式 Scene 消费事实；该合同只在 V5 实际运行验收时生效。
+  if (String(stage).toUpperCase() !== "V5") return [];
   const errors = [];
   if (!isObject(region)) return errors;
   const usage = { ...(isObject(region.scene_asset_usage ?? region.sceneAssetUsage) ? (region.scene_asset_usage ?? region.sceneAssetUsage) : {}), ...(isObject(unit?.scene_asset_usage ?? unit?.sceneAssetUsage) ? (unit.scene_asset_usage ?? unit.sceneAssetUsage) : {}) };
@@ -463,7 +468,7 @@ export function validateSceneAssetUsageContract(region, unit, stage = "V3") {
   return errors;
 }
 
-/** 校验完整场景还原合同并绑定当前 manifest。 */
+/** 校验冻结场景方案；V4 只复核静态规划事实，正式运行证据只在 V5 执行。 */
 export function validateSceneReconstructionContract(contract, manifest = null, options = {}) {
   const stage = options.stage ?? "V1";
   const errors = [];
@@ -478,17 +483,17 @@ export function validateSceneReconstructionContract(contract, manifest = null, o
   const effectImage = isEffectImageContract(contract, manifest, options);
   // V1 先冻结冲突记录；V2 产物必须在 V2→V3 回对时完整绑定，不能用独立资源计划代替。
   validateReferenceTechnicalConflicts(contract, stage, errors);
-  if (["V2", "V3", "V4"].includes(String(stage).toUpperCase())) {
+  if (["V2", "V3", "V4", "V5"].includes(String(stage).toUpperCase())) {
     validateV2StageArtifacts(contract, stage, errors);
     if (String(stage).toUpperCase() !== "V2") errors.push(...validateVisualPostApprovalReviewFields(manifest ?? contract, { stage }));
   }
   const targetInfo = validateTargetConditions(contract, manifest, stage, errors, effectImage);
-  const requireFinalLayout = options.requireFinalLayout ?? (["V3", "V4"].includes(String(stage).toUpperCase()) || (String(stage).toUpperCase() === "V2" && (manifest?.visualStageState === "v2-production-planning-complete" || manifest?.visual_stage_state === "v2-production-planning-complete" || manifest?.effect_image_reconstruction?.lifecycle === "v4-complete")));
-  if (effectImage && ["V2", "V3", "V4"].includes(String(stage).toUpperCase())) validateV2LayoutStage(contract, targetInfo, stage, errors, requireFinalLayout);
+  const requireFinalLayout = options.requireFinalLayout ?? (String(stage).toUpperCase() === "V5" || (String(stage).toUpperCase() === "V2" && (manifest?.visualStageState === "v2-production-planning-complete" || manifest?.visual_stage_state === "v2-production-planning-complete")));
+  if (effectImage && ["V2", "V5"].includes(String(stage).toUpperCase())) validateV2LayoutStage(contract, targetInfo, stage, errors, requireFinalLayout);
   // 场景只盘点自身常驻显示层；独立弹窗由调用方按 DISPLAY_LAYER 工作项作用域单独验收。
   const lifecycle = manifest?.effect_image_reconstruction?.lifecycle;
   const normalizedStage = String(stage).toUpperCase();
-  const displayLayerStage = normalizedStage === "V4" || String(lifecycle ?? "").toLowerCase() === "v4-complete" ? "V4" : normalizedStage;
+  const displayLayerStage = normalizedStage === "V5" ? "V5" : normalizedStage;
   errors.push(...validateDisplayLayerPlanning(field(contract, "display_layer_planning"), targetInfo, { stage: displayLayerStage, scope: options.displayLayerScope ?? "scene", visual_baseline: manifest?.visual_baseline, reference_target: manifest?.reference_target }));
   const toleranceBlock = field(contract, "predeclared_tolerances", "predeclaredTolerances", "tolerance_set", "toleranceSet", "tolerances");
   const toleranceIds = Array.isArray(toleranceBlock) ? new Set(toleranceBlock.map((item) => item?.id ?? item?.tolerance_id ?? item?.toleranceId).filter(nonEmptyString)) : new Set();
@@ -519,11 +524,12 @@ export function validateSceneReconstructionContract(contract, manifest = null, o
   const responsiveBinding = field(responsive, "layout_contract_binding", "layoutContractBinding", "layout_contract", "layoutContract");
   validateLayoutBindingConsistency(responsiveBinding, layoutInfo.binding, contract, stage, errors, "responsive_contract layout binding", "layout_decomposition binding", effectImage);
   validateRootLayoutIdentity(contract, targetInfo, responsiveBinding, layoutInfo.binding, stage, errors, effectImage);
-  if (stage === "V3" || stage === "V4") {
+  if (["V3", "V4", "V5"].includes(String(stage).toUpperCase())) {
     const lifecycle = field(contract, "status", "lifecycle", "stage_status", "stageStatus");
     if (lifecycle === "proposal-missing" || lifecycle === "missing") errors.push(contractError(stage, contract, null, "还原方案缺失，不能进入生产", { actual: lifecycle, returnStage: "V1/PROPOSAL" }));
   }
-  if (stage === "V3" || stage === "V4") errors.push(...validateSceneCombinationPreacceptance(contract, "V3", { effectImage, manifest, visual_validation: { mode } }));
+  // 同屏运行组合属于正式验收；V3 只冻结资源，V4 草图由页面草图合同独立确认。
+  if (String(stage).toUpperCase() === "V5") errors.push(...validateSceneCombinationPreacceptance(contract, "V5", { effectImage, manifest, visual_validation: { mode } }));
   return errors;
 }
 
@@ -683,10 +689,13 @@ function factBounds(value) {
   return isObject(value.bounds) ? value.bounds : isObject(value.rect) ? value.rect : value;
 }
 
-/** 校验 V4 结构化 fidelity case，禁止只凭资源加载或模糊 tolerance 放行。 */
+/** 校验 V5 结构化 fidelity case，禁止只凭资源加载或模糊 tolerance 放行。 */
 export function validateStructuredFidelityCases(cases, manifest = null, options = {}) {
   const errors = [];
-  const stage = options.stage ?? "V4";
+  const stage = options.stage ?? "V5";
+  if (!(["V5", "VALIDATING"].includes(String(stage).toUpperCase()))) {
+    return [contractError(stage, manifest?.scene_reconstruction_contract, null, "结构化 fidelity 运行验收只允许在 V5/VALIDATING", { returnStage: "V5", rootCause: "验收问题" })];
+  }
   if (!Array.isArray(cases) || cases.length === 0) {
     errors.push(contractError(stage, null, null, "fidelity_cases 必须是非空结构化数组", { missing: "fidelity_cases", returnStage: "VALIDATING" }));
     return errors;
@@ -706,7 +715,7 @@ export function validateStructuredFidelityCases(cases, manifest = null, options 
   for (const [index, item] of cases.entries()) {
     const label = `fidelity_cases[${index}]`;
     if (!isObject(item)) { errors.push(contractError(stage, null, null, `${label} 必须是对象`, { missing: label, returnStage: "VALIDATING" })); continue; }
-    // fidelity case 属于 V4 机器验证事实；V2 拆解确认后不得再挂 human_review 或 reviewer。
+    // fidelity case 属于 V5 机器验证事实；V2 拆解确认后不得再挂 human_review 或 reviewer。
     errors.push(...validateVisualPostApprovalReviewFields(item, { stage }));
     const targetIdentity = identityObject(field(item, "target_identity", "targetIdentity"), item.target_sha256, null);
     const candidateIdentity = identityObject(field(item, "candidate_identity", "candidateIdentity"), item.candidate_sha256, item.diff_fingerprint);
@@ -815,12 +824,14 @@ export function validateStructuredFidelityCases(cases, manifest = null, options 
   return errors;
 }
 
-/** 对 V4 必须具备的场景合同执行完整门，供 manifest 和实施包共同调用。 */
+/** 对 V5 必须具备的场景合同执行完整门，供 manifest 和实施包共同调用。 */
 export function validateSceneReconstructionGate(manifest, options = {}) {
   const stage = options.stage ?? "V2";
+  if (String(stage).toUpperCase() === "V3") return [];
+  if (String(stage).toUpperCase() === "V4") return [contractError(stage, manifest?.scene_reconstruction_contract, null, "V4 页面草图必须通过 page-sketch 硬门，不能复用旧正式 Scene gate", { returnStage: "V4", rootCause: "验收问题" })];
   const mode = resolveVisualValidationMode(options, manifest, manifest?.scene_reconstruction_contract);
   const visualValidation = { visual_validation: { mode } };
   const errors = validateSceneReconstructionContract(manifest?.scene_reconstruction_contract, manifest, { ...options, ...visualValidation, stage });
-  if (stage === "V4") errors.push(...validateStructuredFidelityCases(manifest?.fidelity_cases, manifest, { stage: "V4", ...visualValidation }));
+  if (stage === "V5") errors.push(...validateStructuredFidelityCases(manifest?.fidelity_cases, manifest, { stage: "V5", ...visualValidation }));
   return errors;
 }

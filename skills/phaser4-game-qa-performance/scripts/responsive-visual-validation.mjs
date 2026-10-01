@@ -497,13 +497,14 @@ export function evaluateMatrixCoverage(measurements, contract = {}) {
   return { expected, observed: [...observed], missing, mismatched, representativeMissing: representative.missing, status, mode: normalized.visual_validation.mode ?? DEFAULT_VISUAL_VALIDATION_MODE };
 }
 
-/** 验证响应式报告的不可变候选与视觉身份。 */
+/** 验证响应式报告的不可变候选与视觉身份；V5 还必须携带确认草图的内容 SHA。 */
 export function validateEvidenceIdentity(identity, { requireTarget = false, contract = null } = {}) {
   const errors = []; const value = identity && typeof identity === "object" ? identity : {};
   for (const field of ["candidate_sha256", "scene_id", "state_id", "layout_contract_version", "visual_baseline_version"]) if (typeof value[field] !== "string" || value[field].trim() === "") errors.push(`identity.${field} 必须是非空字符串`);
   if (typeof value.candidate_sha256 === "string" && !SHA_PATTERN.test(value.candidate_sha256)) errors.push("identity.candidate_sha256 格式无效");
   if (requireTarget && (typeof value.target_sha256 !== "string" || !SHA_PATTERN.test(value.target_sha256))) errors.push("效果图还原的 identity.target_sha256 必须是合法 SHA-256");
   if (value.target_sha256 !== undefined && (typeof value.target_sha256 !== "string" || !SHA_PATTERN.test(value.target_sha256))) errors.push("identity.target_sha256 格式无效");
+  if ((value.current_stage ?? value.currentStage) === "V5" && (typeof value.pageSketchSha256 !== "string" || !SHA_PATTERN.test(value.pageSketchSha256))) errors.push("V5 identity.pageSketchSha256 必须是合法 SHA-256");
   const binding = contract?.identityContract;
   if (!binding?.trusted || !nonEmptyBinding(binding.schemaVersion) || !nonEmptyBinding(binding.contractVersion) || !Array.isArray(binding.scenes) || binding.scenes.length === 0 || !Array.isArray(binding.states) || binding.states.length === 0 || !nonEmptyBinding(binding.codeCandidate) || !nonEmptyBinding(binding.visualBaselineVersion)) errors.push("原始 UI 合同未通过完整布局合同校验，不能建立权威身份");
   else {
@@ -537,6 +538,7 @@ export function summarizeReport(measurements, contract = {}, identity = null) {
     sceneId: identity?.scene_id ?? null,
     stateId: identity?.state_id ?? null,
     candidateSha256: identity?.candidate_sha256 ?? null,
+    pageSketchSha256: identity?.pageSketchSha256 ?? null,
     layoutContractVersion: identity?.layout_contract_version ?? null,
     visualBaselineVersion: identity?.visual_baseline_version ?? null,
     resize: resize.records,

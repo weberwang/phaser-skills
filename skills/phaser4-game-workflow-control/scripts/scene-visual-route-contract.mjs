@@ -465,7 +465,7 @@ export function validateSceneVisualRouteAnalysis(region, contract = {}, options 
 /** 把场景 route 与 coverage_audit/Implementation Package 的既有字段做单向一致性校验。 */
 function validateBoundProductionFields(region, analysis, bound, sourceLabel, contract, stage, errors) {
   if (!isObject(bound)) return;
-  const returnStage = sourceLabel.includes("visualProductionUnit") ? "V3/V4" : "V1/PROPOSAL";
+  const returnStage = sourceLabel.includes("visualProductionUnit") ? "V3/V5" : "V1/PROPOSAL";
   const rootCause = sourceLabel.includes("visualProductionUnit") ? "执行问题" : "方案缺失";
   const owner = bound.owner_type ?? bound.implementation_owner;
   if (owner !== undefined && owner !== analysis.final_owner) errors.push(routeError(stage, contract, region, `${sourceLabel} owner 与 visual_route_analysis 不一致`, { expected: analysis.final_owner, actual: owner, returnStage, rootCause }));

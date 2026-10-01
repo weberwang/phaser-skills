@@ -153,7 +153,7 @@ function validEffectAsset(overrides = {}) {
   };
 }
 
-/** 构造共享 图像生成 V4 门所需的原子资产合同。 */
+/** 构造共享 图像生成 V5 门所需的原子资产合同。 */
 function effectImageAssetContract() {
   return {
     applicability: "effect-image",
@@ -177,10 +177,10 @@ function effectImageAssetContract() {
   };
 }
 
-/** 绑定 V4 入口的冻结目标、区域和候选身份，避免测试只验证孤立 helper。 */
+/** 绑定 V5 入口的冻结目标、区域和候选身份，避免测试只验证孤立 helper。 */
 function effectImageValidationContext() {
   return {
-    stage: "V4",
+    stage: "V5",
     annotation_number: 2,
     region_id: "SC-MAIN-hero",
     region: effectRegion(),
@@ -335,9 +335,9 @@ test("普通非 effect-image 图像生成 不受重建字段影响", () => {
   assert.deepEqual(validateImageGenerationContract(asset, contract, { annotation_number: 1, region_id: "ordinary" }), []);
 });
 
-test("旧错误 SC-MAIN V4 提示词被新门禁确定性拒绝", () => {
+test("旧错误 SC-MAIN V5 提示词被新门禁确定性拒绝", () => {
   const oldPrompt = "必须重新设计该角色，做成更有游戏感的通用科幻图标";
   const record = validEffectRecord({ global_prompt_prefix: oldPrompt, asset_prompt: "机甲角色", full_prompt: `${oldPrompt}\n机甲角色` });
   const errors = validateImageGenerationContract(validEffectAsset({ generation_record: record }), effectImageAssetContract(), effectImageValidationContext(), effectImageValidationOptions());
-  assert(errors.some((item) => item.includes("[V4]") && item.includes("根因=执行问题") && (item.includes("重新设计") || item.includes("canonical")) && item.includes("应退回阶段=V3/V4")));
+  assert(errors.some((item) => item.includes("[V5]") && item.includes("根因=执行问题") && (item.includes("重新设计") || item.includes("canonical")) && item.includes("应退回阶段=V3/V5")));
 });

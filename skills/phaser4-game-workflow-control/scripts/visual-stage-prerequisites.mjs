@@ -1,19 +1,21 @@
 #!/usr/bin/env node
 /**
- * 视觉 V0→V4 跨阶段硬门。
+ * 视觉 V0→V5 跨阶段硬门。
  *
  * 该模块只读取 Work Item 及其显式绑定的视觉证据，不接受根节点布尔值、
  * Approval Ledger 文本或 stageId 猜测。所有控制入口都应调用同一个函数，
  * 这样待审批的候选在 prepare、handoff、approve 和 advance 之间不会出现
  * 不同解释。
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { validateGlobalVisualBaselineSelectionReferenceShape } from './global-visual-baseline-contract.mjs';
+import { assertConfirmedPageSketch } from './page-sketch-prerequisite.mjs';
+import { V2_PLAN_FIELDS } from './v2-reconstruction-plan-contract.mjs';
 import { deriveVisualDisposition, earliestVisualReturnStage as earliestReturnStage, isPlainObject as isObject, nonEmptyString as nonEmpty, sha256Bytes, VISUAL_REMEDIATION, VISUAL_REMEDIATION_LABEL, VISUAL_REMEDIATION_NEXT_ACTION, VISUAL_RETURN_SNAPSHOT_KEYS as RETURN_SNAPSHOT_KEYS } from './visual-contract-core.mjs';
 export { VISUAL_REMEDIATION } from './visual-contract-core.mjs';
 
-export const VISUAL_STAGE_IDS = Object.freeze(['V0', 'V1', 'V2', 'V3', 'V4']);
+export const VISUAL_STAGE_IDS = Object.freeze(['V0', 'V1', 'V2', 'V3', 'V4', 'V5']);
 export const VISUAL_STAGE_STATES = Object.freeze([
   'not-started',
   'in-progress',
@@ -24,7 +26,8 @@ export const VISUAL_STAGE_STATES = Object.freeze([
   'global-static-baseline-frozen',
   'v2-production-planning-complete',
   'v3-formal-acceptance-complete',
-  'v4-runtime-integration-candidate',
+  'v4-page-sketch-confirmed',
+  'v5-runtime-integration-candidate',
 ]);
 
 export const VISUAL_STAGE_STATE_FOR = Object.freeze({
@@ -32,7 +35,8 @@ export const VISUAL_STAGE_STATE_FOR = Object.freeze({
   V1: new Set(['not-started', 'in-progress', 'pending', 'failed', 'stale', 'invalid', 'global-static-baseline-frozen']),
   V2: new Set(['not-started', 'in-progress', 'pending', 'failed', 'stale', 'invalid', 'v2-production-planning-complete']),
   V3: new Set(['not-started', 'in-progress', 'pending', 'failed', 'stale', 'invalid', 'v3-formal-acceptance-complete']),
-  V4: new Set(['not-started', 'in-progress', 'pending', 'failed', 'stale', 'invalid', 'v4-runtime-integration-candidate']),
+  V4: new Set(['not-started', 'in-progress', 'pending', 'failed', 'stale', 'invalid', 'v4-page-sketch-confirmed']),
+  V5: new Set(['not-started', 'in-progress', 'pending', 'failed', 'stale', 'invalid', 'v5-runtime-integration-candidate']),
 });
 
 export const VISIBLE_VISUAL_BEHAVIORS = Object.freeze([
@@ -50,12 +54,13 @@ const BEHAVIOR_ALIASES = Object.freeze({
   replacesFormalScene: ['replacesFormalScene', 'replaceFormalScene', 'replaces_formal_scene', 'replace_formal_scene'],
   modifiesBootEntry: ['modifiesBootEntry', 'modifyBootEntry', 'modifies_boot_entry', 'bootToVisibleScene', 'changesBootEntry'],
   registersProductionEntry: ['registersProductionEntry', 'registerProductionEntry', 'registers_production_entry', 'productionEntryRegistration', 'formalProductionEntry'],
-  formalRuntimeConsumption: ['formalRuntimeConsumption', 'consumesFormalVisualAsset', 'runtimeVisualIntegration', 'formal_runtime_consumption', 'runtime_visual_integration'],
+  formalRuntimeConsumption: ['formalRuntimeConsumption', 'consumesFormalVisualAsset', 'consumeVisibleAsset', 'consumesVisibleAsset', 'consume_visible_asset', 'consumes_visible_asset', 'runtimeVisualIntegration', 'formal_runtime_consumption', 'runtime_visual_integration'],
   deletesLegacyVisualImplementation: ['deletesLegacyVisualImplementation', 'deleteLegacyVisualImplementation', 'deletes_legacy_visual_implementation', 'removesVisualFallback'],
   declaresVisualComplete: ['declaresVisualComplete', 'visualComplete', 'productionizedVisual', 'declares_visual_complete', 'sceneUiComplete'],
 });
 
 const FORMAL_TEXT = /(?:register|replace|modify|change|wire|connect|consume|delete|remove|complete|productioniz|publish|正式|注册|替换|接入|消费|删除|移除|生产化|完成|可发布).*(?:scene|ui|visual|asset|background|character|vfx|icon|font|boot|入口|场景|界面|视觉|资源|背景|角色|特效|图标|字体)|(?:scene|ui|visual|asset|background|character|vfx|icon|font|boot|入口|场景|界面|视觉|资源|背景|角色|特效|图标|字体).*(?:register|replace|modify|change|wire|connect|consume|delete|remove|complete|productioniz|publish|正式|注册|替换|接入|消费|删除|移除|生产化|完成|可发布)/i;
+const FORMAL_RUNTIME_INTENT_TEXT = /(?:boot\s*(?:→|->|to)\s*scene|(?:register|replace|wire|connect|modify|change|consume|delete|remove|publish|接入|注册|替换|连接|修改|更改|消费|删除|移除|发布).{0,32}(?:boot|main\s*scene|scene|ui|主场景入口|场景入口|正式入口|场景|界面|boot入口)|(?:boot|main\s*scene|scene|ui|主场景入口|场景入口|正式入口|场景|界面|boot入口).{0,32}(?:registration|integration|entry|runtime|注册|接入|集成|运行时|消费|入口)|(?:consume|use|load|render|消费|使用|加载|渲染).{0,24}(?:visible|formal|production|可见|正式|运行时)?.{0,12}(?:visual\s*)?(?:assets?|images?|sprites?|资源|图片|图像)|(?:formal|正式).{0,16}(?:main\s*(?:scene|entry)|boot\s*(?:entry|scene)|scene\s*entry|ui\s*entry|主场景入口|正式入口|boot→scene)|正式.{0,12}(?:boot|main\s*scene|scene|ui).{0,12}(?:接入|注册|集成|入口))/i;
 const GRAYBOX_TEXT = /(?:graybox|greybox|placeholder|prototype|diagnostic|sandbox|isolated|隔离|灰盒|占位|原型|诊断|沙盒)/i;
 const VISUAL_CONTEXT_TEXT = /(?:visual|scene|ui|asset|resource|effect|sprite|background|character|vfx|icon|font|视觉|场景|界面|资源|特效|角色|背景|图标|字体)/i;
 const HASH_PATTERN = /^(?:sha256:[a-f0-9]{64}|git:[a-f0-9]{40}(?:[a-f0-9]{24})?)$/i;
@@ -72,7 +77,7 @@ function valuesOnly(value, depth = 0) {
   return [];
 }
 
-/** 只接受显式 V0-V4；stageId、文本和用户回复都不能提供这个值。 */
+/** 只接受显式 V0-V5；stageId、文本和用户回复都不能提供这个值。 */
 export function normalizeVisualStage(value) {
   const stage = typeof value === 'string' ? value.trim().toUpperCase() : '';
   return VISUAL_STAGE_IDS.includes(stage) ? stage : null;
@@ -95,7 +100,7 @@ export function validateVisualStageDeclaration(subject = {}) {
   const visualContext = Boolean(subject.visualStage || subject.visual_stage || subject.visualStageState || subject.visual_stage_state || baselineState || subject.visualDomain || subject.visualWork || VISUAL_CONTEXT_TEXT.test(String(subject.domain ?? '')) || /^V/i.test(rawStageId));
   if (!visualContext) return errors;
   if (conflicts.length) errors.push(error('VISUAL_STAGE_DECLARATION_INVALID', 'visualStage 字段未知或互相矛盾，不允许猜测', { missingEvidence: ['visualStage'] }));
-  if (/^V/i.test(rawStageId) && !/^V[0-4]$/i.test(rawStageId)) errors.push(error('VISUAL_STAGE_UNKNOWN', `未知视觉阶段：${rawStageId}`, { missingEvidence: ['visualStage'] }));
+  if (/^V/i.test(rawStageId) && !/^V[0-5]$/i.test(rawStageId)) errors.push(error('VISUAL_STAGE_UNKNOWN', `未知视觉阶段：${rawStageId}`, { missingEvidence: ['visualStage'] }));
   if ((subject.visualStageState ?? subject.visual_stage_state ?? subject.visualState ?? subject.visual_state) === 'frozen') errors.push(error('VISUAL_BARE_FROZEN', '裸 frozen 没有视觉阶段语义；请使用 global-static-baseline-frozen 或 v2-production-planning-complete', { missingEvidence: ['visualStageState'] }));
   if (baselineState && baselineState !== 'global-static-baseline-frozen') errors.push(error(baselineState === 'frozen' ? 'VISUAL_BARE_FROZEN' : 'VISUAL_STAGE_STATE_INVALID', '全局静态基线状态必须为 global-static-baseline-frozen，且不能代替 V2', { missingEvidence: ['globalStaticBaselineState'] }));
   const state = firstValue(subject.visualStageState, subject.visual_stage_state, subject.visualState, subject.visual_state);
@@ -106,9 +111,9 @@ export function validateVisualStageDeclaration(subject = {}) {
     const selectionErrors = validateGlobalVisualBaselineSelectionReferenceShape(subject.globalVisualBaselineSelectionRef);
     for (const message of selectionErrors) errors.push(error('GLOBAL_VISUAL_BASELINE_SELECTION_MISSING', message, { missingEvidence: ['globalVisualBaselineSelectionRef'] }));
   }
-  if (/^V[0-4]$/i.test(rawStageId) && stage && rawStageId.toUpperCase() !== stage) errors.push(error('VISUAL_STAGE_DECLARATION_CONFLICT', 'stageId 仅作范围标签，必须与显式 visualStage 一致且不能替代它', { missingEvidence: ['visualStage'] }));
+  if (/^V[0-5]$/i.test(rawStageId) && stage && rawStageId.toUpperCase() !== stage) errors.push(error('VISUAL_STAGE_DECLARATION_CONFLICT', 'stageId 仅作范围标签，必须与显式 visualStage 一致且不能替代它', { missingEvidence: ['visualStage'] }));
   if (stage && !state) errors.push(error('VISUAL_STAGE_STATE_MISSING', `阶段 ${stage} 缺少有语义状态`, { missingEvidence: ['visualStageState'] }));
-  if (!stage && /^V[0-4]$/i.test(rawStageId)) errors.push(error('VISUAL_STAGE_MISSING', 'V0-V4 工作必须显式声明 visualStage，不能从 stageId 推断', { missingEvidence: ['visualStage'] }));
+  if (!stage && /^V[0-5]$/i.test(rawStageId)) errors.push(error('VISUAL_STAGE_MISSING', 'V0-V5 工作必须显式声明 visualStage，不能从 stageId 推断', { missingEvidence: ['visualStage'] }));
   return errors;
 }
 
@@ -134,9 +139,12 @@ export function classifyVisibleVisualProductionIntegration(subject = {}) {
     visualBehaviors: subject.visualBehaviors,
   }).join(' ');
   const visualContext = Boolean(subject.visualDomain || subject.visualWork || subject.visualStage || subject.visual_stage || VISUAL_CONTEXT_TEXT.test(`${subject.domain ?? ''} ${behaviorText}`));
+  const stage = readVisualStage(subject).stage;
+  // V3 本身就是正式资源生产阶段，Main 等 stageId 只是贯穿 Work Item 的范围标签；只有真实运行入口/消费意图才触发下游硬门。
+  const v3ResourceStageWithoutRuntimeIntent = stage === 'V3' && !FORMAL_RUNTIME_INTENT_TEXT.test(behaviorText);
   const stageHint = /(?:production-entry|formal-entry|main|integration|integrate|正式入口|主场景|集成)/i.test(String(subject.stageId ?? ''));
-  if (visualContext && stageHint) behaviors.push('stage-scope-requires-visual-gate');
-  if (!behaviors.length && FORMAL_TEXT.test(behaviorText) && visualContext) behaviors.push('formal-visual-text');
+  if (visualContext && stageHint && !v3ResourceStageWithoutRuntimeIntent) behaviors.push('stage-scope-requires-visual-gate');
+  if (!behaviors.length && FORMAL_TEXT.test(behaviorText) && visualContext && !v3ResourceStageWithoutRuntimeIntent) behaviors.push('formal-visual-text');
   const graybox = subject.graybox === true || subject.grayBox === true || subject.isolatedPrototype === true || GRAYBOX_TEXT.test(behaviorText);
   const formal = behaviors.length > 0;
   // 灰盒只在未声明正式行为时豁免；一旦同一项工作注册正式入口，灰盒文字不能降级门槛。
@@ -163,9 +171,17 @@ export function loadImmutableVisualStageReference(reference, label, options = {}
   const expectedSha = reference.sha256;
   if (!nonEmpty(file) || !nonEmpty(expectedSha)) return null;
   if (!/^sha256:[a-f0-9]{64}$/i.test(String(expectedSha))) return null;
-  const root = resolve(options.projectRoot ?? process.cwd());
-  const absolute = resolve(root, String(file));
-  if (isAbsolute(String(file)) || relative(root, absolute).startsWith('..') || !existsSync(absolute)) return null;
+  let root;
+  let absolute;
+  try {
+    root = realpathSync(resolve(options.projectRoot ?? process.cwd()));
+    const candidate = resolve(root, String(file));
+    const lexical = relative(root, candidate);
+    if (isAbsolute(String(file)) || !lexical || lexical === '..' || lexical.startsWith('..\\') || lexical.startsWith('../') || isAbsolute(lexical)) return null;
+    absolute = realpathSync(candidate);
+    const actualRelative = relative(root, absolute);
+    if (!actualRelative || actualRelative === '..' || actualRelative.startsWith('..\\') || actualRelative.startsWith('../') || isAbsolute(actualRelative) || !statSync(absolute).isFile()) return null;
+  } catch { return null; }
   let bytes;
   try { bytes = readFileSync(absolute); } catch { return null; }
   const actualSha = sha256Bytes(bytes);
@@ -188,11 +204,12 @@ function evidenceObjects(subject = {}, options = {}) {
   const refs = stageReferences(subject, options);
   const evidence = firstObject(options.evidence, options.visualEvidence, options.visualStageEvidence, subject.visualStageEvidence, subject.visual_stage_evidence, subject.visualDependencyChain, subject.visual_dependency_chain) ?? {};
   const refFor = (stage) => firstObject(refs[stage], refs[stage.toLowerCase()], refs[`V${stage.slice(1)}`], refs[`${stage.toLowerCase()}Evidence`], refs[`${stage.toLowerCase()}_evidence`]);
-  const v2Ref = refFor('V2'); const v3Ref = refFor('V3'); const v4Ref = refFor('V4');
+  const v2Ref = refFor('V2'); const v3Ref = refFor('V3'); const v4Ref = refFor('V4'); const v5Ref = refFor('V5');
   const v2 = loadImmutableVisualStageReference(v2Ref, 'V2 reconstruction production plan', options)?.value ?? null;
   const v3 = loadImmutableVisualStageReference(v3Ref, 'V3 formal acceptance', options)?.value ?? null;
-  const v4 = loadImmutableVisualStageReference(v4Ref, 'V4 runtime candidate', options)?.value ?? null;
-  return { evidence: { ...evidence, __references: { V2: v2Ref, V3: v3Ref, V4: v4Ref } }, v2, v3, v4, refs: { V2: v2Ref, V3: v3Ref, V4: v4Ref } };
+  const v4 = loadImmutableVisualStageReference(v4Ref, 'V4 page sketch', options)?.value ?? null;
+  const v5 = loadImmutableVisualStageReference(v5Ref, 'V5 runtime candidate', options)?.value ?? null;
+  return { evidence: { ...evidence, __references: { V2: v2Ref, V3: v3Ref, V4: v4Ref, V5: v5Ref } }, v2, v3, v4, v5, refs: { V2: v2Ref, V3: v3Ref, V4: v4Ref, V5: v5Ref } };
 }
 
 /** 仅接受明确的成功终态，不读取根摘要布尔值。 */
@@ -221,7 +238,7 @@ function isStaleVisualReference(reference, options = {}) {
 
 /** 从工作项和各阶段证据中收集可用于 pending 快照的哈希。 */
 function collectHashes(subject, evidence, ...objects) {
-  const names = ['baselineHash', 'baseline_hash', 'contentHash', 'content_hash', 'artifactHash', 'artifact_hash', 'dependencyHash', 'dependency_hash', 'diffFingerprint', 'diff_fingerprint', 'candidateHash', 'candidate_sha256', 'targetHash', 'target_sha256'];
+  const names = ['baselineHash', 'baseline_hash', 'contentHash', 'content_hash', 'artifactHash', 'artifact_hash', 'dependencyHash', 'dependency_hash', 'diffFingerprint', 'diff_fingerprint', 'candidateHash', 'candidate_sha256', 'candidateSha256', 'targetHash', 'target_sha256', 'targetSha256'];
   const result = {};
   for (const name of names) {
     const value = [subject[name], evidence[name], ...objects.map((item) => item?.[name])].find((item) => hashValue(item));
@@ -232,17 +249,16 @@ function collectHashes(subject, evidence, ...objects) {
 
 /** 计算 pending 使用的不可变快照；任何 hash、候选或证据 ID 漂移都会失效。 */
 export function visualPrerequisiteSnapshot(subject = {}, options = {}) {
-  const { evidence, v2, v3, v4, refs } = evidenceObjects(subject, options);
-  const hashes = collectHashes(subject, evidence, v2, v3, v4);
-  const v2PlanTargetHash = firstHash(subject.targetHash, subject.target_hash, subject.targetSha256, subject.target_sha256, v2?.targetHash, v2?.target_hash, v2?.targetSha256, v2?.target_sha256);
-  const v2PlanCandidateHash = firstHash(v2?.contentHash, v2?.content_hash, v2?.candidateHash, v2?.candidate_hash, v2?.candidate_sha256, v2?.candidateSha256, v2?.candidateIdentity?.sha256, v2?.candidate_identity?.sha256);
-  const v2PlanDiffFingerprint = firstIdentity(v2?.diffFingerprint, v2?.diff_fingerprint, v2?.diffIdentity, v2?.diff_identity, v2?.candidateIdentity?.diffFingerprint, v2?.candidateIdentity?.diff_fingerprint, v2?.candidate_identity?.diffFingerprint, v2?.candidate_identity?.diff_fingerprint);
-  const v2PlanBaselineHash = firstHash(subject.baselineHash, subject.baseline_hash, v2?.baselineHash, v2?.baseline_hash, v2?.baselineSha256, v2?.baseline_sha256);
-  const decompositionConfirmation = firstObject(v2?.visualDecompositionConfirmation, v2?.visual_decomposition_confirmation, v2?.decompositionConfirmation, v2?.decomposition_confirmation);
+  const { evidence, v2, v3, v4, v5, refs } = evidenceObjects(subject, options);
+  const hashes = collectHashes(subject, evidence, v2, v3, v4, v5);
+  const v2PlanTargetHash = firstHash(subject.targetSha256, v2?.targetSha256);
+  const v2PlanCandidateHash = firstHash(v2?.candidateSha256);
+  const v2PlanDiffFingerprint = firstIdentity(v2?.diffFingerprint);
+  const decompositionConfirmation = firstObject(v2?.visualDecompositionConfirmation);
   const identity = {
     workItemId: firstValue(subject.workItemId, subject.work_item_id, evidence.workItemId, evidence.work_item_id),
-    unitResultId: firstValue(v2?.resultId, v2?.unitResultId, v2?.executionUnitResultId),
-    candidateId: firstValue(subject.candidateId, subject.candidate_id, evidence.candidateId, evidence.candidate_id, v4?.candidateId, v4?.candidate_id),
+    unitResultId: null,
+    candidateId: firstValue(subject.candidateId, subject.candidate_id, evidence.candidateId, evidence.candidate_id, v5?.candidateId, v5?.candidate_id),
     candidateVersion: firstValue(subject.candidateVersion, subject.candidate_version, evidence.candidateVersion, evidence.candidate_version),
     contentHash: firstValue(hashes.contentHash, hashes.candidateHash, hashes.candidate_sha256),
     baselineHash: firstValue(hashes.baselineHash, subject.baselineHash),
@@ -250,15 +266,15 @@ export function visualPrerequisiteSnapshot(subject = {}, options = {}) {
     artifactHash: firstValue(hashes.artifactHash),
     dependencyHash: firstValue(hashes.dependencyHash),
     visualManifestHash: firstValue(subject.visualManifestSha256, subject.visual_manifest_sha256, evidence.visualManifestSha256, evidence.visual_manifest_sha256),
-    V2DecompositionConfirmationId: firstValue(decompositionConfirmation?.confirmation_id, decompositionConfirmation?.confirmationId, decompositionConfirmation?.decision_id, decompositionConfirmation?.decisionId),
-    V2DecompositionConfirmationEvidenceHash: firstValue(decompositionConfirmation?.evidence_sha256, decompositionConfirmation?.evidenceSha256, decompositionConfirmation?.decision_sha256, decompositionConfirmation?.decisionSha256),
+    V2DecompositionConfirmationId: firstValue(decompositionConfirmation?.confirmationId),
+    V2DecompositionConfirmationEvidenceHash: firstValue(decompositionConfirmation?.evidenceSha256),
     V2PlanTargetHash: v2PlanTargetHash,
     V2PlanCandidateHash: v2PlanCandidateHash,
     V2PlanDiffFingerprint: v2PlanDiffFingerprint,
-    V2PlanBaselineHash: v2PlanBaselineHash,
     V2ReferenceHash: refs?.V2?.sha256,
     V3ReferenceHash: refs?.V3?.sha256,
     V4ReferenceHash: refs?.V4?.sha256,
+    V5ReferenceHash: refs?.V5?.sha256,
   };
   return Object.fromEntries(Object.entries(identity).filter(([, value]) => value !== null && value !== undefined));
 }
@@ -303,26 +319,19 @@ function hasMachineEvidenceFailure(value) {
 function collectIdentityChanges(subject, { v2, oldSnapshot, snapshot } = {}) {
   const changes = [];
   const read = (value, ...names) => firstValue(...names.map((name) => value?.[name]));
-  const candidateSha = (value) => read(value, 'contentHash', 'content_hash', 'candidateHash', 'candidate_sha256', 'candidateSha256')
-    ?? (isObject(value?.candidateIdentity) ? read(value.candidateIdentity, 'sha256', 'candidate_sha256', 'candidateSha256') : null)
-    ?? (isObject(value?.candidate_identity) ? read(value.candidate_identity, 'sha256', 'candidate_sha256', 'candidateSha256') : null);
-  const diff = (value) => read(value, 'diffFingerprint', 'diff_fingerprint', 'diffIdentity', 'diff_identity')
-    ?? (isObject(value?.candidateIdentity) ? read(value.candidateIdentity, 'diffFingerprint', 'diff_fingerprint', 'diffIdentity', 'diff_identity') : null)
-    ?? (isObject(value?.candidate_identity) ? read(value.candidate_identity, 'diffFingerprint', 'diff_fingerprint', 'diffIdentity', 'diff_identity') : null);
-  const target = (value) => read(value, 'targetHash', 'target_hash', 'targetSha256', 'target_sha256');
-  const baseline = (value) => read(value, 'baselineHash', 'baseline_hash', 'baselineSha256', 'baseline_sha256');
+  const candidateSha = (value) => value?.candidateSha256 ?? null;
+  const diff = (value) => value?.diffFingerprint ?? null;
+  const target = (value) => value?.targetSha256 ?? null;
   const compare = (label, values, normalizer = hashValue) => {
     // 只有两端都通过格式/非空校验的身份才足以证明真实变化；坏格式先按 repair 处理。
     const known = values.map(normalizer).filter(Boolean);
     if (known.length === 2 && known[0] !== known[1]) changes.push(label);
   };
-  const subjectTarget = read(subject, 'targetHash', 'target_hash', 'targetSha256', 'target_sha256');
-  const subjectBaseline = read(subject, 'baselineHash', 'baseline_hash');
+  const subjectTarget = subject?.targetSha256 ?? null;
   // V3/V4 的代码与资源候选会正常演进；仅 V2 拆解方案绑定冲突才允许回退。
   compare('V2 plan target identity', [subjectTarget, target(v2)]);
-  compare('V2 plan candidate identity', [candidateSha(v2), firstValue(v2?.confirmedCandidateSha256, v2?.confirmed_candidate_sha256)]);
-  compare('V2 plan diff identity', [diff(v2), firstValue(v2?.confirmedDiffFingerprint, v2?.confirmed_diff_fingerprint)], firstIdentity);
-  compare('V2 plan baseline identity', [subjectBaseline, baseline(v2)]);
+  compare('V2 plan candidate identity', [candidateSha(v2), v2?.visualDecompositionConfirmation?.candidateSha256]);
+  compare('V2 plan diff identity', [diff(v2), v2?.visualDecompositionConfirmation?.diffFingerprint], firstIdentity);
   if (isObject(oldSnapshot) && isObject(snapshot)) for (const key of RETURN_SNAPSHOT_KEYS) {
     const normalizer = key.includes('DiffFingerprint') || key === 'V2DecompositionConfirmationId' || key === 'workItemId' || key === 'unitResultId' ? firstIdentity : hashValue;
     const previous = normalizer(oldSnapshot[key]);
@@ -360,7 +369,7 @@ function finalizeRemediation(result, context = {}) {
   if (finalDisposition === VISUAL_REMEDIATION.RETURN) {
     const stage = context.returnStage && identityChanges.length === 0
       ? context.returnStage
-      : earliestReturnStage(identityChanges, context.returnStage ?? (result.stage && /^V[0-4]$/.test(result.stage) ? result.stage : 'V2'));
+      : earliestReturnStage(identityChanges, context.returnStage ?? (result.stage && /^V[0-5]$/.test(result.stage) ? result.stage : 'V2'));
     result.returnStage = stage;
     const start = Number(stage.slice(1));
     result.invalidatedStages = Number.isInteger(start) ? VISUAL_STAGE_IDS.slice(start) : [];
@@ -384,25 +393,100 @@ function collectPendingEvidence(value, path = '', output = []) {
   return output;
 }
 
-/** 校验 V2 拆解图确认和生产方案，确保正式实现只依赖拆解事实而不是旧拆解图确认。 */
-function validateV2ProductionPlan(v2, subject, missingEvidence) {
+/** 校验标准冻结 V2 方案及其哈希绑定的拆解、技术和布局来源。 */
+function validateV2ProductionPlan(v2, subject, options, missingEvidence, staleFiles) {
   if (!isObject(v2)) return;
-  const targetSha = firstValue(v2.targetSha256, v2.target_sha256, v2.targetHash, v2.target_hash, subject?.targetSha256, subject?.target_sha256);
-  const confirmation = firstObject(v2.visualDecompositionConfirmation, v2.visual_decomposition_confirmation, v2.decompositionConfirmation, v2.decomposition_confirmation);
-  if (!confirmation) {
-    missingEvidence.push('V2 visual decomposition confirmation');
-  } else {
-    if (!['accepted', 'pass', 'passed', 'complete', 'completed'].includes(textStatus(confirmation.status ?? confirmation.verdict ?? confirmation.result))) missingEvidence.push('V2 visual decomposition confirmation accepted');
-    if (String(confirmation.confirmation_mode ?? confirmation.confirmationMode ?? '').toLowerCase() !== 'manual') missingEvidence.push('V2 visual decomposition confirmation manual');
-    if (!nonEmpty(confirmation.annotation_file ?? confirmation.annotationFile ?? confirmation.decomposition_image ?? confirmation.decompositionImage)) missingEvidence.push('V2 decomposition image');
-    if (!hashValue(confirmation.annotation_sha256 ?? confirmation.annotationSha256 ?? confirmation.decomposition_image_sha256 ?? confirmation.decompositionImageSha256)) missingEvidence.push('V2 decomposition image sha256');
-    const confirmedTarget = firstValue(confirmation.target_sha256, confirmation.targetSha256, confirmation.reference_target_sha256, confirmation.referenceTargetSha256);
-    if (!hashValue(confirmedTarget) || (hashValue(targetSha) && confirmedTarget !== targetSha)) missingEvidence.push('V2 decomposition confirmation target identity');
+  const missing = V2_PLAN_FIELDS.filter((field) => v2[field] === undefined);
+  const extra = Object.keys(v2).filter((field) => !V2_PLAN_FIELDS.includes(field));
+  if (missing.length || extra.length) missingEvidence.push(`V2 reconstruction plan fields (missing: ${missing.join(',') || 'none'}; extra: ${extra.join(',') || 'none'})`);
+  if (v2.schemaVersion !== 'phaser4-scene-v2-reconstruction-plan/1.0' || v2.status !== 'COMPLETE' || v2.stage !== 'V2' || v2.frozen !== true
+    || !nonEmpty(v2.workItemId) || (subject?.workItemId && v2.workItemId !== subject.workItemId)
+    || !nonEmpty(v2.sceneId) || !/^sha256:[a-f0-9]{64}$/i.test(String(v2.targetSha256))
+    || !/^sha256:[a-f0-9]{64}$/i.test(String(v2.candidateSha256)) || !nonEmpty(v2.diffFingerprint)) {
+    missingEvidence.push('V2 COMPLETE/frozen plan identity (work/scene/target/candidate/diff)');
   }
-  if (!isObject(v2.visualProductionContract ?? v2.visual_production_contract ?? v2.productionContract ?? v2.contract)) missingEvidence.push('V2 visual production contract');
-  if (!(v2.productionPlan || v2.production_plan || v2.plan || v2.visualProductionUnits || v2.visual_production_units)) missingEvidence.push('V2 production plan');
-  if (!(v2.coverageAudit || v2.coverage_audit || v2.coverage)) missingEvidence.push('V2 coverage/decomposition audit');
-  if (!(v2.technicalAnalysis || v2.technical_analysis || v2.proposalTechnicalJson || v2.proposal_technical_json)) missingEvidence.push('V2 technical decomposition JSON');
+  if (!isObject(v2.visualProductionContract) || !Array.isArray(v2.visualProductionUnits) || v2.visualProductionUnits.length === 0 || !Array.isArray(v2.displayLayerContexts)) {
+    missingEvidence.push('V2 production contract/units/display-layer contexts');
+  }
+
+  const root = resolve(options.projectRoot ?? process.cwd());
+  const rootReal = (() => { try { return realpathSync(root); } catch { return null; } })();
+  /** 安全读取 V2 冻结源文件并区分内容漂移与结构缺失。 */
+  const readBoundFile = (file, expectedSha, label) => {
+    if (!rootReal || !nonEmpty(file) || isAbsolute(file) || file.includes('\0') || !/^sha256:[a-f0-9]{64}$/i.test(String(expectedSha))) {
+      missingEvidence.push(`${label} file/SHA binding`);
+      return null;
+    }
+    try {
+      const candidate = resolve(rootReal, file);
+      const lexical = relative(rootReal, candidate);
+      if (!lexical || lexical === '..' || lexical.startsWith('..\\') || lexical.startsWith('../') || isAbsolute(lexical)) throw new Error('path escape');
+      const actual = realpathSync(candidate);
+      const realRelative = relative(rootReal, actual);
+      if (!realRelative || realRelative === '..' || realRelative.startsWith('..\\') || realRelative.startsWith('../') || isAbsolute(realRelative) || !statSync(actual).isFile()) throw new Error('symlink escape');
+      const bytes = readFileSync(actual);
+      if (sha256Bytes(bytes) !== expectedSha) {
+        staleFiles.push(`${label}:${file}`);
+        throw new Error('hash mismatch');
+      }
+      return bytes;
+    } catch {
+      missingEvidence.push(`${label} file SHA/path`);
+      return null;
+    }
+  };
+  const sceneMaster = v2.sceneMaster;
+  if (!isObject(sceneMaster) || Object.keys(sceneMaster).some((key) => !['file', 'sha256', 'sceneId'].includes(key))
+    || sceneMaster.sceneId !== v2.sceneId || sceneMaster.sha256 !== v2.targetSha256) missingEvidence.push('V2 sceneMaster target/scene binding');
+  readBoundFile(sceneMaster?.file, sceneMaster?.sha256, 'V2 sceneMaster');
+  for (const field of ['sceneReconstructionContract', 'decompositionAnnotation', 'technicalDecomposition']) {
+    const artifact = v2[field];
+    if (!isObject(artifact) || Object.keys(artifact).some((key) => !['file', 'sha256', 'sceneId'].includes(key)) || artifact.sceneId !== v2.sceneId) {
+      missingEvidence.push(`V2 ${field} scene/file/SHA binding`);
+      continue;
+    }
+    const bytes = readBoundFile(artifact.file, artifact.sha256, `V2 ${field}`);
+    if (bytes && field === 'sceneReconstructionContract') {
+      try {
+        const contract = JSON.parse(bytes.toString('utf8'));
+        const conditions = contract.target_conditions;
+        const layout = contract.layout_decomposition;
+        const annotation = layout?.layout_annotation;
+        const nodes = layout?.layout_nodes;
+        if (!isObject(conditions) || conditions.target_sha256 !== v2.targetSha256 || conditions.scene_id !== v2.sceneId
+          || !Array.isArray(nodes) || nodes.length === 0 || !isObject(annotation)
+          || !nonEmpty(annotation.layout_nodes_file) || !/^sha256:[a-f0-9]{64}$/i.test(String(annotation.layout_nodes_sha256))) {
+          missingEvidence.push('V2 scene reconstruction target/layout coverage');
+          continue;
+        }
+        const nodesBytes = readBoundFile(annotation.layout_nodes_file, annotation.layout_nodes_sha256, 'V2 frozen layout nodes');
+        if (nodesBytes) {
+          const document = JSON.parse(nodesBytes.toString('utf8'));
+          const sourceNodes = document?.layout_nodes;
+          const contractIds = nodes.map((node) => node?.layout_node_id);
+          const sourceIds = Array.isArray(sourceNodes) ? sourceNodes.map((node) => node?.layout_node_id) : [];
+          if (!Array.isArray(sourceNodes) || sourceNodes.length === 0 || sourceIds.some((id) => !nonEmpty(id))
+            || new Set(sourceIds).size !== sourceIds.length || JSON.stringify(contractIds) !== JSON.stringify(sourceIds)
+            || document.target_sha256 !== v2.targetSha256 || document.scene_id !== v2.sceneId) missingEvidence.push('V2 contract/frozen layout node identity and coverage');
+        }
+      } catch {
+        missingEvidence.push('V2 scene reconstruction contract/layout JSON');
+      }
+    }
+  }
+  const confirmation = v2.visualDecompositionConfirmation;
+  if (!isObject(confirmation) || confirmation.confirmationMode !== 'manual' || !['PASS', 'accepted'].includes(confirmation.status)
+    || confirmation.targetSha256 !== v2.targetSha256 || confirmation.candidateSha256 !== v2.candidateSha256
+    || confirmation.diffFingerprint !== v2.diffFingerprint) missingEvidence.push('V2 manual decomposition confirmation identity');
+  if (isObject(confirmation)) readBoundFile(confirmation.evidenceFile, confirmation.evidenceSha256, 'V2 decomposition confirmation');
+}
+
+/** 对外复用同一严格 V2 文件和身份校验，避免阶段入口出现较弱的独立门。 */
+export function validateStandardV2ProductionPlan(value, subject = {}, options = {}) {
+  const missingEvidence = [];
+  const staleFiles = [];
+  validateV2ProductionPlan(value, subject, options, missingEvidence, staleFiles);
+  return { ok: missingEvidence.length === 0, missingEvidence, staleFiles };
 }
 
 /**
@@ -455,20 +539,21 @@ function validateEvidenceFiles(value, label, options, missingEvidence, requireCo
 }
 
 /** 校验每个阶段的候选身份与内容/差异哈希，防止不同候选的证据拼接。 */
-function validateCandidateIdentity(value, label, missingEvidence) {
-  const candidate = value?.candidateIdentity ?? value?.candidate_identity;
-  if (!isObject(candidate) || !hashValue(candidate.sha256) || !hashValue(candidate.diffFingerprint ?? candidate.diff_fingerprint)) {
+function validateCandidateIdentity(value, label, missingEvidence, strict = false) {
+  const candidate = strict ? value?.candidateIdentity : value?.candidateIdentity ?? value?.candidate_identity;
+  const candidateDiff = strict ? candidate?.diffFingerprint : candidate?.diffFingerprint ?? candidate?.diff_fingerprint;
+  if (!isObject(candidate) || !hashValue(candidate.sha256) || !hashValue(candidateDiff)) {
     missingEvidence.push(`${label} candidate identity/hash`);
     return false;
   }
-  const contentHash = value.contentHash ?? value.content_hash ?? value.candidateHash ?? value.candidate_sha256;
-  const diffHash = value.diffFingerprint ?? value.diff_fingerprint;
+  const contentHash = strict ? value.contentHash : value.contentHash ?? value.content_hash ?? value.candidateHash ?? value.candidate_sha256;
+  const diffHash = strict ? value.diffFingerprint : value.diffFingerprint ?? value.diff_fingerprint;
   if (hashValue(contentHash) && candidate.sha256 !== contentHash) missingEvidence.push(`${label} candidate content hash binding`);
-  if (hashValue(diffHash) && (candidate.diffFingerprint ?? candidate.diff_fingerprint) !== diffHash) missingEvidence.push(`${label} candidate diff hash binding`);
+  if (hashValue(diffHash) && candidateDiff !== diffHash) missingEvidence.push(`${label} candidate diff hash binding`);
   return true;
 }
 
-/** 校验正式视觉集成的 V2/V3/V4 依赖链并产生结构化结果。 */
+/** 校验视觉 V3 资源、V4 页面草图与 V5 正式运行态的分段门。 */
 export function validateVisualStagePrerequisites(subject = {}, options = {}) {
   const classification = classifyVisibleVisualProductionIntegration(subject);
   const result = { ok: true, required: classification.isVisibleVisualProductionIntegration, classification, stage: null, state: null, missingStages: [], missingEvidence: [], invalidatedDependencies: [], errors: [], snapshot: null, nextAction: null, disposition: null, remediation: null, affectedScope: [], identityChanges: [], invalidatesDownstream: false, returnStage: null, invalidatedStages: [] };
@@ -481,67 +566,92 @@ export function validateVisualStagePrerequisites(subject = {}, options = {}) {
     return finalizeRemediation(result, { subject, changed: [] });
   }
   if (classification.isolatedGraybox) return finalizeRemediation(result, { subject, changed: [] });
-  if (!stage) { result.ok = false; result.missingStages.push('V4'); result.errors.push(error('VISUAL_STAGE_MISSING', '正式可见视觉集成必须显式声明 visualStage=V4；stageId 不能替代', { missingStages: ['V4'], missingEvidence: ['visualStage'], nextAction: '原地补齐 visualStage=V4 声明并重验当前门；不得因声明缺失回退阶段' })); }
-  else if (stage !== 'V4') { result.ok = false; result.missingStages.push('V4'); result.errors.push(error('VISUAL_STAGE_NOT_V4', `正式可见视觉集成当前阶段为 ${stage}，必须为 V4`, { missingStages: ['V4'] })); }
-  if (conflicts.length) { result.ok = false; result.errors.push(error('VISUAL_STAGE_DECLARATION_INVALID', '视觉阶段字段未知或互相矛盾，不允许猜测', { missingEvidence: ['visualStage'] })); }
-  if (!VISUAL_STAGE_STATES.includes(String(state))) { result.ok = false; result.errors.push(error(state === 'frozen' ? 'VISUAL_BARE_FROZEN' : 'VISUAL_STAGE_STATE_INVALID', '视觉阶段状态缺少语义或使用了裸 frozen', { missingEvidence: ['visualStageState'] })); }
-  else if (state !== 'v4-runtime-integration-candidate') { result.ok = false; result.errors.push(error('VISUAL_STAGE_STATE_NOT_V4', `正式可见视觉集成状态必须为 v4-runtime-integration-candidate，当前为 ${state}`, { missingStages: ['V4'] })); }
+  if (conflicts.length) result.errors.push(error('VISUAL_STAGE_DECLARATION_INVALID', '视觉阶段字段未知或互相矛盾，不允许猜测', { missingEvidence: ['visualStage'] }));
 
-  const { evidence, v2, v3, v4, refs } = evidenceObjects(subject, options);
+  const sketchPreparation = stage === 'V4' && ['in-progress', 'pending'].includes(state);
+  const sketchConfirmed = stage === 'V4' && state === 'v4-page-sketch-confirmed';
+  const formalImplementation = stage === 'V5' && state === 'in-progress';
+  const runtimeAccepted = stage === 'V5' && state === 'v5-runtime-integration-candidate';
+  if (!sketchPreparation && !sketchConfirmed && !formalImplementation && !runtimeAccepted) {
+    const missingStage = stage === 'V4' ? 'V4' : 'V5';
+    result.missingStages.push(missingStage);
+    result.errors.push(error('VISUAL_STAGE_NOT_READY', `正式可见视觉行为必须在 V4 草图准备/确认或 V5 正式实现/运行验收状态执行；当前为 ${stage ?? 'unknown'}/${state ?? 'missing'}`, { missingStages: [missingStage], missingEvidence: ['visualStage', 'visualStageState'] }));
+  }
+
+  const { evidence, v2, v3, v4, v5, refs } = evidenceObjects(subject, options);
   const missingEvidence = result.missingEvidence;
   const staleReferenceStages = [];
-  for (const stage of ['V2', 'V3', 'V4']) {
-    const reference = refs[stage];
-    if (!isObject(reference) || !nonEmpty(reference.path) || !nonEmpty(reference.sha256)) missingEvidence.push(`${stage} immutable evidence reference (path + sha256)`);
-    else if (!loadImmutableVisualStageReference(reference, `${stage} immutable evidence`, options)) {
-      missingEvidence.push(`${stage} immutable evidence hash/identity`);
-      if (isStaleVisualReference(reference, options)) staleReferenceStages.push(stage);
+  const requiredRefs = sketchPreparation ? ['V2', 'V3'] : ['V2', 'V3', 'V4', ...(runtimeAccepted ? ['V5'] : [])];
+  for (const referenceStage of requiredRefs) {
+    const reference = refs[referenceStage];
+    if (!isObject(reference) || !nonEmpty(reference.path) || !nonEmpty(reference.sha256)) missingEvidence.push(`${referenceStage} immutable evidence reference (path + sha256)`);
+    else if (!loadImmutableVisualStageReference(reference, `${referenceStage} immutable evidence`, options)) {
+      missingEvidence.push(`${referenceStage} immutable evidence hash/identity`);
+      if (isStaleVisualReference(reference, options)) staleReferenceStages.push(referenceStage);
     }
   }
-  if (!isObject(v2) || v2.evidenceType !== 'v2-production-plan' || !statusPass(v2.status ?? v2.verdict ?? v2.result)) missingEvidence.push('V2 production plan PASS');
-  if (!hasIdentity(v2) || !nonEmpty(v2.planId ?? v2.plan_id ?? v2.evidenceId ?? v2.evidence_id ?? v2.resultId) || !nonEmpty(v2.workItemId ?? v2.work_item_id) || (subject.workItemId && (v2.workItemId ?? v2.work_item_id) !== subject.workItemId) || !hashValue(v2.baselineHash ?? v2.baseline_hash) || (subject.baselineHash && (v2.baselineHash ?? v2.baseline_hash) !== subject.baselineHash) || !hashValue(v2.contentHash ?? v2.content_hash ?? v2.candidateHash ?? v2.candidate_sha256) || !hashValue(v2.diffFingerprint ?? v2.diff_fingerprint)) missingEvidence.push('V2 immutable plan identity/hash');
+  const staleV2Files = [];
   if (isObject(v2)) {
-    validateEvidenceFiles(v2, 'V2 production plan', options, missingEvidence);
-    validateCandidateIdentity(v2, 'V2 production plan', missingEvidence);
-    validateV2ProductionPlan(v2, subject, missingEvidence);
-    // V2 允许附带可重算的机器检查事实；一旦事实明确失败，只能重验当前门，不能继续冒充方案已满足。
-    if (hasMachineEvidenceFailure(v2)) result.errors.push(error('VISUAL_V2_MACHINE_CHECK_FAILED', 'V2 拆解方案的机器检查事实失败，需要重验当前门', { disposition: VISUAL_REMEDIATION.REVALIDATE, affectedScope: ['V2 machine evidence'] }));
+    validateV2ProductionPlan(v2, subject, options, missingEvidence, staleV2Files);
+  } else missingEvidence.push('V2 standard frozen reconstruction plan');
+  if (staleV2Files.length) {
+    result.invalidatedDependencies.push(...staleV2Files);
+    result.errors.push(error('VISUAL_PENDING_STALE', 'V2 冻结拆解/技术来源文件哈希已漂移，需要重新验证 V2 当前门', { invalidatedDependencies: staleV2Files, disposition: VISUAL_REMEDIATION.REVALIDATE, affectedScope: staleV2Files }));
   }
-  if (!isObject(v3) || v3.evidenceType !== 'v3-formal-acceptance' || !statusPass(v3.status ?? v3.verdict ?? v3.result)) missingEvidence.push('V3 acceptance PASS');
+  if (!isObject(v3) || v3.evidenceType !== 'v3-formal-acceptance' || v3.status !== 'PASS') missingEvidence.push('V3 acceptance PASS');
   if (isObject(v3)) {
-    if (!nonEmpty(v3.acceptanceId ?? v3.acceptance_id ?? v3.evidenceId ?? v3.evidence_id) || !nonEmpty(v3.workItemId ?? v3.work_item_id) || (subject.workItemId && (v3.workItemId ?? v3.work_item_id) !== subject.workItemId) || !hashValue(v3.baselineHash ?? v3.baseline_hash) || (subject.baselineHash && (v3.baselineHash ?? v3.baseline_hash) !== subject.baselineHash) || !hashValue(v3.contentHash ?? v3.content_hash ?? v3.candidateHash ?? v3.candidate_sha256) || !hashValue(v3.diffFingerprint ?? v3.diff_fingerprint)) missingEvidence.push('V3 immutable acceptance identity/hash');
+    if (!nonEmpty(v3.acceptanceId) || !nonEmpty(v3.workItemId) || (subject.workItemId && v3.workItemId !== subject.workItemId) || !hashValue(v3.baselineHash) || (subject.baselineHash && v3.baselineHash !== subject.baselineHash) || !hashValue(v3.contentHash) || !hashValue(v3.diffFingerprint)) missingEvidence.push('V3 immutable acceptance identity/hash');
     validateEvidenceFiles(v3, 'V3 formal acceptance', options, missingEvidence);
-    validateCandidateIdentity(v3, 'V3 formal acceptance', missingEvidence);
-    if (!(v3.formalAssets || v3.formal_assets || v3.assets || v3.productionAssets)) missingEvidence.push('V3 formal assets');
-    if (!(v3.components || v3.componentStates || v3.component_states || v3.componentStatus)) missingEvidence.push('V3 component states');
-    const combination = v3.combinationPreacceptance ?? v3.combination_preacceptance ?? v3.sameScreenAcceptance ?? v3.combinationAcceptance;
-    if (!isObject(combination) || !statusPass(combination.status ?? combination.verdict ?? combination.result)) missingEvidence.push('V3 same-screen combination acceptance');
+    validateCandidateIdentity(v3, 'V3 formal acceptance', missingEvidence, true);
+    const formalAssets = v3.formalAssets;
+    const components = v3.components;
+    if (!Array.isArray(formalAssets) || formalAssets.length === 0) missingEvidence.push('V3 accepted formal assets');
+    else if (formalAssets.some((asset) => !isObject(asset) || !statusPass(asset.status))) missingEvidence.push('V3 formal asset accepted statuses');
+    if (!Array.isArray(components) || components.length === 0) missingEvidence.push('V3 accepted component states');
+    else if (components.some((component) => !isObject(component) || !statusPass(component.status))) missingEvidence.push('V3 component accepted statuses');
   }
-  if (!isObject(v4) || v4.evidenceType !== 'v4-runtime-integration-candidate' || !statusPass(v4.status ?? v4.verdict ?? v4.result)) missingEvidence.push('V4 runtime candidate');
-  if (isObject(v4)) {
-    if (!nonEmpty(v4.candidateId ?? v4.candidate_id ?? v4.evidenceId ?? v4.evidence_id) || !nonEmpty(v4.workItemId ?? v4.work_item_id) || (subject.workItemId && (v4.workItemId ?? v4.work_item_id) !== subject.workItemId) || !hashValue(v4.contentHash ?? v4.content_hash ?? v4.candidateHash ?? v4.candidate_sha256) || !hashValue(v4.diffFingerprint ?? v4.diff_fingerprint) || (subject.baselineHash && v4.baselineHash && v4.baselineHash !== subject.baselineHash)) missingEvidence.push('V4 immutable candidate identity/hash');
-    validateEvidenceFiles(v4, 'V4 runtime candidate', options, missingEvidence);
-    validateCandidateIdentity(v4, 'V4 runtime candidate', missingEvidence);
+
+  let confirmedSketch = null;
+  if (sketchConfirmed || formalImplementation || runtimeAccepted) {
+    try { confirmedSketch = assertConfirmedPageSketch(subject, options.projectRoot); }
+    catch (caught) { missingEvidence.push(caught.message); }
+    const pkg = options.implementationPackage ?? subject.implementationPackage;
+    if ((formalImplementation || runtimeAccepted) && pkg && confirmedSketch
+      && (pkg.pageSketchFile !== confirmedSketch.reference.path || pkg.pageSketchSha256 !== confirmedSketch.sha256)) missingEvidence.push('V5 Implementation Package pageSketchFile/pageSketchSha256 binding');
+  } else if (sketchPreparation && refs.V4) {
+    const draft = loadImmutableVisualStageReference(refs.V4, 'V4 draft page sketch', options);
+    if (!draft || draft.value?.schema !== 'phaser-page-sketch/1.0' || draft.value?.confirmation?.status === 'accepted') missingEvidence.push('V4 editable unconfirmed page sketch');
   }
-  const pending = collectPendingEvidence({ v2, v3, v4, visualManifest: options.visualManifest, implementationPackage: options.implementationPackage });
+
+  if (runtimeAccepted) {
+    if (!isObject(v5) || v5.evidenceType !== 'v5-runtime-integration-candidate' || v5.status !== 'PASS') missingEvidence.push('V5 runtime candidate PASS');
+    if (isObject(v5)) {
+      if (!nonEmpty(v5.candidateId) || v5.workItemId !== subject.workItemId || !hashValue(v5.baselineHash) || v5.baselineHash !== subject.baselineHash || !hashValue(v5.contentHash) || !nonEmpty(v5.diffFingerprint)) missingEvidence.push('V5 immutable candidate identity/hash');
+      validateEvidenceFiles(v5, 'V5 runtime candidate', options, missingEvidence);
+      validateCandidateIdentity(v5, 'V5 runtime candidate', missingEvidence, true);
+      if (v5.pageSketchSha256 !== refs.V4?.sha256) missingEvidence.push('V5 pageSketchSha256 must bind current V4 page sketch');
+    }
+  }
+
+  const pending = collectPendingEvidence({ v2, v3, v4, v5, visualManifest: options.visualManifest, implementationPackage: options.implementationPackage });
   if (pending.length) result.invalidatedDependencies.push(...pending.map((item) => `${item.path}=${item.value}`));
-  const snapshot = visualPrerequisiteSnapshot(subject, { ...options, visualStageEvidence: evidence, v2, v3, v4 });
+  const snapshot = visualPrerequisiteSnapshot(subject, { ...options, visualStageEvidence: evidence, v2, v3, v4, v5 });
   result.snapshot = snapshot;
   const oldSnapshot = options.pendingSnapshot ?? subject.pendingVisualPrerequisiteSnapshot ?? subject.pending_visual_prerequisite_snapshot;
   const changed = compareSnapshots(oldSnapshot, snapshot);
   if (changed.length) result.invalidatedDependencies.push(...changed);
   if (pending.length) result.errors.push(error('VISUAL_PENDING_ASSET', '存在 planned/pending 资源或未批准替代，当前门尚未满足', { invalidatedDependencies: result.invalidatedDependencies, disposition: VISUAL_REMEDIATION.REVALIDATE, affectedScope: pending.map((item) => item.path) }));
   if (staleReferenceStages.length) {
-    const dependencies = staleReferenceStages.map((stage) => `${stage}EvidenceHash`);
+    const dependencies = staleReferenceStages.map((referenceStage) => `${referenceStage}EvidenceHash`);
     result.invalidatedDependencies.push(...dependencies);
     result.errors.push(error('VISUAL_PENDING_STALE', '视觉证据文件内容哈希已漂移，需要重验当前门；不因证据更新自动回退阶段', { invalidatedDependencies: dependencies, disposition: VISUAL_REMEDIATION.REVALIDATE, affectedScope: staleReferenceStages }));
   }
   if (changed.length) result.errors.push(error('VISUAL_PENDING_STALE', '当前门使用的视觉证据已更新，需要重新验证；不因证据更新自动回退阶段', { invalidatedDependencies: changed, disposition: VISUAL_REMEDIATION.REVALIDATE, affectedScope: changed }));
-  if (missingEvidence.length) result.errors.push(error('VISUAL_PREREQUISITES_MISSING', 'V2/V3/V4 下游证据不完整；根摘要、手写 PASS 或用户批准不具备证明力', { missingEvidence }));
+  if (missingEvidence.length) result.errors.push(error('VISUAL_PREREQUISITES_MISSING', 'V2/V3/V4/V5 下游证据不完整；根摘要、手写 PASS 或用户批准不具备证明力', { missingEvidence }));
   result.missingEvidence = [...new Set(missingEvidence)];
   result.invalidatedDependencies = [...new Set(result.invalidatedDependencies)];
   result.ok = result.errors.length === 0;
-  return finalizeRemediation(result, { subject, v2, v3, v4, oldSnapshot, snapshot, changed, returnStage: 'V2' });
+  return finalizeRemediation(result, { subject, v2, v3, v4, v5, oldSnapshot, snapshot, changed, returnStage: 'V2' });
 }
 
 /** 供 CLI 使用的异常，保留结构化门禁信息而非拼接不可解析文本。 */
@@ -591,13 +701,22 @@ export function structuredVisualStageFailure(errorValue, command = 'visual-stage
  */
 export function enforceVisualStageGate(work, options = {}) {
   const result = validateVisualStagePrerequisites(work, options);
-  if (result.required && ['A0', 'A1', 'A2', 'A3'].includes(String(options.actionLevel)) && !result.classification.isolatedGraybox) {
+  const actionLevel = String(options.actionLevel ?? '');
+  const sketchWork = result.stage === 'V4' && ['in-progress', 'pending', 'v4-page-sketch-confirmed'].includes(String(result.state));
+  const formalCodeWork = result.stage === 'V5' && result.state === 'in-progress';
+  const runtimeProofReady = result.stage === 'V5' && result.state === 'v5-runtime-integration-candidate';
+  const prematureA4 = result.required && actionLevel === 'A4' && !runtimeProofReady && !result.classification.isolatedGraybox;
+  const prematureFormalAction = result.required && ['A0', 'A1', 'A2', 'A3'].includes(actionLevel)
+    && !sketchWork && !formalCodeWork && !result.classification.isolatedGraybox;
+  if (prematureA4 || prematureFormalAction) {
     result.ok = false;
-    result.errors.unshift(error('VISUAL_FORMAL_ENTRY_REQUIRES_A4', '正式可见视觉集成必须进入 A4/F4，灰盒隔离才可留在 A2/安全 A3', {
-      missingStages: ['V4'],
+    result.errors.unshift(error(prematureA4 ? 'VISUAL_A4_REQUIRES_V5_RUNTIME_ACCEPTANCE' : 'VISUAL_FORMAL_ENTRY_REQUIRES_A4', prematureA4
+      ? 'A4/F4 正式入口必须等待 V5 运行验收候选完成'
+      : '正式可见视觉集成必须通过 V5 页面草图绑定和运行验收；只有 V4 草图准备或 V5 正式代码实施可在 A1–A3 执行', {
+      missingStages: [prematureA4 ? 'V5' : 'V4'],
       affectedScope: ['当前动作等级', 'A4/F4 pending'],
       disposition: VISUAL_REMEDIATION.REPAIR,
-      nextAction: '原地修复当前动作等级或 pending 上下文，再重新运行当前门；正式入口仍必须通过 A4/F4',
+      nextAction: '原地修复当前动作等级或 pending 上下文，再重新运行当前门；A4/F4 只能在 V5 运行验收后进入',
     }));
     // 该错误只说明当前动作与门不匹配，不使已冻结的候选失效，也不触发阶段回退。
     result.affectedScope = [...new Set([...result.affectedScope, '当前动作等级', 'A4/F4 pending'])];
@@ -607,7 +726,7 @@ export function enforceVisualStageGate(work, options = {}) {
       result.invalidatesDownstream = false;
       result.returnStage = null;
       result.invalidatedStages = [];
-      result.nextAction = '原地修复当前动作等级或 pending 上下文，再重新运行当前门；正式入口仍必须通过 A4/F4';
+      result.nextAction = '原地修复当前动作等级或 pending 上下文，再重新运行当前门；A4/F4 只能在 V5 运行验收后进入';
     }
   }
   if (result.required && !result.ok) throw new VisualStagePrerequisiteError(result, options.command ?? 'visual-stage-gate');

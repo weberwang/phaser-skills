@@ -14,7 +14,7 @@
 
 状态分析完成后再写 `component_inventory`。`component_count` 是唯一原子部件数量，`visible_instance_count` 是全部可见实例数量；`annotation_number` 只是效果图审阅区域编号。相同视觉部件只登记一个 `component_id/atomic_visual_key`，通过多个 `placements` 表达重复出现，不能复制多份组件或资产。举例：② 顶部 6 个按钮必须是 6 个 component、每个状态各一张；⑧ 的 3 个底部表面若视觉完全相同则是 1 个 component+3 个 placements，⑨ 的 3 个动作图标按实际复用关系登记，不得生成横向组图；③、④、⑦ 只有在清单明确单部件且其余状态写明不适用时才保持单图。每个 placement 必须显式 `interaction_required`；交互 placement 必须且只能绑定一个包含 `hotspot_id`、`component_id`、`placement_id` 和合法 `bounds` 的 `interaction_hotspots`，非交互 placement 不得绑定热区。热区不携带 `asset_id`，单独登记且永远不计入视觉资产数量。
 
-默认 `component_inventory.delivery_mode=individual`，共享一张横向组图会被拒绝。生成式位图统一要求 `delivery_mode=individual` 且 `atlas_allowed=false`，不能使用图集。只有其他生产方法，才可在显式声明 `delivery_mode=atlas`、`atlas_allowed=true` 后使用图集，并为每个部件×状态填写唯一 `atlas_slice`（图集资产 ID、切片 ID、`atlas_size.width/height`、x/y/width/height）；x/y 必须不小于 0，切片右/下边界不得越过 `atlas_size`，V4 还要与正式 atlas 资产真实尺寸一致。没有切片元数据的组图不具备合同效力。
+默认 `component_inventory.delivery_mode=individual`，共享一张横向组图会被拒绝。生成式位图统一要求 `delivery_mode=individual` 且 `atlas_allowed=false`，不能使用图集。只有其他生产方法，才可在显式声明 `delivery_mode=atlas`、`atlas_allowed=true` 后使用图集，并为每个部件×状态填写唯一 `atlas_slice`（图集资产 ID、切片 ID、`atlas_size.width/height`、x/y/width/height）；x/y 必须不小于 0，切片右/下边界不得越过 `atlas_size`，V5 还要与正式 atlas 资产真实尺寸一致。没有切片元数据的组图不具备合同效力。
 
 ## 生产
 
@@ -28,6 +28,6 @@
 6. 在开始任何裁切、抠图、分层、AI 分割/补全或生产派生位图前，必须运行 `node scripts/validate_visual_manifest.mjs docs/visual-assets.json --stage V3 --check-files --project-root .`；只有结构校验和文件证据均通过才可执行。bitmap-decomposition 确认只接受生成器产出的标准 PNG，必须包含正式 PNG 魔数/MIME/尺寸和冻结原图 SHA 元数据；冻结原图必须是完整合法 PNG，且 PNG IHDR 宽高与选定 scene/state 画布一致。标注图逐区域复核编号、分类、中文摘要、bounds、placements、生产方式和区域定义 SHA；编号对应的“编号 + 中文摘要”及“新生成/复用”必须真实绘制在 PNG 右侧说明栏，并分别绑定 `production_method`、`production_origin`、`delivery_kind`，不能只藏在 iTXt；正式流程不生成或接受 SVG 标注。右栏中文使用随包的 OFL 点阵字库，覆盖 GB2312、ASCII 和中文标点；未知字符必须在生成阶段报错，不得绘制缺字框继续通过。非拆解 USER_DECISION 的普通图片证据仍按普通路径检查。确认前禁止上述生产操作；提案、冻结目标或区域变化会使确认失效并重新请求；确认只授权位图拆解范围，不授权改变玩法、布局或视觉事实。效果图清单根节点还必须绑定 `workItemId`、`candidateVersion`，不得使用旧 snake_case 根字段。
 7. 生成式位图输出独立位图；只有其他生产方法在合同允许时才输出图集。核对尺寸、锚点、九宫格、采样和纹理预算，再写入唯一权威 `visual-assets.json`。不得把 `runtime-data` 或 `runtime-rendered` 区域裁成位图。owner_type 是合同与确定性 F2 的机器事实，验证器不从像素臆测；必须先绑定既有 coverage/ownership 证据再生成提案。
 
-## V4 验收
+## V5 验收
 
-逐项检查文件存在、透明边缘、完整轮廓、目标缩放、Phaser 加载、运行时路径和纹理键；用动态玩法证据确认拆分没有破坏识别、反馈或遮挡。框选图和单图清单发生变化时返回 V3；资源质量失败留在 V4。
+逐项检查文件存在、透明边缘、完整轮廓、目标缩放、Phaser 加载、运行时路径和纹理键；用动态玩法证据确认拆分没有破坏识别、反馈或遮挡。框选图和单图清单发生变化时返回 V3；资源质量失败留在 V5。

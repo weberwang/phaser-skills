@@ -322,6 +322,8 @@ test("响应式合同声明允许动态有效值并拒绝非法有效声明", ()
 
 test("报告必须带合法不可变证据身份", () => { const missing = summarizeReport([], { resize: { required: false }, viewports: [] }); assert.equal(missing.responsivePass, false); assert(missing.identityErrors.length > 0); const report = summarizeReport([], { ...contract(), resize: { required: false }, viewports: [] }, { ...identity, target_sha256: `sha256:${"b".repeat(64)}` }); assert.deepEqual(report.identityErrors, []); });
 
+test("V5 响应式证据必须携带已确认草图 SHA", () => { const evidenceContract = { ...contract(), resize: { required: false }, viewports: [] }; const missing = summarizeReport([], evidenceContract, { ...identity, currentStage: "V5" }); assert(missing.identityErrors.some((item) => item.includes("pageSketchSha256"))); const malformed = summarizeReport([], evidenceContract, { ...identity, currentStage: "V5", pageSketchSha256: "sha256:bad" }); assert(malformed.identityErrors.some((item) => item.includes("pageSketchSha256"))); const valid = summarizeReport([], evidenceContract, { ...identity, currentStage: "V5", pageSketchSha256: `sha256:${"f".repeat(64)}` }); assert.deepEqual(valid.identityErrors, []); assert.equal(valid.pageSketchSha256, `sha256:${"f".repeat(64)}`); });
+
 test("效果图还原报告必须绑定冻结目标 SHA", () => {
   const { document, targetSha } = effectImageContract();
   const missing = summarizeReport([], document, identity); assert(missing.identityErrors.some((item) => item.includes("target_sha256")));

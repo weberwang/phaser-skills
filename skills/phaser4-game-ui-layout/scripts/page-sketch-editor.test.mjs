@@ -1,0 +1,201 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { initializePageSketchApplication } from "./page-sketch-editor.mjs";
+
+const SHA = `sha256:${"e".repeat(64)}`;
+
+/** 创建可暂停的异步步骤，以便在保存/确认未完成时检查 UI 是否仍可编辑。 */
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+/** 提供页面控制器所需的轻量 DOM 节点与可观察事件监听器。 */
+class FakeElement {
+  /** 初始化模拟元素的样式、属性、子树和交互状态。 */
+  constructor(tagName, document) {
+    this.tagName = tagName;
+    this.ownerDocument = document;
+    this.children = [];
+    this.dataset = {};
+    this.style = {};
+    this.attributes = new Map();
+    this.listeners = new Map();
+    this.disabled = false;
+    this.value = "";
+    this.textContent = "";
+  }
+
+  /** 注册页面控件事件。 */
+  addEventListener(type, callback) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), callback]);
+  }
+
+  /** 只向未禁用控件派发事件，并返回监听器结果供测试等待打开过程。 */
+  dispatch(type, details = {}) {
+    if (this.disabled) return [];
+    const event = { ...details, type, target: this, currentTarget: this, preventDefault() {} };
+    return (this.listeners.get(type) ?? []).map((callback) => callback.call(this, event));
+  }
+
+  /** 追加子节点并维护 DOM 父子关系。 */
+  append(...children) { this.children.push(...children); }
+
+  /** 替换子树内容。 */
+  replaceChildren(...children) { this.children = [...children]; }
+
+  /** 设置并保存页面可访问性属性。 */
+  setAttribute(name, value) { this.attributes.set(name, String(value)); }
+
+  /** 移除本地 data 属性。 */
+  removeAttribute(name) { this.attributes.delete(name); }
+}
+
+/** 创建页面控制器使用的必要按钮、画布和 window。 */
+function createPageDocument() {
+  const elements = new Map();
+  const document = {
+    createElement(tagName) { return new FakeElement(tagName, document); },
+    getElementById(id) { return elements.get(id); },
+  };
+  for (const [id, tag] of [
+    ["stage-frame", "section"], ["stage-surface", "div"], ["open-sketch", "button"], ["toggle-preview", "button"], ["save-sketch", "button"],
+    ["confirm-sketch", "button"], ["confirmed-by", "input"], ["page-status", "span"], ["resource-errors", "aside"],
+  ]) elements.set(id, document.createElement(tag));
+  elements.get("stage-frame").clientWidth = 600;
+  elements.get("stage-frame").clientHeight = 400;
+  const window = {
+    location: { origin: "https://game.test" },
+    listeners: new Map(),
+    addEventListener(type, callback) { this.listeners.set(type, [...(this.listeners.get(type) ?? []), callback]); },
+    removeEventListener() {},
+  };
+  document.defaultView = window;
+  return { document, elements };
+}
+
+/** 创建最小草图文档；实际依赖由 adapters 控制，不触发浏览器文件或网络操作。 */
+function createSketch() {
+  const layout = { schema: "phaser-visual-layout/1.0", target_sha256: SHA, scene_id: "HudScene", state_id: "default", offsets: {} };
+  return {
+    schema: "phaser-page-sketch/1.0", target_sha256: SHA, scene_id: "HudScene", state_id: "default", work_item_id: "WI-1", candidate_version: "candidate-1",
+    viewport: { width: 200, height: 100 }, reference_file: "refs/reference.png", v2_nodes_file: "evidence/nodes.json", v2_nodes_sha256: SHA,
+    v3_manifest_file: "evidence/manifest.json", v3_manifest_sha256: SHA, v3_evidence_file: "evidence/v3-pass.json", v3_evidence_sha256: SHA,
+    v3_assets: [], nodes: [{ layout_node_id: "hud.root", parent_layout_node_id: "viewport", target_bounds: { x: 0, y: 0, width: 200, height: 100 } }],
+    node_presentations: { "hud.root": { kind: "container" } }, layout, confirmation: null,
+  };
+}
+
+test("应用层保存和确认期间锁住节点、打开、保存、确认及确认身份并最终解锁", async () => {
+  const { document, elements } = createPageDocument();
+  const saveGate = deferred();
+  const saveStarted = deferred();
+  const confirmGate = deferred();
+  const confirmStarted = deferred();
+  let diskDocument = createSketch();
+  let openCount = 0;
+  let saveCount = 0;
+  let confirmCount = 0;
+  let store;
+  let editor;
+
+  store = {
+    getDocument() { return structuredClone(diskDocument); },
+    async saveDraft(layout) {
+      saveCount += 1;
+      saveStarted.resolve();
+      await saveGate.promise;
+      diskDocument = { ...diskDocument, layout: structuredClone(layout), confirmation: null };
+      return structuredClone(diskDocument);
+    },
+    async confirm(confirmedBy, { previewReady, layout }) {
+      confirmCount += 1;
+      confirmStarted.resolve();
+      assert.equal(previewReady, true);
+      assert.deepEqual(layout, diskDocument.layout);
+      await confirmGate.promise;
+      diskDocument = { ...diskDocument, confirmation: { status: "accepted", confirmed_at: "2026-10-01T00:00:00.000Z", confirmed_by: confirmedBy, content_sha256: SHA } };
+      return structuredClone(diskDocument);
+    },
+  };
+
+  await initializePageSketchApplication({
+    document,
+    projectRootUrl: new URL("https://game.test/game/"),
+    adapters: {
+      async pickStore() { openCount += 1; return store; },
+      async loadSources() { return { assets: new Map(), confirmationError: null, errors: [], referenceUrl: "blob:reference", revoke() {} }; },
+      async verifySources() { return { errors: [], healthy: true }; },
+      async mountPreview() {
+        return { destroy() {}, errors: [], getBounds: () => ({ x: 0, y: 0, width: 200, height: 100 }), getViewportRect: () => ({ left: 0, top: 0, width: 200, height: 100 }), isHealthy: () => true, reflow() {} };
+      },
+      mountEditor(options) {
+        let layout = structuredClone(options.layout);
+        editor = {
+          interactionEnabled: true,
+          previewMode: false,
+          destroy() {},
+          getLayout() { return structuredClone(layout); },
+          setInteractionEnabled(enabled) { this.interactionEnabled = enabled; },
+          setPreviewMode(enabled) { this.previewMode = enabled; },
+          attemptEdit(nextLayout) {
+            if (!this.interactionEnabled) return false;
+            layout = structuredClone(nextLayout);
+            options.onLayoutChange(layout);
+            return true;
+          },
+        };
+        return editor;
+      },
+    },
+  });
+
+  const [openOperation] = elements.get("open-sketch").dispatch("click");
+  await openOperation;
+  assert.equal(openCount, 1);
+  const previewButton = elements.get("toggle-preview");
+  const beforePreview = editor.getLayout();
+  previewButton.dispatch("click");
+  assert.equal(previewButton.textContent, "返回布局编辑");
+  assert.equal(editor.previewMode, true);
+  assert.deepEqual(editor.getLayout(), beforePreview);
+  previewButton.dispatch("click");
+  assert.equal(previewButton.textContent, "预览正式效果");
+  assert.equal(editor.previewMode, false);
+  assert.deepEqual(editor.getLayout(), beforePreview);
+  const author = elements.get("confirmed-by");
+  author.value = "设计师甲";
+  author.dispatch("input");
+
+  elements.get("save-sketch").dispatch("click");
+  await saveStarted.promise;
+  assert.equal(editor.interactionEnabled, false);
+  for (const id of ["open-sketch", "toggle-preview", "save-sketch", "confirm-sketch", "confirmed-by"]) assert.equal(elements.get(id).disabled, true);
+  const attemptedLayout = { ...createSketch().layout, offsets: { "hud.root": { x: 30, y: 0 } } };
+  assert.equal(editor.attemptEdit(attemptedLayout), false);
+  elements.get("save-sketch").dispatch("click");
+  elements.get("open-sketch").dispatch("click");
+  assert.equal(saveCount, 1);
+  assert.equal(openCount, 1);
+  saveGate.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(editor.interactionEnabled, true);
+  assert.deepEqual(diskDocument.layout.offsets, {});
+  assert.equal(elements.get("confirm-sketch").disabled, false);
+
+  elements.get("confirm-sketch").dispatch("click");
+  await confirmStarted.promise;
+  assert.equal(editor.interactionEnabled, false);
+  for (const id of ["open-sketch", "toggle-preview", "save-sketch", "confirm-sketch", "confirmed-by"]) assert.equal(elements.get(id).disabled, true);
+  assert.equal(editor.attemptEdit(attemptedLayout), false);
+  elements.get("save-sketch").dispatch("click");
+  elements.get("confirm-sketch").dispatch("click");
+  assert.equal(saveCount, 1);
+  assert.equal(confirmCount, 1);
+  confirmGate.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(editor.interactionEnabled, true);
+  assert.equal(diskDocument.confirmation.confirmed_by, "设计师甲");
+  assert.equal(elements.get("confirm-sketch").disabled, true);
+});

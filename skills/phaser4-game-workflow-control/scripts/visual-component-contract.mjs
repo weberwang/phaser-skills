@@ -5,7 +5,7 @@
  *
  * annotation_number 只标识效果图上的审阅区域，不能直接当作资产数量。
  * 该模块把“区域 → 部件 → 状态 → 资产/图集切片”收敛成可验证的映射，
- * 供 V2、V3、Implementation Package、V4 和 F2 共用。
+ * 供 V2、V3、Implementation Package、V5 和 F2 共用。
  */
 import { getVisualRegionDefinitionAliasConflicts, normalizeVisualRegionDefinition } from "../../phaser4-game-asset-integration/scripts/effect_image_annotation_core.mjs";
 import { atomicImageRequirementsEqual, deriveAtomicImageRequirements, normalizeAtomicComponents, normalizeAtomicImageRequirements } from "./visual-atomic-contract.mjs";
@@ -633,25 +633,25 @@ export function validateVisualComponentContract(region, context = {}, options = 
   return errors;
 }
 
-/** 读取正式 atlas 资产的登记尺寸，用于 V4 复核切片不能越界。 */
+/** 读取 V3 正式 atlas 资产的登记尺寸，用于复核切片不能越界。 */
 function resolveAtlasAssetSize(asset) {
   const output = isObject(asset?.output) ? asset.output : (isObject(asset?.output_metadata) ? asset.output_metadata : {});
   return { width: asset?.width ?? output.width, height: asset?.height ?? output.height };
 }
 
-/** 校验 V4 实际输出是否逐 component×state 覆盖 V3 合同。 */
+/** 校验 V5 实际输出是否逐 component×state 覆盖 V3 合同。 */
 export function validateComponentAuditEvidence(region, auditUnit, context = {}, options = {}) {
   const errors = [];
   const canonical = normalizeVisualRegionDefinition(region);
   if (!isObject(region) || canonical.owner_type !== "fixed-production-visual") return errors;
   const derivedRequirements = deriveAtomicImageRequirements(region);
-  if (!atomicImageRequirementsEqual(canonical.atomic_image_requirements, derivedRequirements)) errors.push(componentError(context, "V4 atomic_image_requirements 与状态分析派生结果不一致", { missing: "atomic_image_requirements" }));
+  if (!atomicImageRequirementsEqual(canonical.atomic_image_requirements, derivedRequirements)) errors.push(componentError(context, "V3 atomic_image_requirements 与状态分析派生结果不一致", { missing: "atomic_image_requirements" }));
   const inventory = normalizeComponentInventory(canonical.component_inventory ?? {});
   const stateInfo = normalizeStateAnalysis(canonical.state_analysis ?? {});
   const expected = Array.isArray(canonical.expected_assets) ? canonical.expected_assets.map(normalizeComponentExpectedAsset) : [];
   const placementIdsByComponent = new Map(inventory.components.map((component) => [component.component_id, (component.placements ?? []).map((placement) => placement.placement_id).sort()]));
   const actual = Array.isArray(auditUnit?.actual_assets) ? auditUnit.actual_assets : [];
-  // V4 不能只相信区域的 production_method；actual/runtime 记录也必须逐项拒绝程序绘制图片身份。
+  // V3 不能只相信区域的 production_method；实际资源记录也必须逐项拒绝程序绘制图片身份。
   errors.push(...validateFixedVisualProductionMethod({ ...region, actual_assets: actual, runtime_consumption: auditUnit?.runtime_consumption }, context));
   const required = [];
   for (const component of inventory.components) {
@@ -666,7 +666,7 @@ export function validateComponentAuditEvidence(region, auditUnit, context = {}, 
     const asset = normalizeComponentExpectedAsset(item);
     const actualFile = item?.file ?? item?.path ?? item?.output_file ?? item?.runtime_file ?? item?.runtimeFile ?? "";
     const local = { ...context, component_id: asset.component_id || "?", state_id: asset.canonical_state_id || "?", asset_id: asset.asset_id || item?.id || "?" };
-    // V4 只复核实际文件、组件状态和运行时哈希；拆解确认已在 V2 唯一收敛，
+    // V3 复核实际文件和组件状态；拆解确认已在 V2 唯一收敛，
     // 不再要求每个 actual asset 复制 human_review。
     if (canonical.production_method === "image-generation" || canonical.image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(item, { requiredMime: true, fileFields: ["file", "path", "runtime_file", "output_file"] })) errors.push(componentError(local, `actual_assets[${index}].${violation.field} ${violation.message}`));
     if (!nonEmptyString(asset.component_id) || !nonEmptyString(asset.state_id)) errors.push(componentError(local, `actual_assets[${index}] 必须绑定 component_id/state_id，不能只登记区域组图`, { missing: `actual_assets[${index}].component_id/state_id` }));
@@ -685,10 +685,10 @@ export function validateComponentAuditEvidence(region, auditUnit, context = {}, 
       const atlasSize = expectedAsset.atlas_slice.atlas_size;
       const formalAsset = options.manifestAssets instanceof Map ? options.manifestAssets.get(expectedAsset.asset_id) : null;
       const formalSize = resolveAtlasAssetSize(formalAsset);
-      if (formalAsset && (!Number.isFinite(formalSize.width) || !Number.isFinite(formalSize.height) || formalSize.width <= 0 || formalSize.height <= 0)) errors.push(componentError(local, "V4 正式 atlas 资产缺少有效 width/height", { missing: `assets.${expectedAsset.asset_id}.width/height` }));
-      else if (formalAsset && (formalSize.width !== atlasSize.width || formalSize.height !== atlasSize.height)) errors.push(componentError(local, "V3 atlas_size 与 V4 正式 atlas 资产尺寸不一致", { missing: `assets.${expectedAsset.asset_id}.width/height` }));
+      if (formalAsset && (!Number.isFinite(formalSize.width) || !Number.isFinite(formalSize.height) || formalSize.width <= 0 || formalSize.height <= 0)) errors.push(componentError(local, "V3 正式 atlas 资产缺少有效 width/height", { missing: `assets.${expectedAsset.asset_id}.width/height` }));
+      else if (formalAsset && (formalSize.width !== atlasSize.width || formalSize.height !== atlasSize.height)) errors.push(componentError(local, "V3 atlas_size 与正式 atlas 资产尺寸不一致", { missing: `assets.${expectedAsset.asset_id}.width/height` }));
       const rect = expectedAsset.atlas_slice.rect;
-      if (formalAsset && (rect.x + rect.width > formalSize.width || rect.y + rect.height > formalSize.height)) errors.push(componentError(local, "V4 atlas_slice rect 越过正式 atlas 资产边界", { missing: `assets.${expectedAsset.asset_id}.width/height` }));
+      if (formalAsset && (rect.x + rect.width > formalSize.width || rect.y + rect.height > formalSize.height)) errors.push(componentError(local, "V3 atlas_slice rect 越过正式 atlas 资产边界", { missing: `assets.${expectedAsset.asset_id}.width/height` }));
     }
   }
   const actualSlices = new Map();
@@ -702,11 +702,13 @@ export function validateComponentAuditEvidence(region, auditUnit, context = {}, 
   for (const pair of required) {
     const key = `${pair.componentId}\0${pair.stateId}`;
     const observed = actualPairs.get(key) ?? 0;
-    if (observed !== 1) errors.push(componentError(context, "V4 actual_assets 必须逐 component×state 一一对应", { componentId: pair.componentId, stateId: pair.stateId, expectedCount: 1, observedCount: observed, missing: observed === 0 ? "actual_assets" : undefined }));
+    if (observed !== 1) errors.push(componentError(context, "V3 actual_assets 必须逐 component×state 一一对应", { componentId: pair.componentId, stateId: pair.stateId, expectedCount: 1, observedCount: observed, missing: observed === 0 ? "actual_assets" : undefined }));
   }
-  if (actual.length !== required.length) errors.push(componentError(context, "V4 actual_assets 总数量必须等于所有 required component×state", { expectedCount: required.length, observedCount: actual.length }));
+  if (actual.length !== required.length) errors.push(componentError(context, "V3 actual_assets 总数量必须等于所有 required component×state", { expectedCount: required.length, observedCount: actual.length }));
+  // V3 确认资源和组件产物；逐部件 runtime_consumption 只证明 V5 正式 Scene 接入。
+  if (context.stage === "V5") {
   const usages = auditUnit?.runtime_consumption?.component_usages ?? auditUnit?.runtime_consumption?.componentUsages;
-  if (!Array.isArray(usages)) errors.push(componentError(context, "V4 runtime_consumption 必须逐部件登记 component_usages", { missing: "runtime_consumption.component_usages" }));
+  if (!Array.isArray(usages)) errors.push(componentError(context, "V5 runtime_consumption 必须逐部件登记 component_usages", { missing: "runtime_consumption.component_usages" }));
   else {
     const usagePairs = new Map();
     usages.forEach((usage, index) => {
@@ -747,12 +749,13 @@ export function validateComponentAuditEvidence(region, auditUnit, context = {}, 
       if (observed !== 1) errors.push(componentError(context, "runtime_consumption.component_usages 必须覆盖每个 required component×state", { componentId: pair.componentId, stateId: pair.stateId, expectedCount: 1, observedCount: observed, missing: "runtime_consumption.component_usages" }));
     }
   }
+  }
   // expected/actual 的 component 组合不一致时，继续返回具体 pair 错误供 F2 定位。
   if (expected.length > 0 && actual.length > 0) {
     const expectedKeys = new Set(expected.map((asset) => `${asset.component_id}\0${asset.canonical_state_id}`));
     for (const key of expectedKeys) if (!actualPairs.has(key)) {
       const [componentId, stateId] = key.split("\0");
-      errors.push(componentError(context, "V4 实际输出缺少 V3 expected_assets 部件状态", { componentId, stateId, expectedCount: 1, observedCount: 0, missing: "actual_assets" }));
+      errors.push(componentError(context, "V3 实际输出缺少 expected_assets 部件状态", { componentId, stateId, expectedCount: 1, observedCount: 0, missing: "actual_assets" }));
     }
   }
   return errors;

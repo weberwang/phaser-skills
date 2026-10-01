@@ -29,10 +29,10 @@
       "minLength": 1
     },
     "visualStage": {
-      "enum": ["V0", "V1", "V2", "V3", "V4"]
+      "enum": ["V0", "V1", "V2", "V3", "V4", "V5"]
     },
     "visualStageState": {
-      "enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "global-static-baseline-frozen", "v2-production-planning-complete", "v3-formal-acceptance-complete", "v4-runtime-integration-candidate"]
+      "enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "global-static-baseline-frozen", "v2-production-planning-complete", "v3-formal-acceptance-complete", "v4-page-sketch-confirmed", "v5-runtime-integration-candidate"]
     },
     "globalStaticBaselineState": {"const": "global-static-baseline-frozen", "description": "全局静态 visual_baseline 的冻结声明；只有三张候选效果图经过唯一人工选择确认后才能写入。该字段不等同于逐场景 V2。"},
     "globalVisualBaselineSelectionRef": {"$ref": "#/$defs/globalVisualBaselineSelectionReference", "description": "不可变全局基线选择证据引用；通过 path+sha256 跨 Work Item 复用，根证据内部绑定生产者及其三张 generated 候选图、唯一 SINGLE_HUMAN/CONFIRMED 选择、冻结正文和真实 SHA。"},
@@ -41,7 +41,8 @@
       "properties": {
         "V2": {"$ref": "#/$defs/visualStageEvidenceReference"},
         "V3": {"$ref": "#/$defs/visualStageEvidenceReference"},
-        "V4": {"$ref": "#/$defs/visualStageEvidenceReference"}
+        "V4": {"$ref": "#/$defs/visualStageEvidenceReference"},
+        "V5": {"$ref": "#/$defs/visualStageEvidenceReference"}
       },
       "additionalProperties": false
     },
@@ -66,7 +67,7 @@
     "returnRecord": {"$ref": "#/$defs/returnRecord", "description": "必要回退的持久化审计记录；不允许用 RETURN 掩盖 repair/revalidate。"},
     "sceneReconstructionContract": {
       "type": "object",
-      "description": "effect-image V1-V4 场景还原合同；缺失时不得把独立资源工件视为完整还原。",
+      "description": "effect-image V1-V5 场景还原合同；缺失时不得把独立资源工件视为完整还原。",
       "required": ["contract_version", "reference_technical_conflicts", "target_conditions", "text_decomposition", "coverage_regions", "composition", "responsive_contract", "predeclared_tolerances", "implementation_plan", "display_layer_planning"],
       "properties": {
         "contract_version": {"type": "string", "minLength": 1},
@@ -91,7 +92,7 @@
     },
     "scene_reconstruction_contract": {
       "type": "object",
-      "description": "effect-image V1-V4 场景还原合同；snake_case 入口同样必须显式提供完整合同。",
+      "description": "effect-image V1-V5 场景还原合同；snake_case 入口同样必须显式提供完整合同。",
       "required": ["contract_version", "reference_technical_conflicts", "target_conditions", "text_decomposition", "coverage_regions", "composition", "responsive_contract", "predeclared_tolerances", "implementation_plan", "display_layer_planning"],
       "properties": {
         "contract_version": {"type": "string", "minLength": 1},
@@ -462,6 +463,9 @@
     "responsiveContract": {"$ref": "#/$defs/responsiveViewportContract"}
   },
   "allOf": [
+    {"if": {"required": ["visualStageState"], "properties": {"visualStageState": {"const": "v4-page-sketch-confirmed"}}}, "then": {"required": ["visualStageEvidenceRefs"], "properties": {"visualStageEvidenceRefs": {"required": ["V2", "V3", "V4"]}}}},
+    {"if": {"required": ["visualStage"], "properties": {"visualStage": {"const": "V5"}}}, "then": {"required": ["visualStageEvidenceRefs"], "properties": {"visualStageEvidenceRefs": {"required": ["V2", "V3", "V4"]}}}},
+    {"if": {"required": ["visualStageState"], "properties": {"visualStageState": {"const": "v5-runtime-integration-candidate"}}}, "then": {"required": ["visualStageEvidenceRefs"], "properties": {"visualStageEvidenceRefs": {"required": ["V5"]}}}},
     {"if": {"anyOf": [{"required": ["responsiveViewportContract"]}, {"required": ["responsiveContract"]}, {"required": ["visibleVisualProductionIntegration"], "properties": {"visibleVisualProductionIntegration": {"const": true}}}]}, "then": {"required": ["responsiveContractVersion", "layoutContractVersion", "visualBaselineVersion", "logicalViewportSpace", "designResolutionPolicy", "canvasBackingPolicy", "runtimeDprPolicy", "maxRuntimeDpr", "scaleMode", "cameraViewportPolicy", "cameraZoomPolicy", "cameraOriginPolicy", "inputCoordinatePolicy", "safeAreaPolicy", "resizePolicy", "orientationPolicy", "textResolutionPolicy", "assetResolutionPolicy", "performanceBudget", "representativeViewports", "requiredRuntimeEvidence"]}},
     {
       "if": {"properties": {"globalState": {"const": "RETURN"}}},
@@ -491,21 +495,25 @@
     },
     {
       "if": {"required": ["visualStage"], "properties": {"visualStage": {"const": "V4"}}},
-      "then": {"required": ["visualStageState"], "properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "v4-runtime-integration-candidate"]}}}
+      "then": {"required": ["visualStageState"], "properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "v4-page-sketch-confirmed"]}}}
+    },
+    {
+      "if": {"required": ["visualStage"], "properties": {"visualStage": {"const": "V5"}}},
+      "then": {"required": ["visualStageState"], "properties": {"visualStageState": {"enum": ["not-started", "in-progress", "pending", "failed", "stale", "invalid", "v5-runtime-integration-candidate"]}}}
     },
     {
       "if": {"required": ["stageId"], "properties": {"stageId": {"pattern": "^V[0-9]+$"}}},
       "then": {
         "required": ["visualStage", "visualStageState"],
         "properties": {
-          "visualStage": {"enum": ["V0", "V1", "V2", "V3", "V4"]},
+          "visualStage": {"enum": ["V0", "V1", "V2", "V3", "V4", "V5"]},
           "visualStageState": {"not": {"const": "frozen"}}
         }
       }
     },
     {
       "if": {"anyOf": [
-        {"required": ["stageId"], "properties": {"stageId": {"enum": ["V3", "V4"]}}},
+        {"required": ["stageId"], "properties": {"stageId": {"enum": ["V3", "V4", "V5"]}}},
         {"required": ["stageId", "visualStageState"], "properties": {"stageId": {"const": "V2"}, "visualStageState": {"const": "v2-production-planning-complete"}}}
       ]},
       "then": {
@@ -516,7 +524,7 @@
       }
     },
     {
-      "if": {"required": ["stageId"], "properties": {"stageId": {"enum": ["V3", "V4"]}}},
+      "if": {"required": ["stageId"], "properties": {"stageId": {"const": "V5"}}},
       "then": {
         "anyOf": [
           {"required": ["sceneReconstructionContract"], "properties": {"sceneReconstructionContract": {"required": ["combination_preacceptance"]}}},
@@ -525,7 +533,7 @@
       }
     },
     {
-      "if": {"required": ["stageId"], "properties": {"stageId": {"enum": ["V2", "V3", "V4"]}}},
+      "if": {"required": ["stageId"], "properties": {"stageId": {"enum": ["V2", "V3", "V4", "V5"]}}},
       "then": {
         "anyOf": [
           {
@@ -568,7 +576,7 @@
       }
     },
     {
-      "if": {"required": ["stageId"], "properties": {"stageId": {"enum": ["V3", "V4"]}}},
+      "if": {"required": ["stageId"], "properties": {"stageId": {"const": "V5"}}},
       "then": {
         "anyOf": [
           {

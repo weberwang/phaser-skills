@@ -9,7 +9,7 @@ description: Phaser 4 游戏领域编排角色；在全局控制面已建立 Wor
 
 ## 最短流程
 
-用户先按[`simplified-workflow.md`](../phaser4-game-workflow-control/references/simplified-workflow.md)理解六阶段项目视图：需求与范围 → 全局基线 → 基础工程 → 逐场景生产 → 全局集成验证 → 发布；单场景按场景定义 → 拆解确认 → 资源与组合验收 → 正式实现与运行验收理解。该视图不改变 G0-G3、V0-V4、A0-A6、F0-F4 或证据硬门。
+用户先按[`simplified-workflow.md`](../phaser4-game-workflow-control/references/simplified-workflow.md)理解六阶段项目视图：需求与范围 → 全局基线 → 基础工程 → 逐场景生产 → 全局集成验证 → 发布；单场景按场景定义 → 拆解确认 → 资源与组合验收 → 正式实现与运行验收理解。该视图不改变 G0-G3、V0-V5、A0-A6、F0-F4 或证据硬门。
 
 1. 读取 Work Item、当前任务说明、当前基线和适用状态门；需要字段时按需读取 [`quality-gates.md`](references/quality-gates.md)、[`module-decomposition.md`](references/module-decomposition.md)、[`game-implementation.md`](references/game-implementation.md)、[`delivery-artifacts.md`](references/delivery-artifacts.md) 等 reference。
 2. 先提交最小领域提议和验收边界，完成审查后由控制面运行 `check`；已有入口、调用链、任务范围和风险事实足够时停止探索。
@@ -21,14 +21,14 @@ description: Phaser 4 游戏领域编排角色；在全局控制面已建立 Wor
 
 - 制作、架构、玩法、视觉、资源、音频、数值、QA、性能和发布工作均只能提议、审查或在当前任务内修改。
 - A0-A3 依据当前用户任务；无外部副作用的本地 A4 集成可按任务执行。外部写入、付费、真机、破坏性或外部删除和发布由控制面建立精确 pending 并等待显式批准，本 Skill 不执行这些动作。
-- V0→V1→V2→V3→V4、全局静态基线、场景拆解确认和高保真前置继续使用控制面的不可绕过证据门；领域文档只补充本领域事实。
+- V0→V1→V2→V3→V4→V5、全局静态基线、场景拆解确认和高保真前置继续使用控制面的不可绕过证据门；领域文档只补充本领域事实。
 - 不覆盖并行代理的修改，不自动回滚共享工作区；启动本地验证服务前先按 [`local-service-validation.md`](references/local-service-validation.md) 查找可复用健康实例。
 
 ## 视觉与场景
 
 效果图还原和正式 Scene 接入属于当前场景 Work Item；常驻 HUD 随场景闭环。modal/popup 等弹窗按[独立工作项规则](../phaser4-game-workflow-control/references/control-model.md#弹窗工作项与场景解耦)另建 DISPLAY_LAYER Work Item，独立提交宿主上下文、组件/状态、布局合同和运行态证据，不影响大厅或其他宿主场景验收。
 
-场景 V2 的布局交付必须同时提供标准布局 PNG、`layout-nodes.json`、`layout-decision.json`、自包含 `review.html` 和 `generation-result.json`，并在独立布局确认及场景根计划中绑定同批参考、拆解、决策、节点、PNG 和审阅页 SHA。屏幕 UI 还按[Phaser UI 节点组织](../phaser4-game-ui-layout/references/layout-hierarchy.md)在 V1 定义根层级，在 V2 确认父级职责与 `ui_layout` 字段，在 V3 组合检查职责、输入和裁切边界，在 V4 验证视口变化下的运行结果。编排只引用[离线布局审阅产物](../phaser4-game-ui-layout/references/layout-review-artifacts.md)的通用规则，不为场景手写审阅页；页面候选状态不等于人工确认。
+场景 V2 的布局交付必须同时提供标准布局 PNG、`layout-nodes.json`、`layout-decision.json`、自包含 `review.html` 和 `generation-result.json`，并在独立布局确认及场景根计划中绑定同批参考、拆解、决策、节点、PNG 和审阅页 SHA。屏幕 UI 还按[Phaser UI 节点组织](../phaser4-game-ui-layout/references/layout-hierarchy.md)在 V1 定义根层级，在 V2 确认父级职责与 `ui_layout` 字段，在 V4 草图中检查职责、输入和裁切边界，在 V5 验证视口变化下的运行结果。编排只引用[离线布局审阅产物](../phaser4-game-ui-layout/references/layout-review-artifacts.md)的通用规则，不为场景手写审阅页；页面候选状态不等于人工确认。
 
 ## 状态与返工
 

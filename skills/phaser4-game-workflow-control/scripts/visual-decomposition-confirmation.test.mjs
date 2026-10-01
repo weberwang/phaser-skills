@@ -325,7 +325,7 @@ test("人工确认必须绑定当前编号、区域定义 SHA、原子部件/状
   assert(validateVisualDecompositionConfirmations(manifest, { stage: "V3", requireManualConfirmation: true, ...shallow }).some((item) => item.includes("authority.sceneId")), "聚合校验缺少逐区域权威 scene/state 时必须返回 decision gap");
   const drift = structuredClone(manifest);
   drift.coverage_audit.regions[0].component_inventory.components[0].component_id = "button-2";
-  assert(validateVisualDecompositionConfirmations(drift, { stage: "V4", requireManualConfirmation: true, ...valid.options }).some((item) => item.includes("region_definition_sha256")));
+  assert(validateVisualDecompositionConfirmations(drift, { stage: "V5", requireManualConfirmation: true, ...valid.options }).some((item) => item.includes("region_definition_sha256")));
   const missing = structuredClone(manifest);
   missing.coverage_audit.regions[0].confirmation.component_ids = [];
   assert(validateVisualDecompositionConfirmations(missing, { stage: "V3", requireManualConfirmation: true, ...valid.options }).some((item) => item.includes("component_ids")));
@@ -350,16 +350,16 @@ test("Implementation Package 必须冻结全部拆解编号的同一确认身份
 
 test("固定视觉图片禁止 Phaser Graphics、runtime-program 和 authored-svg 替代", () => {
   for (const [production_method, delivery_kind] of [["phaser-graphics", "runtime-drawing"], ["runtime-program", "runtime-program"], ["authored-svg", "vector-image"]]) {
-    const errors = validateFixedVisualProductionMethod(decompositionRegion({ production_method, delivery_kind, image_generation_required: false }), { stage: "V4" });
+    const errors = validateFixedVisualProductionMethod(decompositionRegion({ production_method, delivery_kind, image_generation_required: false }), { stage: "V5" });
     assert(errors.length > 0, `${production_method} 必须拒绝`);
   }
-  assert.deepEqual(validateFixedVisualProductionMethod(decompositionRegion({ production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false }), { stage: "V4" }), []);
+  assert.deepEqual(validateFixedVisualProductionMethod(decompositionRegion({ production_method: "authored-raster", delivery_kind: "raster-image", image_generation_required: false }), { stage: "V5" }), []);
   const svgOutput = decompositionRegion({ production_origin: "independent-production", production_method: "authored-raster", delivery_kind: "raster-image", expected_assets: [{ asset_id: "button-1", component_id: "button-1", state_id: "default", source_file: "art/button.svg", runtime_file: "public/button.svg" }] });
   assert(validateFixedVisualProductionMethod(svgOutput, { stage: "V3" }).some((item) => item.includes("PNG/JPG")));
   const programComponent = decompositionRegion({ production_method: "authored-raster", delivery_kind: "raster-image", component_inventory: { components: [{ component_id: "button-1", production_method: "phaser-graphics" }] } });
-  assert(validateFixedVisualProductionMethod(programComponent, { stage: "V4" }).some((item) => item.includes("component_id=button-1")), "component 不能使用 Phaser Graphics 伪装图片");
+  assert(validateFixedVisualProductionMethod(programComponent, { stage: "V5" }).some((item) => item.includes("component_id=button-1")), "component 不能使用 Phaser Graphics 伪装图片");
   const programActual = decompositionRegion({ production_method: "authored-raster", delivery_kind: "raster-image", actual_assets: [{ component_id: "button-1", state_id: "default", method: "runtime-program", file: "public/button-1.png" }] });
-  assert(validateFixedVisualProductionMethod(programActual, { stage: "V4" }).some((item) => item.includes("程序绘制图片")), "actual asset 不能使用 runtime-program");
+  assert(validateFixedVisualProductionMethod(programActual, { stage: "V5" }).some((item) => item.includes("程序绘制图片")), "actual asset 不能使用 runtime-program");
   const programExpected = decompositionRegion({ production_method: "authored-raster", delivery_kind: "raster-image", expected_assets: [{ asset_id: "button-1", component_id: "button-1", state_id: "default", production_method: "phaser-graphics", delivery_kind: "runtime-drawing", source_file: "art/button-1.png", runtime_file: "public/button-1.png" }] });
   assert(validateFixedVisualProductionMethod(programExpected, { stage: "V3" }).some((item) => item.includes("程序绘制图片")), "expected asset 不能使用 Phaser Graphics");
 });
@@ -369,11 +369,11 @@ test("确认文件门拒绝浅层调用、任意 confirmation SHA、用户原文
   const valid = confirmedFixture(region);
   assert(validateVisualDecompositionConfirmationRecord(valid.record, region, { stage: "V3" }, { targetSha: HASH, workItemId: "work-item-1", candidateVersion: "candidate-1", candidateSha: HASH }).some((item) => item.includes("decision gap") || item.includes("authority.projectRoot")));
   const arbitrary = { ...valid.record, confirmation_sha256: `sha256:${"b".repeat(64)}` };
-  assert(validateVisualDecompositionConfirmationRecord(arbitrary, region, { stage: "V4" }, valid.options).some((item) => item.includes("规范化确认重算 SHA")));
+  assert(validateVisualDecompositionConfirmationRecord(arbitrary, region, { stage: "V5" }, valid.options).some((item) => item.includes("规范化确认重算 SHA")));
   const userDrift = { ...valid.record, user_message_sha256: HASH };
-  assert(validateVisualDecompositionConfirmationRecord(userDrift, region, { stage: "V4" }, valid.options).some((item) => item.includes("user_message_sha256")));
+  assert(validateVisualDecompositionConfirmationRecord(userDrift, region, { stage: "V5" }, valid.options).some((item) => item.includes("user_message_sha256")));
   const escaped = { ...valid.record, proposal_file: "../../outside.json" };
-  assert(validateVisualDecompositionConfirmationRecord(escaped, region, { stage: "V4" }, valid.options).some((item) => item.includes("路径越界") || item.includes("proposal_file")));
+  assert(validateVisualDecompositionConfirmationRecord(escaped, region, { stage: "V5" }, valid.options).some((item) => item.includes("路径越界") || item.includes("proposal_file")));
 });
 
 test("Work Item 伪内嵌 receipt、manifest A/B 分裂和 ledger ownedPaths 必须拒绝", () => {

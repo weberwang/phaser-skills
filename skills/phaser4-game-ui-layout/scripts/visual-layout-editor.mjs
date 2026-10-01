@@ -129,6 +129,16 @@ export function applyVisualLayoutDrag(layout, nodes, layoutNodeId, delta, { snap
   return validateVisualLayoutDocument(next, nodes);
 }
 
+/** 设置节点相对父级的最终偏移，供数值坐标输入使用。 */
+export function setVisualLayoutOffset(layout, nodes, layoutNodeId, offset) {
+  const nodeMap = validateLayoutNodes(nodes);
+  if (!nodeMap.has(layoutNodeId)) throw new TypeError(`未知 layout_node_id：${layoutNodeId}`);
+  if (!isRecord(offset) || !Number.isFinite(offset.x) || !Number.isFinite(offset.y)) throw new TypeError("坐标偏移必须包含有限数值 x/y");
+  const next = validateVisualLayoutDocument(layout, nodes);
+  next.offsets = { ...next.offsets, [layoutNodeId]: { x: offset.x, y: offset.y } };
+  return validateVisualLayoutDocument(next, nodes);
+}
+
 /** 保存布局的共享入口；失败时只发送 error 状态并继续向调用方抛出。 */
 export async function persistVisualLayoutDocument(layout, nodes, save, onStatus) {
   if (typeof save !== "function") throw new TypeError("save 必须是实际持久化回调");
@@ -165,7 +175,7 @@ function errorMessage(error) {
 }
 
 /** 以隔离的开发期 DOM 层挂载 Phaser 逻辑坐标布局编辑器；reflow 必须同步返回。 */
-export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, layout, getBounds, getViewportRect, reflow, save }) {
+export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, layout, getBounds, getViewportRect, reflow, save, saveOnChange = true, showSaveButton = true, saveButtonLabel = "保存布局", onLayoutChange, onPreviewHealthChange }) {
   const logicalViewport = validateViewport(viewport);
   const nodeMap = validateLayoutNodes(nodes);
   const currentLayout = { value: validateVisualLayoutDocument(layout, nodes) };
@@ -175,6 +185,9 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
   if (getViewportRect !== undefined && typeof getViewportRect !== "function") throw new TypeError("getViewportRect 必须是读取目标 viewport CSS client rect 的回调");
   if (typeof reflow !== "function") throw new TypeError("reflow 必须接入正式布局入口");
   if (typeof save !== "function") throw new TypeError("save 必须是实际持久化回调；缺少时禁止挂载编辑器");
+  if (typeof saveOnChange !== "boolean" || typeof showSaveButton !== "boolean") throw new TypeError("saveOnChange/showSaveButton 必须是布尔值");
+  if (onLayoutChange !== undefined && typeof onLayoutChange !== "function") throw new TypeError("onLayoutChange 必须是函数");
+  if (onPreviewHealthChange !== undefined && typeof onPreviewHealthChange !== "function") throw new TypeError("onPreviewHealthChange 必须是函数");
 
   const document = host.ownerDocument;
   const window = document.defaultView;
@@ -200,6 +213,7 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
     .vle-panel{position:absolute;left:12px;top:12px;width:258px;max-height:calc(100% - 24px);display:flex;flex-direction:column;gap:9px;box-sizing:border-box;padding:12px;background:rgba(12,20,34,.94);border:1px solid #506783;border-radius:8px;box-shadow:0 6px 28px #0008;pointer-events:auto;overflow:hidden}
     .vle-title{margin:0;font-size:14px;font-weight:700}.vle-current{color:#aac4dc;overflow-wrap:anywhere}
     .vle-row{display:flex;align-items:center;gap:8px}.vle-row label{flex:1}.vle-row input[type=range]{width:104px}
+    .vle-coordinates{display:grid;grid-template-columns:1fr 1fr;gap:8px}.vle-coordinate{display:flex;align-items:center;gap:5px;color:#aac4dc}.vle-coordinate input{width:72px;min-width:0;padding:4px;color:#fff;background:#101827;border:1px solid #58728e;border-radius:4px}
     .vle-button{padding:5px 9px;color:inherit;background:#21354d;border:1px solid #58728e;border-radius:5px;cursor:pointer}.vle-button[aria-pressed=true]{background:#245465;border-color:#53cee7}
     .vle-tree{overflow:auto;min-height:40px;max-height:42vh;padding:0;margin:0;list-style:none;border-top:1px solid #40536b}
     .vle-tree button{width:100%;padding:5px 6px;text-align:left;color:inherit;background:transparent;border:0;border-bottom:1px solid #26394f;cursor:pointer;overflow-wrap:anywhere}
@@ -227,16 +241,31 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
   opacityInput.value = "35";
   opacityInput.setAttribute("aria-label", "效果图透明度");
   opacityRow.append(opacityLabel, opacityInput);
+  const coordinateRow = makeElement(document, "div", "vle-coordinates");
+  const xCoordinateLabel = makeElement(document, "label", "vle-coordinate", "相对父级 X");
+  const xCoordinateInput = makeElement(document, "input");
+  xCoordinateInput.type = "number";
+  xCoordinateInput.step = "1";
+  xCoordinateInput.setAttribute("aria-label", "相对父级 X 偏移");
+  xCoordinateLabel.append(xCoordinateInput);
+  const yCoordinateLabel = makeElement(document, "label", "vle-coordinate", "相对父级 Y");
+  const yCoordinateInput = makeElement(document, "input");
+  yCoordinateInput.type = "number";
+  yCoordinateInput.step = "1";
+  yCoordinateInput.setAttribute("aria-label", "相对父级 Y 偏移");
+  yCoordinateLabel.append(yCoordinateInput);
+  coordinateRow.append(xCoordinateLabel, yCoordinateLabel);
   const saveRow = makeElement(document, "div", "vle-row");
-  const saveButton = makeElement(document, "button", "vle-button", "保存布局");
+  const saveButton = makeElement(document, "button", "vle-button", saveButtonLabel);
   saveButton.type = "button";
   const status = makeElement(document, "div", "vle-status", "已加载");
   status.setAttribute("role", "status");
   status.setAttribute("aria-live", "polite");
-  saveRow.append(saveButton, status);
+  if (showSaveButton) saveRow.append(saveButton, status);
+  else saveRow.append(status);
   const tree = makeElement(document, "ul", "vle-tree");
   tree.setAttribute("aria-label", "布局节点树");
-  panel.append(heading, selectedLabel, snapButton, opacityRow, saveRow, tree);
+  panel.append(heading, selectedLabel, snapButton, opacityRow, coordinateRow, saveRow, tree);
   root.append(styles, image, svg, panel);
   document.body.append(root);
 
@@ -244,10 +273,12 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
   let snapping = true;
   let destroyed = false;
   let drag = null;
+  let previewMode = false;
   let revision = 0;
   let saveTail = Promise.resolve();
   let resizeObserver = null;
   let reflowHealthy = false;
+  let interactionEnabled = true;
 
   /** 返回当前容器 client rect 的复制值，映射始终跟随窗口尺寸和页面滚动更新。 */
   function getViewportClientRect() {
@@ -271,6 +302,13 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
   function setStatus(state, message) {
     status.dataset.state = state;
     status.textContent = message;
+  }
+
+  /** 将当前节点相对父级偏移同步到可编辑数值输入。 */
+  function syncCoordinateInputs() {
+    const offset = getNodeOffset(currentLayout.value, selectedId);
+    xCoordinateInput.value = String(offset.x);
+    yCoordinateInput.value = String(offset.y);
   }
 
   /** 返回节点在 Scene 中的即时 bounds；回调异常会被调用点明确呈现。 */
@@ -309,9 +347,12 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
         const bounds = readCurrentBounds(node.layout_node_id);
         const isSelected = node.layout_node_id === selectedId;
         const frame = appendFrame(bounds, isSelected ? "vle-frame vle-frame-selected" : "vle-frame", node.layout_node_id);
-        frame.setAttribute("tabindex", "0");
         frame.setAttribute("role", "button");
         frame.setAttribute("aria-label", `拖动布局节点 ${node.layout_node_id}`);
+        const canEdit = interactionEnabled && !previewMode;
+        frame.setAttribute("tabindex", canEdit ? "0" : "-1");
+        frame.setAttribute("aria-disabled", String(!canEdit));
+        frame.style.pointerEvents = canEdit ? "all" : "none";
         frame.addEventListener("pointerdown", onFramePointerDown);
         frame.addEventListener("keydown", onFrameKeyDown);
         if (focusedNodeId === node.layout_node_id) frame.dataset.restoreFocus = "true";
@@ -352,6 +393,7 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
       button.style.paddingLeft = `${6 + depth * 14}px`;
       button.dataset.layoutNodeId = node.layout_node_id;
       button.setAttribute("aria-current", String(node.layout_node_id === selectedId));
+      button.disabled = !interactionEnabled || previewMode;
       button.addEventListener("click", () => selectNode(node.layout_node_id));
       item.append(button);
       tree.append(item);
@@ -362,6 +404,7 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
   function selectNode(id) {
     if (!nodeMap.has(id)) throw new TypeError(`未知 layout_node_id：${id}`);
     selectedId = id;
+    syncCoordinateInputs();
     renderTree();
     renderFrames();
   }
@@ -379,9 +422,11 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
       }
       if (!renderFrames()) throw new Error(status.textContent || "布局边界读取失败");
       reflowHealthy = true;
+      onPreviewHealthChange?.(true, "预览布局正常");
     } catch (error) {
       setStatus("error", `布局重排失败：${errorMessage(error)}`);
       reflowHealthy = false;
+      onPreviewHealthChange?.(false, errorMessage(error));
       throw error;
     }
   }
@@ -412,6 +457,7 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
 
   /** 开始拖动被按中的节点框，并保存本手势的布局基线。 */
   function onFramePointerDown(event) {
+    if (!interactionEnabled || previewMode) return;
     if (event.button !== undefined && event.button !== 0) return;
     const id = event.currentTarget.getAttribute("data-layout-node-id");
     if (!nodeMap.has(id)) return;
@@ -424,7 +470,7 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
 
   /** 将拖动增量写到所选节点，并立即调用正式布局入口带动真实子孙节点。 */
   function onPointerMove(event) {
-    if (!drag || (drag.pointerId !== undefined && event.pointerId !== drag.pointerId)) return;
+    if (!interactionEnabled || previewMode || !drag || (drag.pointerId !== undefined && event.pointerId !== drag.pointerId)) return;
     try {
       const rect = getViewportClientRect();
       syncGeometry(rect);
@@ -438,6 +484,7 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
       currentLayout.value = nextLayout;
       revision += 1;
       setStatus("dirty", "未保存");
+      onLayoutChange?.(validateVisualLayoutDocument(currentLayout.value, nodes));
       invokeReflow(currentLayout.value);
       drag.reflowFailed = false;
     } catch (error) {
@@ -451,7 +498,7 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
     if (!drag || (drag.pointerId !== undefined && event.pointerId !== drag.pointerId)) return;
     const finishedDrag = drag;
     drag = null;
-    if (finishedDrag.changed && !finishedDrag.reflowFailed && reflowHealthy) {
+    if (saveOnChange && finishedDrag.changed && !finishedDrag.reflowFailed && reflowHealthy) {
       await persistRevision(validateVisualLayoutDocument(currentLayout.value, nodes), revision);
     }
   }
@@ -468,6 +515,7 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
     revision += 1;
     try {
       invokeReflow(currentLayout.value);
+      onLayoutChange?.(validateVisualLayoutDocument(currentLayout.value, nodes));
       setStatus("dirty", "已取消拖动");
     } catch (error) {
       setStatus("error", `取消拖动后的布局重排失败：${errorMessage(error)}`);
@@ -476,6 +524,7 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
 
   /** 通过方向键按 1px 或 Shift+方向键按 8px 微调当前选中节点。 */
   function onFrameKeyDown(event) {
+    if (!interactionEnabled || previewMode) return;
     const focusedId = event.currentTarget.getAttribute("data-layout-node-id");
     if (nodeMap.has(focusedId) && focusedId !== selectedId) selectNode(focusedId);
     const deltas = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
@@ -488,8 +537,10 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
       const snapshot = validateVisualLayoutDocument(currentLayout.value, nodes);
       const snapshotRevision = revision;
       setStatus("dirty", "未保存");
+      syncCoordinateInputs();
+      onLayoutChange?.(snapshot);
       invokeReflow(snapshot);
-      persistRevision(snapshot, snapshotRevision);
+      if (saveOnChange) persistRevision(snapshot, snapshotRevision);
       event.preventDefault();
     } catch (error) {
       setStatus("error", `键盘微调失败：${errorMessage(error)}`);
@@ -505,6 +556,25 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
     await persistRevision(validateVisualLayoutDocument(currentLayout.value, nodes), revision);
   }
 
+  /** 应用数值输入的新父级相对坐标，并触发布局重排及草图失效回调。 */
+  function onCoordinateChange() {
+    if (!interactionEnabled || previewMode) return;
+    const x = Number(xCoordinateInput.value);
+    const y = Number(yCoordinateInput.value);
+    try {
+      currentLayout.value = setVisualLayoutOffset(currentLayout.value, nodes, selectedId, { x, y });
+      revision += 1;
+      const snapshot = validateVisualLayoutDocument(currentLayout.value, nodes);
+      setStatus("dirty", "未保存");
+      onLayoutChange?.(snapshot);
+      invokeReflow(snapshot);
+      if (saveOnChange) persistRevision(snapshot, revision);
+    } catch (error) {
+      setStatus("error", `坐标调整失败：${errorMessage(error)}`);
+      syncCoordinateInputs();
+    }
+  }
+
   /** 对称响应窗口事件、滚动事件和 ResizeObserver 回调参数。 */
   function onViewportGeometryChange() {
     try {
@@ -512,6 +582,52 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
     } catch (error) {
       setStatus("error", `视口尺寸同步失败：${errorMessage(error)}`);
     }
+  }
+
+  /** 保存和确认期间锁住树、框与坐标输入，避免回执晚于用户的后续改动。 */
+  function setInteractionEnabled(enabled) {
+    if (typeof enabled !== "boolean") throw new TypeError("enabled 必须是布尔值");
+    interactionEnabled = enabled;
+    updateInteractionControls();
+    if (!enabled && drag) {
+      currentLayout.value = drag.base;
+      drag = null;
+      revision += 1;
+      syncCoordinateInputs();
+      try {
+        invokeReflow(currentLayout.value);
+        onLayoutChange?.(validateVisualLayoutDocument(currentLayout.value, nodes));
+        setStatus("dirty", "已取消未结束的拖动");
+      } catch (error) { setStatus("error", `取消拖动失败：${errorMessage(error)}`); }
+    }
+    renderFrames();
+  }
+
+  /** 按预览模式或文件操作锁更新控件可编辑性，树和坐标始终只改布局 offset。 */
+  function updateInteractionControls() {
+    const canEdit = interactionEnabled && !previewMode;
+    opacityInput.disabled = !canEdit;
+    snapButton.disabled = !canEdit;
+    xCoordinateInput.disabled = !canEdit;
+    yCoordinateInput.disabled = !canEdit;
+    // 浏览器 tree.children 是 HTMLCollection，先显式转数组再遍历其子按钮。
+    for (const item of Array.from(tree.children)) {
+      for (const button of Array.from(item.children)) button.disabled = !interactionEnabled || previewMode;
+    }
+  }
+
+  /** 隐藏参考图、编辑框和面板，显示无遮挡正式组合；切换不写草图或失效确认。 */
+  function setPreviewMode(enabled) {
+    if (typeof enabled !== "boolean") throw new TypeError("previewMode 必须是布尔值");
+    if (enabled && drag) onPointerCancel({ pointerId: drag.pointerId });
+    previewMode = enabled;
+    image.style.display = previewMode ? "none" : "";
+    svg.style.display = previewMode ? "none" : "";
+    panel.style.display = previewMode ? "none" : "";
+    updateInteractionControls();
+    renderTree();
+    renderFrames();
+    return previewMode;
   }
 
   /** 将浏览器 pointerup 事件转发给可等待的结束处理函数。 */
@@ -565,7 +681,9 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
 
   snapButton.addEventListener("click", onSnapClick);
   opacityInput.addEventListener("input", onOpacityInput);
-  saveButton.addEventListener("click", () => { void onSaveClick(); });
+  xCoordinateInput.addEventListener("change", onCoordinateChange);
+  yCoordinateInput.addEventListener("change", onCoordinateChange);
+  if (showSaveButton) saveButton.addEventListener("click", () => { void onSaveClick(); });
   window.addEventListener("pointermove", onPointerMove);
   window.addEventListener("pointerup", onWindowPointerUp);
   window.addEventListener("pointercancel", onPointerCancel);
@@ -578,6 +696,7 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
     resizeObserver.observe(host);
   }
   renderTree();
+  syncCoordinateInputs();
   onViewportGeometryChange();
   // 编辑器加载时用当前正式布局配置同步一次运行场景，避免叠图状态过期。
   try {
@@ -589,6 +708,10 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
   return {
     destroy,
     getLayout: () => validateVisualLayoutDocument(currentLayout.value, nodes),
+    isPreviewHealthy: () => reflowHealthy,
+    isPreviewMode: () => previewMode,
     reload,
+    setInteractionEnabled,
+    setPreviewMode,
   };
 }

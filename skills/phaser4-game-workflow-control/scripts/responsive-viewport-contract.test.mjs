@@ -203,7 +203,7 @@ test('合同拒绝缺失矩阵、DPR 上限和生产 DPR 混写', () => {
   }
 });
 
-test('V4 证据验证 CSS/backing、动态 DPR、矩阵和候选身份', () => {
+test('V5 证据验证 CSS/backing、动态 DPR、矩阵和候选身份', () => {
   const contract = makeContract();
   const evidence = makeEvidence();
   assert.deepEqual(validateResponsiveEvidenceRecord(evidence, contract, { candidateSha256: CANDIDATE }), []);

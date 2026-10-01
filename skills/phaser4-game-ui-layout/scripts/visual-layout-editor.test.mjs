@@ -206,7 +206,7 @@ class FakeResizeObserver {
 }
 
 /** 构建足以挂载布局编辑器的 fake document/window/host 环境。 */
-function createMountedEditor({ save: saveCallback = async () => {}, getViewportRect } = {}) {
+function createMountedEditor({ save: saveCallback = async () => {}, getViewportRect, editorOptions = {} } = {}) {
   const document = {
     createElement(tagName) { return new FakeElement(tagName, document); },
     createElementNS(_namespace, tagName) { return new FakeElement(tagName, document); },
@@ -250,6 +250,7 @@ function createMountedEditor({ save: saveCallback = async () => {}, getViewportR
       applyRuntimeLayout(nextLayout);
     },
     async save(nextLayout) { saved.push(structuredClone(nextLayout)); await saveCallback(nextLayout); },
+    ...editorOptions,
   });
   return {
     document,
@@ -278,6 +279,13 @@ function findElements(root, predicate) {
 /** 找到编辑器面板中的保存状态节点。 */
 function findStatus(document) {
   return findElements(document.body, (node) => node.className === "vle-status")[0];
+}
+
+/** 构造真实 HTMLCollection 的只读数组式形态，不提供 Array 扩展方法。 */
+function fakeHTMLCollection(items) {
+  const collection = { length: items.length };
+  items.forEach((item, index) => { collection[index] = item; });
+  return collection;
 }
 
 /** 创建浏览器中落在节点矩形上的指针事件序列。 */
@@ -352,5 +360,89 @@ test("连续键盘微调恢复节点焦点并累计位置", async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(environment.editor.getLayout().offsets["hud.group"].x, 6);
   assert.equal(environment.saved.length, 1);
+  environment.editor.destroy();
+});
+
+/** 数值字段直接编辑父级相对坐标，并复用正式同步重排及持久化链路。 */
+test("数值坐标输入设置所选节点的父级相对偏移", async () => {
+  const environment = createMountedEditor();
+  const xInput = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "相对父级 X 偏移")[0];
+  const yInput = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "相对父级 Y 偏移")[0];
+  xInput.value = "24";
+  yInput.value = "-12";
+  xInput.dispatch("change");
+  assert.deepEqual(environment.editor.getLayout().offsets["hud.group"], { x: 24, y: -12 });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(environment.saved.length, 1);
+  environment.editor.destroy();
+});
+
+/** 保存或确认锁定期间，树、框、键盘、透明度和数值输入均不能改变布局。 */
+test("操作锁禁用布局控件并阻止指针键盘及坐标改动", () => {
+  const environment = createMountedEditor();
+  const initial = environment.editor.getLayout();
+  let frame = findElements(environment.document.body, (node) => node.getAttribute("data-layout-node-id") === "hud.group")[0];
+  const xInput = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "相对父级 X 偏移")[0];
+  const opacityInput = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "效果图透明度")[0];
+  environment.editor.setInteractionEnabled(false);
+  frame = findElements(environment.document.body, (node) => node.getAttribute("data-layout-node-id") === "hud.group")[0];
+  assert.equal(frame.getAttribute("aria-disabled"), "true");
+  assert.equal(frame.getAttribute("tabindex"), "-1");
+  assert.equal(xInput.disabled, true);
+  assert.equal(opacityInput.disabled, true);
+  xInput.value = "90";
+  xInput.dispatch("change");
+  frame.dispatch("pointerdown", { button: 0, pointerId: 1, clientX: 110, clientY: 70 });
+  environment.window.dispatch("pointermove", { pointerId: 1, clientX: 180, clientY: 120 });
+  frame.dispatch("keydown", { key: "ArrowRight" });
+  assert.deepEqual(environment.editor.getLayout(), initial);
+  environment.editor.setInteractionEnabled(true);
+  frame = findElements(environment.document.body, (node) => node.getAttribute("data-layout-node-id") === "hud.group")[0];
+  assert.equal(frame.getAttribute("aria-disabled"), "false");
+  assert.equal(xInput.disabled, false);
+  environment.editor.destroy();
+});
+
+/** 树控件必须按浏览器 HTMLCollection 数组式遍历，不能依赖 flatMap。 */
+test("操作锁兼容没有 flatMap 的 HTMLCollection children", () => {
+  const environment = createMountedEditor();
+  const tree = findElements(environment.document.body, (node) => node.className === "vle-tree")[0];
+  const listItems = [...tree.children];
+  const itemChildren = listItems.map((item) => [...item.children]);
+  tree.children = fakeHTMLCollection(listItems);
+  listItems.forEach((item, index) => { item.children = fakeHTMLCollection(itemChildren[index]); });
+  assert.doesNotThrow(() => environment.editor.setInteractionEnabled(false));
+  assert.equal(itemChildren[0][0].disabled, true);
+  tree.children = listItems;
+  listItems.forEach((item, index) => { item.children = itemChildren[index]; });
+  environment.editor.destroy();
+});
+
+/** 正式效果模式隐藏底图、编辑框和面板，返回编辑时恢复原透明度且不改草图。 */
+test("预览正式效果可无遮挡查看并无副作用地恢复布局编辑", () => {
+  const environment = createMountedEditor();
+  const initial = environment.editor.getLayout();
+  const reference = findElements(environment.document.body, (node) => node.className === "vle-reference")[0];
+  const svg = findElements(environment.document.body, (node) => node.className === "vle-svg")[0];
+  const panel = findElements(environment.document.body, (node) => node.className === "vle-panel")[0];
+  const opacity = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "效果图透明度")[0];
+  const xInput = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "相对父级 X 偏移")[0];
+  environment.editor.setPreviewMode(true);
+  assert.equal(environment.editor.isPreviewMode(), true);
+  assert.equal(reference.style.display, "none");
+  assert.equal(svg.style.display, "none");
+  assert.equal(panel.style.display, "none");
+  assert.equal(opacity.disabled, true);
+  xInput.value = "88";
+  xInput.dispatch("change");
+  assert.deepEqual(environment.editor.getLayout(), initial);
+  environment.editor.setPreviewMode(false);
+  assert.equal(environment.editor.isPreviewMode(), false);
+  assert.equal(reference.style.display, "");
+  assert.equal(svg.style.display, "");
+  assert.equal(panel.style.display, "");
+  assert.equal(reference.style.opacity, "0.35");
+  assert.equal(opacity.disabled, false);
+  assert.deepEqual(environment.editor.getLayout(), initial);
   environment.editor.destroy();
 });

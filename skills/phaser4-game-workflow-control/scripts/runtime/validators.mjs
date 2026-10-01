@@ -67,8 +67,8 @@ export function createRecordValidators({
     if (!evidence.fileHashes || typeof evidence.fileHashes !== 'object' || Array.isArray(evidence.fileHashes)) fail('Evidence.fileHashes 必须为对象');
     requireFields(evidence.gateResults, gates.slice(0, 4), 'Evidence.gateResults');
     const evidenceStage = String(evidence.currentStage ?? evidence.current_stage ?? '').toUpperCase();
-    if (evidenceStage === 'V4' || evidence.responsiveEvidence !== undefined || evidence.responsiveRuntimeEvidence !== undefined) {
-      const responsiveErrors = validateResponsiveEvidenceManifest(evidence, evidence.responsiveViewportContract ?? evidence.responsiveContract, { stage: evidenceStage || 'V4', candidateSha256: evidence.candidateSha256 });
+    if (evidenceStage === 'V5' || evidence.responsiveEvidence !== undefined || evidence.responsiveRuntimeEvidence !== undefined) {
+      const responsiveErrors = validateResponsiveEvidenceManifest(evidence, evidence.responsiveViewportContract ?? evidence.responsiveContract, { stage: evidenceStage || 'V5', candidateSha256: evidence.candidateSha256 });
       if (responsiveErrors.length) fail(responsiveErrors[0]);
     }
     return evidence;

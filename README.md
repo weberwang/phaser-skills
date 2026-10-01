@@ -30,7 +30,7 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 需求与范围 → 全局基线 → 基础工程 → 逐场景生产 → 全局集成验证 → 发布
 ```
 
-单场景视觉任务在“逐场景生产”内按“场景定义 → 拆解确认 → 资源与组合验收 → 正式实现与运行验收”推进。该视图只简化展示；全局状态、G0-G3、V0-V4、A0-A6、F0-F4 和证据硬门继续由控制面维护，详见[控制模型](skills/phaser4-game-workflow-control/references/control-model.md)与[状态、阶段与停止门](skills/phaser4-game-workflow-control/references/state-gates.md)。
+单场景视觉任务在“逐场景生产”内按“场景定义 → 拆解确认 → 正式资源验收 → 页面还原草图 → 正式还原与运行验收”推进。该视图只简化展示；全局状态、G0-G3、V0-V5、A0-A6、F0-F4 和证据硬门继续由控制面维护，详见[控制模型](skills/phaser4-game-workflow-control/references/control-model.md)与[状态、阶段与停止门](skills/phaser4-game-workflow-control/references/state-gates.md)。
 
 帧动画采用视频抽帧：结合游戏项目的视觉基线、玩法事件、视角与运行尺寸生成视频提示词，交付后等待真实视频文件；收到视频后按指定 FPS、输出尺寸和是否移除背景生成 PNG 图集、JSON 报告与浏览器预览。预览用于检查动作节奏、透明边缘及循环衔接，Phaser 接入仍回到全局资源和运行时证据门。详见[帧动画工作流接入合同](skills/phaser4-frame-animation/references/workflow-integration.md)。
 
@@ -50,13 +50,13 @@ node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs
 node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs status --repo . --work-item <work-item> [--input <file> ...]
 ```
 
-`run` 只读取、校验、推导路线，并连续推进已满足条件的安全控制面状态，进入实施或遇到缺证据、用户决定时停止；它不运行业务代码、测试、服务、外部动作或发布，也不会自动选择 `RETURN`。`check` 完全只读。三个入口可重复传入 `--input <file>` 绑定显式关键输入，默认文本优先显示六阶段/四步视图；JSON 仍输出稳定的 `status/stage/changed/blocking/next/metadata`，并在 `metadata.workflowView` 提供展示映射、`metadata.planFingerprint` 返回不含时间戳的确定性计划指纹。
+`run` 只读取、校验、推导路线，并连续推进已满足条件的安全控制面状态，进入实施或遇到缺证据、用户决定时停止；它不运行业务代码、测试、服务、外部动作或发布，也不会自动选择 `RETURN`。`check` 完全只读。三个入口可重复传入 `--input <file>` 绑定显式关键输入，默认文本优先显示六阶段/五步视图；JSON 仍输出稳定的 `status/stage/changed/blocking/next/metadata`，并在 `metadata.workflowView` 提供展示映射、`metadata.planFingerprint` 返回不含时间戳的确定性计划指纹。
 
 ## 控制面边界
 
 - `$phaser4-game-workflow-control` 独占全局状态、风险门、任务范围、状态迁移和证据一致性。普通 A0-A3 工作直接依据当前用户任务，不创建独立授权记录，也不设置 F0 授权有效硬门。
 - 任务内可以调整实现方案、文件路径、资源清单和测试范围；同步更新 Work Item/实施包并重验受影响部分即可。无外部副作用的本地 A4 集成可按任务执行；涉及外部写入、付费、真机、破坏性或外部删除、发布的 A4-A6 操作仍必须逐对象建立 pending 并获得显式批准。控制面只校验和记录，不代执行这些动作。
-- V0→V1→V2→V3→V4 的视觉硬门、全局静态基线、场景拆解与布局确认、高保真前置继续使用带路径与 SHA 的不可变证据；缺失或失效时 fail closed。阶段与字段以控制面文档和 Schema 为准。
+- V0→V1→V2→V3→V4→V5 的视觉硬门、全局静态基线、场景拆解与布局确认、高保真前置继续使用带路径与 SHA 的不可变证据；缺失或失效时 fail closed。阶段与字段以控制面文档和 Schema 为准。
 - 共享工作区不自动回滚、不覆盖他人修改；启动本地验证服务前先查找同项目健康实例并复用。
 - 阶段任务验收完成后，执行代理自动按需维护 `.gitignore`，只提交本次任务涉及的文件并报告提交哈希；使用当前分支，不自动推送。具体规则见[阶段收尾与 Git 提交](skills/phaser4-game-workflow-control/SKILL.md#阶段收尾与-git-提交)。
 

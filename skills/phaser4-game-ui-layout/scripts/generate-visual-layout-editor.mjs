@@ -1,25 +1,53 @@
 #!/usr/bin/env node
 
 import { constants } from "node:fs";
-import { copyFile, mkdir } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { copyFile, mkdir, realpath } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { projectRelativePath } from "../../phaser4-game-asset-integration/scripts/layout_review_bundle.mjs";
 
 const SKILL_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const FILES = [
   ["assets/visual-layout-editor-template.html", "index.html"],
-  ["assets/visual-layout-game-adapter.mjs", "visual-layout-game-adapter.mjs"],
   ["scripts/visual-layout-editor.mjs", "visual-layout-editor.mjs"],
-  ["scripts/visual-layout-file-store.mjs", "visual-layout-file-store.mjs"],
+  ["scripts/page-sketch-contract.mjs", "page-sketch-contract.mjs"],
+  ["scripts/page-sketch-file-store.mjs", "page-sketch-file-store.mjs"],
+  ["scripts/page-sketch-preview.mjs", "page-sketch-preview.mjs"],
+  ["scripts/page-sketch-editor.mjs", "page-sketch-editor.mjs"],
 ];
+
+/** 拒绝经现存 symlink/junction 解析到项目外的输出目录。 */
+async function assertRealProjectContainment(projectRoot, outputDirectory) {
+  const rootReal = await realpath(projectRoot);
+  let ancestor = outputDirectory;
+  while (true) {
+    try {
+      const ancestorReal = await realpath(ancestor);
+      const targetReal = resolve(ancestorReal, relative(ancestor, outputDirectory));
+      const fromRoot = relative(rootReal, targetReal);
+      if (!fromRoot || fromRoot === ".." || fromRoot.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) || isAbsolute(fromRoot)) {
+        throw new TypeError("输出目录经真实路径解析后越出游戏项目根目录");
+      }
+      return;
+    } catch (error) {
+      if (error instanceof TypeError || error.code !== "ENOENT") throw error;
+      const parent = resolve(ancestor, "..");
+      if (parent === ancestor) throw error;
+      ancestor = parent;
+    }
+  }
+}
 
 /** 将编辑器模板复制到游戏项目中的一个全新开发目录，不覆盖已有文件。 */
 export async function generateVisualLayoutEditor(projectRoot, outputDirectory) {
   if (!projectRoot || !outputDirectory) throw new Error("用法：node generate-visual-layout-editor.mjs --project-root <game-project> --output <new-dev-dir>");
   const root = resolve(projectRoot);
   const output = resolve(root, outputDirectory);
-  projectRelativePath(root, output);
+  const lexicalRelative = relative(root, output);
+  if (!lexicalRelative || lexicalRelative === ".." || lexicalRelative.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) || isAbsolute(lexicalRelative)) {
+    throw new Error("输出目录逃逸游戏项目根目录");
+  }
+  // mkdir 会跟随父目录链接，因此先检查当前最近真实祖先的最终目标。
+  await assertRealProjectContainment(root, output);
   await mkdir(output);
   const files = [];
   for (const [source, name] of FILES) {

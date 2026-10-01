@@ -5,7 +5,7 @@ description: 为 Phaser 4 游戏建立可验证的 UI 布局合同、坐标空�
 
 # Phaser 4 游戏 UI 布局
 
-正式显示对象、UI 与独立显示层统一遵守[显示对象锚点与显示层分层](references/display-object-layering.md)：可设置原点的对象默认显式使用中心 `(0.5, 0.5)`；例外逐对象记录原因与换算。场景须声明背景、世界、特效、HUD、瞬态层的实际层序、输入和生命周期归属，并在 V3/V4 验证组合与遮挡。
+正式显示对象、UI 与独立显示层统一遵守[显示对象锚点与显示层分层](references/display-object-layering.md)：可设置原点的对象默认显式使用中心 `(0.5, 0.5)`；例外逐对象记录原因与换算。场景须声明背景、世界、特效、HUD、瞬态层的实际层序、输入和生命周期归属，并在 V4/V5 验证草图组合与运行遮挡。
 
 效果图 V2 拆解与布局遵守[功能语义分组约束](references/functional-semantic-grouping.md)和[Phaser UI 节点组织](references/layout-hierarchy.md)：先人工确认位置依赖与信息分组，再生成停靠方案；位置依赖方必须成为被依赖元素所对应布局容器的子元素，共同表达同一信息且彼此无位置依赖的元素列为同组同级项。父容器职责、布局所有者、尺寸、溢出、安全区和输入归属须另行记录；禁止按文字类型或几何最小包含关系自动归父级。
 
@@ -21,7 +21,7 @@ description: 为 Phaser 4 游戏建立可验证的 UI 布局合同、坐标空�
 
 所有可见 Scene、HUD、弹窗和 `DISPLAY_LAYER` 都必须在布局合同中填写 `logicalViewportSpace`、`designResolutionPolicy`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr`、`scaleMode`、`cameraViewportPolicy`、`cameraZoomPolicy`、`cameraOriginPolicy`、`inputCoordinatePolicy`、`safeAreaPolicy`、`resizePolicy`、`orientationPolicy`、`textResolutionPolicy`、`assetResolutionPolicy`、`performanceBudget`、`representativeViewports` 和 `requiredRuntimeEvidence`。竖屏以 1080×1920 为设计基准并按高度适配，横屏以 1920×1080 为设计基准并按宽度适配；另一轴随视口展开或裁切。Canvas 填满 CSS 视口，装饰性背景等比 cover，禁止黑边。Canvas backing 由 CSS 尺寸乘有效 DPR（向上取整）得到，物理像素不得直接用于布局或命中。
 
-运行时 DPR 从设备动态读取，非法输入回退 1，正有限值封顶 2，且必须覆盖 resize、横竖屏和显示密度变化并清理监听器。资源生产 DPR 固定基线为 2，必须与运行时 DPR 分离。ScaleMode 采用 `RESIZE` 或同等填屏的 `custom`，实施包必须证明 `gameSize`、Camera viewport/zoom/origin 和 CSS/物理映射；声明模式或构建成功不能单独作为高分屏证据。弹窗默认继承宿主逻辑视口、DPR、安全区、Camera 和输入合同，V4 必须独立记录其运行轨迹。
+运行时 DPR 从设备动态读取，非法输入回退 1，正有限值封顶 2，且必须覆盖 resize、横竖屏和显示密度变化并清理监听器。资源生产 DPR 固定基线为 2，必须与运行时 DPR 分离。ScaleMode 采用 `RESIZE` 或同等填屏的 `custom`，实施包必须证明 `gameSize`、Camera viewport/zoom/origin 和 CSS/物理映射；声明模式或构建成功不能单独作为高分屏证据。弹窗默认继承宿主逻辑视口、DPR、安全区、Camera 和输入合同，V5 必须独立记录其运行轨迹。
 
 ## 视觉语言默认原则
 
@@ -35,10 +35,10 @@ UI 设计与实现优先用符合全局视觉基线且含义清晰、熟悉的�
 
 1. 读取项目的 GDD/TDD、当前候选、总控审核漏斗和适用视觉阶段；确定稳定 UI ID、坐标空间、参照物、状态与平台输入。
 2. 复制 schema 1.2.0 [合同模板](assets/ui-layout-contract-template.yaml)。普通布局使用 `not-applicable` 并保持 `layout_nodes: []`；冻结视觉目标先用 `frozen-target/specified`。同时冻结上述根级视口/DPR/Camera/Input/性能字段，禁止使用旧 `targets.scale` 字段绕过新门禁。V2 先按位置依赖建立父子、按共同信息建立同级分组，再生成拆解图、技术 JSON 和 `decomposition_elements`，人工修改并确认；屏幕 UI 同时确认 `ui_layout` 职责字段。确认后由智能视觉判断生成逐元素 `left/center/right × top/center/bottom` 决策，再由同一入口同步生成布局 PNG、`layout-nodes.json`、`layout-decision.json`、离线 `review.html` 和 `generation-result.json`。随后登记由确认元素和视觉决策共同推导的非空 `layout_nodes` 与关键对齐合同。
-3. 用 [Phaser 适配器](references/phaser-adapter.md) 设计唯一布局入口：把视口、安全区、方向、内容尺寸和状态作为输入，分离资源 origin、布局停靠点和动画偏移，保证重排幂等。效果图场景在 V3 使用[可视化对齐作业](../phaser4-game-asset-integration/references/visual-alignment-authoring.md)：批量初排后在开发预览中叠加冻结底图，按父容器到子元素的顺序拖拽，直接保存正式 Scene 的布局实现配置并重载复核；V2 目标节点保持只读，只在区域完成及阶段验收时留图。
+3. V3 资源验收后在独立 V4 阶段执行[页面还原草图](../phaser4-game-asset-integration/references/visual-alignment-authoring.md)：生成草图数据，页面读取正式资源，提供可调透明度的效果图底板、显示树、节点选择与坐标调整。父节点移动带动子孙，保存后经用户确认才进入 V5。V5 用 [Phaser 适配器](references/phaser-adapter.md) 消费同一确认草图，复用幂等布局入口并绑定 `pageSketchSha256`；V2 目标节点保持只读。
 4. specified 阶段运行结构检查 `node scripts/validate_ui_layout_contract.mjs <contract>`；verified 正式验收必须运行 `node scripts/validate_ui_layout_contract.mjs <contract> --check-files --project-root .`，复算冻结原图 SHA 并检查目标/运行/parity 证据文件。
-5. 按 [证据矩阵](references/evidence-matrix.md) 生成代表性视口、关键状态和窄高度证据；关键 UI/HUD 记录稳定 element/reference ID、双轴关系、目标/运行测量、实际测试 ID/状态、视觉证据和项目定义容差。V4 还必须记录 CSS/backing 尺寸、raw/effective DPR、Camera、输入命中、同页 resize 和独立 DISPLAY_LAYER 轨迹。`exact` 或明确的全覆盖需求才扩展到完整矩阵和严格 delta。
-6. 按 [工作流门禁](references/workflow-gates.md) 接入 V0–V4、F0–F4 和 G0–G3；只有布局结构、父子归属或参照关系真实变化才退回 V1，普通位置/尺寸调整更新计划并重验受影响区域，F3 只接受绑定当前候选的工程证据。
+5. 按 [证据矩阵](references/evidence-matrix.md) 生成代表性视口、关键状态和窄高度证据；关键 UI/HUD 记录稳定 element/reference ID、双轴关系、目标/运行测量、实际测试 ID/状态、视觉证据和项目定义容差。V5 还必须记录 CSS/backing 尺寸、raw/effective DPR、Camera、输入命中、同页 resize 和独立 DISPLAY_LAYER 轨迹。`exact` 或明确的全覆盖需求才扩展到完整矩阵和严格 delta。
+6. 按 [工作流门禁](references/workflow-gates.md) 接入 V0–V5、F0–F4 和 G0–G3；只有布局结构、父子归属或参照关系真实变化才退回 V1，普通位置/尺寸调整更新计划并重验受影响区域，F3 只接受绑定当前候选的工程证据。
 
 ## effect-image 场景绑定
 
@@ -50,12 +50,12 @@ V2 的布局决策顺序固定为“自动生成拆解图/技术 JSON → 人工
 
 ## 资源导航
 
-场景 `display_layer_planning` 只记录 scene master 与常驻 HUD。modal/popup 等瞬态弹窗建立独立 DISPLAY_LAYER Work Item，在自身合同中记录宿主场景、生命周期、输入阻断、层级、遮罩、焦点恢复和响应式事实，并于自身 V4 同屏验证打开→交互→关闭后的底层布局恢复。弹窗证据仍绑定 scene/layer/host，但不进入宿主场景验收。
+场景 `display_layer_planning` 只记录 scene master 与常驻 HUD。modal/popup 等瞬态弹窗建立独立 DISPLAY_LAYER Work Item，在自身合同中记录宿主场景、生命周期、输入阻断、层级、遮罩、焦点恢复和响应式事实，并于自身 V5 同屏验证打开→交互→关闭后的底层布局恢复。弹窗证据仍绑定 scene/layer/host，但不进入宿主场景验收。
 
 - 需要字段、关系表达或不变量写法时，读取 [references/layout-contract.md](references/layout-contract.md)。
 - 需要 Phaser Scale、Camera、Container、DOM Overlay、resize 或重排边界时，读取 [references/phaser-adapter.md](references/phaser-adapter.md)。
 - 需要对象默认锚点、例外或跨层合成顺序时，读取 [references/display-object-layering.md](references/display-object-layering.md)。
-- 需要 UI 根节点、父容器职责、`ui_layout` 字段或 V1–V4 节点组织规则时，读取 [references/layout-hierarchy.md](references/layout-hierarchy.md)。
+- 需要 UI 根节点、父容器职责、`ui_layout` 字段或 V1–V5 节点组织规则时，读取 [references/layout-hierarchy.md](references/layout-hierarchy.md)。
 - 需要 V/F/G 门禁、退回和候选绑定规则时，读取 [references/workflow-gates.md](references/workflow-gates.md)。
 - 需要组合测试、等价类削减或冻结 Golden 条件时，读取 [references/evidence-matrix.md](references/evidence-matrix.md)。
 - 需要布局审阅页、同批产物、坐标映射、SHA 绑定或离线安全边界时，读取 [references/layout-review-artifacts.md](references/layout-review-artifacts.md)。

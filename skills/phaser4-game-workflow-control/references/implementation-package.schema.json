@@ -20,7 +20,7 @@
     "executionUnits": {
       "type": "array",
       "minItems": 1,
-      "description": "数组顺序由计划制定者预设并作为唯一执行顺序；串行单元各占一个位置，同一并行组必须连续出现。若全部单元仅为 SHARED/MODULE，则该包属于 foundation-only：无视觉产物或行为的纯工程包只需 Work Item 范围、工程基线、冻结实施包和工程证据即可在全局选图前实施；声明 visualProductionUnits、visualManifestFile、visualContractVersion 等视觉合同或资产生产依赖的基础包，必须完整复核 globalVisualBaselineSelectionRef（三张同条件 generated 候选、唯一 SINGLE_HUMAN/CONFIRMED 决定、冻结正文真实 SHA）且 globalStaticBaselineState=global-static-baseline-frozen；声明正式入口或可见资源消费等视觉行为时，仍受正式 V2/V3 门约束。混入 SCENE/DISPLAY_LAYER/INTEGRATION 时仍受正式 V2/V3 门约束。",
+      "description": "数组顺序由计划制定者预设并作为唯一执行顺序；串行单元各占一个位置，同一并行组必须连续出现。若全部单元仅为 SHARED/MODULE，则该包属于 foundation-only：无视觉产物或行为的纯工程包只需 Work Item 范围、工程基线、冻结实施包和工程证据即可在全局选图前实施；声明 visualProductionUnits、visualManifestFile、visualContractVersion 等视觉合同或资产生产依赖的基础包，必须完整复核 globalVisualBaselineSelectionRef（三张同条件 generated 候选、唯一 SINGLE_HUMAN/CONFIRMED 决定、冻结正文真实 SHA）且 globalStaticBaselineState=global-static-baseline-frozen；声明正式入口或可见资源消费等视觉行为时，仍受正式 V2/V3/V4/V5 门约束。混入 SCENE/DISPLAY_LAYER/INTEGRATION 时仍受正式 V2/V3/V4/V5 门约束。",
       "items": {"$ref": "#/$defs/executionUnit"}
     },
     "allowedPaths": {"$ref": "#/$defs/nonEmptyStrings"},
@@ -36,9 +36,11 @@
     "candidateVersion": {"type": "string", "minLength": 1},
     "visualManifestFile": {"type": "string", "minLength": 1},
     "visualManifestSha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "pageSketchFile": {"type": "string", "minLength": 1, "description": "V5 正式实施消费的已确认 V4 草图文件，必须等于当前 Work Item 的 V4 引用路径。"},
+    "pageSketchSha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$", "description": "已确认草图文件字节 SHA，必须等于当前 V4 引用 SHA。"},
     "visualDecompositionConfirmations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/visualDecompositionConfirmationGroup"}},
-    "current_stage": {"enum": ["V1", "V2", "V3", "V4"]},
-    "currentStage": {"enum": ["V1", "V2", "V3", "V4"]},
+    "current_stage": {"enum": ["V1", "V2", "V3", "V4", "V5"]},
+    "currentStage": {"enum": ["V1", "V2", "V3", "V4", "V5"]},
     "scene_reconstruction_contract": {"$ref": "#/$defs/sceneReconstructionContract"},
     "sceneReconstructionContract": {"$ref": "#/$defs/sceneReconstructionContract"},
     "visualProductionUnits": {
@@ -49,6 +51,7 @@
     "responsiveContractVersion": {"type": "string", "minLength": 1}, "layoutContractVersion": {"type": "string", "minLength": 1}, "visualBaselineVersion": {"type": "string", "minLength": 1}, "logicalViewportSpace": {"$ref": "#/$defs/responsiveContractFact"}, "designResolutionPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "canvasBackingPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "runtimeDprPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "maxRuntimeDpr": {"$ref": "#/$defs/responsiveContractFact"}, "scaleMode": {"$ref": "#/$defs/responsiveContractFact"}, "cameraViewportPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "cameraZoomPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "cameraOriginPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "inputCoordinatePolicy": {"$ref": "#/$defs/responsiveContractFact"}, "safeAreaPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "resizePolicy": {"$ref": "#/$defs/responsiveContractFact"}, "orientationPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "textResolutionPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "assetResolutionPolicy": {"$ref": "#/$defs/responsiveContractFact"}, "performanceBudget": {"$ref": "#/$defs/responsiveContractFact"}, "representativeViewports": {"$ref": "#/$defs/responsiveContractFact"}, "requiredRuntimeEvidence": {"$ref": "#/$defs/responsiveContractFact"}, "responsiveViewportContract": {"$ref": "#/$defs/responsiveViewportContract"}, "responsiveContract": {"$ref": "#/$defs/responsiveViewportContract"}
   },
   "allOf": [
+    {"if": {"anyOf": [{"required": ["current_stage"], "properties": {"current_stage": {"const": "V5"}}}, {"required": ["currentStage"], "properties": {"currentStage": {"const": "V5"}}}]}, "then": {"required": ["pageSketchFile", "pageSketchSha256"]}},
     {"if": {"anyOf": [{"required": ["current_stage"]}, {"required": ["currentStage"]}, {"required": ["responsiveViewportContract"]}, {"required": ["responsiveContract"]}]}, "then": {"required": ["responsiveContractVersion", "layoutContractVersion", "visualBaselineVersion", "logicalViewportSpace", "designResolutionPolicy", "canvasBackingPolicy", "runtimeDprPolicy", "maxRuntimeDpr", "scaleMode", "cameraViewportPolicy", "cameraZoomPolicy", "cameraOriginPolicy", "inputCoordinatePolicy", "safeAreaPolicy", "resizePolicy", "orientationPolicy", "textResolutionPolicy", "assetResolutionPolicy", "performanceBudget", "representativeViewports", "requiredRuntimeEvidence"]}},
     {
       "if": {"anyOf": [{"required": ["visualContractVersion"]}, {"required": ["candidateVersion"]}, {"required": ["visualManifestFile"]}, {"required": ["visualManifestSha256"]}, {"required": ["visualProductionUnits"]}]},
@@ -58,7 +61,7 @@
       "if": {"required": ["visualProductionUnits"], "properties": {"visualProductionUnits": {"minItems": 1}}},
       "then": {"required": ["visualDecompositionConfirmations"]}
     },
-    {"if": {"anyOf": [{"required": ["current_stage"], "properties": {"current_stage": {"enum": ["V3", "V4"]}}}, {"required": ["currentStage"], "properties": {"currentStage": {"enum": ["V3", "V4"]}}}]}, "then": {"allOf": [{"anyOf": [{"required": ["scene_reconstruction_contract"], "properties": {"scene_reconstruction_contract": {"required": ["combination_preacceptance"]}}}, {"required": ["sceneReconstructionContract"], "properties": {"sceneReconstructionContract": {"required": ["combination_preacceptance"]}}}]}, {"properties": {"visualProductionUnits": {"items": {"required": ["scene_asset_usage"]}}}}]}}
+    {"if": {"anyOf": [{"required": ["current_stage"], "properties": {"current_stage": {"const": "V5"}}}, {"required": ["currentStage"], "properties": {"currentStage": {"const": "V5"}}}]}, "then": {"allOf": [{"anyOf": [{"required": ["scene_reconstruction_contract"], "properties": {"scene_reconstruction_contract": {"required": ["combination_preacceptance"]}}}, {"required": ["sceneReconstructionContract"], "properties": {"sceneReconstructionContract": {"required": ["combination_preacceptance"]}}}]}, {"properties": {"visualProductionUnits": {"items": {"required": ["scene_asset_usage"]}}}}]}}
   ],
   "$defs": {
     "responsiveContractFact": {"oneOf": [{"type": "object", "minProperties": 1}, {"type": "array", "minItems": 1}, {"type": "string", "minLength": 1}, {"type": "number", "exclusiveMinimum": 0}]},
@@ -324,7 +327,7 @@
     },
     "sceneReconstructionContract": {
       "type": "object",
-      "description": "effect-image V1-V4 场景还原合同；V1 必须显式记录冲突，V2 通过拆解图、技术 JSON 与生产方案确认后才能进入 V3。",
+      "description": "effect-image V1-V5 场景还原合同；V1 必须显式记录冲突，V2 通过拆解图、技术 JSON 与生产方案确认后才能进入 V3。",
       "required": ["contract_version", "reference_technical_conflicts", "decomposition_annotation", "technical_decomposition", "visual_decomposition_confirmation", "visual_production_contract", "visual_production_units", "coverage_audit", "target_conditions", "text_decomposition", "coverage_regions", "composition", "responsive_contract", "predeclared_tolerances", "implementation_plan", "display_layer_planning", "layout_decomposition"],
       "properties": {
         "contract_version": {"type": "string", "minLength": 1},
@@ -919,7 +922,7 @@
     },
     "sceneAssetUsage": {
       "type": "object",
-      "description": "V3/V4 资源放入正式 Scene 后的目标显示和组合条件；不能只用独立图片尺寸替代。",
+      "description": "V5 资源放入正式 Scene 后的目标显示和组合条件；不能只用独立图片尺寸替代。",
       "required": ["target_display_size", "intended_scale_range", "origin", "anchor", "nine_slice", "material", "composition_region", "required_neighbors", "typography_ownership", "runtime_foreground_ownership"],
       "properties": {
         "target_display_size": {"type": "object", "required": ["width", "height"], "properties": {"width": {"type": "number", "exclusiveMinimum": 0}, "height": {"type": "number", "exclusiveMinimum": 0}}},

@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { createExecutionState, executionStatePath, scopedDiffFingerprint } from './execution-unit-control.mjs';
 import { parallelBatchFingerprint } from './parallel-batch-control.mjs';
+import { bindConfirmedSketchFixture, bindPackageToSketchFixture } from './workflow-page-sketch-fixture.mjs';
 import { createReturnRecord } from './return-disposition.mjs';
 import { registerRelaxedWorkflowTests } from './workflow-control-relaxed-cases.mjs';
 import { RESPONSIVE_CONTRACT_FIELDS } from './responsive-viewport-contract.mjs';
@@ -50,12 +51,13 @@ function makeRepo() {
   const pauseContextPath = join(repo, 'docs', 'pause-context.png');
   const settingsContextPath = join(repo, 'docs', 'settings-context.png');
   const v3Path = join(repo, 'docs', 'v3-acceptance.json');
-  const v4Path = join(repo, 'docs', 'v4-runtime-candidate.json');
+  const v4Path = join(repo, 'docs', 'v5-runtime-candidate.json');
   writeFileSync(sceneMasterPath, 'scene-master\n'); writeFileSync(reconstructionContractPath, 'scene-reconstruction-contract\n'); writeFileSync(decompositionAnnotationPath, 'decomposition-annotation\n'); writeFileSync(technicalDecompositionPath, 'technical-decomposition\n'); writeFileSync(confirmationPath, 'decomposition-confirmation\n');
   writeFileSync(pauseContextPath, 'pause-context\n'); writeFileSync(settingsContextPath, 'settings-context\n');
   writeJson(join(repo, 'docs', 'high-fidelity-scene.json'), { schemaVersion: 'phaser4-scene-v2-reconstruction-plan/1.0', workItemId: 'WI-1', status: 'COMPLETE', stage: 'V2', frozen: true, sceneId: 'play', targetSha256: HASH, candidateSha256: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF, sceneMaster: { file: 'docs/high-fidelity-scene.png', sha256: hashFile(sceneMasterPath), sceneId: 'play' }, sceneReconstructionContract: { file: 'docs/scene-reconstruction-contract.json', sha256: hashFile(reconstructionContractPath), sceneId: 'play' }, decompositionAnnotation: { file: 'docs/decomposition-annotation.png', sha256: hashFile(decompositionAnnotationPath), sceneId: 'play' }, technicalDecomposition: { file: 'docs/technical-decomposition.json', sha256: hashFile(technicalDecompositionPath), sceneId: 'play' }, visualDecompositionConfirmation: { confirmationId: 'V2-CONFIRM-1', confirmationMode: 'manual', status: 'PASS', targetSha256: HASH, candidateSha256: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF, evidenceFile: 'docs/v2-decomposition-confirmation.json', evidenceSha256: hashFile(confirmationPath) }, visualProductionContract: { contractId: 'VPC-1' }, visualProductionUnits: [{ unitId: 'scene-root', owner: 'fixed-production-visual' }], displayLayerContexts: [{ displayLayerId: 'pause', hostSceneId: 'play', hostContextImage: { file: 'docs/pause-context.png', sha256: hashFile(pauseContextPath), sceneId: 'play', displayLayerId: 'pause', hostSceneId: 'play' } }, { displayLayerId: 'settings', hostSceneId: 'play', hostContextImage: { file: 'docs/settings-context.png', sha256: hashFile(settingsContextPath), sceneId: 'play', displayLayerId: 'settings', hostSceneId: 'play' } }] });
   writeJson(v3Path, { evidenceType: 'v3-formal-acceptance', status: 'PASS', acceptanceId: 'V3-ACCEPT-1', workItemId: 'WI-1', baselineHash: HASH, contentHash: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF, candidateIdentity: { sha256: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF }, files: ['docs/high-fidelity-scene.png'], fileHashes: { 'docs/high-fidelity-scene.png': hashFile(sceneMasterPath) }, formalAssets: ['docs/high-fidelity-scene.png'], components: ['scene-master'], combinationPreacceptance: { status: 'PASS' } });
-  writeJson(v4Path, { evidenceType: 'v4-runtime-integration-candidate', status: 'PASS', candidateId: 'V4-CANDIDATE-1', workItemId: 'WI-1', baselineHash: HASH, contentHash: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF, candidateIdentity: { sha256: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF }, files: ['docs/high-fidelity-scene.png'], fileHashes: { 'docs/high-fidelity-scene.png': hashFile(sceneMasterPath) } });
+  writeJson(v4Path, { evidenceType: 'v5-runtime-integration-candidate', status: 'PASS', candidateId: 'V5-CANDIDATE-1', workItemId: 'WI-1', baselineHash: HASH, contentHash: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF, candidateIdentity: { sha256: CANDIDATE_HASH, diffFingerprint: VISUAL_DIFF }, files: ['docs/high-fidelity-scene.png'], fileHashes: { 'docs/high-fidelity-scene.png': hashFile(sceneMasterPath) } });
+  bindConfirmedSketchFixture({ repo, work: { workItemId: 'WI-1', baselineHash: HASH, visualStageEvidenceRefs: { V2: { path: 'docs/high-fidelity-scene.json' } } }, pkg: { executionUnits: [] } });
   execFileSync('git', ['add', '.'], { cwd: repo });
   execFileSync('git', ['commit', '-qm', 'baseline'], { cwd: repo });
   return { repo, head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim() };
@@ -70,7 +72,7 @@ function makeWork(head, overrides = {}) {
     assignedAgent: 'implementer', delegatedAgents: [], expectedOutputs: ['src/main.js'], validationPlan: ['node --test'], exitCriteria: ['tests pass'], nextGate: 'F0', rollbackPolicy: '不自动回滚共享工作区', evidenceRoot: '.workflow-control/evidence/WI-1',
     pendingApprovalId: 'PENDING-1', pendingApprovalObject: 'core implementation', pendingApprovalStage: 'G1', pendingApprovalActionLevel: 'A3', pendingApprovalGate: 'F0', pendingApprovalState: 'IMPLEMENTING', pendingApprovalContext: 'implementation', pendingApprovalActionType: 'phaser-code-change', pendingApprovalImpactSummary: [], pendingApprovalFileScope: ['src'], pendingApprovalServices: [], pendingApprovalAllowServiceStart: false, pendingApprovalAllowDelete: false, pendingApprovalExternalWrite: false, pendingApprovalDestructive: false, pendingApprovalPhysicalDevice: false, pendingApprovalRelease: false, pendingApprovalExternalTargets: [], pendingApprovalPreparedAt: '2026-08-11T00:00:00.000Z', pendingApprovalPresentedId: null, pendingApprovalPresentedAt: null,
     validationBatchId: 'BATCH-1', changeRequestFiles: [], moduleGateRequired: false, substantiveTradeoffRequired: false, visualDecisionRequired: false, releaseWorkItem: false,
-    visualStage: 'V4', visualStageState: 'v4-runtime-integration-candidate', visualStageEvidenceRefs: { V2: { path: 'docs/high-fidelity-scene.json', sha256: '', workItemId: 'WI-1' }, V3: { path: 'docs/v3-acceptance.json', sha256: '', workItemId: 'WI-1' }, V4: { path: 'docs/v4-runtime-candidate.json', sha256: '', workItemId: 'WI-1' } },
+    visualStage: 'V5', visualStageState: 'v5-runtime-integration-candidate', visualStageEvidenceRefs: { V2: { path: 'docs/high-fidelity-scene.json', sha256: '', workItemId: 'WI-1' }, V3: { path: 'docs/v3-acceptance.json', sha256: '', workItemId: 'WI-1' }, V5: { path: 'docs/v5-runtime-candidate.json', sha256: '', workItemId: 'WI-1' } },
     responsiveContractVersion: 'responsive-viewport/1.0', layoutContractVersion: 'layout/1.0', visualBaselineVersion: 'visual-baseline/1.0',
     ...structuredClone(RESPONSIVE_FIXTURE),
     ...overrides
@@ -158,9 +160,7 @@ function setup(workOverrides = {}, approvals = [], packageFactory = makePackage)
   mkdirSync(join(root, 'evidence', 'WI-1'), { recursive: true });
   const workValue = makeWork(head, workOverrides);
   const packageValue = packageFactory();
-  const visualEvidenceSha = hashFile(join(repo, 'docs', 'high-fidelity-scene.json')); const v3EvidenceSha = hashFile(join(repo, 'docs', 'v3-acceptance.json')); const v4EvidenceSha = hashFile(join(repo, 'docs', 'v4-runtime-candidate.json'));
-  workValue.visualStageEvidenceRefs.V2.sha256 = visualEvidenceSha; workValue.visualStageEvidenceRefs.V3.sha256 = v3EvidenceSha; workValue.visualStageEvidenceRefs.V4.sha256 = v4EvidenceSha;
-  const sceneUnit = packageValue.executionUnits.find((unit) => unit.unitId === 'SCENE-1'); if (sceneUnit?.highFidelityPrerequisite) sceneUnit.highFidelityPrerequisite.evidenceSha256 = visualEvidenceSha;
+  bindConfirmedSketchFixture({ repo, work: workValue, pkg: packageValue });
   writeJson(workPath, { ...workValue, ...workOverrides });
   writeJson(ledgerPath, { schemaVersion: '1.0', approvals });
   writeJson(packagePath, packageValue);
@@ -172,9 +172,7 @@ function setup(workOverrides = {}, approvals = [], packageFactory = makePackage)
 /** 写入自定义实施包时重新绑定当前 Work Item 的不可变 V2 证据，避免测试误命中无关前置门。 */
 function writeBoundPackage(fixture, pkg) {
   const work = JSON.parse(readFileSync(fixture.workPath, 'utf8'));
-  for (const unit of pkg.executionUnits) {
-    if (unit.highFidelityPrerequisite) unit.highFidelityPrerequisite.evidenceSha256 = work.visualStageEvidenceRefs.V2.sha256;
-  }
+  bindPackageToSketchFixture({ repo: fixture.repo, work, pkg });
   writeJson(fixture.packagePath, pkg);
 }
 
@@ -182,7 +180,7 @@ function writeBoundPackage(fixture, pkg) {
 function writeExecutionState(fixture) {
   const work = JSON.parse(readFileSync(fixture.workPath, 'utf8'));
   const pkg = JSON.parse(readFileSync(fixture.packagePath, 'utf8'));
-  for (const unit of pkg.executionUnits) if (unit.highFidelityPrerequisite) unit.highFidelityPrerequisite.evidenceSha256 = work.visualStageEvidenceRefs.V2.sha256;
+  bindPackageToSketchFixture({ repo: fixture.repo, work, pkg });
   writeJson(fixture.packagePath, pkg);
   const state = createExecutionState(work, pkg, { hashText: (value) => `sha256:${createHash('sha256').update(value).digest('hex')}`, resolve, existsSync, readFileSync, fileHash: hashFile, repo: fixture.repo }, '2026-08-11T00:01:00.000Z');
   writeJson(join(fixture.repo, executionStatePath(work)), state);
@@ -274,7 +272,7 @@ function makeEvidence(fixture, audit) {
   writeFileSync(output, 'tests passed\n');
   const rel = '.workflow-control/evidence/WI-1/test-output.txt';
   const common = { status: 'PASS', baselineHash: HASH, diffFingerprint: audit.diffFingerprint };
-  // V4 门禁现在先验证响应式实测事实；夹具必须覆盖完整矩阵，才能继续断言后续证据门。
+  // V5 门禁现在先验证响应式实测事实；夹具必须覆盖完整矩阵，才能继续断言后续证据门。
   const responsiveBase = {
     verificationStatus: 'verified', runtimeMeasured: true, measuredAt: '2026-08-11T00:02:00.000Z', viewportRect: { width: 320, height: 800 }, canvasRect: { width: 320, height: 800 }, designTransform: calculateFixedDesignViewport({ width: 320, height: 800 }), logicalSize: { width: 320, height: 800 }, backingSize: { width: 640, height: 1600 }, cssDisplaySize: { width: 320, height: 800 }, rawDevicePixelRatio: 2, effectiveDevicePixelRatio: 2, logicalToCssScale: 1, cssToPhysicalScale: 2, gameSize: { width: 320, height: 800 }, cameraViewport: { width: 320, height: 800 }, cameraZoom: 1, cameraOrigin: { x: 0, y: 0 }, safeArea: { top: 0, right: 0, bottom: 0, left: 0 }, edgeGaps: { top: 0, right: 0, bottom: 0, left: 0 }, backgroundCoverage: { covered: true }, keyUiRects: [{ id: 'play', x: 20, y: 20, width: 100, height: 48 }], inputHitResults: [{ id: 'play', logicalPoint: { x: 30, y: 30 }, hit: true }], resizeTrajectory: [{ event: 'same-page-resize' }, { event: 'orientation-change' }, { event: 'dpr-drop-to-1' }, { event: 'dpr-unchanged-resize' }], pageReloaded: false, screenshot: 'evidence/scene.png', sceneId: 'play', stateId: 'default', candidateSha256: CANDIDATE_HASH, layoutContractVersion: 'layout/1.0', visualBaselineVersion: 'visual-baseline/1.0', matrixCases: ['dpr-1', 'dpr-1.25-1.5', 'dpr-2', 'dpr-above-2-cap', 'same-page-resize', 'orientation-change', 'dpr-drop-to-1', 'same-dpr-resize']
   };
@@ -289,7 +287,7 @@ function makeEvidence(fixture, audit) {
     measured(1366, 768, 2, { contextId: 'page-b' }),
     measured(1280, 720, 3, { contextId: 'page-b', samePageWithPrevious: true }),
   ];
-  return { evidenceId: 'EV-1', batchId: 'BATCH-1', workItemId: 'WI-1', baselineHash: HASH, codeFingerprint: `git:${fixture.head}`, diffFingerprint: audit.diffFingerprint, recordedAt: new Date(Date.parse(audit.recordedAt) + 1000).toISOString(), commands: [{ command: 'node --test', exitCode: 0, outputFile: rel, outputHash: hashFile(output) }], environment: { node: process.version }, dataSources: ['git diff'], files: [rel], fileHashes: { [rel]: hashFile(output) }, gateResults: { F0: { ...common, workItemId: 'WI-1', authorizationBasis: 'TASK_SCOPE' }, F1: { ...common }, F2: { ...common, reviewer: 'independent-reviewer', reviewMode: 'INDEPENDENT' }, F3: { ...common, evidenceId: 'EV-1' } }, responsiveEvidence, verdict: 'PASS', uncoveredItems: [], completedOutputs: ['src/main.js'], completedUnitIds: JSON.parse(readFileSync(fixture.packagePath, 'utf8')).executionUnits.map((unit) => unit.unitId), satisfiedExitCriteria: ['tests pass'] };
+  return { evidenceId: 'EV-1', batchId: 'BATCH-1', workItemId: 'WI-1', baselineHash: HASH, codeFingerprint: `git:${fixture.head}`, diffFingerprint: audit.diffFingerprint, pageSketchSha256: JSON.parse(readFileSync(fixture.workPath, 'utf8')).visualStageEvidenceRefs.V4.sha256, recordedAt: new Date(Date.parse(audit.recordedAt) + 1000).toISOString(), commands: [{ command: 'node --test', exitCode: 0, outputFile: rel, outputHash: hashFile(output) }], environment: { node: process.version }, dataSources: ['git diff'], files: [rel], fileHashes: { [rel]: hashFile(output) }, gateResults: { F0: { ...common, workItemId: 'WI-1', authorizationBasis: 'TASK_SCOPE' }, F1: { ...common }, F2: { ...common, reviewer: 'independent-reviewer', reviewMode: 'INDEPENDENT' }, F3: { ...common, evidenceId: 'EV-1' } }, responsiveEvidence, verdict: 'PASS', uncoveredItems: [], completedOutputs: ['src/main.js'], completedUnitIds: JSON.parse(readFileSync(fixture.packagePath, 'utf8')).executionUnits.map((unit) => unit.unitId), satisfiedExitCriteria: ['tests pass'] };
 }
 
 registerRelaxedWorkflowTests({ assert, test, setup, makeFoundationPackage, makePackage, writeBoundPackage, run, rejects, readFileSync, writeJson, join, rmSync, existsSync, makeEvidence, hash: HASH });
@@ -321,10 +319,10 @@ test('混合场景实施包：包含 SCENE 时仍必须通过 V2 规划门', () 
   rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /V2 前置门|V2/);
 });
 
-test('正式场景执行：V3 未完成时拒绝创建执行状态', () => {
+test('正式场景执行：V4 草图未确认时拒绝创建执行状态', () => {
   assert.throws(
     () => setup({ visualStage: 'V2', visualStageState: 'v2-production-planning-complete' }),
-    /V3 前置门|V3/,
+    /V4 前置门|V4/,
   );
 });
 
@@ -975,8 +973,8 @@ test('V2 视觉 Work Item 缺失 visualProductionUnits 时规划迁移拒绝绕�
   const f = setup({ domain: 'visual-assets', stageId: 'V2', globalState: 'REVIEW', pendingApprovalState: 'REVIEW', visualStage: 'V2', visualStageState: 'v2-production-planning-complete' }); rejects(run('transition', ['--work-item', f.workPath, '--to', 'IMPLEMENTING', '--implementation-package', f.packagePath], f.repo), /visualManifestFile|visualProductionUnits/);
 });
 
-test('V4 视觉门不允许 domain=code 通过自由文本绕过', () => {
-  const f = setup({ domain: 'code', stageId: 'V4', visualStage: 'V4', visualStageState: 'v4-runtime-integration-candidate' }); rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /visualManifestFile|visualProductionUnits/);
+test('V5 视觉门不允许 domain=code 通过自由文本绕过', () => {
+  const f = setup({ domain: 'code', stageId: 'V5', visualStage: 'V5', visualStageState: 'v5-runtime-integration-candidate' }); rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /visualManifestFile|visualProductionUnits/);
 });
 
 test('V3 视觉 Implementation Package 的 图像生成 编号未映射 coverage 时 CLI 拒绝', () => {

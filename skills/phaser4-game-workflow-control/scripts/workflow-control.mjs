@@ -23,7 +23,8 @@ import { declaredOperationFlags, requestedOperationFlags, requireResolvedUserInp
 import { schemaEnum, schemaRequired } from './runtime/schema-contract.mjs';
 import { approvalMatchesPending, approvalMatchesQuery, approvalSnapshotFromWork } from './runtime/approval-contract.mjs';
 import { validateActionState, validateChangeRequests as validateChangeRequestRules } from './runtime/workflow-state-contract.mjs';
-import { prepareImplementationPackageActivation, prepareSceneStageTransition } from './scene-stage-transition.mjs';
+import { prepareSceneStageTransition } from './scene-stage-transition.mjs';
+import { prepareImplementationTransition } from './workflow-implementation-transition.mjs';
 import { hasResponsiveDeclaration, isResponsiveWorkItem, validateResponsiveContract } from './responsive-viewport-contract.mjs';
 const STATES = schemaEnum('work-item.schema.json', ['properties', 'globalState']);
 const LEVELS = schemaEnum('work-item.schema.json', ['properties', 'pendingApprovalActionLevel']);
@@ -692,8 +693,8 @@ function evidenceCheck(args, silent = false, validationContextOverride = null) {
     const implementationPackage = validationContext.validateImplementationPackage(validationContext.readJson(resolve(repo, packagePath), 'Implementation Package'), work);
     executionPackage = implementationPackage;
     if (isVisualProductionWork(work)) visualPackage = implementationPackage;
-  } else if (isVisualProductionWork(work)) {
-    if (!packagePath) fail('V3/V4 视觉 Evidence 必须绑定 Implementation Package');
+  } else if (isVisualProductionWork(work) && ['V3', 'V5'].includes(String(work.visualStage ?? '').toUpperCase())) {
+    if (!packagePath) fail('V3/V5 视觉 Evidence 必须绑定 Implementation Package');
     visualPackage = validationContext.validateImplementationPackage(validationContext.readJson(resolve(repo, packagePath), 'Implementation Package'), work);
   }
   if (audit.diffFingerprint !== evidence.diffFingerprint) fail('旧证据不能验证当前 diff');
@@ -712,16 +713,12 @@ function evidenceCheck(args, silent = false, validationContextOverride = null) {
   // Evidence 顶层已经绑定 Work Item；F0 可附带 TASK_SCOPE 或 workItemId，附带时必须一致。
   const f0MatchesWork = (f0.workItemId === undefined || f0.workItemId === work.workItemId)
     && (f0.authorizationBasis === undefined || f0.authorizationBasis === audit.authorizationBasis);
-  // V2 拆解确认通过后，V3-V4 的视觉 F2 只消费机器验证事实；通用非视觉 F2 仍保留 reviewer/reviewMode 硬门。
+  // V2 拆解确认通过后，V3/V5 的视觉 F2 只消费机器验证事实；通用非视觉 F2 仍保留 reviewer/reviewMode 硬门。
   if (!f0MatchesWork || evidence.gateResults.F3.evidenceId !== evidence.evidenceId || (!visualMachineValidation && !reviewer)) fail('F0 范围、F2 审查或 F3 证据绑定不完整');
   let visualManifest = null;
   if (visualPackage) { const snapshot = validationContext.loadVisualManifestSnapshot(visualPackage); if (snapshot?.errors?.length) fail(snapshot.errors[0]); visualManifest = snapshot?.manifest ?? null; }
-  // V4 可见单元必须逐条提交真实响应式运行证据；宿主场景通过不能替代独立 DISPLAY_LAYER 轨迹。
-  if (isResponsiveWorkItem(work, executionPackage ?? visualPackage) && (String(work.visualStage ?? work.stageId).toUpperCase() === 'V4' || evidence.responsiveEvidence !== undefined || evidence.responsiveRuntimeEvidence !== undefined)) {
-    const candidateSha256 = visualManifest?.candidate_identity?.sha256 ?? visualManifest?.candidateSha256 ?? evidence.candidateSha256;
-    const requiredUnits = (executionPackage?.executionUnits ?? visualPackage?.executionUnits ?? []).filter((unit) => ['SCENE', 'DISPLAY_LAYER'].includes(unit?.unitType));
-    validateResponsiveEvidence(evidence, executionPackage ?? visualPackage ?? work, { stage: 'V4', candidateSha256, requiredUnits });
-  }
+  // V5 可见单元必须逐条提交真实响应式运行证据；宿主场景通过不能替代独立 DISPLAY_LAYER 轨迹。
+  if (isResponsiveWorkItem(work, executionPackage ?? visualPackage) && (String(work.visualStage ?? work.stageId).toUpperCase() === 'V5' || evidence.responsiveEvidence !== undefined || evidence.responsiveRuntimeEvidence !== undefined)) validateResponsiveEvidence(evidence, executionPackage ?? visualPackage ?? work, { stage: 'V5', candidateSha256: visualManifest?.candidate_identity?.sha256 ?? visualManifest?.candidateSha256 ?? evidence.candidateSha256, requiredUnits: (executionPackage?.executionUnits ?? visualPackage?.executionUnits ?? []).filter((unit) => ['SCENE', 'DISPLAY_LAYER'].includes(unit?.unitType)) });
   visualStageGate({ ...work, implementationPackage: visualPackage, visualManifest }, { command: 'evidence-check', actionLevel: audit.actionLevel, projectRoot: repo, pendingSnapshot: work.pendingVisualPrerequisiteSnapshot, evidence });
   const visualEvidenceErrors = validateVisualEvidence(evidence, visualPackage, { manifest: visualManifest, projectRoot: repo, diffFingerprint: evidence.diffFingerprint, implementationPackage: visualPackage, authority: visualPackage ? validationContext.authorityFor(visualPackage, work) : null });
   if (visualEvidenceErrors.length) fail(visualEvidenceErrors[0]);
@@ -788,25 +785,13 @@ function transition(args) {
       implementationPackage,
     });
   }
+  let packageActivated = false;
   if (target === 'IMPLEMENTING') {
-    const level = work.pendingApprovalActionLevel;
-    if (!['A2', 'A3'].includes(level)) fail('进入 IMPLEMENTING 仅允许 A2/A3');
-    if (isVisualProductionWork(work) && String(work.stageId).toUpperCase() === 'V3' && level === 'A2') fail('V3 拆解分析进入 IMPLEMENTING 前必须完成并人工接受 visual-decomposition-confirmation/1.0');
-    if (level === 'A3') {
-      const packagePath = args['implementation-package'] ?? work.implementationPackageRecord;
-      const pkg = validationContext.validateImplementationPackage(validationContext.readJson(packagePath, 'Implementation Package'), work);
-      if (!stageTransitionPlan?.reuseExecutionState) {
-        const packageSwitch = pkg.executionUnits.some((unit) => ['SCENE', 'DISPLAY_LAYER'].includes(unit.unitType)) && work.implementationPackageRecord && resolve(repo, packagePath) !== resolve(repo, work.implementationPackageRecord)
-          ? prepareImplementationPackageActivation({ work, pkg, packagePath, repo, validationContext, unitIo: (currentRepo) => unitIo(currentRepo), validateWorkItem })
-          : { nextWork: work, package: pkg, previousWork: null, previousPackage: null, replaceExisting: false };
-        work = packageSwitch.nextWork;
-        // 正式包身份变化时，旧序列必须先闭环并归档；普通重复进入仍严格复核现有状态。
-        initializeExecutionState(work, packageSwitch.package ?? pkg, repo, stageIo, { replaceExisting: Boolean(packageSwitch.replaceExisting), previousWork: packageSwitch.previousWork, previousPackage: packageSwitch.previousPackage });
-        work.implementationPackageRecord = normalizeRepoPath(repo, packagePath);
-      }
-    }
+    const plan = prepareImplementationTransition({ work, args, repo, validationContext, stageTransitionPlan, stageIo, unitIo: (currentRepo) => unitIo(currentRepo), validateWorkItem, isVisualProductionWork, initializeExecutionState, normalizeRepoPath });
+    work = plan.work;
+    packageActivated = plan.packageActivated;
   }
-  if (stageTransitionPlan?.updateExecutionState) {
+  if (stageTransitionPlan?.updateExecutionState && !packageActivated) {
     // 先验证最终 Work Item 副本，再更新状态文件，避免阶段元数据单边切换。
     validateWorkItem({ ...work, globalState: target });
     updateExecutionStateStage(stageTransitionPlan.previousWork, work, stageTransitionPlan.previousPackage, repo, stageIo);
@@ -964,7 +949,7 @@ function lint(args) {
 
 const HELP_COMMANDS = ['run', 'check', 'status', 'init', 'route', 'advance', 'prepare-approval', 'handoff', 'preflight', 'approve', 'delegate-check', 'parallel-check', 'unit-check', 'diff-audit', 'evidence-check', 'transition', 'lint'];
 const COMMAND_HELP = {
-  transition: '用法：node <skill-dir>/scripts/workflow-control.mjs transition --repo <目录> --work-item <文件> --to <状态> [--visual-stage V3|V4] [--visual-stage-state <状态>]\nV2→V3 进入 REVIEW；V3→V4 进入 IMPLEMENTING 并复用已完成的正式包。阶段通过须绑定真实证据。',
+  transition: '用法：node <skill-dir>/scripts/workflow-control.mjs transition --repo <目录> --work-item <文件> --to <状态> [--visual-stage V3|V4|V5] [--visual-stage-state <状态>]\nV2→V3 进入 REVIEW；V3→V4 进入 REVIEW 草图阶段；V4 确认后激活新包进入 V5/IMPLEMENTING。阶段通过须绑定真实证据。',
   run: '用法：node <skill-dir>/scripts/workflow-control.mjs run --repo <目录> --work-item <文件> [--input <文件>]... [--json]\n必填：--repo、--work-item；连续推进已满足条件的 A0-A3 控制面状态，进入 IMPLEMENTING 或遇到门禁即停止。',
   check: '用法：node <skill-dir>/scripts/workflow-control.mjs check --repo <目录> --work-item <文件> [--implementation-package <文件>] [--evidence <文件>] [--input <文件>]... [--json]\n必填：--repo、--work-item；只读校验，不写入工件。',
   status: '用法：node <skill-dir>/scripts/workflow-control.mjs status --repo <目录> --work-item <文件> [--input <文件>]... [--json]\n必填：--repo、--work-item；输出最小状态、阻断原因和下一动作。',

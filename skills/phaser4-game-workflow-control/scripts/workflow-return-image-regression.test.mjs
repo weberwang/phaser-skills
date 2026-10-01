@@ -28,7 +28,7 @@ function returnWork(overrides = {}) {
     implementationPackageRecord: "evidence/package.json",
     evidenceRoot: "evidence/WI-RETURN-1",
     visualStage: "V3",
-    visualStageState: "v2-production-planning-complete",
+    visualStageState: "in-progress",
     ...overrides,
   };
 }
@@ -104,7 +104,7 @@ test("RETURN 由控制面推导恢复状态并实际清除旧审批与下游引�
 });
 
 test("RETURN 到 IMPLEMENTING 保留 V2 视觉证据，不扩大失效范围", () => {
-  const record = createReturnRecord({ classification: "hard-gate-would-be-bypassed", reason: "实施硬门需要重新验证", affectedScope: ["stage:V3"] }, returnWork());
+  const record = createReturnRecord({ classification: "hard-gate-would-be-bypassed", reason: "实施硬门需要重新验证", affectedScope: ["stage:V5"] }, returnWork({ visualStage: "V5" }));
   assert.equal(record.returnState, "IMPLEMENTING");
   assert.equal(record.invalidatedArtifacts.includes("visualStageEvidenceRefs"), false);
   assert.equal(record.invalidatedArtifacts.includes("visualHumanApproval"), false);

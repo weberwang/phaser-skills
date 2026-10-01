@@ -1,5 +1,5 @@
 import { closeSync, openSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { assertFormalExecutionAfterV3, assertHighFidelityPrerequisite, assertHighFidelityPrerequisites } from './high-fidelity-prerequisite.mjs';
+import { assertFormalExecutionAfterV4, assertHighFidelityPrerequisite, assertHighFidelityPrerequisites } from './high-fidelity-prerequisite.mjs';
 import { loadImmutableVisualStageReference, validateVisualStagePrerequisites } from './visual-stage-prerequisites.mjs';
 import { writeJson } from './runtime/io.mjs';
 import { schemaEnum, schemaFields, schemaNode } from './runtime/schema-contract.mjs';
@@ -214,8 +214,8 @@ function deriveNextTask(units) {
 
 /** 生成初始状态：首个串行单元或首个并行组立即标记 IN_PROGRESS。 */
 export function createExecutionState(work, pkg, io, now = new Date().toISOString()) {
-  // V3 是正式功能执行的硬边界；先校验 V3，再复核整个包的 V2 结果，避免规划包提前激活。
-  assertFormalExecutionAfterV3(work, pkg, io.repo ?? null, io);
+  // V4 草图确认是正式功能执行的硬边界；创建状态前同时复核不可变草图与 V2 来源。
+  assertFormalExecutionAfterV4(work, pkg, io.repo ?? null, io);
   assertHighFidelityPrerequisites(pkg, work, io.repo ?? null, io);
   const firstUnit = pkg.executionUnits[0];
   const units = pkg.executionUnits.map((unit, order) => ({ unitId: unit.unitId, order, parallelMode: unit.parallelMode, parallelGroup: unit.parallelGroup, state: 'PENDING', resultId: null, resultPath: null, resultFingerprint: null, startedAt: null, completedAt: null }));
@@ -245,15 +245,15 @@ export function createExecutionState(work, pkg, io, now = new Date().toISOString
   return state;
 }
 
-/** V3 Implementation Package 规划阶段只复核当前 Work Item 的 V2 结果，避免控制 CLI 重复实现视觉门逻辑。 */
+/** Implementation Package 规划阶段只复核当前 Work Item 的 V2 结果，避免控制 CLI 重复实现视觉门逻辑。 */
 export function assertImplementationPackagePlanningPrerequisites(pkg, work, repo, io) {
   return assertHighFidelityPrerequisites(pkg, work, repo, io);
 }
 
 /** 复核当前计划与单元证据；任务内路径和验收命令调整只影响相关单元。 */
 export function validateExecutionState(state, statePath, work, pkg, repo, io) {
-  // 状态文件每次读取都重新检查 V3，防止阶段回退或 V3 证据漂移后继续执行正式单元。
-  assertFormalExecutionAfterV3(work, pkg, repo, io);
+  // 状态文件每次读取都重新检查已确认 V4 草图，防止漂移后继续执行正式单元。
+  assertFormalExecutionAfterV4(work, pkg, repo, io);
   if (!state || typeof state !== 'object' || Array.isArray(state)) throw new Error('Execution State 必须为对象');
   const missing = EXECUTION_STATE_FIELDS.filter((field) => state[field] === undefined);
   const extra = Object.keys(state).filter((field) => !EXECUTION_STATE_FIELDS.includes(field));
@@ -417,20 +417,21 @@ export function updateExecutionStateStage(work, nextWork, pkg, repo, io) {
   return { state: validated, statePath: loaded.statePath };
 }
 
-/** 校验场景 Work Item 的最终 V4 证据，避免把正式代码序列完成误报为场景完成。 */
+/** 校验场景 Work Item 的最终 V5 运行证据，避免把正式代码序列完成误报为场景完成。 */
 export function assertSceneWorkItemComplete(work, pkg, repo, evidence = null) {
   const hasSceneUnit = pkg?.executionUnits?.some((unit) => ['SCENE', 'DISPLAY_LAYER'].includes(unit.unitType));
-  // 设计阶段尚无正式代码包，仍属于场景生命周期，不能在 V2/V3 提前关闭工作项。
-  if (!hasSceneUnit && !['V2', 'V3', 'V4'].includes(work.visualStage)) return true;
-  if (String(work.visualStage ?? '').toUpperCase() !== 'V4' || work.visualStageState !== 'v4-runtime-integration-candidate') throw new Error('场景 Work Item 只有 V4 运行态联合验收完成后才能 COMPLETE；当前正式代码序列已完成但场景仍未完成');
+  // 设计与草图阶段尚无正式代码包，仍属于场景生命周期，不能在 V2-V4 提前关闭工作项。
+  if (!hasSceneUnit && !['V2', 'V3', 'V4', 'V5'].includes(work.visualStage)) return true;
+  if (String(work.visualStage ?? '').toUpperCase() !== 'V5' || work.visualStageState !== 'v5-runtime-integration-candidate') throw new Error('场景 Work Item 只有 V5 正式还原与运行验收完成后才能 COMPLETE；当前正式代码序列已完成但场景仍未完成');
   const visualResult = validateVisualStagePrerequisites({ ...work, visualIntegration: { ...(work.visualIntegration ?? {}), declaresVisualComplete: true } }, { projectRoot: repo, implementationPackage: pkg, evidence });
-  if (!visualResult.ok) throw new Error(`场景 Work Item V4 运行态联合验收未闭合：${visualResult.errors?.[0]?.message ?? visualResult.missingEvidence?.[0] ?? '缺少完整视觉阶段证据'}`);
-  const reference = work.visualStageEvidenceRefs?.V4;
-  const loaded = loadImmutableVisualStageReference(reference, 'V4 runtime candidate', { projectRoot: repo });
+  if (!visualResult.ok) throw new Error(`场景 Work Item V5 运行态联合验收未闭合：${visualResult.errors?.[0]?.message ?? visualResult.missingEvidence?.[0] ?? '缺少完整视觉阶段证据'}`);
+  const reference = work.visualStageEvidenceRefs?.V5;
+  const loaded = loadImmutableVisualStageReference(reference, 'V5 runtime candidate', { projectRoot: repo });
   const value = loaded?.value;
   const status = String(value?.status ?? value?.verdict ?? value?.result ?? '').trim().toUpperCase();
-  if (!value || value.evidenceType !== 'v4-runtime-integration-candidate' || status !== 'PASS' || value.workItemId !== work.workItemId) throw new Error('场景 Work Item COMPLETE 缺少当前 Work Item 的 V4 runtime integration candidate 证据');
-  if (evidence && (value.diffFingerprint ?? value.diff_fingerprint) !== evidence.diffFingerprint) throw new Error('V4 运行态证据与当前候选 Evidence Manifest diff 身份不一致');
+  if (!value || value.evidenceType !== 'v5-runtime-integration-candidate' || status !== 'PASS' || value.workItemId !== work.workItemId) throw new Error('场景 Work Item COMPLETE 缺少当前 Work Item 的 V5 runtime integration candidate 证据');
+  if (value.pageSketchSha256 !== work.visualStageEvidenceRefs?.V4?.sha256) throw new Error('V5 运行态证据必须声明并消费当前 V4 页面草图 SHA');
+  if (evidence && (value.diffFingerprint ?? value.diff_fingerprint) !== evidence.diffFingerprint) throw new Error('V5 运行态证据与当前候选 Evidence Manifest diff 身份不一致');
   return true;
 }
 

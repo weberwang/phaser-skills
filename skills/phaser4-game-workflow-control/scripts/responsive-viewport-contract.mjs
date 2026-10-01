@@ -30,7 +30,7 @@ export const RESPONSIVE_CONTRACT_FIELDS = Object.freeze([
   'representativeViewports', 'requiredRuntimeEvidence',
 ]);
 
-/** V4 每个 Scene 或 DISPLAY_LAYER 至少要提交的真实运行字段。 */
+/** V5 每个 Scene 或 DISPLAY_LAYER 至少要提交的真实运行字段。 */
 export const RUNTIME_EVIDENCE_FIELDS = Object.freeze([
   'viewportRect', 'canvasRect', 'designTransform', 'logicalSize', 'backingSize', 'cssDisplaySize',
   'rawDevicePixelRatio', 'effectiveDevicePixelRatio', 'logicalToCssScale',
@@ -55,7 +55,7 @@ export const REPRESENTATIVE_BEHAVIOR_REQUIREMENTS = Object.freeze([
 ]);
 
 const SHA256 = /^sha256:[a-f0-9]{64}$/i;
-const STAGE_PATTERN = /^V[1-4]$/i;
+const STAGE_PATTERN = /^V[1-5]$/i;
 const DPR_NUMBERS = [1, 1.25, 1.5, 2];
 
 /** 判断是否为普通对象，避免数组被当作结构化合同事实。 */
@@ -112,7 +112,7 @@ export function hasResponsiveDeclaration(value = {}) {
   );
 }
 
-/** 判断工作项是否进入需要响应式合同的 V1-V4 可见范围。 */
+/** 判断工作项是否进入需要响应式合同的 V1-V5 可见范围。 */
 export function isResponsiveWorkItem(work = {}, implementationPackage = null) {
   const stage = String(work?.visualStage ?? work?.visual_stage ?? work?.stageId ?? '').trim().toUpperCase();
   const visibleUnit = (implementationPackage?.executionUnits ?? []).some((unit) => ['SCENE', 'DISPLAY_LAYER'].includes(unit?.unitType));
@@ -318,7 +318,7 @@ export function validateResponsiveContract(value, options = {}) {
   validateRepresentativeMatrix(contract, stage, errors);
   const requiredEvidence = contract.requiredRuntimeEvidence;
   const requiredEvidenceFields = Array.isArray(requiredEvidence) ? requiredEvidence : requiredEvidence?.requiredFields;
-  if (!Array.isArray(requiredEvidenceFields) || !RUNTIME_EVIDENCE_FIELDS.every((fieldName) => requiredEvidenceFields.includes(fieldName) || requiredEvidenceFields.includes(fieldName.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`)))) errors.push(contractError(stage, scope, 'requiredRuntimeEvidence 未覆盖完整 V4 运行字段', 'requiredRuntimeEvidence'));
+  if (!Array.isArray(requiredEvidenceFields) || !RUNTIME_EVIDENCE_FIELDS.every((fieldName) => requiredEvidenceFields.includes(fieldName) || requiredEvidenceFields.includes(fieldName.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`)))) errors.push(contractError(stage, scope, 'requiredRuntimeEvidence 未覆盖完整 V5 运行字段', 'requiredRuntimeEvidence'));
   return [...new Set(errors)];
 }
 
@@ -380,7 +380,7 @@ function validateDesignTransform(record, stage, scope, errors) {
 
 /** 校验单个 Scene/DISPLAY_LAYER 的真实运行记录。 */
 export function validateResponsiveEvidenceRecord(record, contract = null, options = {}) {
-  const stage = String(options.stage ?? 'V4').toUpperCase();
+  const stage = String(options.stage ?? 'V5').toUpperCase();
   const scope = options.scope ?? record?.displayLayerId ?? record?.sceneId ?? record?.scene_id ?? '*';
   const errors = [];
   if (!isObject(record)) return [contractError(stage, scope, '响应式运行证据必须是对象')];
@@ -388,7 +388,7 @@ export function validateResponsiveEvidenceRecord(record, contract = null, option
   if (!['verified', 'pass'].includes(status) || field(record, 'runtimeMeasured', 'runtime_measured', 'measured') === false) errors.push(contractError(stage, scope, '只有 verified/PASS 的真实运行测量才能驱动通过'));
   const measuredAt = field(record, 'measuredAt', 'measured_at', 'recordedAt', 'recorded_at');
   const measurementSource = String(field(record, 'measurementSource', 'measurement_source', 'source') ?? '').toLowerCase();
-  if (field(record, 'runtimeMeasured', 'runtime_measured', 'measured') !== true && !measurementSource.includes('runtime') && !measurementSource.includes('browser')) errors.push(contractError(stage, scope, 'V4 响应式证据必须有真实运行测量标记', 'runtimeMeasured=true'));
+  if (field(record, 'runtimeMeasured', 'runtime_measured', 'measured') !== true && !measurementSource.includes('runtime') && !measurementSource.includes('browser')) errors.push(contractError(stage, scope, 'V5 响应式证据必须有真实运行测量标记', 'runtimeMeasured=true'));
   if (!nonEmptyString(measuredAt) || Number.isNaN(Date.parse(measuredAt))) errors.push(contractError(stage, scope, '运行证据缺少有效测量时间', 'measuredAt'));
   for (const fieldName of RUNTIME_EVIDENCE_FIELDS) if (field(record, fieldName, fieldName.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`)) === undefined) errors.push(contractError(stage, scope, `运行证据缺少 ${fieldName}`, fieldName));
   const raw = field(record, 'rawDevicePixelRatio', 'raw_device_pixel_ratio');
@@ -413,7 +413,7 @@ export function validateResponsiveEvidenceRecord(record, contract = null, option
   const trajectory = field(record, 'resizeTrajectory', 'resize_trajectory');
   if (!Array.isArray(trajectory) || trajectory.length === 0) errors.push(contractError(stage, scope, 'resizeTrajectory 必须记录同页 resize/横竖屏/DPR 变化轨迹', 'resizeTrajectory'));
   if (field(record, 'pageReloaded', 'page_reloaded') !== false) errors.push(contractError(stage, scope, 'resize 必须在同一页面完成，pageReloaded 必须为 false'));
-  if (!hasFact(field(record, 'screenshot'))) errors.push(contractError(stage, scope, 'V4 必须提交真实运行截图', 'screenshot'));
+  if (!hasFact(field(record, 'screenshot'))) errors.push(contractError(stage, scope, 'V5 必须提交真实运行截图', 'screenshot'));
   for (const name of ['sceneId', 'stateId', 'layoutContractVersion', 'visualBaselineVersion']) if (!nonEmptyString(field(record, name, name.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`)))) errors.push(contractError(stage, scope, `运行证据缺少 ${name}`, name));
   const expectedLayoutVersion = options.layoutContractVersion ?? field(contract, 'layoutContractVersion', 'layout_contract_version');
   const expectedVisualVersion = options.visualBaselineVersion ?? field(contract, 'visualBaselineVersion', 'visual_baseline_version');
@@ -438,7 +438,7 @@ export function validateResponsiveEvidenceRecord(record, contract = null, option
 /** 只按实测几何、DPR 和同页轨迹校验一个可见单元的完整代表矩阵。 */
 function validateMeasuredMatrix(records, stage, scope) {
   const errors = [];
-  // V4 只接受实测几何和数值覆盖；viewportId、matrixCases 等自报标签不能替代事实。
+  // V5 只接受实测几何和数值覆盖；viewportId、matrixCases 等自报标签不能替代事实。
   const viewport = (record) => field(record, 'viewportRect', 'viewport_rect') ?? {};
   const effective = (record) => field(record, 'effectiveDevicePixelRatio', 'effective_device_pixel_ratio');
   const raw = (record) => field(record, 'rawDevicePixelRatio', 'raw_device_pixel_ratio');
@@ -448,14 +448,14 @@ function validateMeasuredMatrix(records, stage, scope) {
     landscape: records.some((record) => viewport(record).width > viewport(record).height),
     'desktop-wide': records.some((record) => viewport(record).width >= 1024),
   };
-  for (const kind of REPRESENTATIVE_VIEWPORT_KINDS) if (!categories[kind]) errors.push(contractError(stage, scope, `V4 证据未覆盖代表性 ${kind} 视口`));
+  for (const kind of REPRESENTATIVE_VIEWPORT_KINDS) if (!categories[kind]) errors.push(contractError(stage, scope, `V5 证据未覆盖代表性 ${kind} 视口`));
   const dprCoverage = {
     'dpr-1': records.some((record) => effective(record) === 1),
     'dpr-1.25-or-1.5': records.some((record) => [1.25, 1.5].includes(effective(record))),
     'dpr-2': records.some((record) => effective(record) === 2),
     'dpr-over-2-capped': records.some((record) => raw(record) > 2 && effective(record) === 2),
   };
-  for (const requirement of REPRESENTATIVE_DPR_REQUIREMENTS) if (!dprCoverage[requirement]) errors.push(contractError(stage, scope, `V4 证据未覆盖 ${requirement}`));
+  for (const requirement of REPRESENTATIVE_DPR_REQUIREMENTS) if (!dprCoverage[requirement]) errors.push(contractError(stage, scope, `V5 证据未覆盖 ${requirement}`));
   const transitions = records.slice(1).map((record, index) => {
     const previous = records[index];
     const samePage = record.samePageWithPrevious === true && record.pageReloaded === false
@@ -463,19 +463,19 @@ function validateMeasuredMatrix(records, stage, scope) {
     const before = viewport(previous); const after = viewport(record);
     return { samePage, viewportChanged: before.width !== after.width || before.height !== after.height, before, after, previousDpr: effective(previous), currentDpr: effective(record) };
   });
-  if (!transitions.some((item) => item.samePage && item.viewportChanged)) errors.push(contractError(stage, scope, 'V4 证据未覆盖 same-page-resize'));
-  if (!transitions.some((item) => item.samePage && item.previousDpr > 1 && item.currentDpr === 1)) errors.push(contractError(stage, scope, 'V4 证据未覆盖 dpr-drop-to-1'));
-  if (!transitions.some((item) => item.samePage && item.viewportChanged && item.previousDpr === item.currentDpr)) errors.push(contractError(stage, scope, 'V4 证据未覆盖 dpr-unchanged-resize'));
-  if (!transitions.some((item) => item.samePage && (item.before.width > item.before.height) !== (item.after.width > item.after.height))) errors.push(contractError(stage, scope, 'V4 证据未覆盖 orientation-change'));
+  if (!transitions.some((item) => item.samePage && item.viewportChanged)) errors.push(contractError(stage, scope, 'V5 证据未覆盖 same-page-resize'));
+  if (!transitions.some((item) => item.samePage && item.previousDpr > 1 && item.currentDpr === 1)) errors.push(contractError(stage, scope, 'V5 证据未覆盖 dpr-drop-to-1'));
+  if (!transitions.some((item) => item.samePage && item.viewportChanged && item.previousDpr === item.currentDpr)) errors.push(contractError(stage, scope, 'V5 证据未覆盖 dpr-unchanged-resize'));
+  if (!transitions.some((item) => item.samePage && (item.before.width > item.before.height) !== (item.after.width > item.after.height))) errors.push(contractError(stage, scope, 'V5 证据未覆盖 orientation-change'));
   return errors;
 }
 
-/** 校验 V4 证据清单，要求每个可见单元独立记录且绑定当前候选。 */
+/** 校验 V5 证据清单，要求每个可见单元独立记录且绑定当前候选。 */
 export function validateResponsiveEvidenceManifest(value, contract = null, options = {}) {
-  const stage = String(options.stage ?? value?.currentStage ?? value?.current_stage ?? 'V4').toUpperCase();
+  const stage = String(options.stage ?? value?.currentStage ?? value?.current_stage ?? 'V5').toUpperCase();
   const source = Array.isArray(value) ? value : value?.responsiveEvidence ?? value?.responsiveRuntimeEvidence ?? value?.responsive_runtime_evidence ?? value?.runtimeEvidence;
   const errors = [];
-  if (!Array.isArray(source) || source.length === 0) return [contractError(stage, '*', 'V4 缺少真实响应式运行证据数组', 'responsiveEvidence')];
+  if (!Array.isArray(source) || source.length === 0) return [contractError(stage, '*', 'V5 缺少真实响应式运行证据数组', 'responsiveEvidence')];
   const records = source;
   for (const [index, record] of records.entries()) errors.push(...validateResponsiveEvidenceRecord(record, contract, { ...options, stage, scope: record?.displayLayerId ?? record?.sceneId ?? `record-${index}` }));
   const requiredUnits = options.requiredUnits ?? [];

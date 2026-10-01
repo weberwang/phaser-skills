@@ -194,7 +194,7 @@ export function validateHumanReviewIdentity(review, identity = {}, context = {},
  */
 export function validateVisualPostApprovalReviewFields(value, options = {}) {
   const errors = [];
-  const stage = options.stage ?? "V3/V4";
+  const stage = options.stage ?? "V3/V5";
   const contextFor = (path) => ({ stage, region_id: path || "*" });
   const walk = (current, path = "") => {
     if (Array.isArray(current)) {

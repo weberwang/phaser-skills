@@ -2,7 +2,7 @@
  * 图像生成 尺寸归一化记录的纯合同校验器。
  *
  * 运行时转换由 visual-image-normalization.mjs 负责；本模块不加载 Sharp，
- * 这样 V3/V4 合同校验仍可在没有本地原图时审计结构化事实。
+ * 这样 V3/V5 合同校验仍可在没有本地原图时审计结构化事实。
  */
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";

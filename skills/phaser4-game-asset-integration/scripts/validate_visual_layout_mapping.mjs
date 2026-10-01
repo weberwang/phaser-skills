@@ -117,7 +117,7 @@ export function validatePngLayoutMetadata(region, item, expectedPlacements, labe
  * implementation 是消费证据；三者不能各自维护一份没有交叉身份的坐标清单。
  */
 export function validateEffectImageLayoutBindings(data, errors, options = {}) {
-  const requireLayout = options.requireLayout ?? (options.stage === "V3" || options.stage === "V4" || data?.effect_image_reconstruction?.lifecycle === "v4-complete" || [data?.visualStageState, data?.visual_stage_state].includes("v2-production-planning-complete"));
+  const requireLayout = options.requireLayout ?? (options.stage === "V5" || data?.effect_image_reconstruction?.lifecycle === "v5-complete" || [data?.visualStageState, data?.visual_stage_state].includes("v2-production-planning-complete"));
   const coverageRegions = Array.isArray(data?.coverage_audit?.regions) ? data.coverage_audit.regions.filter(isObject) : [];
   const contract = data?.scene_reconstruction_contract;
   const decomposition = contract?.layout_decomposition;
@@ -232,12 +232,12 @@ export function validateEffectImageLayoutBindings(data, errors, options = {}) {
   return { nodeById };
 }
 
-/** V4 逐布局节点复核目标 bounds、候选 bounds、几何差异和证据。 */
-export function validateV4LayoutMeasurements(data, layoutBindings, errors, options = {}) {
+/** V5 逐布局节点复核目标 bounds、候选 bounds、几何差异和证据。 */
+export function validateV5LayoutMeasurements(data, layoutBindings, errors, options = {}) {
   const mode = resolveVisualValidationMode(options, data, data?.scene_reconstruction_contract);
   const exact = mode === "exact";
   const nodes = layoutBindings?.nodeById;
-  if (!(nodes instanceof Map) || nodes.size === 0) { errors.push("V4 缺少可用于逐节点几何验收的 layout_nodes"); return; }
+  if (!(nodes instanceof Map) || nodes.size === 0) { errors.push("V5 缺少可用于逐节点几何验收的 layout_nodes"); return; }
   const cases = Array.isArray(data?.fidelity_cases) ? data.fidelity_cases : [];
   for (const [caseIndex, item] of cases.entries()) {
     const label = `fidelity_cases[${caseIndex}]`;
