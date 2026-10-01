@@ -175,11 +175,17 @@ function errorMessage(error) {
 }
 
 /** 以隔离的开发期 DOM 层挂载 Phaser 逻辑坐标布局编辑器；reflow 必须同步返回。 */
-export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, layout, getBounds, getViewportRect, reflow, save, saveOnChange = true, showSaveButton = true, saveButtonLabel = "保存布局", onLayoutChange, onPreviewHealthChange }) {
+export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, viewport, nodes, layout, getBounds, getViewportRect, reflow, save, saveOnChange = true, showSaveButton = true, saveButtonLabel = "保存布局", onLayoutChange, onPreviewHealthChange }) {
   const logicalViewport = validateViewport(viewport);
   const nodeMap = validateLayoutNodes(nodes);
   const currentLayout = { value: validateVisualLayoutDocument(layout, nodes) };
   if (!host || typeof host.getBoundingClientRect !== "function" || !host.ownerDocument) throw new TypeError("host 必须是带 ownerDocument 的游戏画布容器");
+  if (!controlsHost || controlsHost.ownerDocument !== host.ownerDocument || typeof controlsHost.append !== "function") {
+    throw new TypeError("controlsHost 必须是与 host 同属一个 document 且支持 append 的右侧操作容器");
+  }
+  if (typeof host.contains !== "function" || host.contains(controlsHost)) {
+    throw new TypeError("controlsHost 不能位于 host 的画布子树内");
+  }
   if (typeof referenceUrl !== "string" || referenceUrl.trim() === "") throw new TypeError("referenceUrl 必须指向开发预览使用的冻结效果图");
   if (typeof getBounds !== "function") throw new TypeError("getBounds 必须是读取正式 Scene 逻辑 bounds 的回调");
   if (getViewportRect !== undefined && typeof getViewportRect !== "function") throw new TypeError("getViewportRect 必须是读取目标 viewport CSS client rect 的回调");
@@ -200,17 +206,19 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
   root.setAttribute("aria-label", "开发阶段布局对齐编辑器");
   const styles = makeElement(document, "style");
   styles.textContent = `
-    .vle-root{position:fixed;left:0;top:0;z-index:2147483000;overflow:visible;pointer-events:none;font:13px/1.4 system-ui,sans-serif;color:#ecf4ff}
+    /* 只裁剪开发显示和命中区域；草图中的合法越界逻辑坐标保持原值。 */
+    .vle-root{position:fixed;left:0;top:0;z-index:2147483000;overflow:hidden;pointer-events:none;font:13px/1.4 system-ui,sans-serif;color:#ecf4ff}
     .vle-reference,.vle-svg{position:absolute;left:0;top:0;width:100%;height:100%}
     .vle-reference{object-fit:fill;pointer-events:none;user-select:none}
-    .vle-svg{overflow:visible;pointer-events:none}
+    /* SVG 的越界节点框不能越过 viewport 截获右侧操作栏输入。 */
+    .vle-svg{overflow:hidden;pointer-events:none}
     .vle-frame{fill:rgba(76,190,255,.04);stroke:#67b6d8;stroke-width:2;vector-effect:non-scaling-stroke;pointer-events:all;cursor:grab}
     .vle-frame:hover{fill:rgba(76,190,255,.14);stroke:#a3e4ff}
     .vle-frame-selected{fill:rgba(66,198,255,.12);stroke:#5be2ff;stroke-width:3;cursor:grabbing}
     .vle-frame-parent{fill:rgba(186,129,255,.04);stroke:#c39aff;stroke-width:2;stroke-dasharray:7 5;vector-effect:non-scaling-stroke;pointer-events:none}
     .vle-frame-target{fill:rgba(255,198,69,.04);stroke:#ffd166;stroke-width:2;stroke-dasharray:3 5;vector-effect:non-scaling-stroke;pointer-events:none}
     .vle-label{font:12px system-ui,sans-serif;fill:#fff;stroke:#142133;stroke-width:3;paint-order:stroke;pointer-events:none}
-    .vle-panel{position:absolute;left:12px;top:12px;width:258px;max-height:calc(100% - 24px);display:flex;flex-direction:column;gap:9px;box-sizing:border-box;padding:12px;background:rgba(12,20,34,.94);border:1px solid #506783;border-radius:8px;box-shadow:0 6px 28px #0008;pointer-events:auto;overflow:hidden}
+    .vle-panel{position:static;width:100%;max-height:calc(100vh - 24px);display:flex;flex-direction:column;gap:9px;box-sizing:border-box;padding:12px;background:rgba(12,20,34,.94);border:1px solid #506783;border-radius:8px;box-shadow:0 6px 28px #0008;pointer-events:auto;overflow:hidden}
     .vle-title{margin:0;font-size:14px;font-weight:700}.vle-current{color:#aac4dc;overflow-wrap:anywhere}
     .vle-row{display:flex;align-items:center;gap:8px}.vle-row label{flex:1}.vle-row input[type=range]{width:104px}
     .vle-coordinates{display:grid;grid-template-columns:1fr 1fr;gap:8px}.vle-coordinate{display:flex;align-items:center;gap:5px;color:#aac4dc}.vle-coordinate input{width:72px;min-width:0;padding:4px;color:#fff;background:#101827;border:1px solid #58728e;border-radius:4px}
@@ -266,8 +274,10 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
   const tree = makeElement(document, "ul", "vle-tree");
   tree.setAttribute("aria-label", "布局节点树");
   panel.append(heading, selectedLabel, snapButton, opacityRow, coordinateRow, saveRow, tree);
-  root.append(styles, image, svg, panel);
+  // 覆盖层只负责参考图和 SVG；控件进入宿主提供的独立栏，避免遮挡游戏预览。
+  root.append(styles, image, svg);
   document.body.append(root);
+  controlsHost.append(panel);
 
   let selectedId = nodes[0].layout_node_id;
   let snapping = true;
@@ -616,14 +626,13 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
     }
   }
 
-  /** 隐藏参考图、编辑框和面板，显示无遮挡正式组合；切换不写草图或失效确认。 */
+  /** 正式效果预览只隐藏底图和编辑框，右栏保留并禁用布局编辑控件。 */
   function setPreviewMode(enabled) {
     if (typeof enabled !== "boolean") throw new TypeError("previewMode 必须是布尔值");
     if (enabled && drag) onPointerCancel({ pointerId: drag.pointerId });
     previewMode = enabled;
     image.style.display = previewMode ? "none" : "";
     svg.style.display = previewMode ? "none" : "";
-    panel.style.display = previewMode ? "none" : "";
     updateInteractionControls();
     renderTree();
     renderFrames();
@@ -677,6 +686,7 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
     window.visualViewport?.removeEventListener("scroll", onViewportGeometryChange);
     resizeObserver?.disconnect();
     root.remove();
+    panel.remove();
   }
 
   snapButton.addEventListener("click", onSnapClick);
@@ -711,6 +721,8 @@ export function mountVisualLayoutEditor({ host, referenceUrl, viewport, nodes, l
     isPreviewHealthy: () => reflowHealthy,
     isPreviewMode: () => previewMode,
     reload,
+    // CSS transform 不一定触发 ResizeObserver，设备模拟与全屏切换后由宿主显式刷新覆盖层。
+    refreshViewport: onViewportGeometryChange,
     setInteractionEnabled,
     setPreviewMode,
   };

@@ -2,6 +2,32 @@ import { mountVisualLayoutEditor } from "./visual-layout-editor.mjs";
 import { pickPageSketchFileStore } from "./page-sketch-file-store.mjs";
 import { loadPageSketchSources, mountPageSketchPreview, verifyPageSketchSources } from "./page-sketch-preview.mjs";
 
+/** 开发预览设备尺寸使用 CSS 像素，不代表设备物理分辨率或修改草图 viewport。 */
+export const PREVIEW_DEVICES = Object.freeze([
+  { id: "sketch", label: "草图原始尺寸" },
+  { id: "phone-small", label: "小屏手机 · 360 × 640", width: 360, height: 640 },
+  { id: "phone", label: "手机 · 390 × 844", width: 390, height: 844 },
+  { id: "phone-large", label: "大屏手机 · 430 × 932", width: 430, height: 932 },
+  { id: "tablet", label: "平板 · 768 × 1024", width: 768, height: 1024 },
+  { id: "desktop", label: "桌面 · 1440 × 900", width: 1440, height: 900 },
+]);
+
+/** 分两层等比缩放：设备适配左侧空间，固定草图适配设备屏幕，避免显示选择改变已确认坐标。 */
+export function calculateDevicePreviewGeometry(viewport, device, available) {
+  for (const size of [viewport, device, available]) {
+    if (![size?.width, size?.height].every((value) => Number.isFinite(value) && value > 0)) throw new TypeError("预览尺寸必须是正有限数");
+  }
+  const deviceScale = Math.min(available.width / device.width, available.height / device.height);
+  const contentScale = Math.min(device.width / viewport.width, device.height / viewport.height);
+  return {
+    deviceScale, contentScale,
+    deviceLeft: (available.width - device.width * deviceScale) / 2,
+    deviceTop: (available.height - device.height * deviceScale) / 2,
+    contentLeft: (device.width - viewport.width * contentScale) / 2,
+    contentTop: (device.height - viewport.height * contentScale) / 2,
+  };
+}
+
 /**
  * 创建开发阶段草图工作台；adapters可替换pickStore/loadSources/mountPreview/mountEditor，隔离浏览器IO并验证异步操作锁。
  */
@@ -16,6 +42,12 @@ export async function initializePageSketchApplication({ document, projectRootUrl
   const window = document.defaultView;
   const frame = document.getElementById("stage-frame");
   const surface = document.getElementById("stage-surface");
+  const deviceFrame = document.getElementById("stage-device");
+  const controlsHost = document.getElementById("layout-controls");
+  const deviceSelect = document.getElementById("preview-device");
+  const orientationSelect = document.getElementById("device-orientation");
+  const deviceSummary = document.getElementById("device-summary");
+  const fullscreenButton = document.getElementById("toggle-fullscreen");
   const openButton = document.getElementById("open-sketch");
   const previewButton = document.getElementById("toggle-preview");
   const saveButton = document.getElementById("save-sketch");
@@ -33,6 +65,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
   let confirmationHashValid = true;
   let operationInFlight = false;
   let previewMode = false;
+  let fullscreenInFlight = false;
 
   /** 用安全纯文本方式展示资源读取和解码失败项。 */
   function renderErrors(items) {
@@ -62,15 +95,64 @@ export async function initializePageSketchApplication({ document, projectRootUrl
     openButton.disabled = operationInFlight;
   }
 
-  /** 缩放静态草图视口并居中，不修改游戏逻辑 viewport 坐标。 */
+  /** 设备外框与逻辑画布分别缩放；空布局或隐藏窗口不计算无效比例。 */
   function resizeSurface() {
-    if (!surface?.dataset.viewportWidth) return;
-    const width = Number(surface.dataset.viewportWidth);
-    const height = Number(surface.dataset.viewportHeight);
-    const scale = Math.min(frame.clientWidth / width, frame.clientHeight / height);
-    surface.style.transform = `scale(${scale})`;
-    surface.style.left = `${(frame.clientWidth - width * scale) / 2}px`;
-    surface.style.top = `${(frame.clientHeight - height * scale) / 2}px`;
+    if (!surface?.dataset.viewportWidth || frame.clientWidth <= 32 || frame.clientHeight <= 32) return;
+    const viewport = { width: Number(surface.dataset.viewportWidth), height: Number(surface.dataset.viewportHeight) };
+    const preset = PREVIEW_DEVICES.find((item) => item.id === deviceSelect.value) ?? PREVIEW_DEVICES[0];
+    const device = preset.id === "sketch" ? { ...viewport } : { width: preset.width, height: preset.height };
+    if (preset.id !== "sketch") {
+      const portrait = orientationSelect.value !== "landscape";
+      const short = Math.min(device.width, device.height);
+      const long = Math.max(device.width, device.height);
+      device.width = portrait ? short : long;
+      device.height = portrait ? long : short;
+    }
+    orientationSelect.disabled = preset.id === "sketch";
+    const geometry = calculateDevicePreviewGeometry(viewport, device, { width: frame.clientWidth - 32, height: frame.clientHeight - 32 });
+    deviceFrame.style.width = `${device.width}px`;
+    deviceFrame.style.height = `${device.height}px`;
+    deviceFrame.style.transform = `scale(${geometry.deviceScale})`;
+    deviceFrame.style.left = `${geometry.deviceLeft + 16}px`;
+    deviceFrame.style.top = `${geometry.deviceTop + 16}px`;
+    surface.style.transform = `scale(${geometry.contentScale})`;
+    surface.style.left = `${geometry.contentLeft}px`;
+    surface.style.top = `${geometry.contentTop}px`;
+    deviceSummary.textContent = `设备 ${device.width} × ${device.height} · 草图 ${viewport.width} × ${viewport.height} · 显示 ${Math.round(geometry.deviceScale * 100)}%`;
+    // CSS transform 不触发 ResizeObserver，主动同步叠图以保持拖拽与显示位置一致。
+    editor?.refreshViewport?.();
+  }
+
+  /** 切换设备时采用其默认方向，后续横竖屏调整由用户单独控制。 */
+  function onDeviceChange() {
+    const preset = PREVIEW_DEVICES.find((item) => item.id === deviceSelect.value);
+    orientationSelect.value = preset?.width > preset?.height ? "landscape" : "portrait";
+    resizeSurface();
+  }
+
+  /** 全屏整个工作台，确保右栏仍可操作，退出后重新测量左侧空间。 */
+  async function onToggleFullscreen() {
+    if (fullscreenInFlight) return;
+    fullscreenInFlight = true;
+    fullscreenButton.disabled = true;
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await document.documentElement.requestFullscreen();
+    } catch (error) {
+      status.textContent = `无法切换 Web 全屏：${error.message}`;
+    } finally {
+      fullscreenInFlight = false;
+      onFullscreenChange();
+    }
+  }
+
+  /** 浏览器 Esc 退出与按钮退出使用同一个状态刷新入口。 */
+  function onFullscreenChange() {
+    const fullscreen = Boolean(document.fullscreenElement);
+    fullscreenButton.textContent = fullscreen ? "退出 Web 全屏" : "进入 Web 全屏";
+    fullscreenButton.setAttribute("aria-pressed", String(fullscreen));
+    fullscreenButton.disabled = fullscreenInFlight || typeof document.documentElement?.requestFullscreen !== "function";
+    resizeSurface();
   }
 
   /** 销毁当前草图叠图、运行时节点预览程序和临时对象 URL。 */
@@ -124,6 +206,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
       previewHealthy = preview.isHealthy() && sources.errors.length === 0;
       editor = mountEditor({
         host: surface,
+        controlsHost,
         referenceUrl: sources.referenceUrl,
         viewport: sketch.viewport,
         nodes: sketch.nodes,
@@ -147,6 +230,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
           updateButtons();
         },
       });
+      resizeSurface();
       if (hasAcceptedConfirmation) status.textContent = `V4 草图已确认：${sketch.confirmation.content_sha256}`;
       else if (sources.errors.length || preview.errors.length || !confirmationHashValid) status.textContent = "草图已载入，但存在阻断项；修复全部资源后才能确认。";
       else status.textContent = "页面草图已载入；拖拽或输入父级偏移后，先保存草图再确认。";
@@ -226,6 +310,20 @@ export async function initializePageSketchApplication({ document, projectRootUrl
     updateButtons();
   }
 
+  for (const preset of PREVIEW_DEVICES) {
+    const option = document.createElement("option");
+    option.value = preset.id;
+    option.textContent = preset.label;
+    deviceSelect.append(option);
+  }
+  deviceSelect.value = "sketch";
+  orientationSelect.value = "portrait";
+  orientationSelect.disabled = true;
+  deviceSelect.addEventListener("change", onDeviceChange);
+  orientationSelect.addEventListener("change", resizeSurface);
+  fullscreenButton.addEventListener("click", onToggleFullscreen);
+  document.addEventListener("fullscreenchange", onFullscreenChange);
+  onFullscreenChange();
   openButton.addEventListener("click", onOpenSketch);
   previewButton.addEventListener("click", onTogglePreview);
   saveButton.addEventListener("click", () => { void onSaveDraft(); });

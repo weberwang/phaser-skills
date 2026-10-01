@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { initializePageSketchApplication } from "./page-sketch-editor.mjs";
+import { calculateDevicePreviewGeometry, initializePageSketchApplication } from "./page-sketch-editor.mjs";
 
 const SHA = `sha256:${"e".repeat(64)}`;
 
@@ -58,10 +58,14 @@ function createPageDocument() {
   const document = {
     createElement(tagName) { return new FakeElement(tagName, document); },
     getElementById(id) { return elements.get(id); },
+    listeners: new Map(),
+    addEventListener(type, callback) { this.listeners.set(type, [...(this.listeners.get(type) ?? []), callback]); },
   };
   for (const [id, tag] of [
     ["stage-frame", "section"], ["stage-surface", "div"], ["open-sketch", "button"], ["toggle-preview", "button"], ["save-sketch", "button"],
     ["confirm-sketch", "button"], ["confirmed-by", "input"], ["page-status", "span"], ["resource-errors", "aside"],
+    ["stage-device", "div"], ["layout-controls", "div"], ["preview-device", "select"], ["device-orientation", "select"],
+    ["device-summary", "p"], ["toggle-fullscreen", "button"],
   ]) elements.set(id, document.createElement(tag));
   elements.get("stage-frame").clientWidth = 600;
   elements.get("stage-frame").clientHeight = 400;
@@ -71,6 +75,9 @@ function createPageDocument() {
     addEventListener(type, callback) { this.listeners.set(type, [...(this.listeners.get(type) ?? []), callback]); },
     removeEventListener() {},
   };
+  document.documentElement = document.createElement("html");
+  document.documentElement.requestFullscreen = async () => { document.fullscreenElement = document.documentElement; };
+  document.exitFullscreen = async () => { document.fullscreenElement = null; };
   document.defaultView = window;
   return { document, elements };
 }
@@ -131,10 +138,14 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认及�
         return { destroy() {}, errors: [], getBounds: () => ({ x: 0, y: 0, width: 200, height: 100 }), getViewportRect: () => ({ left: 0, top: 0, width: 200, height: 100 }), isHealthy: () => true, reflow() {} };
       },
       mountEditor(options) {
+        assert.equal(options.controlsHost, elements.get("layout-controls"));
+        assert.notEqual(options.controlsHost, options.host);
         let layout = structuredClone(options.layout);
         editor = {
           interactionEnabled: true,
           previewMode: false,
+          geometryRefreshes: 0,
+          refreshViewport() { this.geometryRefreshes += 1; },
           destroy() {},
           getLayout() { return structuredClone(layout); },
           setInteractionEnabled(enabled) { this.interactionEnabled = enabled; },
@@ -154,6 +165,27 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认及�
   const [openOperation] = elements.get("open-sketch").dispatch("click");
   await openOperation;
   assert.equal(openCount, 1);
+  const originalSketch = structuredClone(diskDocument);
+  const device = elements.get("preview-device");
+  device.value = "phone";
+  device.dispatch("change");
+  assert.equal(elements.get("stage-device").style.width, "390px");
+  assert.equal(elements.get("stage-device").style.height, "844px");
+  assert.equal(elements.get("stage-surface").style.transform, "scale(1.95)");
+  const refreshBeforeRotate = editor.geometryRefreshes;
+  elements.get("device-orientation").value = "landscape";
+  elements.get("device-orientation").dispatch("change");
+  assert.equal(elements.get("stage-device").style.width, "844px");
+  assert.equal(elements.get("stage-device").style.height, "390px");
+  assert(editor.geometryRefreshes > refreshBeforeRotate);
+  assert.deepEqual(diskDocument, originalSketch);
+  const [enterFullscreen] = elements.get("toggle-fullscreen").dispatch("click");
+  await enterFullscreen;
+  assert.equal(document.fullscreenElement, document.documentElement);
+  assert.equal(elements.get("toggle-fullscreen").textContent, "退出 Web 全屏");
+  document.fullscreenElement = null;
+  for (const callback of document.listeners.get("fullscreenchange")) callback();
+  assert.equal(elements.get("toggle-fullscreen").textContent, "进入 Web 全屏");
   const previewButton = elements.get("toggle-preview");
   const beforePreview = editor.getLayout();
   previewButton.dispatch("click");
@@ -198,4 +230,22 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认及�
   assert.equal(editor.interactionEnabled, true);
   assert.equal(diskDocument.confirmation.confirmed_by, "设计师甲");
   assert.equal(elements.get("confirm-sketch").disabled, true);
+});
+
+
+test("设备预览两层缩放保持逻辑坐标，手机、平板和全屏留边都位于可用区域", () => {
+  for (const device of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1440, height: 900 }]) {
+    for (const available of [{ width: 600, height: 400 }, { width: 1500, height: 1000 }]) {
+      const viewport = { width: 1280, height: 720 };
+      const result = calculateDevicePreviewGeometry(viewport, device, available);
+      assert(result.deviceLeft >= 0 && result.deviceTop >= 0);
+      assert(result.contentLeft >= 0 && result.contentTop >= 0);
+      assert(device.width * result.deviceScale <= available.width + 1e-8);
+      assert(device.height * result.deviceScale <= available.height + 1e-8);
+      assert(viewport.width * result.contentScale <= device.width + 1e-8);
+      assert(viewport.height * result.contentScale <= device.height + 1e-8);
+      assert.deepEqual(viewport, { width: 1280, height: 720 });
+    }
+  }
+  assert.throws(() => calculateDevicePreviewGeometry({ width: 0, height: 10 }, { width: 10, height: 10 }, { width: 10, height: 10 }), /正有限数/);
 });

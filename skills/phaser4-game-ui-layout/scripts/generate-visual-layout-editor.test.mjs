@@ -13,6 +13,12 @@ test("在游戏项目新目录生成完整编辑器模板且不覆盖已有目�
     const html = await readFile(join(root, "editor", "index.html"), "utf8");
     assert.match(html, /initializePageSketchApplication/);
     assert.match(html, /page-sketch-project-root/);
+    assert.match(html, /id="stage-device"><div id="stage-surface"/);
+    assert.match(html, /id="workspace-controls"/);
+    assert.match(html, /id="layout-controls"/);
+    assert.match(html, /id="preview-device"/);
+    assert.match(html, /id="toggle-fullscreen"/);
+    assert.doesNotMatch(html, /grid-template-columns: 1fr;/);
     assert.doesNotMatch(html, /visual-layout-game-adapter/);
     for (const file of ["visual-layout-editor.mjs", "page-sketch-contract.mjs", "page-sketch-file-store.mjs", "page-sketch-preview.mjs", "page-sketch-editor.mjs"]) {
       assert.equal(await readFile(join(root, "editor", file), "utf8").then(Boolean), true);

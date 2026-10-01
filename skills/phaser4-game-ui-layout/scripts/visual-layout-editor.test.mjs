@@ -72,6 +72,27 @@ test("非法节点或布局不能进入可视化编辑器", () => {
   assert.throws(() => applyVisualLayoutDrag(layout, cyclic, "hud.group", { x: 1, y: 1 }), /循环/);
 });
 
+/** 操作栏必须属于同一文档并置于游戏画布子树之外。 */
+test("操作栏拒绝跨文档容器与画布内部容器", () => {
+  const foreignDocument = {};
+  assert.throws(
+    () => createMountedEditor({ controlsHostFactory: () => new FakeElement("aside", foreignDocument) }),
+    /同属一个 document/,
+  );
+  assert.throws(
+    () => createMountedEditor({ controlsHostFactory: ({ document, host }) => {
+      const child = new FakeElement("aside", document);
+      host.append(child);
+      return child;
+    } }),
+    /画布子树内/,
+  );
+  assert.throws(
+    () => createMountedEditor({ controlsHostFactory: ({ document }) => ({ ownerDocument: document }) }),
+    /支持 append/,
+  );
+});
+
 /** 持久化回调失败时只报告 error 并拒绝，不会返回成功布局。 */
 test("保存失败不报告成功", async () => {
   const { nodes, layout } = createFixture();
@@ -206,7 +227,7 @@ class FakeResizeObserver {
 }
 
 /** 构建足以挂载布局编辑器的 fake document/window/host 环境。 */
-function createMountedEditor({ save: saveCallback = async () => {}, getViewportRect, editorOptions = {} } = {}) {
+function createMountedEditor({ save: saveCallback = async () => {}, getViewportRect, editorOptions = {}, controlsHostFactory, nodes: nodesOverride, layout: layoutOverride } = {}) {
   const document = {
     createElement(tagName) { return new FakeElement(tagName, document); },
     createElementNS(_namespace, tagName) { return new FakeElement(tagName, document); },
@@ -217,11 +238,16 @@ function createMountedEditor({ save: saveCallback = async () => {}, getViewportR
   window.ResizeObserver = FakeResizeObserver;
   window.visualViewport = new FakeEventTarget();
   document.defaultView = window;
-  const { nodes, layout } = createFixture();
+  const fixture = createFixture();
+  const nodes = nodesOverride ?? fixture.nodes;
+  const layout = layoutOverride ?? fixture.layout;
   let hostRect = { left: 100, top: 50, width: 400, height: 200 };
   let liveViewportRect = hostRect;
   const host = new FakeElement("div", document);
   host.getBoundingClientRect = () => ({ ...hostRect });
+  const controlsHost = controlsHostFactory?.({ document, host }) ?? new FakeElement("aside", document);
+  document.body.append(host);
+  if (controlsHost.ownerDocument === document && typeof controlsHost.append === "function" && !host.contains(controlsHost)) document.body.append(controlsHost);
   const runtimeBounds = new Map();
   /** 用布局偏移重建运行时节点 bounds，代表正式 Scene 的同步重排入口。 */
   function applyRuntimeLayout(nextLayout) {
@@ -239,6 +265,7 @@ function createMountedEditor({ save: saveCallback = async () => {}, getViewportR
   const saved = [];
   const editor = mountVisualLayoutEditor({
     host,
+    controlsHost,
     referenceUrl: "reference.png",
     viewport: { width: 400, height: 200 },
     nodes,
@@ -256,6 +283,7 @@ function createMountedEditor({ save: saveCallback = async () => {}, getViewportR
     document,
     window,
     host,
+    controlsHost,
     editor,
     nodes,
     saved,
@@ -333,7 +361,7 @@ test("同步重排失败不会写文件或报告成功", async () => {
 /** window 与 ResizeObserver 的事件实参不会被误当成 rect，销毁后监听器清理对称。 */
 test("视口事件回调忽略事件参数并在销毁时移除", () => {
   const environment = createMountedEditor({ getViewportRect: true });
-  const root = environment.document.body.children[0];
+  const root = findElements(environment.document.body, (node) => node.getAttribute("data-phaser-visual-layout-editor"))[0];
   environment.setViewportRect({ left: 160, top: 80, width: 320, height: 160 });
   environment.window.dispatch("scroll", { left: 1, top: 2, width: 3, height: 4 });
   assert.equal(root.style.left, "160px");
@@ -342,9 +370,30 @@ test("视口事件回调忽略事件参数并在销毁时移除", () => {
   assert.equal(root.style.top, "80px");
   assert.equal(root.style.height, "160px");
   assert.equal((environment.window.listeners.get("resize") ?? []).length, 1);
+  environment.setViewportRect({ left: 200, top: 110, width: 300, height: 150 });
+  environment.editor.refreshViewport();
+  assert.equal(root.style.left, "200px");
+  assert.equal(root.style.width, "300px");
   environment.editor.destroy();
   assert.equal((environment.window.listeners.get("resize") ?? []).length, 0);
   assert.equal(FakeResizeObserver.latest.disconnected, true);
+  assert.equal(environment.controlsHost.children.length, 0);
+  assert.equal(findElements(environment.document.body, (node) => node.getAttribute("data-phaser-visual-layout-editor")).length, 0);
+});
+
+/** viewport 尺寸变化后拖动仍按新 client rect 换算，不受右栏 DOM 层级影响。 */
+test("独立右栏挂载后拖动按缩放后的视口映射逻辑坐标", async () => {
+  const environment = createMountedEditor({ getViewportRect: true });
+  const frame = findElements(environment.document.body, (node) => node.getAttribute("data-layout-node-id") === "hud.group")[0];
+  frame.dispatch("pointerdown", { button: 0, pointerId: 1, clientX: 110, clientY: 70 });
+  environment.setViewportRect({ left: 100, top: 50, width: 200, height: 100 });
+  environment.editor.refreshViewport();
+  environment.window.dispatch("pointermove", { pointerId: 1, clientX: 113, clientY: 70 });
+  assert.deepEqual(environment.editor.getLayout().offsets["hud.group"], { x: 20, y: 30 });
+  environment.window.dispatch("pointerup", { pointerId: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(environment.saved.length, 1);
+  environment.editor.destroy();
 });
 
 /** 连续键盘微调跨过重绘仍保留同一节点焦点，并累计写入偏移。 */
@@ -418,20 +467,25 @@ test("操作锁兼容没有 flatMap 的 HTMLCollection children", () => {
   environment.editor.destroy();
 });
 
-/** 正式效果模式隐藏底图、编辑框和面板，返回编辑时恢复原透明度且不改草图。 */
-test("预览正式效果可无遮挡查看并无副作用地恢复布局编辑", () => {
+/** 正式效果模式隐藏底图和编辑框，右栏始终保留并禁用布局编辑，切回时恢复。 */
+test("面板始终留在独立右栏，纯预览保留右栏且不遮挡画布", () => {
   const environment = createMountedEditor();
   const initial = environment.editor.getLayout();
   const reference = findElements(environment.document.body, (node) => node.className === "vle-reference")[0];
   const svg = findElements(environment.document.body, (node) => node.className === "vle-svg")[0];
+  const root = findElements(environment.document.body, (node) => node.getAttribute("data-phaser-visual-layout-editor"))[0];
   const panel = findElements(environment.document.body, (node) => node.className === "vle-panel")[0];
+  const styles = root.children[0];
   const opacity = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "效果图透明度")[0];
   const xInput = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "相对父级 X 偏移")[0];
   environment.editor.setPreviewMode(true);
   assert.equal(environment.editor.isPreviewMode(), true);
   assert.equal(reference.style.display, "none");
   assert.equal(svg.style.display, "none");
-  assert.equal(panel.style.display, "none");
+  assert.notEqual(panel.style.display, "none");
+  assert.equal(panel.parentNode, environment.controlsHost);
+  assert.equal(root.contains(panel), false);
+  assert.match(styles.textContent, /\.vle-panel\{position:static;width:100%/);
   assert.equal(opacity.disabled, true);
   xInput.value = "88";
   xInput.dispatch("change");
@@ -440,9 +494,31 @@ test("预览正式效果可无遮挡查看并无副作用地恢复布局编辑",
   assert.equal(environment.editor.isPreviewMode(), false);
   assert.equal(reference.style.display, "");
   assert.equal(svg.style.display, "");
-  assert.equal(panel.style.display, "");
+  assert.equal(panel.parentNode, environment.controlsHost);
   assert.equal(reference.style.opacity, "0.35");
   assert.equal(opacity.disabled, false);
   assert.deepEqual(environment.editor.getLayout(), initial);
+  environment.editor.destroy();
+  assert.equal(panel.parentNode, null);
+  assert.equal(root.parentNode, null);
+});
+
+/** 越界节点保留逻辑几何，只由 overlay 和 SVG 限制可视与命中范围。 */
+test("viewport 裁剪越界叠图但不钳制草图节点坐标", () => {
+  const { nodes, layout } = createFixture();
+  nodes[0].target_bounds = { x: -24, y: 184, width: 460, height: 32 };
+  const environment = createMountedEditor({ nodes, layout });
+  const root = findElements(environment.document.body, (node) => node.getAttribute("data-phaser-visual-layout-editor"))[0];
+  const svg = findElements(root, (node) => node.className === "vle-svg")[0];
+  const styleText = root.children[0].textContent;
+  const frame = findElements(svg, (node) => node.getAttribute("data-layout-node-id") === "hud.group")[0];
+
+  assert.match(styleText, /\.vle-root\{[^}]*overflow:hidden/);
+  assert.match(styleText, /\.vle-svg\{overflow:hidden/);
+  assert.equal(frame.getAttribute("x"), "-20");
+  assert.equal(frame.getAttribute("y"), "190");
+  assert.equal(frame.getAttribute("width"), "460");
+  assert.equal(nodes[0].target_bounds.x, -24);
+  assert.equal(nodes[0].target_bounds.width, 460);
   environment.editor.destroy();
 });
