@@ -20,8 +20,9 @@
 
 - **V1**：确认契约是否定义浏览器 viewport、Canvas、逻辑坐标、safe area 四层关系，
   FIT/RESIZE/COVER、响应式锚点和断点重排，背景覆盖目标，留白/裁切/拉伸许可，
-  代表性视口，以及动态文本、显隐、滚动、触控、resize 和横屏策略。只有 `exact`
-  或项目明确要求时才冻结完整的基准/最窄/最宽/横屏/安全区矩阵。缺少影响可用性的核心关系才输出
+  代表性视口，以及动态文本、显隐、滚动、触控、resize 和项目支持方向策略。方向以
+  `orientationPolicy.allowed` 为准；单方向项目只覆盖该方向，双方向项目才要求方向切换。
+  只有 `exact` 或项目明确要求时才冻结完整的基准/最窄/最宽/支持方向/安全区矩阵。缺少影响可用性的核心关系才输出
   `响应式契约缺失`，阻断 V2。
 - **V2 F1**：核对当前候选与任务内响应式规格和布局合同一致；不在 F1 执行工程验证。
 - **V5 F2**：确定性机器分别检查资源的满幅能力、锚点/字体/九宫格/缩放和预算；不能
@@ -47,6 +48,7 @@
   "frozen_visual_target": null,
   "visual_validation": { "mode": "usability" },
   "applicability": "scene",
+  "orientationPolicy": { "allowed": ["portrait", "landscape"] },
   "viewport": {
     "mode": "full-viewport",
     "strategy": "RESIZE",
@@ -70,6 +72,9 @@
   }
 }
 ```
+
+示例声明双方向，因此 `landscape` 视口和 resize 轨迹属于有效样本；单方向项目应按
+`orientationPolicy.allowed` 删除另一方向的视口，并在支持方向内保留窄/宽尺寸、DPR 与连续 resize 覆盖。
 
 `viewport.allowWhitespace` 未定义时必须输出 `decision_gap`，即使测量看似通过；
 定义为 `false` 时四边空隙超过 `whitespaceTolerancePx` 失败。`mode: full-viewport`
@@ -227,7 +232,8 @@ FIT 不等于响应式通过和 resize 轨迹；严格满视口断言仅作为 `
 DPR 对应。ScaleMode 由项目选择，但 `FIT`、`RESIZE`、`NONE`、Canvas 存在、构建成功、
 源码含 DPR 计算或单张静态截图都不能单独驱动通过。
 
-每个正式 Scene 和独立 `DISPLAY_LAYER` 的默认 `usability` 都必须至少覆盖窄竖屏、标准竖屏、横屏、桌面宽屏、DPR 1、
-DPR 1.25 或 1.5、DPR 2、原始 DPR 大于 2 的封顶、同页连续 resize、DPR 降至 1、
-DPR 不变时再次 resize。独立 `DISPLAY_LAYER` 另需 `open → interact → resize → close → restore`
+每个正式 Scene 和独立 `DISPLAY_LAYER` 的默认 `usability` 都必须按 `orientationPolicy.allowed`
+覆盖代表视口：允许竖屏时覆盖窄/标准竖屏，允许横屏时覆盖横屏/桌面宽屏；单方向项目只在该方向覆盖窄宽尺寸。
+矩阵仍须覆盖 DPR 1、DPR 1.25 或 1.5、DPR 2、原始 DPR 大于 2 的封顶、同页连续 resize、DPR 降至 1、
+DPR 不变时再次 resize。项目支持双方向时，连续 resize 还须覆盖方向切换。独立 `DISPLAY_LAYER` 另需 `open → interact → resize → close → restore`
 轨迹和宿主同屏状态；宿主已通过不能替代该层证据。缺少真实测量统一为 `unverified`。

@@ -8,6 +8,7 @@ import { validateContract as validateUiLayoutContract } from "../../phaser4-game
 import { calculateFullBleedCoverTransform } from "../../phaser4-game-asset-integration/scripts/full-bleed-background-adapter.mjs";
 import { DEFAULT_DPR, isDeviceDprInput, isWorkflowDpr, parseDeviceDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
 import { DEFAULT_VISUAL_VALIDATION_MODE, isExactVisualValidation, resolveVisualValidationMode, validateVisualValidationPolicy } from "../../phaser4-game-workflow-control/scripts/visual-validation-policy.mjs";
+import { resolveOrientationCoverage, measuredOrientation, matchesRepresentativeViewport, validateOrientationPolicyConsistency, hasSamePageOrientationChange } from "../../phaser4-game-workflow-control/scripts/orientation-validation-scope.mjs";
 
 export const DEFAULT_HOOK_NAME = "__PHASER_VISUAL_VALIDATION__";
 const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
@@ -207,12 +208,17 @@ export function normalizeContract(raw = {}) {
     responsiveViewportContract: source.logicalViewportSpace
       ? {
           applicability: source.requiredRuntimeEvidence?.displayLayerTrajectory?.required === true ? "DISPLAY_LAYER" : "SCENE",
+          orientationPolicy: source.orientationPolicy,
           representativeViewports: source.representativeViewports,
           requiredRuntimeEvidence: source.requiredRuntimeEvidence
         }
       : source.responsiveViewportContract ?? source.responsive_viewport_contract ?? null,
     dprErrors: collectDprErrors(source)
   };
+  const nestedOrientation = (source.responsiveViewportContract ?? source.responsive_viewport_contract)?.orientationPolicy;
+  // 同一输入不能让 QA 和控制面各自采用不同的方向范围。
+  normalized.orientationErrors = source.orientationPolicy !== undefined && nestedOrientation !== undefined
+    ? validateOrientationPolicyConsistency(source.orientationPolicy, nestedOrientation) : [];
   // UI 合同和响应式脚本共享同一视觉模式；非法模式沿用 usability 计算，但在报告中明确暴露错误。
   normalized.visualValidationErrors = [];
   validateVisualValidationPolicy(normalized.visualValidationErrors, "visual_validation", source);
@@ -434,15 +440,15 @@ export function buildResizeRecords(measurements, contract = {}) {
 }
 
 /** 校验默认 usability 的最小真实运行矩阵；每一项都来自测量而不是命令行声明。 */
-export function validateRepresentativeMatrix(measurements, { requireDisplayLayer = false } = {}) {
-  const missing = [];
+export function validateRepresentativeMatrix(measurements, { requireDisplayLayer = false, orientationPolicy } = {}) {
+  const coverage = resolveOrientationCoverage(orientationPolicy);
+  const missing = [...coverage.errors];
   const viewport = (item) => item?.viewportRect ?? {};
   const effective = (item) => item?.effectiveDevicePixelRatio ?? item?.scaling?.physical?.dpr;
   const raw = (item) => item?.rawDevicePixelRatio;
-  if (!measurements.some((item) => viewport(item).height > viewport(item).width && viewport(item).width <= 375)) missing.push("窄竖屏");
-  if (!measurements.some((item) => viewport(item).height > viewport(item).width && viewport(item).width >= 390)) missing.push("标准竖屏");
-  if (!measurements.some((item) => viewport(item).width > viewport(item).height)) missing.push("横屏");
-  if (!measurements.some((item) => viewport(item).width >= 1024)) missing.push("桌面宽屏");
+  const labels = { 'narrow-portrait': '窄竖屏', 'standard-portrait': '标准竖屏', landscape: '横屏', 'desktop-wide': '桌面宽屏' };
+  for (const kind of coverage.viewportKinds) if (!measurements.some((item) => matchesRepresentativeViewport(kind, viewport(item)))) missing.push(labels[kind]);
+  if (measurements.some((item) => !coverage.orientations.includes(measuredOrientation(viewport(item))))) missing.push("视口方向不在 orientationPolicy.allowed 中");
   if (!measurements.some((item) => effective(item) === 1)) missing.push("DPR 1");
   if (!measurements.some((item) => [1.25, 1.5].includes(effective(item)))) missing.push("DPR 1.25 或 1.5");
   if (!measurements.some((item) => effective(item) === 2)) missing.push("DPR 2");
@@ -459,6 +465,8 @@ export function validateRepresentativeMatrix(measurements, { requireDisplayLayer
   if (!downToOne) missing.push("DPR 降至 1");
   const sameDprResize = measurements.some((item, index) => index > 0 && item.samePageWithPrevious === true && effective(item) === effective(measurements[index - 1]) && stableStringify(viewport(item)) !== stableStringify(viewport(measurements[index - 1])));
   if (!sameDprResize) missing.push("DPR 不变时再次 resize");
+  // 单方向项目的同页变化只需 resize；双方向才需证明页面内实际旋转。
+  if (coverage.requiresOrientationChange && !hasSamePageOrientationChange(measurements)) missing.push("方向切换");
   if (requireDisplayLayer) {
     const phases = new Set(measurements.flatMap((item) => Array.isArray(item.displayLayerTrajectory) ? item.displayLayerTrajectory.map((step) => step?.phase) : []));
     for (const phase of ["open", "interact", "resize", "close", "restore"]) if (!phases.has(phase)) missing.push(`DISPLAY_LAYER ${phase}`);
@@ -470,7 +478,13 @@ export function validateRepresentativeMatrix(measurements, { requireDisplayLayer
 export function evaluateMatrixCoverage(measurements, contract = {}) {
   const normalized = normalizeContract(contract);
   const exact = isExactVisualValidation(normalized);
-  const declared = normalized.viewports;
+  const coverage = resolveOrientationCoverage(normalized.responsiveViewportContract?.orientationPolicy);
+  const rawDeclared = normalized.viewports;
+  // 精确测量模式也只能使用项目支持方向，不能因完整矩阵扩大产品方向范围。
+  const declared = normalized.responsiveViewportContract && coverage.errors.length === 0
+    ? Array.isArray(rawDeclared) ? rawDeclared.filter((item) => coverage.orientations.includes(measuredOrientation(item)))
+      : rawDeclared && typeof rawDeclared === "object" ? Object.fromEntries(Object.entries(rawDeclared).filter(([, item]) => coverage.orientations.includes(measuredOrientation(item)))) : rawDeclared
+    : rawDeclared;
   const expected = Array.isArray(declared)
     ? declared.map((item, index) => item?.name ?? `viewport-${index + 1}`)
     : declared && typeof declared === "object"
@@ -488,13 +502,16 @@ export function evaluateMatrixCoverage(measurements, contract = {}) {
     if (actualWidth !== finiteNumber(wanted?.width) || actualHeight !== finiteNumber(wanted?.height) || !isWorkflowDpr(expectedDpr) || !isWorkflowDpr(actualDpr) || actualDpr !== expectedDpr) mismatched.push(name);
   }
   const representative = normalized.responsiveViewportContract
-    ? validateRepresentativeMatrix(measurements, { requireDisplayLayer: normalized.responsiveViewportContract.applicability === "DISPLAY_LAYER" })
+    ? validateRepresentativeMatrix(measurements, { requireDisplayLayer: normalized.responsiveViewportContract.applicability === "DISPLAY_LAYER", orientationPolicy: normalized.responsiveViewportContract.orientationPolicy })
     : { status: "pass", missing: [] };
-  // 新合同的 usability 也必须覆盖默认代表矩阵；旧合同只读迁移时仍按既有语义报告。
+  const orientationMissing = normalized.responsiveViewportContract
+    ? coverage.orientations.filter((orientation) => !measurements.some((item) => measuredOrientation(item.viewportRect) === orientation)) : [];
+  if (normalized.responsiveViewportContract && coverage.requiresOrientationChange && !hasSamePageOrientationChange(measurements)) orientationMissing.push("方向切换");
+  // 精确模式核对支持方向内声明的尺寸；可用性模式核对相应代表矩阵。
   const status = exact
-    ? expected.length === 0 || missing.length > 0 ? "decision_gap" : mismatched.length > 0 ? "fail" : "pass"
-    : measurements.length === 0 ? "unverified" : representative.status;
-  return { expected, observed: [...observed], missing, mismatched, representativeMissing: representative.missing, status, mode: normalized.visual_validation.mode ?? DEFAULT_VISUAL_VALIDATION_MODE };
+    ? expected.length === 0 || missing.length > 0 || normalized.orientationErrors.length > 0 || (normalized.responsiveViewportContract && coverage.errors.length > 0) ? "decision_gap" : mismatched.length > 0 ? "fail" : orientationMissing.length > 0 ? "unverified" : "pass"
+    : normalized.orientationErrors.length > 0 ? "decision_gap" : measurements.length === 0 ? "unverified" : representative.status;
+  return { expected, observed: [...observed], missing, mismatched, representativeMissing: representative.missing, orientationMissing, orientationErrors: normalized.orientationErrors, status, mode: normalized.visual_validation.mode ?? DEFAULT_VISUAL_VALIDATION_MODE };
 }
 
 /** 验证响应式报告的不可变候选与视觉身份；V5 还必须携带确认草图的内容 SHA。 */
@@ -659,9 +676,15 @@ async function runBrowserValidation(options) {
   const identityErrors = validateEvidenceIdentity(identity, { requireTarget: contract.effectImageApplicability === "effect-image" || identity?.reconstruction_applicability === "effect-image", contract });
   if (identityErrors.length) throw new Error(identityErrors.join("；"));
   if (contract.dprErrors.length) throw new Error(contract.dprErrors.join("；"));
+  if (contract.orientationErrors.length) throw new Error(contract.orientationErrors.join("；"));
   if (options.hook) contract.hook.name = String(options.hook);
   const viewportInput = await readJsonInput(options.viewports, { allowPlain: true });
-  const viewports = parseViewports(viewportInput ?? options.viewports ?? "390x844");
+  const coverage = resolveOrientationCoverage(contract.responsiveViewportContract?.orientationPolicy);
+  if (coverage.errors.length) throw new Error(coverage.errors.join("；"));
+  // 浏览器采集前就裁定方向范围，单方向项目不会启动另一方向的运行验证。
+  const viewports = parseViewports(viewportInput ?? options.viewports ?? "390x844")
+    .filter((viewport) => coverage.orientations.includes(measuredOrientation(viewport)));
+  if (viewports.length === 0) throw new Error("视口矩阵没有项目支持方向的样本");
   const viewportDprErrors = viewports.flatMap((viewport, index) => {
     const declared = viewport.deviceScaleFactor ?? viewport.dpr;
     if (declared === undefined) return [];

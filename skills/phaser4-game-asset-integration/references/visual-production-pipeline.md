@@ -33,7 +33,7 @@ F2 必须由确定性机器验证执行，并绑定当前 baseline/diff 身份�
 5. 保留已批准的功能语义、业务状态、交互语义和状态所有权，同时检查构图、信息层级、资源槽、页面模板和布局几何是否足以承载核心玩具、专属场景对象、关键反馈与奖励表达。必要灰盒是功能与结构证据，不是必须原样换皮的最终视觉模板。
 6. 建立全局视觉基线候选，记录基线 ID/版本、风格指纹、主锚点与分系统锚点、世界幻想及形状、比例、镜头、色彩、材质、光源、描边、密度、字体、图标、面板、动画和 VFX 规则，并明确允许变量与禁止项。未冻结内容不得作为批量生产依据。
 
-7. 场景、整套 UI、视觉系统和可选参考模式必须同时读取并冻结 [`phaser4-game-ui-layout` 的布局合同](../../phaser4-game-ui-layout/references/layout-contract.md)：浏览器 viewport、Canvas、逻辑坐标、safe area 四层关系，FIT/RESIZE/COVER/响应式锚点/断点重排，背景覆盖目标，留白/裁切/拉伸许可，代表性视口与关键状态，以及动态文本、显隐、滚动、触控、resize 和横屏策略，并声明 `visual_validation.mode=usability|exact`（默认 `usability`）。只有 `exact` 或明确全覆盖需求时才冻结完整视口/状态矩阵。缺少影响可用性的核心关系标记“响应式契约缺失”，阻断当前场景 Work Item 的 V2。
+7. 场景、整套 UI、视觉系统和可选参考模式必须同时读取并冻结 [`phaser4-game-ui-layout` 的布局合同](../../phaser4-game-ui-layout/references/layout-contract.md)：浏览器 viewport、Canvas、逻辑坐标、safe area 四层关系，FIT/RESIZE/COVER/响应式锚点/断点重排，背景覆盖目标，留白/裁切/拉伸许可，代表性视口与关键状态，以及动态文本、显隐、滚动、触控、resize 和项目支持方向策略，并声明 `visual_validation.mode=usability|exact`（默认 `usability`）。方向覆盖遵循 `orientationPolicy.allowed`：单方向项目在同方向覆盖窄宽尺寸与连续 resize，双方向项目才验证方向切换；`exact` 方向轴只覆盖声明的方向。只有 `exact` 或明确全覆盖需求时才冻结完整视口/状态矩阵。缺少影响可用性的核心关系标记“响应式契约缺失”，阻断当前场景 Work Item 的 V2。
 8. 参考模式在当前场景 Work Item 的 V1 内生成或接收并冻结参考身份、版本、权属、文件指纹、目标视口/状态、对比条件、scene master/reference target 与宿主上下文效果图；V2 前基于 V1 拆解草案建立区域关系和必要状态证据，字段、容差、冲突处理和失败条件以[视觉还原](visual-reconstruction.md)为准。默认允许合理几何偏差，只有明确 `exact` 需求时才定义严格像素容差和全覆盖矩阵。
 
 玩法拥有规则、状态、交互和功能灰盒。美术拥有视觉契约中的表现目标，不得通过视觉实现改写玩法规则。

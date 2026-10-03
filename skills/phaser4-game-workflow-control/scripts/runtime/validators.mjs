@@ -1,5 +1,5 @@
 import { schemaContract, schemaEnum, schemaRequired } from './schema-contract.mjs';
-import { hasResponsiveDeclaration, isResponsiveWorkItem, validateResponsiveContract, validateResponsiveEvidenceManifest } from '../responsive-viewport-contract.mjs';
+import { hasResponsiveDeclaration, isResponsiveWorkItem, validateResponsiveContract, validateResponsiveEvidenceManifest, validateResponsiveEvidenceRecord } from '../responsive-viewport-contract.mjs';
 
 const APPROVAL_FIELDS = schemaRequired('approval-ledger.schema.json', ['properties', 'approvals', 'items']);
 const DELEGATION_SCHEMA = schemaContract('delegation-package.schema.json');
@@ -68,7 +68,14 @@ export function createRecordValidators({
     requireFields(evidence.gateResults, gates.slice(0, 4), 'Evidence.gateResults');
     const evidenceStage = String(evidence.currentStage ?? evidence.current_stage ?? '').toUpperCase();
     if (evidenceStage === 'V5' || evidence.responsiveEvidence !== undefined || evidence.responsiveRuntimeEvidence !== undefined) {
-      const responsiveErrors = validateResponsiveEvidenceManifest(evidence, evidence.responsiveViewportContract ?? evidence.responsiveContract, { stage: evidenceStage || 'V5', candidateSha256: evidence.candidateSha256 });
+      const contract = evidence.responsiveViewportContract ?? evidence.responsiveContract;
+      const options = { stage: evidenceStage || 'V5', candidateSha256: evidence.candidateSha256 };
+      const records = evidence.responsiveEvidence ?? evidence.responsiveRuntimeEvidence;
+      // 独立清单结构校验尚无项目方向上下文；方向矩阵由后续绑定 Work Item/实施包的门复核。
+      const responsiveErrors = contract
+        ? validateResponsiveEvidenceManifest(evidence, contract, options)
+        : !Array.isArray(records) || records.length === 0 ? ['V5 缺少真实响应式运行证据数组']
+          : records.flatMap((record) => validateResponsiveEvidenceRecord(record, null, options));
       if (responsiveErrors.length) fail(responsiveErrors[0]);
     }
     return evidence;

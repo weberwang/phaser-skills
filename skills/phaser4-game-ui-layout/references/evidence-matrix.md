@@ -8,7 +8,7 @@
 
 ## 默认高分屏运行矩阵
 
-`representativeViewports` 在 `usability` 下至少包含窄竖屏、标准竖屏、横屏和桌面宽屏，并覆盖有效 DPR 1、1.25 或 1.5、2，以及 raw DPR 大于 2 且 effective DPR 封顶为 2 的样本。每个正式 Scene 和独立 `DISPLAY_LAYER` 都必须独立完成该矩阵，不能借用其他单元的样本。`requiredRuntimeEvidence` 必须记录真实测量而非命令行声明：`viewportRect`、`canvasRect`、`designTransform`（方向、设计尺寸、适配轴、比例、可见逻辑区域和偏移）、`logicalSize`、`backingSize`、`cssDisplaySize`、raw/effective DPR、`logicalToCssScale`、`cssToPhysicalScale`、Camera viewport/zoom/origin、safe area、edge gaps、背景覆盖、关键 UI 边界、输入命中、截图和候选/合同/基线身份。
+`representativeViewports` 按 `orientationPolicy.allowed` 决定方向类别：支持竖屏时至少包含窄/标准竖屏，支持横屏时至少包含横屏/桌面宽屏；单方向项目不得把另一方向列为必测项，但仍要覆盖该方向下窄/宽尺寸。矩阵继续覆盖有效 DPR 1、1.25 或 1.5、2，以及 raw DPR 大于 2 且 effective DPR 封顶为 2 的样本。视口标签和宽高实测方向/尺寸必须一致。每个正式 Scene 和独立 `DISPLAY_LAYER` 都必须独立完成该矩阵，不能借用其他单元的样本。`requiredRuntimeEvidence` 必须记录真实测量而非命令行声明：`viewportRect`、`canvasRect`、`designTransform`（方向、设计尺寸、适配轴、比例、可见逻辑区域和偏移）、`logicalSize`、`backingSize`、`cssDisplaySize`、raw/effective DPR、`logicalToCssScale`、`cssToPhysicalScale`、Camera viewport/zoom/origin、safe area、edge gaps、背景覆盖、关键 UI 边界、输入命中、截图和候选/合同/基线身份。
 
 同一页面必须执行连续 resize、DPR 降至 1、DPR 不变时再次 resize，并证明 CSS 尺寸与 backing 尺寸同步更新且页面未 reload。缺少真实运行测量时标记 `unverified`；源码存在 DPR 计算、Canvas 存在、Canvas 未溢出、构建/类型/单测通过、单张截图或 AI 审查都不能单独驱动 V5 PASS。
 
@@ -20,9 +20,9 @@ effect-image 的 parity case 不能退化为 `structured-layout-and-independent-
 
 ## 最小轴
 
-默认 `usability` 的最小轴由项目选择代表性覆盖：基准与窄/宽视口、至少一种方向变化、关键字号/文案、零/非零安全区、关键动作状态和宿主生命周期；每项都检查边界、遮挡、可读性、可操作性和关系不变量。
+默认 `usability` 的最小轴由项目选择代表性覆盖：基准与窄/宽视口、项目支持双方向时的方向变化、关键字号/文案、零/非零安全区、关键动作状态和宿主生命周期；单方向项目在同一方向验证窄宽尺寸与连续 resize。每项都检查边界、遮挡、可读性、可操作性和关系不变量。
 
-`exact` 或项目明确的全覆盖需求才必须声明并执行完整轴：`breakpoint-neighbors`、`width`、`height`、`orientation`、`text-scale`、`localization`、`safe-area`、`action-state`、`dpr`、`dynamic-values`、`scene-lifecycle`、`overlay-keyboard-scroll`，包括每个断点三点、完整宽高/方向/字号/文案/安全区/状态和组合。
+`exact` 或项目明确的全覆盖需求才必须声明并执行完整轴：`breakpoint-neighbors`、`width`、`height`、`text-scale`、`localization`、`safe-area`、`action-state`、`dpr`、`dynamic-values`、`scene-lifecycle`、`overlay-keyboard-scroll`，包括每个断点三点、完整宽高/字号/文案/安全区/状态和组合。项目同时支持竖屏与横屏时，另必须包含 `orientation` 轴，并覆盖 `orientationPolicy.allowed` 中的方向；单方向项目无需声明该轴，也不能扩展到不支持方向。
 
 ## 证据类型
 

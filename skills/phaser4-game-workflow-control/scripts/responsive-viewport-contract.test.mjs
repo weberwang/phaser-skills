@@ -62,7 +62,7 @@ function makeContract() {
       id: kind,
       kind,
       orientation: kind === 'landscape' || kind === 'desktop-wide' ? 'landscape' : 'portrait',
-      logicalSize: { width: index === 0 ? 320 : 400, height: index === 2 ? 240 : 800 },
+      logicalSize: { width: [320, 400, 800, 1440][index], height: [800, 800, 360, 900][index] },
       dprCoverage: REPRESENTATIVE_DPR_REQUIREMENTS,
     })),
     representativeDprs: REPRESENTATIVE_DPR_REQUIREMENTS,
@@ -121,11 +121,66 @@ function makeMeasuredEvidence(width, height, rawDpr, overrides = {}) {
   });
 }
 
+/** 单方向合同只冻结本方向设计基准、视口和 resize 行为。 */
+function makeSingleOrientationContract(orientation) {
+  const contract = makeContract();
+  contract.orientationPolicy.allowed = [orientation];
+  delete contract.designResolutionPolicy[orientation === 'portrait' ? 'landscape' : 'portrait'];
+  contract.runtimeDprPolicy.updatesOn = ['resize', 'display-density-change', 'same-page-resize'];
+  contract.requiredRuntimeEvidence = contract.requiredRuntimeEvidence.filter((item) => item !== 'orientation-change');
+  contract.representativeViewports = orientation === 'portrait'
+    ? [{ id: 'narrow', kind: 'narrow-portrait', logicalSize: { width: 320, height: 800 } }, { id: 'standard', kind: 'standard-portrait', logicalSize: { width: 390, height: 844 } }]
+    : [{ id: 'landscape', kind: 'landscape', logicalSize: { width: 800, height: 360 } }, { id: 'desktop', kind: 'desktop-wide', logicalSize: { width: 1440, height: 900 } }];
+  return contract;
+}
+
+/** 保持单页与方向不变，独立覆盖尺寸变化、DPR 降低和封顶。 */
+function makeSingleOrientationMeasurements(orientation) {
+  const sizes = orientation === 'portrait'
+    ? [[320, 800], [390, 844], [400, 860], [420, 900], [430, 932]]
+    : [[800, 360], [1024, 768], [1100, 800], [1200, 800], [1440, 900]];
+  return sizes.map(([width, height], index) => makeMeasuredEvidence(width, height, [3, 1, 1, 1.5, 2][index], {
+    contextId: 'same-page', samePageWithPrevious: index > 0,
+    resizeTrajectory: [{ event: 'same-page-resize' }, { event: 'dpr-drop-to-1' }, { event: 'dpr-unchanged-resize' }],
+  }));
+}
+
+test('单方向合同与 V5 证据无需另一方向设计、视口或切换轨迹', () => {
+  for (const orientation of ['portrait', 'landscape']) {
+    const contract = makeSingleOrientationContract(orientation);
+    assert.deepEqual(validateResponsiveContract(contract), [], orientation);
+    const records = makeSingleOrientationMeasurements(orientation);
+    assert.deepEqual(validateResponsiveEvidenceManifest({ responsiveEvidence: records }, contract), [], orientation);
+    assert.deepEqual(validateResponsiveEvidenceManifest({ responsiveEvidence: records }, contract, { requiredUnits: [{ unitType: 'SCENE', sceneId: 'play' }] }), [], orientation);
+    const missingDpr = records.filter((record) => record.effectiveDevicePixelRatio !== 1.5);
+    assert.match(validateResponsiveEvidenceManifest({ responsiveEvidence: missingDpr }, contract).join('\n'), /dpr-1.25-or-1.5/);
+    const opposite = makeSingleOrientationMeasurements(orientation === 'portrait' ? 'landscape' : 'portrait')[0];
+    assert.match(validateResponsiveEvidenceManifest({ responsiveEvidence: [...records, opposite] }, contract).join('\n'), /方向不在/);
+  }
+});
+
+test('双方向声明继续要求另一方向和同页方向切换，非法方向不能缩小矩阵', () => {
+  const contract = makeContract();
+  const records = makeSingleOrientationMeasurements('portrait');
+  assert.match(validateResponsiveEvidenceManifest({ responsiveEvidence: records }, contract).join('\n'), /landscape/);
+  assert.match(validateResponsiveEvidenceManifest({ responsiveEvidence: records }, contract).join('\n'), /orientation-change/);
+  const conflict = { ...makeSingleOrientationContract('portrait'), responsiveViewportContract: contract };
+  assert.match(validateResponsiveEvidenceManifest({ responsiveEvidence: records }, conflict).join('\n'), /根级与嵌套 orientationPolicy.allowed 必须一致/);
+  for (const allowed of [[], ['unknown'], ['portrait', 'portrait']]) {
+    const invalid = makeSingleOrientationContract('portrait');
+    invalid.orientationPolicy.allowed = allowed;
+    assert.match(validateResponsiveContract(invalid).join('\n'), /orientationPolicy.allowed/);
+    assert.match(validateResponsiveEvidenceManifest({ responsiveEvidence: records }, invalid).join('\n'), /orientationPolicy.allowed/);
+  }
+});
+
 test('响应式合同覆盖 18 个字段、运行时 DPR 和生产 2 DPR 分离', () => {
   const contract = makeContract();
   assert.equal(RESPONSIVE_CONTRACT_FIELDS.length, 18);
   assert.deepEqual(validateResponsiveContract(contract, { stage: 'V1' }), []);
   assert.deepEqual(validateResponsiveContract({ ...contract, responsiveViewportContract: contract }, { stage: 'V1' }), []);
+  const orientationConflict = { ...contract, orientationPolicy: { allowed: ['portrait'] }, responsiveViewportContract: contract };
+  assert.match(validateResponsiveContract(orientationConflict).join('\n'), /根级与嵌套 orientationPolicy.allowed 必须一致/);
   const conflicting = { ...contract, designResolutionPolicy: structuredClone(contract.designResolutionPolicy), responsiveViewportContract: contract };
   conflicting.designResolutionPolicy.backgroundFit.targetPoint.x = 0.25;
   assert.match(validateResponsiveContract(conflicting, { stage: 'V1' }).join('\n'), /根级与嵌套 designResolutionPolicy 必须一致/);

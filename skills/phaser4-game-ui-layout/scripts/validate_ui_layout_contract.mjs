@@ -8,6 +8,7 @@ import { DPR_POLICY, IMAGE_PRODUCTION_DPR, RUNTIME_MAX_DPR, isDeviceDprInput, is
 import { DESIGN_RESOLUTIONS } from "./fixed-design-viewport.mjs";
 import { layoutNodeIdentityProjection, validateEffectImageParentChildLayoutNodes } from "../../phaser4-game-workflow-control/scripts/layout-node-parent-geometry.mjs";
 import { resolveVisualValidationMode, validateVisualValidationPolicy } from "../../phaser4-game-workflow-control/scripts/visual-validation-policy.mjs";
+import { matchesRepresentativeViewport, measuredOrientation, resolveOrientationCoverage } from "../../phaser4-game-workflow-control/scripts/orientation-validation-scope.mjs";
 import { validateUiInteractionTree, validateUiLayout } from "../../phaser4-game-asset-integration/scripts/ui-layout-organization.mjs";
 
 const ROOT_REQUIRED = ["schema_version", "contract_id", "contract_version", "scope", "fidelity", "frozen_visual_target", "logicalViewportSpace", "designResolutionPolicy", "canvasBackingPolicy", "runtimeDprPolicy", "maxRuntimeDpr", "scaleMode", "cameraViewportPolicy", "cameraZoomPolicy", "cameraOriginPolicy", "inputCoordinatePolicy", "safeAreaPolicy", "resizePolicy", "orientationPolicy", "textResolutionPolicy", "assetResolutionPolicy", "performanceBudget", "representativeViewports", "requiredRuntimeEvidence", "targets", "coordinate_spaces", "regions", "layout_nodes", "content", "platform_insets", "scrolling", "dynamic_content", "overlay_rules", "breakpoints", "invariants", "critical_alignments", "parity_cases", "evidence_matrix"];
@@ -15,7 +16,6 @@ const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const REQUIRED_EVIDENCE_AXES = new Set(["breakpoint-neighbors", "width", "height", "orientation", "text-scale", "localization", "safe-area", "action-state", "dpr", "dynamic-values", "scene-lifecycle", "overlay-keyboard-scroll"]);
 const REQUIRED_PROGRAMMATIC_TEXT_LANGUAGES = ["en", "zh-CN", "ja", "ru", "es"];
 const REQUIRED_RUNTIME_EVIDENCE_FIELDS = ["viewportRect", "canvasRect", "designTransform", "logicalSize", "backingSize", "cssDisplaySize", "rawDevicePixelRatio", "effectiveDevicePixelRatio", "logicalToCssScale", "cssToPhysicalScale", "cameraViewport", "cameraZoom", "cameraOrigin", "safeArea", "edgeGaps", "backgroundCoverage", "keyUiRects", "inputHitResults", "resizeTrajectory", "pageReloaded", "screenshot", "sceneId", "stateId", "candidateSha256", "layoutContractVersion", "visualBaselineVersion"];
-const REPRESENTATIVE_VIEWPORT_KINDS = ["narrow-portrait", "standard-portrait", "landscape", "desktop-wide"];
 
 /** 判断值是否为合同允许的对象类型。 */
 function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
@@ -205,7 +205,7 @@ function validateCriticalAlignments(items, ids, layoutNodes, target, codeCandida
 }
 
 /** 验证布局 parity case 绑定同一目标、候选和可复现条件。 */
-function validateParityCases(items, target, codeCandidate, scope, contractVersion, errors, mode = "usability") {
+function validateParityCases(items, target, codeCandidate, scope, contractVersion, errors, mode = "usability", coverage = null) {
   const exact = mode === "exact";
   if (!Array.isArray(items) || items.length === 0) { if (exact) errors.push("parity_cases 必须是非空数组"); return; }
   const ids = new Set();
@@ -220,6 +220,7 @@ function validateParityCases(items, target, codeCandidate, scope, contractVersio
     if (item.layout_contract_version !== contractVersion) errors.push(`${label}.layout_contract_version 与根 contract_version 不一致`);
     if (item.visual_baseline_version !== target?.visual_baseline_version) errors.push(`${label}.visual_baseline_version 与冻结目标不一致`);
     if (!isObject(item.viewport) || !isNumber(item.viewport.width) || item.viewport.width <= 0 || !isNumber(item.viewport.height) || item.viewport.height <= 0) errors.push(`${label}.viewport 必须包含正数 width/height`);
+    else if (coverage && !coverage.orientations.includes(measuredOrientation(item.viewport))) errors.push(`${label}.viewport 的方向超出 orientationPolicy.allowed 支持范围`);
     if (!isWorkflowDpr(item.dpr)) errors.push(`${label}.${workflowDprError("dpr", item.dpr)}`);
     if (!(Number.isInteger(item.random_seed) || isString(item.random_seed))) errors.push(`${label}.random_seed 必须是整数或非空字符串`);
     for (const field of ["reference_evidence", "candidate_evidence"]) if (!Array.isArray(item[field]) || item[field].length === 0 || !item[field].every(isString)) errors.push(`${label}.${field} 必须是非空字符串数组`);
@@ -250,10 +251,16 @@ function validateScopeRegionIds(scope, regionIds, errors) {
 }
 
 /** 验证目标视口和方向范围；缩放、DPR 与相机关系由响应式合同统一验证。 */
-function validateTargets(targets, errors) {
+function validateTargets(targets, errors, coverage) {
   if (!isObject(targets)) return;
-  for (const name of ["min", "preferred", "max"]) { const target = targets[name]; if (!isObject(target)) { errors.push(`targets.${name} 必须是对象`); continue; } for (const dimension of ["width", "height"]) if (!isNumber(target[dimension]) || target[dimension] <= 0) errors.push(`targets.${name}.${dimension} 必须是正数`); if (!isString(target.orientation)) errors.push(`targets.${name}.orientation 必须是非空字符串`); }
+  for (const name of ["min", "preferred", "max"]) { const target = targets[name]; if (!isObject(target)) { errors.push(`targets.${name} 必须是对象`); continue; } for (const dimension of ["width", "height"]) if (!isNumber(target[dimension]) || target[dimension] <= 0) errors.push(`targets.${name}.${dimension} 必须是正数`); if (!isString(target.orientation)) errors.push(`targets.${name}.orientation 必须是非空字符串`); else { if (!coverage.orientations.includes(target.orientation)) errors.push(`targets.${name}.orientation 不在 orientationPolicy.allowed 支持范围内`); const actualOrientation = measuredOrientation(target); if (actualOrientation && target.orientation !== actualOrientation) errors.push(`targets.${name}.orientation 与 width/height 实测方向不一致`); } }
   if (!Array.isArray(targets.orientations) || targets.orientations.length === 0) errors.push("targets.orientations 必须是非空数组");
+  else {
+    const orientations = targets.orientations.filter(isString);
+    if (orientations.length !== targets.orientations.length) errors.push("targets.orientations 只能包含非空方向字符串");
+    if (new Set(orientations).size !== orientations.length) errors.push("targets.orientations 不得重复");
+    if (coverage.errors.length === 0 && (orientations.length !== coverage.orientations.length || coverage.orientations.some((orientation) => !orientations.includes(orientation)))) errors.push("targets.orientations 必须与 orientationPolicy.allowed 一致");
+  }
   if (!isObject(targets.aspect_ratio)) errors.push("targets.aspect_ratio 必须是对象"); else { const { min, max } = targets.aspect_ratio; if (!isNumber(min) || min <= 0) errors.push("targets.aspect_ratio.min 必须是正数"); if (!isNumber(max) || max <= 0) errors.push("targets.aspect_ratio.max 必须是正数"); if (isNumber(min) && isNumber(max) && min > max) errors.push("targets.aspect_ratio.min 不能大于 max"); }
 }
 
@@ -272,10 +279,10 @@ function requireArrayIncludes(value, label, required, errors) {
   return missing.length === 0;
 }
 
-/** 固定设计稿只锁定主轴基准；另一轴必须随真实视口变化，背景独立等比铺满。 */
-function validateDesignResolutionPolicy(policy, errors) {
-  if (!requireObjectFields(policy, "designResolutionPolicy", ["portrait", "landscape", "canvasFit", "crossAxis", "backgroundFit"], errors)) return;
-  for (const orientation of ["portrait", "landscape"]) {
+/** 固定设计稿只锁定项目支持方向的主轴基准，背景独立等比铺满。 */
+function validateDesignResolutionPolicy(policy, orientations, errors) {
+  if (!requireObjectFields(policy, "designResolutionPolicy", ["canvasFit", "crossAxis", "backgroundFit"], errors)) return;
+  for (const orientation of orientations) {
     const actual = policy[orientation];
     const expected = DESIGN_RESOLUTIONS[orientation];
     if (!isObject(actual) || actual.width !== expected.width || actual.height !== expected.height || actual.fitAxis !== expected.fitAxis) {
@@ -294,9 +301,16 @@ function validateDesignResolutionPolicy(policy, errors) {
   }
 }
 
+/** 只有项目明确支持两种方向时，才要求方向切换事件；其他事件仍按原合同强制。 */
+function requireResponsiveEvents(value, label, required, coverage, errors) {
+  const requiredEvents = required.filter((event) => event !== "orientation-change");
+  if (coverage.requiresOrientationChange) requiredEvents.push("orientation-change");
+  requireArrayIncludes(value, label, requiredEvents, errors);
+}
+
 /** 验证高分屏布局的统一坐标、DPR、Camera、输入和 resize 合同。 */
-function validateResponsiveContract(document, errors) {
-  validateDesignResolutionPolicy(document.designResolutionPolicy, errors);
+function validateResponsiveContract(document, errors, coverage) {
+  validateDesignResolutionPolicy(document.designResolutionPolicy, coverage.orientations, errors);
   const logical = document.logicalViewportSpace;
   if (requireObjectFields(logical, "logicalViewportSpace", ["unit", "layoutSpace", "gameSizeSpace", "safeAreaSpace", "source", "coordinateOrigin"], errors)) {
     if (logical.unit !== "css-px") errors.push("logicalViewportSpace.unit 必须为 css-px，布局合同禁止使用物理像素");
@@ -312,7 +326,7 @@ function validateResponsiveContract(document, errors) {
     for (const field of ["relation", "widthFormula", "heightFormula"]) if (!isString(backing[field]) || !/css|logical/i.test(backing[field]) || !/effective(?:devicepixelratio|dpr)/i.test(backing[field])) errors.push(`canvasBackingPolicy.${field} 必须表达 backing=CSS逻辑尺寸×effectiveDPR`);
     if (backing.effectiveDprSource !== "runtimeDprPolicy") errors.push("canvasBackingPolicy.effectiveDprSource 必须引用 runtimeDprPolicy");
     if (backing.rounding !== "ceil") errors.push("canvasBackingPolicy.rounding 必须为 ceil");
-    requireArrayIncludes(backing.updatesOn, "canvasBackingPolicy.updatesOn", ["resize", "orientation-change", "dpr-change"], errors);
+    requireResponsiveEvents(backing.updatesOn, "canvasBackingPolicy.updatesOn", ["resize", "dpr-change"], coverage, errors);
     if (backing.physicalPixelLayout !== "forbidden") errors.push("canvasBackingPolicy.physicalPixelLayout 必须为 forbidden，不能用物理像素硬编码布局");
     if (backing.maxBackingSource !== "performanceBudget.maxCanvasBacking") errors.push("canvasBackingPolicy.maxBackingSource 必须引用 performanceBudget.maxCanvasBacking");
   }
@@ -323,7 +337,7 @@ function validateResponsiveContract(document, errors) {
     if (runtimeDpr.source !== "device-dynamic") errors.push("runtimeDprPolicy.source 必须为 device-dynamic，禁止只在启动时读取");
     if (runtimeDpr.invalidInput !== "fallback-to-1" || runtimeDpr.invalidFallback !== 1) errors.push("runtimeDprPolicy 必须声明非法 DPR 回退为 1");
     if (runtimeDpr.minExclusive !== 0 || runtimeDpr.maxInclusive !== RUNTIME_MAX_DPR) errors.push(`runtimeDprPolicy 必须限制在 (0, ${RUNTIME_MAX_DPR}]`);
-    requireArrayIncludes(runtimeDpr.refreshOn, "runtimeDprPolicy.refreshOn", ["resize", "orientation-change", "display-density-change"], errors);
+    requireResponsiveEvents(runtimeDpr.refreshOn, "runtimeDprPolicy.refreshOn", ["resize", "display-density-change"], coverage, errors);
     if (runtimeDpr.notStartupOnly !== true) errors.push("runtimeDprPolicy.notStartupOnly 必须为 true");
     if (runtimeDpr.listenerCleanup !== "required") errors.push("runtimeDprPolicy.listenerCleanup 必须为 required");
     for (const legacyField of ["productionDpr", "imageProductionDpr", "assetDpr"]) if (legacyField in runtimeDpr) errors.push(`runtimeDprPolicy.${legacyField} 不得混入图片生产 DPR，运行时与资源生产必须分离`);
@@ -372,14 +386,14 @@ function validateResponsiveContract(document, errors) {
     if (safeArea.coordinateSpace !== "css-logical-px") errors.push("safeAreaPolicy.coordinateSpace 必须为 css-logical-px");
     if (safeArea.source !== "runtime-insets") errors.push("safeAreaPolicy.source 必须为 runtime-insets");
     if (!isString(safeArea.zeroCase)) errors.push("safeAreaPolicy.zeroCase 必须声明零安全区策略");
-    requireArrayIncludes(safeArea.refreshOn, "safeAreaPolicy.refreshOn", ["resize", "orientation-change", "safe-area-change"], errors);
+    requireResponsiveEvents(safeArea.refreshOn, "safeAreaPolicy.refreshOn", ["resize", "safe-area-change"], coverage, errors);
     if (safeArea.popupInheritance !== "inherit-host-safe-area") errors.push("safeAreaPolicy.popupInheritance 必须声明 DISPLAY_LAYER 继承安全区");
   }
 
   const resize = document.resizePolicy;
   if (requireObjectFields(resize, "resizePolicy", ["samePage", "pageReloaded", "events", "recompute", "listenerCleanup", "idempotent", "dprChangeUpdatesCssAndBacking"], errors)) {
     if (resize.samePage !== true || resize.pageReloaded !== false) errors.push("resizePolicy 必须在同一页面完成且 pageReloaded=false");
-    requireArrayIncludes(resize.events, "resizePolicy.events", ["resize", "orientation-change", "dpr-change", "safe-area-change"], errors);
+    requireResponsiveEvents(resize.events, "resizePolicy.events", ["resize", "dpr-change", "safe-area-change"], coverage, errors);
     requireArrayIncludes(resize.recompute, "resizePolicy.recompute", ["logicalViewportSpace", "canvasBackingPolicy", "safeAreaPolicy", "cameraViewportPolicy", "inputCoordinatePolicy"], errors);
     if (resize.listenerCleanup !== "required") errors.push("resizePolicy.listenerCleanup 必须为 required");
     if (resize.idempotent !== true) errors.push("resizePolicy.idempotent 必须为 true");
@@ -388,7 +402,6 @@ function validateResponsiveContract(document, errors) {
 
   const orientation = document.orientationPolicy;
   if (requireObjectFields(orientation, "orientationPolicy", ["allowed", "source", "reflow", "resizeRequired", "popupInheritance"], errors)) {
-    requireArrayIncludes(orientation.allowed, "orientationPolicy.allowed", ["portrait", "landscape"], errors);
     if (orientation.source !== "runtime-viewport") errors.push("orientationPolicy.source 必须来自 runtime-viewport");
     if (!isString(orientation.reflow)) errors.push("orientationPolicy.reflow 必须声明横竖屏重排策略");
     if (orientation.resizeRequired !== true) errors.push("orientationPolicy.resizeRequired 必须为 true");
@@ -399,7 +412,7 @@ function validateResponsiveContract(document, errors) {
   if (requireObjectFields(text, "textResolutionPolicy", ["coordinateSpace", "fontSizeUnit", "dprIndependent", "reflowOn", "clarityDegradation"], errors)) {
     if (text.coordinateSpace !== "css-logical-px" || text.fontSizeUnit !== "logical-px") errors.push("textResolutionPolicy 必须使用 CSS 逻辑像素和 logical-px 字号");
     if (text.dprIndependent !== true) errors.push("textResolutionPolicy.dprIndependent 必须为 true");
-    requireArrayIncludes(text.reflowOn, "textResolutionPolicy.reflowOn", ["resize", "orientation-change", "dpr-change", "locale-change"], errors);
+    requireResponsiveEvents(text.reflowOn, "textResolutionPolicy.reflowOn", ["resize", "dpr-change", "locale-change"], coverage, errors);
     if (text.clarityDegradation !== "forbid-silent") errors.push("textResolutionPolicy.clarityDegradation 必须禁止静默降低文字清晰度");
   }
 
@@ -424,12 +437,12 @@ function validateResponsiveContract(document, errors) {
     if (!isString(budget.degradationPolicy) || !/explicit|never silently/i.test(budget.degradationPolicy)) errors.push("performanceBudget.degradationPolicy 必须声明显式降级且禁止静默降低清晰度");
   }
 
-  validateRepresentativeViewports(document.representativeViewports, errors);
+  validateRepresentativeViewports(document.representativeViewports, coverage, errors);
   validateRequiredRuntimeEvidence(document.requiredRuntimeEvidence, errors);
 }
 
-/** 验证默认 usability 必须覆盖四类代表性视口及 DPR 封顶样本。 */
-function validateRepresentativeViewports(viewports, errors) {
+/** 验证默认 usability 覆盖支持方向的代表视口及 DPR 封顶样本。 */
+function validateRepresentativeViewports(viewports, coverage, errors) {
   if (!Array.isArray(viewports) || viewports.length === 0) { errors.push("representativeViewports 必须是非空数组"); return; }
   const ids = new Set(); const kinds = new Set(); const dprs = new Set(); let hasCap = false;
   viewports.forEach((viewport, index) => {
@@ -440,6 +453,12 @@ function validateRepresentativeViewports(viewports, errors) {
     if (isString(viewport.kind)) kinds.add(viewport.kind);
     for (const field of ["width", "height"]) if (!isNumber(viewport[field]) || viewport[field] <= 0) errors.push(`${label}.${field} 必须是正数`);
     if (!["portrait", "landscape"].includes(viewport.orientation)) errors.push(`${label}.orientation 必须为 portrait 或 landscape`);
+    const actualOrientation = measuredOrientation(viewport);
+    if (actualOrientation && isString(viewport.orientation) && viewport.orientation !== actualOrientation) errors.push(`${label}.orientation 与 width/height 实测方向不一致`);
+    if (isString(viewport.kind)) {
+      if (!coverage.viewportKinds.includes(viewport.kind)) errors.push(`${label}.kind ${viewport.kind} 不在 orientationPolicy.allowed 支持范围内`);
+      if (!matchesRepresentativeViewport(viewport.kind, viewport)) errors.push(`${label}.kind 与 width/height 的代表视口方向或尺寸不一致`);
+    }
     if (!isDeviceDprInput(viewport.rawDpr)) errors.push(`${label}.rawDpr 必须是正有限数字`);
     if (!isWorkflowDpr(viewport.effectiveDpr)) errors.push(`${label}.effectiveDpr ${workflowDprError("必须是正有限数字且不超过 2", viewport.effectiveDpr)}`);
     if (isDeviceDprInput(viewport.rawDpr) && isWorkflowDpr(viewport.effectiveDpr)) {
@@ -448,7 +467,7 @@ function validateRepresentativeViewports(viewports, errors) {
       else if (viewport.rawDpr !== viewport.effectiveDpr) errors.push(`${label}.rawDpr 未超过上限时 effectiveDpr 必须等于原始值`);
     }
   });
-  const missingKinds = REPRESENTATIVE_VIEWPORT_KINDS.filter((kind) => !kinds.has(kind));
+  const missingKinds = coverage.viewportKinds.filter((kind) => !kinds.has(kind));
   if (missingKinds.length) errors.push(`representativeViewports 缺少代表性视口：${missingKinds.join(", ")}`);
   if (![1, 2].every((dpr) => dprs.has(dpr)) || ![1.25, 1.5].some((dpr) => dprs.has(dpr))) errors.push("representativeViewports 必须覆盖 DPR 1、1.25/1.5 和 2");
   if (!hasCap) errors.push(`representativeViewports 必须包含 rawDpr>${RUNTIME_MAX_DPR} 且 effectiveDpr=${RUNTIME_MAX_DPR} 的封顶证据`);
@@ -708,7 +727,7 @@ function validateEvidenceMatrixDpr(value, path, errors, seen = new Set()) {
 }
 
 /** 验证证据矩阵绑定和必需轴。 */
-function validateEvidenceMatrix(matrix, errors, mode = "usability") { if (!isObject(matrix)) return; for (const field of ["candidate_binding", "golden_policy", "snapshot_stability"]) if (!isString(matrix[field])) errors.push(`evidence_matrix.${field} 必须是非空字符串`); const exact = mode === "exact"; if (exact && (!Array.isArray(matrix.required_axes) || matrix.required_axes.length === 0 || !matrix.required_axes.every(isString))) errors.push("evidence_matrix.required_axes 必须是非空数组"); else if (Array.isArray(matrix.required_axes) && matrix.required_axes.some((axis) => !isString(axis))) errors.push("evidence_matrix.required_axes 只能包含非空字符串"); else if (exact) { const missing = [...REQUIRED_EVIDENCE_AXES].filter((axis) => !matrix.required_axes.includes(axis)).sort(); if (missing.length) errors.push(`evidence_matrix.required_axes 缺少必需轴：${missing.join(", ")}`); } validateEvidenceMatrixDpr(matrix, "evidence_matrix", errors); }
+function validateEvidenceMatrix(matrix, errors, mode = "usability", coverage = null) { if (!isObject(matrix)) return; for (const field of ["candidate_binding", "golden_policy", "snapshot_stability"]) if (!isString(matrix[field])) errors.push(`evidence_matrix.${field} 必须是非空字符串`); const exact = mode === "exact"; if (exact && (!Array.isArray(matrix.required_axes) || matrix.required_axes.length === 0 || !matrix.required_axes.every(isString))) errors.push("evidence_matrix.required_axes 必须是非空数组"); else if (Array.isArray(matrix.required_axes) && matrix.required_axes.some((axis) => !isString(axis))) errors.push("evidence_matrix.required_axes 只能包含非空字符串"); else if (exact) { const requiredAxes = [...REQUIRED_EVIDENCE_AXES]; if (coverage && !coverage.requiresOrientationChange) requiredAxes.splice(requiredAxes.indexOf("orientation"), 1); const missing = requiredAxes.filter((axis) => !matrix.required_axes.includes(axis)).sort(); if (missing.length) errors.push(`evidence_matrix.required_axes 缺少必需轴：${missing.join(", ")}`); } validateEvidenceMatrixDpr(matrix, "evidence_matrix", errors); }
 
 /** 程序化文本必须始终保留本地化显示轴，不能因 usability 模式跳过五语种适配。 */
 function validateProgrammaticTextEvidence(document, errors) {
@@ -720,15 +739,15 @@ function validateProgrammaticTextEvidence(document, errors) {
 export function validateContract(document) {
   const errors = []; const warnings = []; const specialized = []; validateRoot(document, errors); if (!isObject(document)) return { status: "failed", errors, warnings, specialized_review: specialized };
   const mode = resolveVisualValidationMode(document); validateVisualValidationPolicy(errors, "visual_validation", document);
-  validateScope(document.scope, errors); const fidelity = validateFidelityLifecycle(document, errors); const requiresFrozenLayout = fidelity?.applicability === "frozen-target" || isEffectImageContract(document); if (requiresFrozenLayout) validateFrozenVisualTarget(document.frozen_visual_target, errors); const binding = validateSceneReconstructionBinding(document, fidelity, errors); validateTargets(document.targets, errors); validateResponsiveContract(document, errors); const spaces = validateCoordinateSpaces(document.coordinate_spaces, errors); const ids = validateRegions(document, spaces, errors, specialized); validateScopeRegionIds(document.scope, ids, errors); validateReferenceGraph(document, ids, errors); const layoutNodes = validateLayoutNodes(document, fidelity, binding, spaces, ids, errors); validateLayoutAnnotationBinding(document, binding, layoutNodes, errors); validateLayoutContractIdentity(document, binding, errors); validateContent(document.content, errors); validateBreakpoints(document.breakpoints, errors); validatePlatformAndScrolling(document, ids, errors); validateDynamicContent(document.dynamic_content, ids, errors); validateOverlays(document.overlay_rules, ids, errors, specialized); validateOverlayCoverage(document, ids, errors); validateInvariants(document.invariants, ids, errors, mode);
+  validateScope(document.scope, errors); const fidelity = validateFidelityLifecycle(document, errors); const requiresFrozenLayout = fidelity?.applicability === "frozen-target" || isEffectImageContract(document); if (requiresFrozenLayout) validateFrozenVisualTarget(document.frozen_visual_target, errors); const binding = validateSceneReconstructionBinding(document, fidelity, errors); const coverage = resolveOrientationCoverage(document.orientationPolicy); errors.push(...coverage.errors); validateTargets(document.targets, errors, coverage); validateResponsiveContract(document, errors, coverage); const spaces = validateCoordinateSpaces(document.coordinate_spaces, errors); const ids = validateRegions(document, spaces, errors, specialized); validateScopeRegionIds(document.scope, ids, errors); validateReferenceGraph(document, ids, errors); const layoutNodes = validateLayoutNodes(document, fidelity, binding, spaces, ids, errors); validateLayoutAnnotationBinding(document, binding, layoutNodes, errors); validateLayoutContractIdentity(document, binding, errors); validateContent(document.content, errors); validateBreakpoints(document.breakpoints, errors); validatePlatformAndScrolling(document, ids, errors); validateDynamicContent(document.dynamic_content, ids, errors); validateOverlays(document.overlay_rules, ids, errors, specialized); validateOverlayCoverage(document, ids, errors); validateInvariants(document.invariants, ids, errors, mode);
   if (requiresFrozenLayout) {
     validateCriticalAlignments(document.critical_alignments, ids, layoutNodes, document.frozen_visual_target, document.scope?.bindings?.code_candidate, fidelity?.status, errors, mode);
     if (fidelity?.status === "verified") {
-      validateParityCases(document.parity_cases, document.frozen_visual_target, document.scope?.bindings?.code_candidate, document.scope, document.contract_version, errors, mode);
+      validateParityCases(document.parity_cases, document.frozen_visual_target, document.scope?.bindings?.code_candidate, document.scope, document.contract_version, errors, mode, coverage);
       if (mode === "exact" && Array.isArray(document.parity_cases) && document.parity_cases.some((item) => item?.conclusion !== "passed")) errors.push("verified 的 parity_cases 必须全部 passed");
     } else if (!Array.isArray(document.parity_cases) || document.parity_cases.length > 0) errors.push("specified 的 parity_cases 必须为空数组");
   }
-  validateEvidenceMatrix(document.evidence_matrix, errors, mode); validateProgrammaticTextEvidence(document, errors);
+  validateEvidenceMatrix(document.evidence_matrix, errors, mode, coverage); validateProgrammaticTextEvidence(document, errors);
   if (isObject(document.dynamic_content?.localization) && !["forbid-critical", "forbid"].includes(document.dynamic_content.localization.truncate_policy)) warnings.push("本地化截断策略未明确禁止关键文本");
   return { status: errors.length ? "failed" : "passed", errors, warnings, specialized_review: specialized };
 }

@@ -8,6 +8,7 @@ import {
   computeCoverage,
   computeEdgeGaps,
   evaluateViewport as evaluateViewportRaw,
+  evaluateMatrixCoverage,
   summarizeReport,
   validateRepresentativeMatrix
 } from "./responsive-visual-validation.mjs";
@@ -154,10 +155,14 @@ test("resize 轨迹记录同页面前后变化", () => {
   assert.equal(resize.status, "pass");
   assert.equal(resize.records[0].pageReloaded, false);
   assert.equal(resize.records[0].canvasChanged, true);
-  assert.equal(summarizeReport(measurements, {
+  const report = summarizeReport(measurements, {
     ...contract(),
     viewports: { baseline: { width: 390, height: 844, dpr: 2 }, narrow: { width: 360, height: 800, dpr: 2 } }
-  }, identity).status, "pass");
+  }, identity);
+  // 同页 resize 已通过，但合同声明双方向，竖屏记录不能证明横屏与旋转。
+  assert.equal(report.resizeStatus, "pass");
+  assert.equal(report.status, "unverified");
+  assert(report.matrix.orientationMissing.includes("landscape"));
 });
 
 test("required resize 不接受无布局变化、刷新或跨 context 记录", () => { const base = [{ name: "a", status: "pass", contextId: 1, viewportRect: { width: 390, height: 844 }, canvasRect: { width: 390, height: 844 }, keyUiRects: { score: { x: 1 } } }, { name: "b", status: "pass", contextId: 1, viewportRect: { width: 360, height: 800 }, canvasRect: { width: 390, height: 844 }, keyUiRects: { score: { x: 1 } } }]; assert.equal(buildResizeRecords(base, { resize: { required: true } }).status, "fail"); const changedContext = structuredClone(base); changedContext[1].contextId = 2; changedContext[1].canvasRect.width = 360; assert.equal(buildResizeRecords(changedContext, { resize: { required: true } }).status, "fail"); const refreshed = structuredClone(base); refreshed[1].pageReloaded = true; refreshed[1].canvasRect.width = 360; assert.equal(buildResizeRecords(refreshed, { resize: { required: true } }).status, "fail"); });
@@ -303,10 +308,67 @@ test("usability 代表矩阵覆盖视口、DPR、连续 resize 与弹窗轨迹",
     { contextId: "page-b", viewportRect: { width: 900, height: 400 }, rawDevicePixelRatio: 1.5, effectiveDevicePixelRatio: 1.5 },
     { contextId: "page-c", viewportRect: { width: 1440, height: 900 }, rawDevicePixelRatio: 2, effectiveDevicePixelRatio: 2 }
   ];
-  assert.deepEqual(validateRepresentativeMatrix(measurements, { requireDisplayLayer: true }), { status: "pass", missing: [] });
-  const incomplete = validateRepresentativeMatrix(measurements.slice(0, 1), { requireDisplayLayer: true });
+  const orientationPolicy = { allowed: ["portrait", "landscape"] };
+  assert.deepEqual(validateRepresentativeMatrix(measurements, { requireDisplayLayer: true, orientationPolicy }), { status: "pass", missing: [] });
+  const incomplete = validateRepresentativeMatrix(measurements.slice(0, 1), { requireDisplayLayer: true, orientationPolicy });
   assert.equal(incomplete.status, "unverified");
   assert(incomplete.missing.includes("桌面宽屏"));
+});
+
+/** QA 同方向实测矩阵保留 DPR 与单页重排覆盖，不引入旋转样本。 */
+function singleOrientationMeasurements(orientation) {
+  const sizes = orientation === "portrait"
+    ? [[360, 800], [390, 844], [400, 860], [420, 900], [430, 932]]
+    : [[800, 360], [1024, 768], [1100, 800], [1200, 800], [1440, 900]];
+  return sizes.map(([width, height], index) => ({
+    name: `sample-${index}`, contextId: "single-page", samePageWithPrevious: index > 0, pageReloaded: false,
+    viewportRect: { width, height }, rawDevicePixelRatio: [3, 1, 1, 1.5, 2][index], effectiveDevicePixelRatio: [2, 1, 1, 1.5, 2][index],
+    displayLayerTrajectory: ["open", "interact", "resize", "close", "restore"].map((phase) => ({ phase })),
+  }));
+}
+
+test("QA 单方向矩阵无需跨方向，声明双方向仍缺方向证据", () => {
+  for (const orientation of ["portrait", "landscape"]) {
+    const measurements = singleOrientationMeasurements(orientation);
+    assert.deepEqual(validateRepresentativeMatrix(measurements, { orientationPolicy: { allowed: [orientation] } }), { status: "pass", missing: [] });
+    const both = validateRepresentativeMatrix(measurements, { orientationPolicy: { allowed: ["portrait", "landscape"] } });
+    assert.equal(both.status, "unverified");
+    assert(both.missing.includes("方向切换"));
+    const missingDpr = validateRepresentativeMatrix(measurements.slice(0, 3), { orientationPolicy: { allowed: [orientation] } });
+    assert(missingDpr.missing.includes("DPR 1.25 或 1.5"));
+  }
+  assert(validateRepresentativeMatrix(singleOrientationMeasurements("portrait")).missing.some((item) => item.includes("orientationPolicy.allowed")));
+});
+
+test("QA 从根合同读取方向，exact 的完整矩阵也只验证项目支持方向", () => {
+  for (const orientation of ["portrait", "landscape"]) {
+    const measurements = singleOrientationMeasurements(orientation).map((item) => ({ ...item, scaling: { physical: { dpr: item.effectiveDevicePixelRatio } } }));
+    const declared = measurements.map((item) => ({ name: item.name, ...item.viewportRect, deviceScaleFactor: item.rawDevicePixelRatio }));
+    declared.push({ name: "unsupported", width: orientation === "portrait" ? 800 : 360, height: orientation === "portrait" ? 360 : 800 });
+    const scoped = contract({ orientationPolicy: { allowed: [orientation] }, viewports: declared });
+    const exact = evaluateMatrixCoverage(measurements, scoped);
+    assert.equal(exact.status, "pass", orientation);
+    assert(!exact.expected.includes("unsupported"));
+    assert.equal(evaluateMatrixCoverage(measurements, { ...scoped, visual_validation: { mode: "usability" } }).status, "pass");
+  }
+});
+
+test("exact 双方向合同缺另一方向或同页旋转时不能通过", () => {
+  const measurement = { name: "portrait", contextId: "page-a", pageReloaded: false, viewportRect: { width: 390, height: 844 }, scaling: { physical: { dpr: 1 } } };
+  const scoped = contract({ viewports: [{ name: "portrait", width: 390, height: 844 }] });
+  const missing = evaluateMatrixCoverage([measurement], scoped);
+  assert.equal(missing.status, "unverified");
+  assert(missing.orientationMissing.includes("landscape"));
+  const landscape = { ...measurement, name: "landscape", samePageWithPrevious: true, viewportRect: { width: 844, height: 390 } };
+  scoped.viewports.push({ name: "landscape", width: 844, height: 390 });
+  assert.equal(evaluateMatrixCoverage([measurement, { ...landscape, contextId: "other-page" }], scoped).status, "unverified");
+  assert.equal(evaluateMatrixCoverage([measurement, landscape], scoped).status, "pass");
+});
+
+test("QA 拒绝根级与嵌套方向范围冲突", () => {
+  const scoped = contract({ orientationPolicy: { allowed: ["portrait"] }, responsiveViewportContract: { orientationPolicy: { allowed: ["portrait", "landscape"] } } });
+  const measurements = singleOrientationMeasurements("portrait");
+  assert.equal(evaluateMatrixCoverage(measurements, scoped).status, "decision_gap");
 });
 
 test("响应式合同声明允许动态有效值并拒绝非法有效声明", () => {

@@ -14,6 +14,7 @@ import {
   parseDeviceDpr,
 } from './workflow-dpr-contract.mjs';
 import { DESIGN_RESOLUTIONS, calculateFixedDesignViewport } from '../../phaser4-game-ui-layout/scripts/fixed-design-viewport.mjs';
+import { resolveOrientationCoverage, measuredOrientation, matchesRepresentativeViewport, validateOrientationPolicyConsistency, hasSamePageOrientationChange } from './orientation-validation-scope.mjs';
 
 /** 响应式模块复用既有 DPR 单一真源，避免调用方引入第二套常量。 */
 export { DEFAULT_DPR, IMAGE_PRODUCTION_DPR, RUNTIME_MAX_DPR } from './workflow-dpr-contract.mjs';
@@ -40,7 +41,7 @@ export const RUNTIME_EVIDENCE_FIELDS = Object.freeze([
   'candidateSha256', 'layoutContractVersion', 'visualBaselineVersion',
 ]);
 
-/** 默认 usability 矩阵的稳定类别；完整断点矩阵仍由项目自行扩展。 */
+/** 已知代表性视口类别；必测子集由项目支持方向决定。 */
 export const REPRESENTATIVE_VIEWPORT_KINDS = Object.freeze([
   'narrow-portrait', 'standard-portrait', 'landscape', 'desktop-wide',
 ]);
@@ -169,8 +170,9 @@ function hasRequirement(values, requirement) {
 /** 校验代表性 viewport 和 DPR/resize 行为矩阵的合同事实。 */
 function validateRepresentativeMatrix(contract, stage, errors) {
   const viewports = contract.representativeViewports;
-  if (!Array.isArray(viewports) || viewports.length < REPRESENTATIVE_VIEWPORT_KINDS.length) {
-    errors.push(contractError(stage, '*', 'representativeViewports 必须覆盖默认 usability 四类视口', 'representativeViewports'));
+  const coverage = resolveOrientationCoverage(contract.orientationPolicy);
+  if (!Array.isArray(viewports) || viewports.length < coverage.viewportKinds.length || viewports.length === 0) {
+    errors.push(contractError(stage, '*', 'representativeViewports 必须覆盖项目支持方向的代表性视口', 'representativeViewports'));
     return;
   }
   const kinds = new Set();
@@ -185,11 +187,14 @@ function validateRepresentativeMatrix(contract, stage, errors) {
     if (!nonEmptyString(id)) errors.push(contractError(stage, '*', `representativeViewports[${index}] 缺少稳定 id`, `representativeViewports[${index}].id`));
     const normalizedKind = REPRESENTATIVE_VIEWPORT_KINDS.find((candidate) => kind.includes(candidate)) ?? kind;
     if (REPRESENTATIVE_VIEWPORT_KINDS.includes(normalizedKind)) kinds.add(normalizedKind);
+    const size = field(viewport, 'viewportRect', 'viewport_rect', 'logicalSize', 'logical_size', 'size') ?? viewport;
+    if (measuredOrientation(size) && !coverage.orientations.includes(measuredOrientation(size))) errors.push(contractError(stage, String(id ?? '*'), '代表性视口方向不在 orientationPolicy.allowed 中'));
+    if (coverage.viewportKinds.includes(normalizedKind) && !matchesRepresentativeViewport(normalizedKind, size)) errors.push(contractError(stage, String(id ?? '*'), `代表性 ${normalizedKind} 类别与视口尺寸不一致`));
     if (!hasFact(field(viewport, 'logicalSize', 'logical_size', 'size', 'viewportRect', 'viewport_rect')) && !(Number.isFinite(viewport.width) && Number.isFinite(viewport.height))) errors.push(contractError(stage, String(id ?? '*'), '代表性视口缺少逻辑尺寸'));
     const dprCoverage = field(viewport, 'dprCoverage', 'dpr_coverage', 'dprs', 'requiredDprs', 'required_dprs');
     if (dprCoverage !== undefined && !Array.isArray(dprCoverage)) errors.push(contractError(stage, String(id ?? '*'), '视口 dprCoverage 必须为数组'));
   }
-  for (const kind of REPRESENTATIVE_VIEWPORT_KINDS) if (!kinds.has(kind)) errors.push(contractError(stage, '*', `representativeViewports 缺少 ${kind} 类别`));
+  for (const kind of coverage.viewportKinds) if (!kinds.has(kind)) errors.push(contractError(stage, '*', `representativeViewports 缺少 ${kind} 类别`));
   const matrix = JSON.stringify(matrixSources).toLowerCase();
   const effectiveDprs = viewports.map((viewport) => field(viewport, 'effectiveDpr', 'effective_dpr')).filter((value) => typeof value === 'number');
   const rawDprs = viewports.map((viewport) => field(viewport, 'rawDpr', 'raw_dpr')).filter((value) => typeof value === 'number');
@@ -208,12 +213,16 @@ function validateRepresentativeMatrix(contract, stage, errors) {
     'orientation-change': JSON.stringify(contract.orientationPolicy ?? '').toLowerCase().includes('orientation'),
     'display-layer-open-interact-close-restore': Array.isArray(runtime?.displayLayerTrajectory?.steps) && ['open', 'interact', 'close'].every((step) => runtime.displayLayerTrajectory.steps.includes(step)) && runtime.displayLayerTrajectory.steps.some((step) => ['restore', 'host-restore'].includes(step)),
   };
-  for (const requirement of REPRESENTATIVE_BEHAVIOR_REQUIREMENTS) if (!behaviorCoverage[requirement] && !hasRequirement(matrix, requirement)) errors.push(contractError(stage, '*', `usability 矩阵缺少 ${requirement}`));
+  // 锁定方向的项目只验证同方向 resize；仅双方向合同要求实际方向切换。
+  for (const requirement of REPRESENTATIVE_BEHAVIOR_REQUIREMENTS) {
+    if (requirement === 'orientation-change' && !coverage.requiresOrientationChange) continue;
+    if (!behaviorCoverage[requirement] && !hasRequirement(matrix, requirement)) errors.push(contractError(stage, '*', `usability 矩阵缺少 ${requirement}`));
+  }
 }
 
 /** 校验固定横竖屏设计基准、主轴适配和背景 cover，避免合同把黑边当作适配结果。 */
-function validateDesignResolutionPolicy(policy, stage, scope, errors) {
-  const requiredFields = ['portrait', 'landscape', 'canvasFit', 'crossAxis', 'backgroundFit'];
+function validateDesignResolutionPolicy(policy, stage, scope, errors, orientations) {
+  const requiredFields = [...orientations, 'canvasFit', 'crossAxis', 'backgroundFit'];
   if (!isObject(policy)) {
     errors.push(contractError(stage, scope, 'designResolutionPolicy 必须声明为对象', 'designResolutionPolicy'));
     return;
@@ -221,7 +230,7 @@ function validateDesignResolutionPolicy(policy, stage, scope, errors) {
   for (const fieldName of requiredFields) {
     if (policy[fieldName] === undefined || policy[fieldName] === null) errors.push(contractError(stage, scope, `designResolutionPolicy 缺少 ${fieldName}`, `designResolutionPolicy.${fieldName}`));
   }
-  for (const orientation of ['portrait', 'landscape']) {
+  for (const orientation of orientations) {
     const actual = policy[orientation];
     const expected = DESIGN_RESOLUTIONS[orientation];
     if (!isObject(actual) || actual.width !== expected.width || actual.height !== expected.height || actual.fitAxis !== expected.fitAxis) {
@@ -261,15 +270,18 @@ export function validateResponsiveContract(value, options = {}) {
   const contract = extractResponsiveContract(value);
   const errors = [];
   if (!isObject(contract) || Object.keys(contract).length === 0) return [contractError(stage, scope, '缺少响应式视口合同', 'responsiveViewportContract')];
+  const coverage = resolveOrientationCoverage(contract.orientationPolicy);
+  for (const error of coverage.errors) errors.push(contractError(stage, scope, error));
   const nestedContract = value?.responsiveViewportContract ?? value?.responsiveContract ?? value?.responsive_contract;
   if (nestedContract !== undefined && nestedContract !== null) {
     if (!isObject(nestedContract)) errors.push(contractError(stage, scope, '嵌套 responsiveViewportContract 必须为对象'));
+    for (const error of validateOrientationPolicyConsistency(value?.orientationPolicy, nestedContract?.orientationPolicy)) errors.push(contractError(stage, scope, error));
     if (value?.designResolutionPolicy === undefined || value?.designResolutionPolicy === null) errors.push(contractError(stage, scope, '根字段必须声明 designResolutionPolicy', 'designResolutionPolicy'));
     if (nestedContract?.designResolutionPolicy === undefined || nestedContract?.designResolutionPolicy === null) errors.push(contractError(stage, scope, '嵌套 responsiveViewportContract 必须声明 designResolutionPolicy', 'responsiveViewportContract.designResolutionPolicy'));
     if (isObject(value?.designResolutionPolicy) && isObject(nestedContract?.designResolutionPolicy) && !sameDesignResolutionPolicy(value.designResolutionPolicy, nestedContract.designResolutionPolicy)) errors.push(contractError(stage, scope, '根级与嵌套 designResolutionPolicy 必须一致'));
   }
   for (const fieldName of RESPONSIVE_CONTRACT_FIELDS) if (contract[fieldName] === undefined || contract[fieldName] === null) errors.push(contractError(stage, scope, `响应式合同缺少 ${fieldName}`, fieldName));
-  validateDesignResolutionPolicy(contract.designResolutionPolicy, stage, scope, errors);
+  validateDesignResolutionPolicy(contract.designResolutionPolicy, stage, scope, errors, coverage.orientations);
   if (contract.maxRuntimeDpr !== RUNTIME_MAX_DPR) errors.push(contractError(stage, scope, `maxRuntimeDpr 必须固定为 ${RUNTIME_MAX_DPR}`, 'maxRuntimeDpr=2'));
   const dprPolicy = contract.runtimeDprPolicy;
   if (!isObject(dprPolicy)) errors.push(contractError(stage, scope, 'runtimeDprPolicy 必须声明设备动态读取和非法回退事实', 'runtimeDprPolicy'));
@@ -281,7 +293,7 @@ export function validateResponsiveContract(value, options = {}) {
     if (field(dprPolicy, 'cap', 'max', 'maximum', 'maxInclusive') !== RUNTIME_MAX_DPR) errors.push(contractError(stage, scope, `runtimeDprPolicy 上限必须为 ${RUNTIME_MAX_DPR}`, 'runtimeDprPolicy.cap=2'));
     const changes = field(dprPolicy, 'updatesOn', 'updates_on', 'dynamicTriggers', 'dynamic_triggers', 'refreshOn');
     const changeText = JSON.stringify(changes ?? []).toLowerCase();
-    if (!changeText.includes('resize') || !changeText.includes('orientation') || !(changeText.includes('density') || changeText.includes('dpr'))) errors.push(contractError(stage, scope, 'DPR 动态策略必须覆盖 resize/横竖屏/显示密度变化'));
+    if (!changeText.includes('resize') || (coverage.requiresOrientationChange && !changeText.includes('orientation')) || !(changeText.includes('density') || changeText.includes('dpr'))) errors.push(contractError(stage, scope, 'DPR 动态策略必须覆盖 resize/显示密度变化，双方向项目还需方向切换'));
   }
   if (!hasFact(contract.logicalViewportSpace) || (isObject(contract.logicalViewportSpace) && !String(field(contract.logicalViewportSpace, 'unit', 'coordinateSpace', 'coordinate_space') ?? '').toLowerCase().includes('css'))) errors.push(contractError(stage, scope, 'logicalViewportSpace 必须明确 CSS 逻辑像素坐标空间', 'logicalViewportSpace'));
   if (!hasFact(contract.canvasBackingPolicy)) errors.push(contractError(stage, scope, 'canvasBackingPolicy 必须明确 CSS→物理 backing 关系', 'canvasBackingPolicy'));
@@ -411,7 +423,7 @@ export function validateResponsiveEvidenceRecord(record, contract = null, option
   const hits = field(record, 'inputHitResults', 'input_hit_results');
   if (!Array.isArray(hits) || hits.length === 0 || hits.some((item) => item?.hit !== true && item?.passed !== true)) errors.push(contractError(stage, scope, 'inputHitResults 必须全部明确通过'));
   const trajectory = field(record, 'resizeTrajectory', 'resize_trajectory');
-  if (!Array.isArray(trajectory) || trajectory.length === 0) errors.push(contractError(stage, scope, 'resizeTrajectory 必须记录同页 resize/横竖屏/DPR 变化轨迹', 'resizeTrajectory'));
+  if (!Array.isArray(trajectory) || trajectory.length === 0) errors.push(contractError(stage, scope, 'resizeTrajectory 必须记录支持方向内的同页 resize/DPR 变化轨迹', 'resizeTrajectory'));
   if (field(record, 'pageReloaded', 'page_reloaded') !== false) errors.push(contractError(stage, scope, 'resize 必须在同一页面完成，pageReloaded 必须为 false'));
   if (!hasFact(field(record, 'screenshot'))) errors.push(contractError(stage, scope, 'V5 必须提交真实运行截图', 'screenshot'));
   for (const name of ['sceneId', 'stateId', 'layoutContractVersion', 'visualBaselineVersion']) if (!nonEmptyString(field(record, name, name.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`)))) errors.push(contractError(stage, scope, `运行证据缺少 ${name}`, name));
@@ -436,19 +448,15 @@ export function validateResponsiveEvidenceRecord(record, contract = null, option
 }
 
 /** 只按实测几何、DPR 和同页轨迹校验一个可见单元的完整代表矩阵。 */
-function validateMeasuredMatrix(records, stage, scope) {
-  const errors = [];
+function validateMeasuredMatrix(records, stage, scope, contract) {
+  const coverage = resolveOrientationCoverage(extractResponsiveContract(contract).orientationPolicy);
+  const errors = coverage.errors.map((error) => contractError(stage, scope, error));
   // V5 只接受实测几何和数值覆盖；viewportId、matrixCases 等自报标签不能替代事实。
   const viewport = (record) => field(record, 'viewportRect', 'viewport_rect') ?? {};
   const effective = (record) => field(record, 'effectiveDevicePixelRatio', 'effective_device_pixel_ratio');
   const raw = (record) => field(record, 'rawDevicePixelRatio', 'raw_device_pixel_ratio');
-  const categories = {
-    'narrow-portrait': records.some((record) => viewport(record).height > viewport(record).width && viewport(record).width <= 375),
-    'standard-portrait': records.some((record) => viewport(record).height > viewport(record).width && viewport(record).width >= 390),
-    landscape: records.some((record) => viewport(record).width > viewport(record).height),
-    'desktop-wide': records.some((record) => viewport(record).width >= 1024),
-  };
-  for (const kind of REPRESENTATIVE_VIEWPORT_KINDS) if (!categories[kind]) errors.push(contractError(stage, scope, `V5 证据未覆盖代表性 ${kind} 视口`));
+  for (const record of records) if (!coverage.orientations.includes(measuredOrientation(viewport(record)))) errors.push(contractError(stage, scope, 'V5 证据视口方向不在 orientationPolicy.allowed 中'));
+  for (const kind of coverage.viewportKinds) if (!records.some((record) => matchesRepresentativeViewport(kind, viewport(record)))) errors.push(contractError(stage, scope, `V5 证据未覆盖代表性 ${kind} 视口`));
   const dprCoverage = {
     'dpr-1': records.some((record) => effective(record) === 1),
     'dpr-1.25-or-1.5': records.some((record) => [1.25, 1.5].includes(effective(record))),
@@ -466,7 +474,7 @@ function validateMeasuredMatrix(records, stage, scope) {
   if (!transitions.some((item) => item.samePage && item.viewportChanged)) errors.push(contractError(stage, scope, 'V5 证据未覆盖 same-page-resize'));
   if (!transitions.some((item) => item.samePage && item.previousDpr > 1 && item.currentDpr === 1)) errors.push(contractError(stage, scope, 'V5 证据未覆盖 dpr-drop-to-1'));
   if (!transitions.some((item) => item.samePage && item.viewportChanged && item.previousDpr === item.currentDpr)) errors.push(contractError(stage, scope, 'V5 证据未覆盖 dpr-unchanged-resize'));
-  if (!transitions.some((item) => item.samePage && (item.before.width > item.before.height) !== (item.after.width > item.after.height))) errors.push(contractError(stage, scope, 'V5 证据未覆盖 orientation-change'));
+  if (coverage.requiresOrientationChange && !hasSamePageOrientationChange(records, viewport)) errors.push(contractError(stage, scope, 'V5 证据未覆盖 orientation-change'));
   return errors;
 }
 
@@ -475,18 +483,22 @@ export function validateResponsiveEvidenceManifest(value, contract = null, optio
   const stage = String(options.stage ?? value?.currentStage ?? value?.current_stage ?? 'V5').toUpperCase();
   const source = Array.isArray(value) ? value : value?.responsiveEvidence ?? value?.responsiveRuntimeEvidence ?? value?.responsive_runtime_evidence ?? value?.runtimeEvidence;
   const errors = [];
+  const nestedContract = contract?.responsiveViewportContract ?? contract?.responsiveContract ?? contract?.responsive_contract;
+  if (nestedContract !== undefined && nestedContract !== null) {
+    for (const error of validateOrientationPolicyConsistency(contract?.orientationPolicy, nestedContract?.orientationPolicy)) errors.push(contractError(stage, '*', error));
+  }
   if (!Array.isArray(source) || source.length === 0) return [contractError(stage, '*', 'V5 缺少真实响应式运行证据数组', 'responsiveEvidence')];
   const records = source;
   for (const [index, record] of records.entries()) errors.push(...validateResponsiveEvidenceRecord(record, contract, { ...options, stage, scope: record?.displayLayerId ?? record?.sceneId ?? `record-${index}` }));
   const requiredUnits = options.requiredUnits ?? [];
-  if (requiredUnits.length === 0) errors.push(...validateMeasuredMatrix(records, stage, '*'));
+  if (requiredUnits.length === 0) errors.push(...validateMeasuredMatrix(records, stage, '*', contract));
   for (const unit of requiredUnits) {
     const unitRecords = records.filter((record) => unit.unitType === 'SCENE'
       ? record?.sceneId === unit.sceneId && record?.displayLayerId === undefined
       : record?.displayLayerId === unit.displayLayerId && record?.hostSceneId === unit.hostSceneId);
     const unitScope = unit.displayLayerId ?? unit.sceneId ?? '*';
     if (unitRecords.length === 0) errors.push(contractError(stage, unitScope, '可见 execution unit 缺少独立响应式运行轨迹'));
-    else errors.push(...validateMeasuredMatrix(unitRecords, stage, unitScope));
+    else errors.push(...validateMeasuredMatrix(unitRecords, stage, unitScope, contract));
   }
   return [...new Set(errors)];
 }

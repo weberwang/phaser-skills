@@ -14,17 +14,17 @@ schema 1.2.0 根对象包含 `fidelity`、`frozen_visual_target`、`layout_nodes
 
 `logicalViewportSpace` 的单位固定为 CSS 逻辑像素（`css-px`/`css-logical-px`）。布局、safe area、断点、点击区域、`gameSize`、Camera viewport、Camera zoom 和程序化文字排版都在该空间计算。`canvasBackingPolicy` 必须明确 `backingWidth = ceil(cssWidth × effectiveDPR)`、`backingHeight = ceil(cssHeight × effectiveDPR)`，并声明 backing 是物理像素；物理 backing 像素不得直接作为布局坐标或命中坐标。CSS display 尺寸、逻辑尺寸和 backing 尺寸必须分别记录，不能把一个数值重复贴到三种空间。
 
-`runtimeDprPolicy` 必须从设备动态读取，非法、零、负数、非有限或字符串值回退为 1，有效值严格位于 `(0, 2]`，原始值大于 2 时有效值封顶为 2。DPR 不是启动常量：resize、横竖屏切换和显示密度变化都要重新读取并清理监听器。`maxRuntimeDpr` 固定为数字 `2`。资源生产基线另由 `assetResolutionPolicy.productionDpr=2` 声明，和运行时 DPR 分离；2 只表示生成/生产清晰度，不代表运行时固定使用 2。运行时代表性矩阵仍必须覆盖 DPR `1.25/1.5`。
+`runtimeDprPolicy` 必须从设备动态读取，非法、零、负数、非有限或字符串值回退为 1，有效值严格位于 `(0, 2]`，原始值大于 2 时有效值封顶为 2。DPR 不是启动常量：resize 和显示密度变化都要重新读取；若 `orientationPolicy.allowed` 同时包含 `portrait` 与 `landscape`，方向切换也要重新读取并清理监听器。`maxRuntimeDpr` 固定为数字 `2`。资源生产基线另由 `assetResolutionPolicy.productionDpr=2` 声明，和运行时 DPR 分离；2 只表示生成/生产清晰度，不代表运行时固定使用 2。运行时代表性矩阵仍必须覆盖 DPR `1.25/1.5`。
 
-`designResolutionPolicy` 固定竖屏设计基准为 1080×1920、按高度适配，横屏设计基准为 1920×1080、按宽度适配。实际 CSS 视口为 `W×H` 时，竖屏比例 `s=H/1920`、可见逻辑区域为 `(W/s)×1920`；横屏比例 `s=W/1920`、可见逻辑区域为 `1920×(H/s)`。设计区域在可见区域中居中，另一轴可以展开或裁切；安全区、UI 锚点和输入命中必须使用实际可见区域。横竖屏以运行时视口宽高判断，宽高相等时按横屏处理。
+`orientationPolicy.allowed` 必须是非空且无重复的 `portrait`/`landscape` 数组，不从缺省值推断双方向支持。`designResolutionPolicy` 只要求声明 `allowed` 中方向的分支：竖屏基准为 1080×1920、按高度适配；横屏基准为 1920×1080、按宽度适配。实际 CSS 视口为 `W×H` 时，竖屏比例 `s=H/1920`、可见逻辑区域为 `(W/s)×1920`；横屏比例 `s=W/1920`、可见逻辑区域为 `1920×(H/s)`。设计区域在可见区域中居中，另一轴可以展开或裁切；安全区、UI 锚点和输入命中必须使用实际可见区域。横竖屏以运行时视口宽高判断，宽高相等时按横屏处理。
 
 Canvas 必须填满真实 CSS 视口，`scaleMode` 采用 `RESIZE` 或能证明同等行为的 `custom`，不能用 `FIT` 留黑边。逻辑尺寸、CSS 尺寸、物理 backing、`gameSize`、Camera viewport/zoom/origin 和输入映射之间的关系仍需实证；单独声明模式或构建成功都不是高分屏兼容证明。
 
 Camera 合同必须说明逻辑 viewport 如何映射到物理 backing，zoom 不得偷换 DPR，origin 必须显式声明；输入合同必须说明 CSS client 坐标如何经过逻辑 viewport、Camera 再到世界/命中空间。弹窗和 `DISPLAY_LAYER` 默认继承宿主的 CSS 逻辑视口、有效 DPR、Camera/输入合同和 safe area；若使用独立 Camera，必须在自身合同声明并单独验证。
 
-`resizePolicy` 必须在同一页面完成，不得用刷新页面掩盖重排；resize、横竖屏、safe area 和 DPR 变化后至少重新计算逻辑视口、Canvas backing、safe area、Camera viewport、输入映射和文字排版，监听器必须可清理且重复计算幂等。允许在超预算时显式减少滤镜、RenderTexture 或透明全屏层，但不得静默降低 DPR、资源质量或文字清晰度。
+`resizePolicy` 必须在同一页面完成，不得用刷新页面掩盖重排；resize、safe area 和 DPR 变化后至少重新计算逻辑视口、Canvas backing、safe area、Camera viewport、输入映射和文字排版。仅当 `orientationPolicy.allowed` 同时包含两种方向时，事件数组才必须包含 `orientation-change`，并验证方向切换后的同页重排；所有项目都必须覆盖连续 resize 与 DPR 变化。监听器必须可清理且重复计算幂等。允许在超预算时显式减少滤镜、RenderTexture 或透明全屏层，但不得静默降低 DPR、资源质量或文字清晰度。
 
-`performanceBudget` 至少记录最大 Canvas backing、最大像素总量、RenderTexture、全屏滤镜、透明全屏层、代表性设备和真实测量结果。`representativeViewports` 默认 usability 必须覆盖窄竖屏、标准竖屏、横屏、桌面宽屏、DPR 1、1.25/1.5、2 和原始 DPR 大于 2 的封顶样本。`requiredRuntimeEvidence` 必须要求 `viewportRect`、`canvasRect`、`designTransform`、`logicalSize`、`backingSize`、`cssDisplaySize`、原始/有效 DPR、两段缩放、Camera、safe area、边距、背景覆盖、关键 UI、输入命中、resize 轨迹、`pageReloaded`、截图及 scene/state、候选 SHA、合同/基线版本；`designTransform` 记录实际方向、设计宽高、适配轴、比例、可见逻辑区域及居中偏移，必须与当前 CSS 视口一致。缺少真实运行测量只能标记 `unverified`。
+`performanceBudget` 至少记录最大 Canvas backing、最大像素总量、RenderTexture、全屏滤镜、透明全屏层、代表性设备和真实测量结果。`representativeViewports` 按 `orientationPolicy.allowed` 覆盖类别：支持竖屏时要求窄/标准竖屏，支持横屏时要求横屏/桌面宽屏；单方向项目用该方向的窄宽尺寸覆盖，并仍包含 DPR 1、1.25/1.5、2 和原始 DPR 大于 2 的封顶样本。`requiredRuntimeEvidence` 必须要求 `viewportRect`、`canvasRect`、`designTransform`、`logicalSize`、`backingSize`、`cssDisplaySize`、原始/有效 DPR、两段缩放、Camera、safe area、边距、背景覆盖、关键 UI、输入命中、resize 轨迹、`pageReloaded`、截图及 scene/state、候选 SHA、合同/基线版本；`designTransform` 记录实际方向、设计宽高、适配轴、比例、可见逻辑区域及居中偏移，必须与当前 CSS 视口一致。缺少真实运行测量只能标记 `unverified`。
 
 ## V2 串行拆解与布局标注
 
@@ -73,7 +73,7 @@ Camera 合同必须说明逻辑 viewport 如何映射到物理 backing，zoom �
 
 ## 目标与尺寸
 
-`targets` 只定义代表性设备视口的最小、首选和最大逻辑宽高、方向和宽高比，不能覆盖固定设计基准。`scale` 旧嵌套字段不再承担 DPR 或 backing 合同，相关事实统一写在根级响应式字段。`aspect_ratio.min/max` 必须是正数且顺序合理。`content` 定义 `max_width`、`columns`、`gaps` 和 `margins`；断点和布局关系仍必须使用逻辑像素，不能使用参考截图的物理像素直接硬编码。
+`targets` 只定义代表性设备视口的最小、首选和最大逻辑宽高、方向和宽高比，不能覆盖固定设计基准；`targets.orientations` 必须与 `orientationPolicy.allowed` 一致，三个示例目标也只能使用支持方向。`scale` 旧嵌套字段不再承担 DPR 或 backing 合同，相关事实统一写在根级响应式字段。`aspect_ratio.min/max` 必须是正数且顺序合理。`content` 定义 `max_width`、`columns`、`gaps` 和 `margins`；断点和布局关系仍必须使用逻辑像素，不能使用参考截图的物理像素直接硬编码。
 
 尺寸策略可以是 `fixed`、`content`、`proportional`、`stretch`、`contain`、`cover` 或 `nine_slice`，但必须同时给出最小、首选和最大值；三档宽高须为正数或非空表达式，数值最小值不能大于最大值。固定尺寸、绝对定位和悬浮元素是可审查模式，不是格式错误；缺少参照、策略或证据才退回。
 
@@ -104,7 +104,7 @@ Camera 合同必须说明逻辑 viewport 如何映射到物理 backing，zoom �
 
 ## 不变量与证据
 
-`invariants` 的每一项都包含稳定 ID、非空描述/表达式、非空且全部有效的适用区域、非负容差和 `evidence.automation`/`evidence.visual` 字符串项。关系表达优先描述相对中心、边界距离、间距、遮挡和断点结构，而非一个孤立屏幕坐标。`evidence_matrix` 必须绑定同一候选、合同版本、动态封顶 2 的 DPR 策略和已执行的视口条件；默认 `usability` 覆盖基准及代表性窄/宽、方向和关键状态，验证关系不变量与可用性。只有 `exact` 或项目明确要求时才覆盖断点邻值、宽高、方向、字号、本地化、安全区、动作态、DPR、动态值、Scene 生命周期和覆盖层/键盘/滚动的完整组合，并启用 Golden 精确视觉。
+`invariants` 的每一项都包含稳定 ID、非空描述/表达式、非空且全部有效的适用区域、非负容差和 `evidence.automation`/`evidence.visual` 字符串项。关系表达优先描述相对中心、边界距离、间距、遮挡和断点结构，而非一个孤立屏幕坐标。`evidence_matrix` 必须绑定同一候选、合同版本、动态封顶 2 的 DPR 策略和已执行的视口条件；默认 `usability` 覆盖基准及代表性窄/宽、项目支持方向和关键状态，验证关系不变量与可用性。只有 `exact` 或项目明确要求时才覆盖断点邻值、宽高、字号、本地化、安全区、动作态、DPR、动态值、Scene 生命周期和覆盖层/键盘/滚动的完整组合；`orientation` 轴只在项目同时支持两种方向时强制，并只覆盖 `orientationPolicy.allowed` 声明的方向。精确矩阵启用 Golden 精确视觉。
 
 `critical_alignments` 用于冻结目标中的关键 UI/HUD：通过 `layout_node_id` 绑定布局节点，`element_id` 等于对应 `region_id`。`reference_id` 可指向稳定 region、`viewport` 或具体节点；多节点 region 必须指定具体节点。两种模式均保留唯一 ID、双轴关系、目标证据、双方身份和测试计划；verified 需要真实运行测量、运行证据与通过结果。默认 `usability` 不强制目标精确测量、四轴 delta 或预声明容差，允许合理的位置和尺寸差异；若提供测量字段，其结构必须有效。只有 `exact` 才强制目标几何、四轴 delta、精确差值一致性和项目容差。目标或布局结构实质变化才重新确认，普通运行态微调原地验证。
 

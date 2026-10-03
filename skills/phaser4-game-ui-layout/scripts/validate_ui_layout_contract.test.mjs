@@ -25,6 +25,33 @@ function fidelityContract(status = "verified") {
   if (status === "verified") { Object.assign(document.critical_alignments[0], { actual_test_id: "tests/layout/title-center", runtime_measurement: { x: 115, y: 32, width: 160, height: 48 }, delta: { x: 0, y: 0, width: 0, height: 0 }, test_status: "passed", runtime_evidence: ["evidence/runtime-title.png"] }); document.parity_cases = [{ id: "main-default", target_sha256: targetSha, candidate_sha256: candidateSha, scene_id: "MainScene", state_id: "default", viewport: { width: 390, height: 844 }, dpr: 2, language: "zh-CN", random_seed: 42, input_trace: "traces/main.json", sample_rule: "stable-frame", layout_contract_version: "1.0.0", visual_baseline_version: "ui-v1", reference_evidence: ["evidence/target.png"], candidate_evidence: ["evidence/candidate.png"], tolerance: { unit: "logical-px", value: 2 }, exception_ids: [], conclusion: "passed" }]; }
   return document;
 }
+/** 将模板合同缩窄到单一支持方向，同时保留该方向的尺寸、DPR 封顶和常规重排证据。 */
+function restrictToOrientation(document, orientation) {
+  document.orientationPolicy.allowed = [orientation];
+  delete document.designResolutionPolicy[orientation === "portrait" ? "landscape" : "portrait"];
+  document.targets.orientations = [orientation];
+  for (const target of [document.targets.min, document.targets.preferred, document.targets.max]) {
+    // 模板目标含不同方向的端点，单方向测试需旋转宽高以保留尺寸尺度而不制造反向样本。
+    if ((target.width < target.height ? "portrait" : "landscape") !== orientation) [target.width, target.height] = [target.height, target.width];
+    target.orientation = orientation;
+  }
+  for (const policy of [document.canvasBackingPolicy, document.runtimeDprPolicy, document.safeAreaPolicy, document.resizePolicy, document.textResolutionPolicy]) {
+    const eventField = policy.updatesOn ? "updatesOn" : policy.refreshOn ? "refreshOn" : policy.events ? "events" : "reflowOn";
+    policy[eventField] = policy[eventField].filter((event) => event !== "orientation-change");
+  }
+  document.representativeViewports = document.representativeViewports.filter((viewport) => viewport.orientation === orientation);
+  if (orientation === "portrait") {
+    document.representativeViewports.push({ id: "portrait-dpr-cap", kind: "standard-portrait", width: 430, height: 932, orientation: "portrait", rawDpr: 3, effectiveDpr: 2 });
+  } else {
+    document.representativeViewports.push(
+      { id: "landscape-dpr-one", kind: "landscape", width: 900, height: 600, orientation: "landscape", rawDpr: 1, effectiveDpr: 1 },
+      { id: "landscape-dpr-mid", kind: "landscape", width: 960, height: 640, orientation: "landscape", rawDpr: 1.5, effectiveDpr: 1.5 },
+    );
+  }
+  // 方向缩窄会改变身份投影中的设计分辨率策略，测试夹具需重新绑定哈希，避免误报过期合同。
+  if (document.scene_reconstruction_binding) document.scene_reconstruction_binding.layout_contract_sha256 = computeLayoutContractIdentityHash(document);
+  return document;
+}
 /** 断言指定缺陷稳定地产生失败和可定位诊断。 */
 function assertFailed(document, expected) { const result = validateContract(document); assert.equal(result.status, "failed"); assert(result.errors.some((item) => item.includes(expected)), JSON.stringify(result)); }
 
@@ -112,6 +139,32 @@ test("固定横竖屏设计分辨率、主轴适配与背景 cover 不可缺失"
   const cover = copy(); cover.designResolutionPolicy.backgroundFit.mode = "contain"; assertFailed(cover, "背景需等比覆盖可见视口");
   const focus = copy(); focus.designResolutionPolicy.backgroundFit.sourceFocalPoint.x = 2; assertFailed(focus, "sourceFocalPoint 必须包含 [0,1]");
   const crossAxis = copy(); crossAxis.designResolutionPolicy.crossAxis = "fixed"; assertFailed(crossAxis, "crossAxis 必须为 extend-or-crop");
+});
+test("单方向合同只要求支持方向设计基准、视口类别和重排事件", () => {
+  for (const orientation of ["portrait", "landscape"]) {
+    const document = restrictToOrientation(copy(), orientation);
+    assert.equal(validateContract(document).status, "passed", `${orientation}: ${JSON.stringify(validateContract(document))}`);
+    const exact = restrictToOrientation(copy(), orientation);
+    exact.visual_validation = { mode: "exact" };
+    exact.evidence_matrix.required_axes = exact.evidence_matrix.required_axes.filter((axis) => axis !== "orientation");
+    assert.equal(validateContract(exact).status, "passed", `${orientation} exact: ${JSON.stringify(validateContract(exact))}`);
+  }
+});
+test("双方向仍要求双方设计基准、代表视口、方向切换事件和 exact 方向轴", () => {
+  const missingDesign = copy(); delete missingDesign.designResolutionPolicy.landscape; assertFailed(missingDesign, "designResolutionPolicy.landscape 必须为");
+  const missingViewport = copy(); missingViewport.representativeViewports = missingViewport.representativeViewports.filter((item) => item.kind !== "landscape"); assertFailed(missingViewport, "缺少代表性视口：landscape");
+  const missingEvent = copy(); missingEvent.resizePolicy.events = missingEvent.resizePolicy.events.filter((event) => event !== "orientation-change"); assertFailed(missingEvent, "resizePolicy.events 缺少必需项：orientation-change");
+  const missingAxis = fidelityContract(); missingAxis.evidence_matrix.required_axes = missingAxis.evidence_matrix.required_axes.filter((axis) => axis !== "orientation"); assertFailed(missingAxis, "required_axes 缺少必需轴：orientation");
+});
+test("方向声明非法、视口标签与几何不一致或 exact parity 超出支持方向时失败", () => {
+  for (const allowed of [[], ["portrait", "portrait"], ["diagonal"], "portrait-only"]) {
+    const invalid = copy(); invalid.orientationPolicy.allowed = allowed; assertFailed(invalid, "orientationPolicy.allowed 必须是非空且不重复的 portrait/landscape 数组");
+  }
+  const mismatch = copy(); mismatch.representativeViewports[0].orientation = "landscape"; assertFailed(mismatch, "与 width/height 实测方向不一致");
+  const wrongKind = copy(); wrongKind.representativeViewports[0].width = 400; assertFailed(wrongKind, "代表视口方向或尺寸不一致");
+  const unsupportedTarget = restrictToOrientation(copy(), "portrait"); unsupportedTarget.targets.orientations.push("landscape"); assertFailed(unsupportedTarget, "targets.orientations 必须与 orientationPolicy.allowed 一致");
+  const targetGeometry = restrictToOrientation(copy(), "portrait"); targetGeometry.targets.preferred.width = 1200; assertFailed(targetGeometry, "targets.preferred.orientation 与 width/height 实测方向不一致");
+  const unsupportedParity = restrictToOrientation(fidelityContract(), "portrait"); unsupportedParity.parity_cases[0].viewport = { width: 844, height: 390 }; assertFailed(unsupportedParity, "viewport 的方向超出 orientationPolicy.allowed 支持范围");
 });
 test("设计分辨率策略变化使布局合同身份失效", () => {
   const document = fidelityContract("specified");
