@@ -78,6 +78,7 @@ node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs
 - `$phaser4-game-audio`、`$phaser4-game-balance`：音频和数值平衡。
 - [`$phaser4-game-ad-integration`](skills/phaser4-game-ad-integration/SKILL.md)：通过 AppLovin 官方 MAX Cordova 原生插件接入移动端 Banner、插页与激励视频，管理多广告位静默预加载、广告位独立加载重试、Banner 布局刷新、视频不可用提示和隐私验收。
 - `$phaser4-game-qa-performance`：质量、测试和性能验证。
+- [`$phaser4-game-artifact-cleanup`](skills/phaser4-game-artifact-cleanup/SKILL.md)：核对引用、保留策略与文件归属，清理过期记录和未使用中间产物，保留有效证据与审计链。
 - `$phaser4-game-release`：发布候选、渠道和合规交付。
 - `$grilling`：只处理无法由事实确定且会改变范围、行为、预算、合规或数据边界的用户决定。
 
