@@ -90,3 +90,13 @@ test("runtime placements 接受明确的文本与程序预览配方", () => {
   };
   assert.deepEqual(validatePageSketchResourceBindings({ nodes, sceneId: "HudScene", stateId: "default", assets: [], regions, mappings: [], nodePresentations }), []);
 });
+
+
+/** 生成器和控制门共用绑定校验，阻断错误背景参照而不改写已确认 V2 身份。 */
+test("共享绑定门拒绝把背景节点作为父容器", () => {
+  const fixture = createBindingFixture();
+  fixture.nodes[0].layout_role = "background";
+  fixture.nodes[0].parent_layout_node_id = "viewport";
+  fixture.nodes[1].parent_layout_node_id = "hud.root";
+  assert.throws(() => validatePageSketchResourceBindings({ ...fixture, sceneId: "HudScene", stateId: "default" }), /不得相对背景/);
+});

@@ -117,7 +117,7 @@ test("项目子路径与百分号文件名保持在配置资源根下，控制�
   const referenceBytes = new TextEncoder().encode("reference bytes");
   const hashes = new Map([
     ["/game/evidence/nodes.json", new TextEncoder().encode("nodes")],
-    ["/game/evidence/manifest.json", new TextEncoder().encode("manifest")],
+    ["/game/evidence/manifest.json", new TextEncoder().encode(JSON.stringify({ regions: [{ id: "backdrop", layer: "background", scene_id: "HudScene", state_id: "default", layout_node_ids: ["hud.hero"] }] }))],
     ["/game/evidence/v3-pass.json", new TextEncoder().encode("evidence")],
     ["/game/refs/%252e%252e/reference.png", referenceBytes],
     ["/game/public/hero.png", new TextEncoder().encode("hero")],
@@ -128,6 +128,7 @@ test("项目子路径与百分号文件名保持在配置资源根下，控制�
     return `sha256:${[...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
   };
   const sketch = createSketch();
+  sketch.nodes.find((node) => node.layout_node_id === "hud.hero").parent_layout_node_id = "viewport";
   sketch.target_sha256 = await sha(referenceBytes);
   sketch.layout.target_sha256 = sketch.target_sha256;
   sketch.v2_nodes_sha256 = await sha(hashes.get("/game/evidence/nodes.json"));
@@ -151,6 +152,7 @@ test("项目子路径与百分号文件名保持在配置资源根下，控制�
     imageDecoder: async () => {},
   });
   assert.deepEqual(sources.errors, []);
+  assert.deepEqual(sources.lockedNodeIds, ["hud.hero"]);
   assert.equal(requested.some((url) => url.pathname === "/game/refs/%252e%252e/reference.png"), true);
   assert.equal(requested.every((url) => url.pathname.startsWith("/game/") && url.origin === "https://game.test"), true);
   hashes.set("/game/public/hero.png", new TextEncoder().encode("externally changed asset bytes"));

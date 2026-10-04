@@ -80,6 +80,13 @@ export function validateDecompositionElements(elements, regions = [], canvas = n
     const region = regionById.get(element.region_id); if (!region) errors.push(`${itemLabel}.region_id 未绑定当前 scene/state 区域`); else { regionIds.add(element.region_id); if (element.scene_id !== region.scene_id || element.state_id !== region.state_id) errors.push(`${itemLabel} scene/state 未绑定所属区域`); if (validBounds(region.bounds) && validBounds(element.bounds) && !containsBounds(region.bounds, element.bounds)) errors.push(`${itemLabel}.bounds 超出所属区域`); }
     if (isObject(canvas) && Number.isFinite(canvas.width) && Number.isFinite(canvas.height) && validBounds(element.bounds) && !containsBounds({ x: 0, y: 0, width: canvas.width, height: canvas.height }, element.bounds)) errors.push(`${itemLabel}.bounds 超出目标画布`);
   }
+  // 背景是固定显示层，不能用作布局容器或相对测量参照。
+  const backgrounds = new Set(elements.filter((element) => element?.role === "background" || regionById.get(element?.region_id)?.layer === "background").map((element) => element.element_id));
+  for (const element of elements) {
+    if (!isObject(element)) continue;
+    if (backgrounds.has(element.parent_element_id)) errors.push(`${label} 元素 ${element.element_id} 不得相对背景 ${element.parent_element_id} 布局，请改用视口、安全区或功能容器`);
+    if (backgrounds.has(element.element_id) && element.parent_element_id !== "viewport") errors.push(`${label} 背景 ${element.element_id} 必须独立归属 viewport`);
+  }
   validateSemanticGrouping(elements, { canvas }, errors, label);
   validateUiInteractionTree(elements, errors, label);
   const expectedRegionIds = [...regionById.keys()].filter(nonEmptyString).sort(); const actualRegionIds = [...regionIds].sort(); if (JSON.stringify(actualRegionIds) !== JSON.stringify(expectedRegionIds)) errors.push(`${label} 未完整覆盖当前 scene/state 区域`);

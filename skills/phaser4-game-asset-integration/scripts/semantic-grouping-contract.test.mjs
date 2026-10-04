@@ -124,3 +124,19 @@ test("组件/placement 源显式声明进入 proposal 元素，缺失声明不�
   assert.equal(Object.hasOwn(elements[2], "parent_element_id"), false);
   assert.equal(Object.hasOwn(elements[2], "ui_layout"), false);
 });
+
+
+/** 在 V2 拆解阶段拒绝视觉背景承担布局职责，避免冻结后才发现错误父级。 */
+test("拆解阶段拒绝以背景作父级与将背景放入功能容器", () => {
+  const wrongParent = validElements();
+  wrongParent[1].role = "background";
+  const errors = [];
+  validateDecompositionElements(wrongParent, regions(), CANVAS, "elements", errors);
+  assert(errors.some((message) => message.includes("不得相对背景")));
+  assert(errors.some((message) => message.includes("必须独立归属 viewport")));
+  const regionBackground = regions();
+  regionBackground[0].layer = "background";
+  const layerErrors = [];
+  validateDecompositionElements(validElements(), regionBackground, CANVAS, "elements", layerErrors);
+  assert(layerErrors.some((message) => message.includes("不得相对背景")));
+});

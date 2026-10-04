@@ -1,3 +1,4 @@
+import { assertPageSketchBackgroundLayout } from "./page-sketch-contract.mjs";
 /** 收集区域技术合同中声明的 asset_id，覆盖 expected_assets 与原子映射两种合同形态。 */
 function collectRegionAssetIds(region) {
   const ids = new Set();
@@ -121,6 +122,7 @@ export function validatePageSketchResourceBindings({ nodes, sceneId, stateId, as
     throw new TypeError("nodePresentations 必须是节点 presentation 映射");
   }
 
+  assertPageSketchBackgroundLayout({ nodes, regions, sceneId, stateId });
   const nodeById = new Map();
   for (const node of nodes) {
     if (!node || typeof node.layout_node_id !== "string" || !node.layout_node_id.trim() || nodeById.has(node.layout_node_id)) {

@@ -286,6 +286,7 @@ function createMountedEditor({ save: saveCallback = async () => {}, getViewportR
     controlsHost,
     editor,
     nodes,
+    runtimeBounds,
     saved,
     setHostRect(rect) { hostRect = rect; liveViewportRect = rect; },
     setViewportRect(rect) { liveViewportRect = rect; },
@@ -426,6 +427,116 @@ test("数值坐标输入设置所选节点的父级相对偏移", async () => {
   environment.editor.destroy();
 });
 
+/** 重置清空所有打开时已有的偏移，恢复冻结父子几何并按自动保存策略写入。 */
+test("重置布局恢复初始坐标和父子关系且不改写 V2 输入节点", async () => {
+  const fixture = createFixture();
+  const sourceNodes = structuredClone(fixture.nodes);
+  const notifications = [];
+  const environment = createMountedEditor({
+    nodes: fixture.nodes,
+    layout: fixture.layout,
+    editorOptions: { onLayoutChange: (layout) => notifications.push(layout) },
+  });
+
+  const reset = environment.editor.resetToInitial();
+  assert.deepEqual(reset.offsets, {});
+  assert.deepEqual(environment.editor.getLayout().offsets, {});
+  assert.deepEqual(fixture.nodes, sourceNodes);
+  assert.deepEqual(notifications.at(-1).offsets, {});
+  const parentFrame = findElements(environment.document.body, (node) => node.getAttribute("data-layout-node-id") === "hud.group")[0];
+  const childFrame = findElements(environment.document.body, (node) => node.getAttribute("data-layout-node-id") === "hud.button")[0];
+  assert.equal(parentFrame.getAttribute("x"), "100");
+  assert.equal(childFrame.getAttribute("x"), "180");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(environment.saved.length, 1);
+  assert.deepEqual(environment.saved[0].offsets, {});
+  environment.editor.destroy();
+});
+
+/** 外部改写传入节点后，重置仍使用挂载时冻结的父级和 target_bounds 副本。 */
+test("重置基于编辑器隔离的节点快照", () => {
+  const environment = createMountedEditor();
+  environment.nodes[1].parent_layout_node_id = "viewport";
+  environment.nodes[1].target_bounds.x = 9;
+
+  const childButton = findElements(environment.document.body, (node) => node.dataset.layoutNodeId === "hud.button")[0];
+  childButton.dispatch("click");
+  environment.editor.resetToInitial();
+  const childItem = findElements(environment.document.body, (node) => node.dataset.layoutNodeId === "hud.button")[0];
+  const targetFrame = findElements(environment.document.body, (node) => node.getAttribute("class") === "vle-frame-target")[0];
+  assert.equal(childItem.style.paddingLeft, "20px");
+  assert.equal(targetFrame.getAttribute("x"), "180");
+  assert.equal(environment.nodes[1].parent_layout_node_id, "viewport");
+  assert.equal(environment.nodes[1].target_bounds.x, 9);
+  environment.editor.destroy();
+});
+
+/** reset 期间的拖动被取消；锁定、正式预览和销毁状态禁止重置副作用。 */
+test("重置取消拖动并遵守锁定预览与销毁状态", async () => {
+  const environment = createMountedEditor();
+  const frame = findElements(environment.document.body, (node) => node.getAttribute("data-layout-node-id") === "hud.group")[0];
+  frame.dispatch("pointerdown", { button: 0, pointerId: 1, clientX: 110, clientY: 70 });
+  environment.window.dispatch("pointermove", { pointerId: 1, clientX: 142, clientY: 70 });
+  assert.deepEqual(environment.editor.getLayout().offsets["hud.group"], { x: 36, y: 6 });
+  assert.deepEqual(environment.editor.resetToInitial().offsets, {});
+  environment.window.dispatch("pointerup", { pointerId: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(environment.saved.length, 1);
+  assert.deepEqual(environment.saved[0].offsets, {});
+
+  environment.editor.setInteractionEnabled(false);
+  assert.throws(() => environment.editor.resetToInitial(), /操作锁定期间/);
+  environment.editor.setInteractionEnabled(true);
+  environment.editor.setPreviewMode(true);
+  assert.throws(() => environment.editor.resetToInitial(), /正式效果预览期间/);
+  environment.editor.setPreviewMode(false);
+  const beforeDestroy = environment.editor.getLayout();
+  environment.editor.destroy();
+  assert.deepEqual(environment.editor.resetToInitial(), beforeDestroy);
+  assert.deepEqual(environment.editor.getLayout(), beforeDestroy);
+  assert.equal(environment.saved.length, 1);
+});
+
+/** reset 重排失败时恢复此前运行布局、保留原错误且不会自动保存。 */
+test("重置重排失败不保存且恢复原运行布局", async () => {
+  const environment = createMountedEditor();
+  const initial = environment.editor.getLayout();
+  const receivedOffsets = [];
+  environment.setReflowOverride((nextLayout) => {
+    receivedOffsets.push(structuredClone(nextLayout.offsets));
+    for (const node of environment.nodes) {
+      const offset = nextLayout.offsets[node.layout_node_id] ?? { x: 0, y: 0 };
+      environment.runtimeBounds.set(node.layout_node_id, {
+        ...node.target_bounds,
+        x: node.target_bounds.x + offset.x,
+        y: node.target_bounds.y + offset.y,
+      });
+    }
+    if (Object.keys(nextLayout.offsets).length === 0) throw new Error("reset scene failed");
+  });
+
+  assert.throws(() => environment.editor.resetToInitial(), /reset scene failed/);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(receivedOffsets[0], {});
+  assert.deepEqual(receivedOffsets.at(-1), initial.offsets);
+  assert.deepEqual(environment.editor.getLayout(), initial);
+  assert.equal(environment.editor.isPreviewHealthy(), true);
+  assert.equal(environment.runtimeBounds.get("hud.group").x, 104);
+  assert.equal(environment.saved.length, 0);
+  assert.match(findStatus(environment.document).textContent, /布局重置失败：reset scene failed/);
+  environment.editor.destroy();
+});
+
+/** 重置的自动保存失败会保留 error 状态，不产生未处理 Promise 拒绝。 */
+test("重置自动保存失败不报告已保存", async () => {
+  const environment = createMountedEditor({ save: async () => { throw new Error("disk full"); } });
+  environment.editor.resetToInitial();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(findStatus(environment.document).dataset.state, "error");
+  assert.match(findStatus(environment.document).textContent, /保存失败：disk full/);
+  environment.editor.destroy();
+});
+
 /** 保存或确认锁定期间，树、框、键盘、透明度和数值输入均不能改变布局。 */
 test("操作锁禁用布局控件并阻止指针键盘及坐标改动", () => {
   const environment = createMountedEditor();
@@ -520,5 +631,74 @@ test("viewport 裁剪越界叠图但不钳制草图节点坐标", () => {
   assert.equal(frame.getAttribute("width"), "460");
   assert.equal(nodes[0].target_bounds.x, -24);
   assert.equal(nodes[0].target_bounds.width, 460);
+  environment.editor.destroy();
+});
+
+
+/** 完全出屏节点保留真实坐标，通过边缘代理框继续拖动，且覆盖层仍受 viewport 裁剪。 */
+test("子节点越过父框或完全出屏后仍可通过独立框与边缘框拖动", async () => {
+  const fixture = createFixture();
+  fixture.layout.offsets["hud.button"] = { x: 500, y: -200 };
+  const environment = createMountedEditor({ layout: fixture.layout, editorOptions: { saveOnChange: false } });
+  const treeButton = findElements(environment.controlsHost, (node) => node.dataset.layoutNodeId === "hud.button")[0];
+  treeButton.dispatch("click");
+  const frame = findElements(environment.document.body, (node) => node.getAttribute("data-layout-node-id") === "hud.button")[0];
+  assert.equal(frame.getAttribute("data-offscreen-handle"), "true");
+  assert(Number(frame.getAttribute("x")) < 400);
+  assert(Number(frame.getAttribute("y")) >= 0);
+  frame.dispatch("pointerdown", { button: 0, pointerId: 21, clientX: 470, clientY: 60 });
+  environment.window.dispatch("pointermove", { pointerId: 21, clientX: 438, clientY: 76 });
+  assert.deepEqual(environment.editor.getLayout().offsets["hud.button"], { x: 468, y: -184 });
+  environment.window.dispatch("pointerup", { pointerId: 21 });
+  const parentFrame = findElements(environment.document.body, (node) => node.getAttribute("data-layout-node-id") === "hud.group")[0];
+  assert.equal(parentFrame.style.pointerEvents, "stroke");
+  const svg = findElements(environment.document.body, (node) => node.className === "vle-svg")[0];
+  const hitFrames = Array.from(svg.children).filter((node) => node.getAttribute("data-layout-node-id"));
+  assert.equal(hitFrames.at(-1).getAttribute("data-layout-node-id"), "hud.button");
+  environment.editor.destroy();
+});
+
+/** 背景和携带背景的父级不可被任何输入移动，普通兄弟节点仍可编辑。 */
+test("背景位置锁覆盖拖动键盘数值输入与祖先移动", () => {
+  const fixture = createFixture();
+  fixture.nodes.push({ layout_node_id: "hud.other", parent_layout_node_id: "hud.group", target_bounds: { x: 20, y: 20, width: 30, height: 30 } });
+  const environment = createMountedEditor({ nodes: fixture.nodes, editorOptions: { lockedNodeIds: ["hud.button"], saveOnChange: false } });
+  const initial = environment.editor.getLayout();
+  for (const id of ["hud.button", "hud.group"]) {
+    const treeButton = findElements(environment.controlsHost, (node) => node.dataset.layoutNodeId === id)[0];
+    treeButton.dispatch("click");
+    const frame = findElements(environment.document.body, (node) => node.getAttribute("data-layout-node-id") === id)[0];
+    assert.equal(frame.style.pointerEvents, "none");
+    frame.dispatch("pointerdown", { button: 0, pointerId: 11, clientX: 180, clientY: 150 });
+    environment.window.dispatch("pointermove", { pointerId: 11, clientX: 210, clientY: 170 });
+    frame.dispatch("keydown", { key: "ArrowRight" });
+    const xInput = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "相对父级 X 偏移")[0];
+    assert.equal(xInput.disabled, true);
+    xInput.value = "123";
+    xInput.dispatch("change");
+    assert.deepEqual(environment.editor.getLayout(), initial);
+  }
+  const otherButton = findElements(environment.controlsHost, (node) => node.dataset.layoutNodeId === "hud.other")[0];
+  otherButton.dispatch("click");
+  const otherFrame = findElements(environment.document.body, (node) => node.getAttribute("data-layout-node-id") === "hud.other")[0];
+  otherFrame.dispatch("keydown", { key: "ArrowRight" });
+  assert.deepEqual(environment.editor.getLayout().offsets["hud.other"], { x: 1, y: 0 });
+  environment.editor.destroy();
+});
+
+
+/** 子节点在父框外但仍位于预览内时使用自己的真实框命中，不需要先恢复父级坐标。 */
+test("子节点离开父容器仍能从真实节点框再次开始拖动", () => {
+  const fixture = createFixture();
+  fixture.layout.offsets["hud.button"] = { x: -160, y: -120 };
+  const environment = createMountedEditor({ layout: fixture.layout, editorOptions: { saveOnChange: false } });
+  findElements(environment.controlsHost, (node) => node.dataset.layoutNodeId === "hud.button")[0].dispatch("click");
+  const frame = findElements(environment.document.body, (node) => node.getAttribute("data-layout-node-id") === "hud.button")[0];
+  assert.equal(frame.getAttribute("x"), "20");
+  assert.equal(frame.getAttribute("y"), "30");
+  assert.equal(frame.getAttribute("data-offscreen-handle"), null);
+  frame.dispatch("pointerdown", { button: 0, pointerId: 22, clientX: 130, clientY: 80 });
+  environment.window.dispatch("pointermove", { pointerId: 22, clientX: 162, clientY: 88 });
+  assert.deepEqual(environment.editor.getLayout().offsets["hud.button"], { x: -128, y: -112 });
   environment.editor.destroy();
 });

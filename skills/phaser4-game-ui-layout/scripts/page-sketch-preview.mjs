@@ -1,4 +1,4 @@
-import { hashPageSketchContent, validatePageSketchDocument, validateProjectRelativePath } from "./page-sketch-contract.mjs";
+import { assertPageSketchBackgroundLayout, hashPageSketchContent, validatePageSketchDocument, validateProjectRelativePath } from "./page-sketch-contract.mjs";
 import { validateVisualLayoutDocument } from "./visual-layout-editor.mjs";
 
 /** 以 WebCrypto 校验已下载源文件的真实内容身份。 */
@@ -68,7 +68,17 @@ export async function loadPageSketchSources(sketchInput, { projectRootUrl, fetch
     [sketch.v3_manifest_file, sketch.v3_manifest_sha256, "V3 资源清单"],
     [sketch.v3_evidence_file, sketch.v3_evidence_sha256, "V3 验收证据"],
   ];
-  await Promise.all(sources.map(([file, sha, label]) => loadFile(file, sha, label)));
+  const sourceFiles = await Promise.all(sources.map(([file, sha, label]) => loadFile(file, sha, label)));
+  let lockedNodeIds = [];
+  let backgroundLayoutError = null;
+  try {
+    const manifest = sourceFiles[1] ? JSON.parse(new TextDecoder().decode(sourceFiles[1].bytes)) : {};
+    // 共用生成与正式阶段的布局门，不允许开发预览偷偷改写已冻结的父子关系。
+    lockedNodeIds = assertPageSketchBackgroundLayout({ nodes: sketch.nodes, regions: manifest.regions ?? [], sceneId: sketch.scene_id, stateId: sketch.state_id });
+  } catch (error) {
+    backgroundLayoutError = error.message;
+    errors.push(`背景布局关系无效：${error.message}`);
+  }
 
   const reference = await loadFile(sketch.reference_file, sketch.target_sha256, "冻结效果图");
   let referenceUrl = null;
@@ -127,6 +137,8 @@ export async function loadPageSketchSources(sketchInput, { projectRootUrl, fetch
   }
 
   return {
+    lockedNodeIds,
+    backgroundLayoutError,
     assets,
     confirmationError,
     errors,

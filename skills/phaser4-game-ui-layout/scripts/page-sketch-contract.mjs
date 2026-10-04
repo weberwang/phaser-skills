@@ -6,6 +6,21 @@ export const PAGE_SKETCH_RESOURCE_MAP_SCHEMA = "phaser-page-sketch-resources/1.0
 const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const PRESENTATION_KINDS = new Set(["image", "text", "container", "runtime-program"]);
 
+/** 背景仅属于视口显示层，不可成为元素的布局父级；返回明确归属的固定背景节点。 */
+export function assertPageSketchBackgroundLayout({ nodes, regions = [], sceneId, stateId }) {
+  const backgroundIds = new Set(nodes.filter((node) => node.layout_role === "background" || node.layer === "background").map((node) => node.layout_node_id));
+  const backgroundRegions = regions.filter((region) => region.layer === "background" && region.scene_id === sceneId && region.state_id === stateId);
+  const regionIds = new Set(backgroundRegions.map((region) => region.id));
+  const nodeIds = new Set(nodes.map((node) => node.layout_node_id));
+  for (const region of backgroundRegions) for (const id of region.layout_node_ids ?? []) if (nodeIds.has(id)) backgroundIds.add(id);
+  for (const node of nodes) if (regionIds.has(node.region_id)) backgroundIds.add(node.layout_node_id);
+  for (const node of nodes) {
+    if (backgroundIds.has(node.parent_layout_node_id)) throw new TypeError(`节点 ${node.layout_node_id} 不得相对背景 ${node.parent_layout_node_id} 布局；请在 V2 改用 viewport、safe-area 或功能容器并重新确认`);
+    if (backgroundIds.has(node.layout_node_id) && node.parent_layout_node_id !== "viewport") throw new TypeError(`背景 ${node.layout_node_id} 必须独立归属 viewport，不能放入可移动功能容器；请更新 V2 显示树并重新确认`);
+  }
+  return [...backgroundIds];
+}
+
 /** 判断普通 JSON 对象，避免数组或 null 被误认为合同节点。 */
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);

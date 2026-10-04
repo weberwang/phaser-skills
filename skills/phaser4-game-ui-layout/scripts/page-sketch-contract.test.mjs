@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { canonicalPageSketchContent, hashPageSketchContent, validatePageSketchDocument, validateProjectRelativePath } from "./page-sketch-contract.mjs";
+import { assertPageSketchBackgroundLayout, canonicalPageSketchContent, hashPageSketchContent, validatePageSketchDocument, validateProjectRelativePath } from "./page-sketch-contract.mjs";
 
 const SHA = `sha256:${"a".repeat(64)}`;
 
@@ -71,4 +71,23 @@ test("相对项目文件拒绝绝对路径和目录上跳", () => {
   assert.throws(() => validateProjectRelativePath("C:\\secret.png", "file"), /项目相对路径/);
   assert.throws(() => validateProjectRelativePath("https:secret.png", "file"), /项目相对路径/);
   assert.throws(() => validateProjectRelativePath("public/bad\u0000name.png", "file"), /控制字符/);
+});
+
+
+/** 背景固定归属视口，前景只参照真正的功能容器；原始父子关系不得被静默改写。 */
+test("背景不作为相对布局父级且不能放入可移动功能容器", () => {
+  const nodes = [
+    { layout_node_id: "back", region_id: "back-region", parent_layout_node_id: "viewport" },
+    { layout_node_id: "group", parent_layout_node_id: "safe-area" },
+    { layout_node_id: "button", parent_layout_node_id: "group" },
+  ];
+  const options = { nodes, regions: [{ id: "back-region", layer: "background", scene_id: "main", state_id: "default", layout_node_ids: ["back"] }], sceneId: "main", stateId: "default" };
+  const baseline = structuredClone(nodes);
+  assert.deepEqual(assertPageSketchBackgroundLayout(options), ["back"]);
+  assert.deepEqual(nodes, baseline);
+  nodes[2].parent_layout_node_id = "back";
+  assert.throws(() => assertPageSketchBackgroundLayout(options), /不得相对背景/);
+  nodes[2].parent_layout_node_id = "group";
+  nodes[0].parent_layout_node_id = "group";
+  assert.throws(() => assertPageSketchBackgroundLayout(options), /必须独立归属 viewport/);
 });

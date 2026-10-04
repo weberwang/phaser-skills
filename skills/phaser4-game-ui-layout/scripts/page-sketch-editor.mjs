@@ -51,6 +51,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
   const openButton = document.getElementById("open-sketch");
   const previewButton = document.getElementById("toggle-preview");
   const saveButton = document.getElementById("save-sketch");
+  const resetButton = document.getElementById("reset-sketch");
   const confirmButton = document.getElementById("confirm-sketch");
   const authorInput = document.getElementById("confirmed-by");
   const status = document.getElementById("page-status");
@@ -90,6 +91,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
     previewButton.textContent = previewMode ? "返回布局编辑" : "预览正式效果";
     previewButton.setAttribute("aria-pressed", String(previewMode));
     saveButton.disabled = !editor || operationInFlight;
+    resetButton.disabled = !editor || operationInFlight || previewMode;
     authorInput.disabled = !editor || operationInFlight;
     confirmButton.disabled = !editor || operationInFlight || !draftSaved || !previewHealthy || Boolean(sources?.errors.length) || !confirmationHashValid || !authorInput.value.trim() || hasConfirmation;
     openButton.disabled = operationInFlight;
@@ -189,6 +191,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
       confirmationHashValid = !sources.confirmationError;
       if (sources.confirmationError) renderErrors([sources.confirmationError, ...sources.errors]);
       else renderErrors(sources.errors);
+      if (sources.backgroundLayoutError) throw new Error(sources.backgroundLayoutError);
       if (!sources.referenceUrl) throw new Error("冻结效果图不能从当前开发服务读取或 SHA 不匹配，请先修复资源路径");
 
       preview = await mountPreview({ host: surface, sketch, sources });
@@ -207,6 +210,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
       editor = mountEditor({
         host: surface,
         controlsHost,
+        lockedNodeIds: sources.lockedNodeIds ?? [],
         referenceUrl: sources.referenceUrl,
         viewport: sketch.viewport,
         nodes: sketch.nodes,
@@ -244,6 +248,21 @@ export async function initializePageSketchApplication({ document, projectRootUrl
       operationInFlight = false;
       updateButtons();
     }
+  }
+
+  /** 恢复冻结 V2 的坐标与显示树，先作为未保存草稿，再沿用保存和确认流程。 */
+  function onResetSketch() {
+    if (!editor || operationInFlight || previewMode) return;
+    try {
+      editor.resetToInitial();
+      // 重置属于布局修改，不能沿用重置前的已保存快照或人工签收状态。
+      draftSaved = false;
+      status.textContent = "已恢复初始坐标与父子关系；请保存草图并重新确认。";
+    } catch (error) {
+      draftSaved = false;
+      status.textContent = `重置布局失败：${error.message}`;
+    }
+    updateButtons();
   }
 
   /** 将当前 V2 布局偏移写入完整 page-sketch 文件并清空旧确认。 */
@@ -327,6 +346,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
   openButton.addEventListener("click", onOpenSketch);
   previewButton.addEventListener("click", onTogglePreview);
   saveButton.addEventListener("click", () => { void onSaveDraft(); });
+  resetButton.addEventListener("click", onResetSketch);
   confirmButton.addEventListener("click", () => { void onConfirmSketch(); });
   authorInput.addEventListener("input", updateButtons);
   window.addEventListener("resize", resizeSurface, { passive: true });

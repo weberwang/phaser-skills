@@ -62,7 +62,7 @@ function createPageDocument() {
     addEventListener(type, callback) { this.listeners.set(type, [...(this.listeners.get(type) ?? []), callback]); },
   };
   for (const [id, tag] of [
-    ["stage-frame", "section"], ["stage-surface", "div"], ["open-sketch", "button"], ["toggle-preview", "button"], ["save-sketch", "button"],
+    ["stage-frame", "section"], ["stage-surface", "div"], ["open-sketch", "button"], ["toggle-preview", "button"], ["save-sketch", "button"], ["reset-sketch", "button"],
     ["confirm-sketch", "button"], ["confirmed-by", "input"], ["page-status", "span"], ["resource-errors", "aside"],
     ["stage-device", "div"], ["layout-controls", "div"], ["preview-device", "select"], ["device-orientation", "select"],
     ["device-summary", "p"], ["toggle-fullscreen", "button"],
@@ -150,6 +150,13 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认及�
           getLayout() { return structuredClone(layout); },
           setInteractionEnabled(enabled) { this.interactionEnabled = enabled; },
           setPreviewMode(enabled) { this.previewMode = enabled; },
+          /** 模拟恢复初始偏移并通知宿主草稿已修改。 */
+          resetToInitial() {
+            if (!this.interactionEnabled || this.previewMode) throw new Error("当前不能重置");
+            layout = { ...layout, offsets: {} };
+            options.onLayoutChange(layout);
+            return structuredClone(layout);
+          },
           attemptEdit(nextLayout) {
             if (!this.interactionEnabled) return false;
             layout = structuredClone(nextLayout);
@@ -191,6 +198,7 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认及�
   previewButton.dispatch("click");
   assert.equal(previewButton.textContent, "返回布局编辑");
   assert.equal(editor.previewMode, true);
+  assert.equal(elements.get("reset-sketch").disabled, true);
   assert.deepEqual(editor.getLayout(), beforePreview);
   previewButton.dispatch("click");
   assert.equal(previewButton.textContent, "预览正式效果");
@@ -203,7 +211,7 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认及�
   elements.get("save-sketch").dispatch("click");
   await saveStarted.promise;
   assert.equal(editor.interactionEnabled, false);
-  for (const id of ["open-sketch", "toggle-preview", "save-sketch", "confirm-sketch", "confirmed-by"]) assert.equal(elements.get(id).disabled, true);
+  for (const id of ["open-sketch", "toggle-preview", "reset-sketch", "save-sketch", "confirm-sketch", "confirmed-by"]) assert.equal(elements.get(id).disabled, true);
   const attemptedLayout = { ...createSketch().layout, offsets: { "hud.root": { x: 30, y: 0 } } };
   assert.equal(editor.attemptEdit(attemptedLayout), false);
   elements.get("save-sketch").dispatch("click");
@@ -219,7 +227,7 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认及�
   elements.get("confirm-sketch").dispatch("click");
   await confirmStarted.promise;
   assert.equal(editor.interactionEnabled, false);
-  for (const id of ["open-sketch", "toggle-preview", "save-sketch", "confirm-sketch", "confirmed-by"]) assert.equal(elements.get(id).disabled, true);
+  for (const id of ["open-sketch", "toggle-preview", "reset-sketch", "save-sketch", "confirm-sketch", "confirmed-by"]) assert.equal(elements.get(id).disabled, true);
   assert.equal(editor.attemptEdit(attemptedLayout), false);
   elements.get("save-sketch").dispatch("click");
   elements.get("confirm-sketch").dispatch("click");
@@ -230,6 +238,18 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认及�
   assert.equal(editor.interactionEnabled, true);
   assert.equal(diskDocument.confirmation.confirmed_by, "设计师甲");
   assert.equal(elements.get("confirm-sketch").disabled, true);
+  const confirmedDisk = structuredClone(diskDocument);
+  editor.attemptEdit({ ...createSketch().layout, offsets: { "hud.root": { x: 48, y: -8 } } });
+  assert.deepEqual(editor.getLayout().offsets, { "hud.root": { x: 48, y: -8 } });
+  elements.get("reset-sketch").dispatch("click");
+  assert.deepEqual(editor.getLayout().offsets, {});
+  assert.match(elements.get("page-status").textContent, /恢复初始坐标与父子关系/);
+  assert.deepEqual(diskDocument, confirmedDisk, "重置不能绕过显式保存直接覆写文件");
+  assert.equal(elements.get("confirm-sketch").disabled, true);
+  elements.get("save-sketch").dispatch("click");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(diskDocument.confirmation, null);
+  assert.equal(elements.get("confirm-sketch").disabled, false);
 });
 
 
