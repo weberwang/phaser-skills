@@ -53,7 +53,6 @@ export async function initializePageSketchApplication({ document, projectRootUrl
   const saveButton = document.getElementById("save-sketch");
   const resetButton = document.getElementById("reset-sketch");
   const confirmButton = document.getElementById("confirm-sketch");
-  const authorInput = document.getElementById("confirmed-by");
   const status = document.getElementById("page-status");
   const errorsPanel = document.getElementById("resource-errors");
   let fileStore = null;
@@ -92,8 +91,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
     previewButton.setAttribute("aria-pressed", String(previewMode));
     saveButton.disabled = !editor || operationInFlight;
     resetButton.disabled = !editor || operationInFlight || previewMode;
-    authorInput.disabled = !editor || operationInFlight;
-    confirmButton.disabled = !editor || operationInFlight || !draftSaved || !previewHealthy || Boolean(sources?.errors.length) || !confirmationHashValid || !authorInput.value.trim() || hasConfirmation;
+    confirmButton.disabled = !editor || operationInFlight || !draftSaved || !previewHealthy || Boolean(sources?.errors.length) || !confirmationHashValid || hasConfirmation;
     openButton.disabled = operationInFlight;
   }
 
@@ -225,7 +223,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
           draftSaved = false;
           const savedConfirmation = fileStore.getDocument().confirmation;
           if (savedConfirmation) status.textContent = "草图已修改；保存后旧确认会失效。";
-          else status.textContent = "草图有未保存修改；请先保存，再由确认人签收。";
+          else status.textContent = "草图有未保存修改；请先保存，再点击确认草图。";
           updateButtons();
         },
         onPreviewHealthChange(healthy, message) {
@@ -278,7 +276,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
       if (saved.confirmation !== null) throw new Error("草图修改后 confirmation 必须已清除");
       draftSaved = true;
       confirmationHashValid = true;
-      status.textContent = "草图已保存并读回复核；确认人签收后才可进入 V5。";
+      status.textContent = "草图已保存并读回复核；点击确认草图后才可进入 V5。";
     } catch (error) {
       draftSaved = false;
       status.textContent = `保存草图失败：${error.message}`;
@@ -297,7 +295,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
     const lockedEditor = editor;
     updateButtons();
     try {
-      // 确认哈希计算与文件回写期间冻结节点、作者及操作按钮，防止签收旧快照后继续编辑。
+      // 确认哈希计算与文件回写期间冻结节点及操作按钮，防止签收旧快照后继续编辑。
       lockedEditor.setInteractionEnabled(false);
       const sourceCheck = await verifySources(fileStore.getDocument(), { projectRootUrl, pageOrigin: window.location.origin });
       const sourceErrors = Array.isArray(sourceCheck?.errors) ? sourceCheck.errors : [];
@@ -306,7 +304,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
         renderErrors([...sources.errors, ...sourceErrors]);
         throw new Error(sourceErrors.length ? `确认前来源复核失败：${sourceErrors.join("；")}` : "确认前来源复核未通过");
       }
-      const saved = await fileStore.confirm(authorInput.value, { previewReady: true, layout: lockedEditor.getLayout() });
+      const saved = await fileStore.confirm({ previewReady: true, layout: lockedEditor.getLayout() });
       confirmationHashValid = true;
       status.textContent = `草图已确认，可推进 V5：${saved.confirmation.content_sha256}`;
       renderErrors([]);
@@ -348,7 +346,6 @@ export async function initializePageSketchApplication({ document, projectRootUrl
   saveButton.addEventListener("click", () => { void onSaveDraft(); });
   resetButton.addEventListener("click", onResetSketch);
   confirmButton.addEventListener("click", () => { void onConfirmSketch(); });
-  authorInput.addEventListener("input", updateButtons);
   window.addEventListener("resize", resizeSurface, { passive: true });
   window.addEventListener("pagehide", () => {
     resizeObserver?.disconnect();

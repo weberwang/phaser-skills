@@ -48,7 +48,7 @@ V0-V5、G0-G3 与领域阶段是 `stageId`，不是另一套状态机。只有�
 | V1 | `in-progress`/过程状态 | 视觉契约、冻结图、布局和容差 |
 | V2 | `v2-production-planning-complete` | 拆解图、技术 JSON、coverage、component×state、父子/停靠/对齐/显示层事实、生产方案和拆解确认 |
 | V3 | `v3-formal-acceptance-complete` | 正式资产、组件资源状态、`visualManifestFile`/`visualManifestSha256` 与生产验收 |
-| V4 | `v4-page-sketch-confirmed` | `phaser-page-sketch/1.0` 文件、V2/V3 来源、资源 SHA、确认人/时间与内容摘要 |
+| V4 | `v4-page-sketch-confirmed` | `phaser-page-sketch/1.0` 文件、V2/V3 来源、资源 SHA、确认时间与内容摘要 |
 | V5 | `v5-runtime-integration-candidate` | runtime replay、fresh fidelity、正式 Scene 消费、无替代 |
 
 V3→V4 不要求先完成正式 Scene 代码。V4 保存不产生完成态；确认内容后才允许登记 V4 不可变引用并进入 V5。正式执行准入和 COMPLETE 会重新读取草图及来源文件，V5 运行候选必须提供 `pageSketchSha256` 等于当前 V4 引用 SHA。

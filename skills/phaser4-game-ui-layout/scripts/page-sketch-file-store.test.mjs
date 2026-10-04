@@ -49,7 +49,7 @@ function memoryHandle(initial = createSketch(), { delayWrite = false } = {}) {
 }
 
 test("草图保存完整JSON并使已确认回执失效", async () => {
-  const confirmed = createSketch({ status: "accepted", confirmed_at: "2026-10-01T00:00:00.000Z", confirmed_by: "原作者", content_sha256: SHA });
+  const confirmed = createSketch({ status: "accepted", confirmed_at: "2026-10-01T00:00:00.000Z", content_sha256: SHA });
   const handle = memoryHandle(confirmed);
   const store = await createPageSketchFileStore(handle);
   const layout = { ...confirmed.layout, offsets: { root: { x: 12, y: -4 } } };
@@ -65,15 +65,14 @@ test("草图必须先保存且资源预览通过后才能写确认内容hash", a
   const store = await createPageSketchFileStore(handle);
   const draft = createSketch().layout;
   const changed = { ...draft, offsets: { root: { x: 5, y: 8 } } };
-  await assert.rejects(store.confirm("作者", { previewReady: true, layout: changed }), /未保存/);
-  await assert.rejects(store.confirm("作者", { previewReady: false, layout: draft }), /未通过/);
-  await assert.rejects(store.confirm("  ", { previewReady: true, layout: draft }), /确认人/);
+  await assert.rejects(store.confirm({ previewReady: true, layout: changed }), /未保存/);
+  await assert.rejects(store.confirm({ previewReady: false, layout: draft }), /未通过/);
   await store.saveDraft(changed);
   const beforeConfirmation = store.getDocument();
   const expectedHash = await hashPageSketchContent(beforeConfirmation);
-  const confirmed = await store.confirm("设计师甲", { previewReady: true, layout: changed });
+  const confirmed = await store.confirm({ previewReady: true, layout: changed });
   assert.equal(confirmed.confirmation.status, "accepted");
-  assert.equal(confirmed.confirmation.confirmed_by, "设计师甲");
+  assert.equal(Object.hasOwn(confirmed.confirmation, "confirmed_by"), false);
   assert.equal(confirmed.confirmation.content_sha256, expectedHash);
   assert.equal(JSON.parse(handle.contents).confirmation.content_sha256, expectedHash);
 });

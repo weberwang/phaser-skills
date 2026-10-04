@@ -142,7 +142,7 @@ export function applyVisualLayoutDrag(layout, nodes, layoutNodeId, delta, { snap
   return validateVisualLayoutDocument(next, nodes);
 }
 
-/** 设置节点相对父级的最终偏移，供数值坐标输入使用。 */
+/** 设置节点相对冻结布局的增量偏移；最终坐标在编辑面板中换算。 */
 export function setVisualLayoutOffset(layout, nodes, layoutNodeId, offset) {
   const nodeMap = validateLayoutNodes(nodes);
   if (!nodeMap.has(layoutNodeId)) throw new TypeError(`未知 layout_node_id：${layoutNodeId}`);
@@ -273,18 +273,47 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
   opacityInput.value = "35";
   opacityInput.setAttribute("aria-label", "效果图透明度");
   opacityRow.append(opacityLabel, opacityInput);
+  const coordinateModeRow = makeElement(document, "label", "vle-row", "坐标模式");
+  const coordinateModeInput = makeElement(document, "select", "vle-button");
+  coordinateModeInput.setAttribute("aria-label", "坐标模式");
+  for (const [value, text] of [["relative", "相对父容器"], ["absolute", "绝对坐标（视口）"]]) {
+    const option = makeElement(document, "option", "", text);
+    option.value = value;
+    coordinateModeInput.append(option);
+  }
+  coordinateModeInput.value = "relative";
+  coordinateModeRow.append(coordinateModeInput);
+  // 参照点属于父容器坐标系，节点本身始终用左上角测量，避免切换时隐式改变锚点。
+  const relativePoints = {
+    "top-left": { label: "左上角", x: 0, y: 0 },
+    "top-right": { label: "右上角", x: 1, y: 0 },
+    "bottom-left": { label: "左下角", x: 0, y: 1 },
+    "bottom-right": { label: "右下角", x: 1, y: 1 },
+    center: { label: "中心点", x: 0.5, y: 0.5 },
+  };
+  const relativePointRow = makeElement(document, "label", "vle-row", "父容器参照点");
+  const relativePointInput = makeElement(document, "select", "vle-button");
+  relativePointInput.setAttribute("aria-label", "父容器参照点");
+  for (const [value, point] of Object.entries(relativePoints)) {
+    const option = makeElement(document, "option", "", point.label);
+    option.value = value;
+    relativePointInput.append(option);
+  }
+  relativePointInput.value = "top-left";
+  relativePointRow.append(relativePointInput);
+  const coordinateOriginLabel = makeElement(document, "div", "vle-current");
   const coordinateRow = makeElement(document, "div", "vle-coordinates");
-  const xCoordinateLabel = makeElement(document, "label", "vle-coordinate", "相对父级 X");
+  const xCoordinateLabel = makeElement(document, "label", "vle-coordinate", "X");
   const xCoordinateInput = makeElement(document, "input");
   xCoordinateInput.type = "number";
   xCoordinateInput.step = "1";
-  xCoordinateInput.setAttribute("aria-label", "相对父级 X 偏移");
+  xCoordinateInput.setAttribute("aria-label", "节点 X 坐标");
   xCoordinateLabel.append(xCoordinateInput);
-  const yCoordinateLabel = makeElement(document, "label", "vle-coordinate", "相对父级 Y");
+  const yCoordinateLabel = makeElement(document, "label", "vle-coordinate", "Y");
   const yCoordinateInput = makeElement(document, "input");
   yCoordinateInput.type = "number";
   yCoordinateInput.step = "1";
-  yCoordinateInput.setAttribute("aria-label", "相对父级 Y 偏移");
+  yCoordinateInput.setAttribute("aria-label", "节点 Y 坐标");
   yCoordinateLabel.append(yCoordinateInput);
   coordinateRow.append(xCoordinateLabel, yCoordinateLabel);
   const saveRow = makeElement(document, "div", "vle-row");
@@ -297,7 +326,7 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
   else saveRow.append(status);
   const tree = makeElement(document, "ul", "vle-tree");
   tree.setAttribute("aria-label", "布局节点树");
-  panel.append(heading, selectedLabel, snapButton, opacityRow, coordinateRow, saveRow, tree);
+  panel.append(heading, selectedLabel, snapButton, opacityRow, coordinateModeRow, relativePointRow, coordinateOriginLabel, coordinateRow, saveRow, tree);
   // 覆盖层只负责参考图和 SVG；控件进入宿主提供的独立栏，避免遮挡游戏预览。
   root.append(styles, image, svg);
   document.body.append(root);
@@ -338,11 +367,28 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     status.textContent = message;
   }
 
-  /** 将当前节点相对父级偏移同步到可编辑数值输入。 */
+  /** 按父容器即时尺寸计算四角或中心原点；视口及安全区采用各自逻辑边界。 */
+  function coordinateOrigin() {
+    if (coordinateModeInput.value === "absolute") return { x: 0, y: 0 };
+    const node = nodeMap.get(selectedId);
+    const parentId = node.parent_layout_node_id;
+    const parentBounds = nodeMap.has(parentId) ? readCurrentBounds(parentId)
+      : parentId === "viewport" ? { x: 0, y: 0, width: logicalViewport.width, height: logicalViewport.height }
+        : normalizeBounds(node.parent_target_bounds, `节点 ${selectedId}.parent_target_bounds`);
+    const point = relativePoints[relativePointInput.value];
+    return { x: parentBounds.x + parentBounds.width * point.x, y: parentBounds.y + parentBounds.height * point.y };
+  }
+
+  /** 显示最终坐标而非冻结布局的增量；模式切换只改变读数，不修改保存数据。 */
   function syncCoordinateInputs() {
-    const offset = getNodeOffset(currentLayout.value, selectedId);
-    xCoordinateInput.value = String(offset.x);
-    yCoordinateInput.value = String(offset.y);
+    const bounds = readCurrentBounds(selectedId);
+    const origin = coordinateOrigin();
+    xCoordinateInput.value = String(bounds.x - origin.x);
+    yCoordinateInput.value = String(bounds.y - origin.y);
+    coordinateOriginLabel.textContent = coordinateModeInput.value === "absolute"
+      ? "原点：视口左上角（逻辑像素）"
+      : `原点：父容器 ${nodeMap.get(selectedId).parent_layout_node_id} ${relativePoints[relativePointInput.value].label}；测量节点左上角（逻辑像素）`;
+    relativePointInput.disabled = !interactionEnabled || previewMode || coordinateModeInput.value !== "relative";
     xCoordinateInput.disabled = yCoordinateInput.disabled = !interactionEnabled || previewMode || movementLocks.has(selectedId);
   }
 
@@ -414,6 +460,7 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
         label.textContent = node.layout_node_id;
         svg.append(label);
       }
+      syncCoordinateInputs();
       selectedLabel.textContent = `当前节点：${selectedId}${movementLocks.has(selectedId) ? "（位置锁定）" : ""}`;
       if (focusedNodeId) {
         for (const frame of svg.children) {
@@ -612,19 +659,24 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     await persistRevision(validateVisualLayoutDocument(currentLayout.value, nodes), revision);
   }
 
-  /** 应用数值输入的新父级相对坐标，并触发布局重排及草图失效回调。 */
+  /** 将绝对或父级相对的最终坐标换算为当前节点偏移，祖先及子节点的独立偏移不变。 */
   function onCoordinateChange() {
     if (!interactionEnabled || previewMode || movementLocks.has(selectedId)) return;
     const x = Number(xCoordinateInput.value);
     const y = Number(yCoordinateInput.value);
     try {
-      currentLayout.value = setVisualLayoutOffset(currentLayout.value, nodes, selectedId, { x, y });
+      if (xCoordinateInput.value.trim() === "" || yCoordinateInput.value.trim() === "" || !Number.isFinite(x) || !Number.isFinite(y)) throw new TypeError("节点坐标必须是有限数值");
+      const origin = coordinateOrigin();
+      const bounds = readCurrentBounds(selectedId);
+      const offset = getNodeOffset(currentLayout.value, selectedId);
+      // 只写所选节点的增量，父级移动仍由正式 reflow 传播到全部子节点。
+      currentLayout.value = setVisualLayoutOffset(currentLayout.value, nodes, selectedId, { x: offset.x + x + origin.x - bounds.x, y: offset.y + y + origin.y - bounds.y });
       revision += 1;
       const snapshot = validateVisualLayoutDocument(currentLayout.value, nodes);
       setStatus("dirty", "未保存");
       onLayoutChange?.(snapshot);
       invokeReflow(snapshot);
-      if (saveOnChange) persistRevision(snapshot, revision);
+      if (saveOnChange) void persistRevision(snapshot, revision).catch(() => {});
     } catch (error) {
       setStatus("error", `坐标调整失败：${errorMessage(error)}`);
       syncCoordinateInputs();
@@ -703,6 +755,8 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     const canEdit = interactionEnabled && !previewMode;
     opacityInput.disabled = !canEdit;
     snapButton.disabled = !canEdit;
+    coordinateModeInput.disabled = !canEdit;
+    relativePointInput.disabled = !canEdit || coordinateModeInput.value !== "relative";
     xCoordinateInput.disabled = !canEdit || movementLocks.has(selectedId);
     yCoordinateInput.disabled = !canEdit || movementLocks.has(selectedId);
     // 浏览器 tree.children 是 HTMLCollection，先显式转数组再遍历其子按钮。
@@ -734,6 +788,12 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     snapping = !snapping;
     snapButton.textContent = snapping ? `吸附：开（${DEFAULT_SNAP_STEP}px）` : "吸附：关";
     snapButton.setAttribute("aria-pressed", String(snapping));
+  }
+
+  /** 模式或父容器参照点切换只换算读数，不触发布局变更或保存。 */
+  function onCoordinateModeChange() {
+    if (destroyed || !interactionEnabled || previewMode) return;
+    syncCoordinateInputs();
   }
 
   /** 按滑块值即时调整冻结参考图透明度。 */
@@ -776,6 +836,8 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
 
   snapButton.addEventListener("click", onSnapClick);
   opacityInput.addEventListener("input", onOpacityInput);
+  coordinateModeInput.addEventListener("change", onCoordinateModeChange);
+  relativePointInput.addEventListener("change", onCoordinateModeChange);
   xCoordinateInput.addEventListener("change", onCoordinateChange);
   yCoordinateInput.addEventListener("change", onCoordinateChange);
   if (showSaveButton) saveButton.addEventListener("click", () => { void onSaveClick(); });

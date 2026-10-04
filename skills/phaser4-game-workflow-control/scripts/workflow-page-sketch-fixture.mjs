@@ -56,7 +56,7 @@ export function bindConfirmedSketchFixture({ repo, work, pkg }) {
     v3_assets: [{ asset_id: 'test-image', file: assetFile, sha256: assetSha, layout_node_id: node.layout_node_id }], nodes: [node], node_presentations: { [node.layout_node_id]: { kind: 'image', asset_ids: ['test-image'], object_fit: 'fill' } },
     layout: { schema: 'phaser-visual-layout/1.0', target_sha256: targetSha, scene_id: sceneId, state_id: 'default', offsets: {} }, confirmation: null,
   };
-  sketch.confirmation = { status: 'accepted', confirmed_at: '2026-10-01T00:00:00.000Z', confirmed_by: '测试确认人', content_sha256: hashBytes(canonicalPageSketchContent(sketch)) };
+  sketch.confirmation = { status: 'accepted', confirmed_at: '2026-10-01T00:00:00.000Z', content_sha256: hashBytes(canonicalPageSketchContent(sketch)) };
   const v4Ref = writeArtifact(repo, 'docs/page-sketch.json', sketch);
   const v5Ref = writeArtifact(repo, 'docs/v5-runtime-candidate.json', { ...common, evidenceType: 'v5-runtime-integration-candidate', candidateId: 'V5-TEST', pageSketchSha256: v4Ref.sha256 });
   work.visualStageEvidenceRefs = { V2: v2Ref, V3: v3Ref, V4: v4Ref, V5: v5Ref };

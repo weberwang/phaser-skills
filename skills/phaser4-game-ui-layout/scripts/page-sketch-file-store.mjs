@@ -78,10 +78,9 @@ export async function createPageSketchFileStore(handle) {
       } finally { operationInFlight = false; }
     },
     /** 只有当前内容已保存且真实预览健康时，才能写入绑定内容 hash 的人工确认。 */
-    async confirm(confirmedBy, { previewReady, layout } = {}) {
+    async confirm({ previewReady, layout } = {}) {
       beginOperation("确认");
       try {
-        if (typeof confirmedBy !== "string" || confirmedBy.trim() === "") throw new Error("确认人必须填写非空身份");
         if (previewReady !== true) throw new Error("资源或场景预览未通过，不能确认草图");
         const normalizedLayout = validateVisualLayoutDocument(layout, document.nodes);
         if (!sameJson(normalizedLayout, document.layout)) throw new Error("当前布局还有未保存修改，请先保存草图再确认");
@@ -91,7 +90,6 @@ export async function createPageSketchFileStore(handle) {
         const confirmation = {
           status: "accepted",
           confirmed_at: new Date().toISOString(),
-          confirmed_by: confirmedBy.trim(),
           content_sha256: contentHash,
         };
         return await writeAndReadBack({ ...contentSnapshot, confirmation });

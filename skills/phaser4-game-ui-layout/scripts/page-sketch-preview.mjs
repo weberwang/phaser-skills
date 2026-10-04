@@ -74,7 +74,7 @@ export async function loadPageSketchSources(sketchInput, { projectRootUrl, fetch
   try {
     const manifest = sourceFiles[1] ? JSON.parse(new TextDecoder().decode(sourceFiles[1].bytes)) : {};
     // 共用生成与正式阶段的布局门，不允许开发预览偷偷改写已冻结的父子关系。
-    lockedNodeIds = assertPageSketchBackgroundLayout({ nodes: sketch.nodes, regions: manifest.regions ?? [], sceneId: sketch.scene_id, stateId: sketch.state_id });
+    lockedNodeIds = assertPageSketchBackgroundLayout({ nodes: sketch.nodes, regions: manifest.regions ?? [], sceneId: sketch.scene_id, stateId: sketch.state_id, nodePresentations: sketch.node_presentations });
   } catch (error) {
     backgroundLayoutError = error.message;
     errors.push(`背景布局关系无效：${error.message}`);

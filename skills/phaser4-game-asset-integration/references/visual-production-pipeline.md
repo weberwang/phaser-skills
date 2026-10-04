@@ -104,7 +104,7 @@ V3 以文件、性能、加载、响应式、`production_contract_audit` 和一�
 
 ## V4 页面还原草图与确认
 
-生成 `phaser-page-sketch/1.0` 草图数据，绑定当前 V2 节点、V3 清单和正式验收文件 SHA。草图页面加载正式资源，提供可调透明度的效果图底板、显示树、选择与坐标编辑；父节点移动带动子孙。保存写回草图 JSON，确认再记录确认人、时间和内容 SHA；后续修改必须使确认失效。用户确认与文件校验通过后登记 `visualStageEvidenceRefs.V4`，才允许进入 V5。完整操作与返工边界见[页面还原草图作业](visual-alignment-authoring.md)。
+生成 `phaser-page-sketch/1.0` 草图数据，绑定当前 V2 节点、V3 清单和正式验收文件 SHA。草图页面加载正式资源，提供可调透明度的效果图底板、显示树、选择与坐标编辑；父节点移动带动子孙。保存写回草图 JSON，点击确认后记录确认时间和内容 SHA，无需填写确认人；后续修改必须使确认失效。用户确认与文件校验通过后登记 `visualStageEvidenceRefs.V4`，才允许进入 V5。完整操作与返工边界见[页面还原草图作业](visual-alignment-authoring.md)。
 
 ## V5 正式还原与动态玩法视觉验收
 

@@ -122,7 +122,7 @@ export function validatePageSketchResourceBindings({ nodes, sceneId, stateId, as
     throw new TypeError("nodePresentations 必须是节点 presentation 映射");
   }
 
-  assertPageSketchBackgroundLayout({ nodes, regions, sceneId, stateId });
+  assertPageSketchBackgroundLayout({ nodes, regions, sceneId, stateId, nodePresentations });
   const nodeById = new Map();
   for (const node of nodes) {
     if (!node || typeof node.layout_node_id !== "string" || !node.layout_node_id.trim() || nodeById.has(node.layout_node_id)) {

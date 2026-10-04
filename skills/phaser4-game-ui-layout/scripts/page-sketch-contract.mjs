@@ -7,7 +7,7 @@ const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const PRESENTATION_KINDS = new Set(["image", "text", "container", "runtime-program"]);
 
 /** 背景仅属于视口显示层，不可成为元素的布局父级；返回明确归属的固定背景节点。 */
-export function assertPageSketchBackgroundLayout({ nodes, regions = [], sceneId, stateId }) {
+export function assertPageSketchBackgroundLayout({ nodes, regions = [], sceneId, stateId, nodePresentations = {} }) {
   const backgroundIds = new Set(nodes.filter((node) => node.layout_role === "background" || node.layer === "background").map((node) => node.layout_node_id));
   const backgroundRegions = regions.filter((region) => region.layer === "background" && region.scene_id === sceneId && region.state_id === stateId);
   const regionIds = new Set(backgroundRegions.map((region) => region.id));
@@ -17,6 +17,13 @@ export function assertPageSketchBackgroundLayout({ nodes, regions = [], sceneId,
   for (const node of nodes) {
     if (backgroundIds.has(node.parent_layout_node_id)) throw new TypeError(`节点 ${node.layout_node_id} 不得相对背景 ${node.parent_layout_node_id} 布局；请在 V2 改用 viewport、safe-area 或功能容器并重新确认`);
     if (backgroundIds.has(node.layout_node_id) && node.parent_layout_node_id !== "viewport") throw new TypeError(`背景 ${node.layout_node_id} 必须独立归属 viewport，不能放入可移动功能容器；请更新 V2 显示树并重新确认`);
+  }
+  // 即使背景当前没有子节点，也不能把它声明为空容器或用容器配方替代正式显示内容。
+  for (const node of nodes) {
+    if (!backgroundIds.has(node.layout_node_id)) continue;
+    if (node.element_type === "container" || node.is_container === true || node.empty_container === true || node.layout_role === "container" || nodePresentations[node.layout_node_id]?.kind === "container") {
+      throw new TypeError(`背景 ${node.layout_node_id} 不能声明为容器或使用 container presentation；请在 V2 改为独立显示节点并重新确认`);
+    }
   }
   return [...backgroundIds];
 }
@@ -166,11 +173,12 @@ export function validatePageSketchDocument(document, { expectedIdentity } = {}) 
     if (!Object.hasOwn(document.node_presentations, nodeId)) throw new TypeError(`节点 ${nodeId} 缺少 presentation，不能在草图页准确预览`);
   }
 
+  assertPageSketchBackgroundLayout({ nodes: document.nodes, sceneId: document.scene_id, stateId: document.state_id, nodePresentations: document.node_presentations });
+
   if (document.confirmation !== null) {
     if (!isRecord(document.confirmation) || document.confirmation.status !== "accepted") throw new TypeError("confirmation 必须是 null 或 accepted 回执");
     requireText(document.confirmation.confirmed_at, "confirmation.confirmed_at");
     if (!Number.isFinite(Date.parse(document.confirmation.confirmed_at))) throw new TypeError("confirmation.confirmed_at 必须是有效时间");
-    requireText(document.confirmation.confirmed_by, "confirmation.confirmed_by");
     requireSha(document.confirmation.content_sha256, "confirmation.content_sha256");
   }
 

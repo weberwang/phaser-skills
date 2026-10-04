@@ -63,7 +63,7 @@ function createPageDocument() {
   };
   for (const [id, tag] of [
     ["stage-frame", "section"], ["stage-surface", "div"], ["open-sketch", "button"], ["toggle-preview", "button"], ["save-sketch", "button"], ["reset-sketch", "button"],
-    ["confirm-sketch", "button"], ["confirmed-by", "input"], ["page-status", "span"], ["resource-errors", "aside"],
+    ["confirm-sketch", "button"], ["page-status", "span"], ["resource-errors", "aside"],
     ["stage-device", "div"], ["layout-controls", "div"], ["preview-device", "select"], ["device-orientation", "select"],
     ["device-summary", "p"], ["toggle-fullscreen", "button"],
   ]) elements.set(id, document.createElement(tag));
@@ -94,7 +94,7 @@ function createSketch() {
   };
 }
 
-test("应用层保存和确认期间锁住节点、打开、保存、确认及确认身份并最终解锁", async () => {
+test("应用层保存和确认期间锁住节点、打开、保存、确认并最终解锁", async () => {
   const { document, elements } = createPageDocument();
   const saveGate = deferred();
   const saveStarted = deferred();
@@ -116,13 +116,13 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认及�
       diskDocument = { ...diskDocument, layout: structuredClone(layout), confirmation: null };
       return structuredClone(diskDocument);
     },
-    async confirm(confirmedBy, { previewReady, layout }) {
+    async confirm({ previewReady, layout }) {
       confirmCount += 1;
       confirmStarted.resolve();
       assert.equal(previewReady, true);
       assert.deepEqual(layout, diskDocument.layout);
       await confirmGate.promise;
-      diskDocument = { ...diskDocument, confirmation: { status: "accepted", confirmed_at: "2026-10-01T00:00:00.000Z", confirmed_by: confirmedBy, content_sha256: SHA } };
+      diskDocument = { ...diskDocument, confirmation: { status: "accepted", confirmed_at: "2026-10-01T00:00:00.000Z", content_sha256: SHA } };
       return structuredClone(diskDocument);
     },
   };
@@ -204,14 +204,11 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认及�
   assert.equal(previewButton.textContent, "预览正式效果");
   assert.equal(editor.previewMode, false);
   assert.deepEqual(editor.getLayout(), beforePreview);
-  const author = elements.get("confirmed-by");
-  author.value = "设计师甲";
-  author.dispatch("input");
 
   elements.get("save-sketch").dispatch("click");
   await saveStarted.promise;
   assert.equal(editor.interactionEnabled, false);
-  for (const id of ["open-sketch", "toggle-preview", "reset-sketch", "save-sketch", "confirm-sketch", "confirmed-by"]) assert.equal(elements.get(id).disabled, true);
+  for (const id of ["open-sketch", "toggle-preview", "reset-sketch", "save-sketch", "confirm-sketch"]) assert.equal(elements.get(id).disabled, true);
   const attemptedLayout = { ...createSketch().layout, offsets: { "hud.root": { x: 30, y: 0 } } };
   assert.equal(editor.attemptEdit(attemptedLayout), false);
   elements.get("save-sketch").dispatch("click");
@@ -227,7 +224,7 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认及�
   elements.get("confirm-sketch").dispatch("click");
   await confirmStarted.promise;
   assert.equal(editor.interactionEnabled, false);
-  for (const id of ["open-sketch", "toggle-preview", "reset-sketch", "save-sketch", "confirm-sketch", "confirmed-by"]) assert.equal(elements.get(id).disabled, true);
+  for (const id of ["open-sketch", "toggle-preview", "reset-sketch", "save-sketch", "confirm-sketch"]) assert.equal(elements.get(id).disabled, true);
   assert.equal(editor.attemptEdit(attemptedLayout), false);
   elements.get("save-sketch").dispatch("click");
   elements.get("confirm-sketch").dispatch("click");
@@ -236,7 +233,7 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认及�
   confirmGate.resolve();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(editor.interactionEnabled, true);
-  assert.equal(diskDocument.confirmation.confirmed_by, "设计师甲");
+  assert.equal(Object.hasOwn(diskDocument.confirmation, "confirmed_by"), false);
   assert.equal(elements.get("confirm-sketch").disabled, true);
   const confirmedDisk = structuredClone(diskDocument);
   editor.attemptEdit({ ...createSketch().layout, offsets: { "hud.root": { x: 48, y: -8 } } });

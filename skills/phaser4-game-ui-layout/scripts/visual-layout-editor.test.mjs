@@ -9,6 +9,8 @@ import {
   validateVisualLayoutDocument,
 } from "./visual-layout-editor.mjs";
 
+import { calculatePageSketchNodeBounds } from "./page-sketch-preview.mjs";
+
 const targetSha = `sha256:${"a".repeat(64)}`;
 
 /** 为编辑器纯逻辑用例创建含父子节点的冻结布局样例。 */
@@ -413,15 +415,15 @@ test("连续键盘微调恢复节点焦点并累计位置", async () => {
   environment.editor.destroy();
 });
 
-/** 数值字段直接编辑父级相对坐标，并复用正式同步重排及持久化链路。 */
-test("数值坐标输入设置所选节点的父级相对偏移", async () => {
+/** 数值字段直接编辑相对父容器的最终坐标，并复用正式同步重排及持久化链路。 */
+test("数值坐标输入设置所选节点的最终坐标", async () => {
   const environment = createMountedEditor();
-  const xInput = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "相对父级 X 偏移")[0];
-  const yInput = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "相对父级 Y 偏移")[0];
+  const xInput = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "节点 X 坐标")[0];
+  const yInput = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "节点 Y 坐标")[0];
   xInput.value = "24";
   yInput.value = "-12";
   xInput.dispatch("change");
-  assert.deepEqual(environment.editor.getLayout().offsets["hud.group"], { x: 24, y: -12 });
+  assert.deepEqual(environment.editor.getLayout().offsets["hud.group"], { x: -76, y: -112 });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(environment.saved.length, 1);
   environment.editor.destroy();
@@ -542,7 +544,7 @@ test("操作锁禁用布局控件并阻止指针键盘及坐标改动", () => {
   const environment = createMountedEditor();
   const initial = environment.editor.getLayout();
   let frame = findElements(environment.document.body, (node) => node.getAttribute("data-layout-node-id") === "hud.group")[0];
-  const xInput = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "相对父级 X 偏移")[0];
+  const xInput = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "节点 X 坐标")[0];
   const opacityInput = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "效果图透明度")[0];
   environment.editor.setInteractionEnabled(false);
   frame = findElements(environment.document.body, (node) => node.getAttribute("data-layout-node-id") === "hud.group")[0];
@@ -588,7 +590,7 @@ test("面板始终留在独立右栏，纯预览保留右栏且不遮挡画布",
   const panel = findElements(environment.document.body, (node) => node.className === "vle-panel")[0];
   const styles = root.children[0];
   const opacity = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "效果图透明度")[0];
-  const xInput = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "相对父级 X 偏移")[0];
+  const xInput = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "节点 X 坐标")[0];
   environment.editor.setPreviewMode(true);
   assert.equal(environment.editor.isPreviewMode(), true);
   assert.equal(reference.style.display, "none");
@@ -672,7 +674,7 @@ test("背景位置锁覆盖拖动键盘数值输入与祖先移动", () => {
     frame.dispatch("pointerdown", { button: 0, pointerId: 11, clientX: 180, clientY: 150 });
     environment.window.dispatch("pointermove", { pointerId: 11, clientX: 210, clientY: 170 });
     frame.dispatch("keydown", { key: "ArrowRight" });
-    const xInput = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "相对父级 X 偏移")[0];
+    const xInput = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "节点 X 坐标")[0];
     assert.equal(xInput.disabled, true);
     xInput.value = "123";
     xInput.dispatch("change");
@@ -701,4 +703,180 @@ test("子节点离开父容器仍能从真实节点框再次开始拖动", () =>
   environment.window.dispatch("pointermove", { pointerId: 22, clientX: 162, clientY: 88 });
   assert.deepEqual(environment.editor.getLayout().offsets["hud.button"], { x: -128, y: -112 });
   environment.editor.destroy();
+});
+
+/** 坐标验收使用草图正式的祖先偏移算法，确保父容器移动后子节点一起移动。 */
+async function createCoordinateEditor(options = {}) {
+  const environment = createMountedEditor({ ...options, editorOptions: { saveOnChange: false, ...options.editorOptions } });
+  environment.setReflowOverride((layout) => {
+    for (const node of environment.nodes) environment.runtimeBounds.set(node.layout_node_id, calculatePageSketchNodeBounds(layout, environment.nodes, node.layout_node_id));
+  });
+  await environment.editor.reload(environment.editor.getLayout());
+  const input = (label) => findElements(environment.controlsHost, (node) => node.getAttribute("aria-label") === label)[0];
+  return { ...environment, x: input("节点 X 坐标"), y: input("节点 Y 坐标"), mode: input("坐标模式"), point: input("父容器参照点") };
+}
+
+/** 切换模式只换算显示数值，相对位置包含初始局部位置而非增量偏移。 */
+test("父级相对与视口绝对坐标切换不改变布局或保存状态", async () => {
+  const environment = await createCoordinateEditor();
+  findElements(environment.controlsHost, (node) => node.dataset.layoutNodeId === "hud.button")[0].dispatch("click");
+  const baseline = environment.editor.getLayout();
+  assert.equal(environment.x.value, "82");
+  assert.equal(environment.y.value, "47");
+  environment.mode.value = "absolute";
+  environment.mode.dispatch("change");
+  assert.equal(environment.x.value, "186");
+  assert.equal(environment.y.value, "153");
+  environment.mode.value = "relative";
+  environment.mode.dispatch("change");
+  assert.equal(environment.x.value, "82");
+  assert.deepEqual(environment.editor.getLayout(), baseline);
+  assert.equal(environment.saved.length, 0);
+  environment.editor.destroy();
+});
+
+/** 两种模式写同一最终位置；移动父容器不改子节点局部坐标，重置恢复初始读数。 */
+test("相对及绝对输入等价并正确传播父容器位移", async () => {
+  const environment = await createCoordinateEditor();
+  const select = (id) => findElements(environment.controlsHost, (node) => node.dataset.layoutNodeId === id)[0].dispatch("click");
+  select("hud.button");
+  environment.x.value = "-20";
+  environment.y.value = "25.5";
+  environment.x.dispatch("change");
+  assert.deepEqual(environment.editor.getLayout().offsets["hud.button"], { x: -100, y: -24.5 });
+  environment.mode.value = "absolute";
+  environment.mode.dispatch("change");
+  assert.equal(environment.x.value, "84");
+  assert.equal(environment.y.value, "131.5");
+  environment.x.value = "200";
+  environment.y.value = "180";
+  environment.x.dispatch("change");
+  assert.deepEqual(environment.editor.getLayout().offsets["hud.button"], { x: 16, y: 24 });
+  environment.mode.value = "relative";
+  environment.mode.dispatch("change");
+  assert.equal(environment.x.value, "96");
+  assert.equal(environment.y.value, "74");
+  select("hud.group");
+  environment.x.value = "140";
+  environment.y.value = "130";
+  environment.x.dispatch("change");
+  assert.equal(environment.runtimeBounds.get("hud.button").x, 236);
+  select("hud.button");
+  assert.equal(environment.x.value, "96");
+  assert.equal(environment.y.value, "74");
+  environment.editor.resetToInitial();
+  assert.equal(environment.x.value, "80");
+  assert.equal(environment.y.value, "50");
+  environment.x.value = "";
+  environment.x.dispatch("change");
+  assert.deepEqual(environment.editor.getLayout().offsets, {});
+  assert.equal(environment.x.value, "80");
+  environment.editor.destroy();
+});
+
+/** 顶层安全区使用自身左上角为原点，切换模式、缩放和操作锁不会变更真实坐标。 */
+test("安全区原点与操作锁下的坐标模式保持正确", async () => {
+  const fixture = createFixture();
+  fixture.nodes[0].parent_layout_node_id = "safe-area";
+  fixture.nodes[0].parent_target_bounds = { x: 12, y: 30, width: 360, height: 160 };
+  const environment = await createCoordinateEditor({ nodes: fixture.nodes });
+  assert.equal(environment.x.value, "92");
+  assert.equal(environment.y.value, "76");
+  environment.x.value = "20";
+  environment.y.value = "15";
+  environment.x.dispatch("change");
+  assert.equal(environment.runtimeBounds.get("hud.group").x, 32);
+  assert.equal(environment.runtimeBounds.get("hud.group").y, 45);
+  environment.setHostRect({ left: 0, top: 0, width: 800, height: 400 });
+  environment.editor.refreshViewport();
+  assert.equal(environment.x.value, "20");
+  environment.editor.setInteractionEnabled(false);
+  assert.equal(environment.mode.disabled, true);
+  environment.editor.setInteractionEnabled(true);
+  environment.editor.setPreviewMode(true);
+  assert.equal(environment.mode.disabled, true);
+  environment.editor.destroy();
+});
+
+/** 四角与中心都以父容器即时边界换算，切换不得写布局或触发持久化。 */
+test("相对参照点支持父容器四角和中心且切换不移动节点", async () => {
+  const environment = await createCoordinateEditor();
+  findElements(environment.controlsHost, (node) => node.dataset.layoutNodeId === "hud.button")[0].dispatch("click");
+  const baseline = environment.editor.getLayout();
+  for (const [point, x, y] of [["top-left", 82, 47], ["top-right", -218, 47], ["bottom-left", 82, -153], ["bottom-right", -218, -153], ["center", -68, -53]]) {
+    environment.point.value = point;
+    environment.point.dispatch("change");
+    assert.equal(Number(environment.x.value), x);
+    assert.equal(Number(environment.y.value), y);
+    assert.deepEqual(environment.editor.getLayout(), baseline);
+  }
+  assert.equal(environment.saved.length, 0);
+  environment.mode.value = "absolute";
+  environment.mode.dispatch("change");
+  assert.equal(environment.point.disabled, true);
+  assert.equal(environment.x.value, "186");
+  environment.mode.value = "relative";
+  environment.mode.dispatch("change");
+  assert.equal(environment.point.disabled, false);
+  assert.equal(environment.point.value, "center");
+  assert.equal(environment.x.value, "-68");
+  environment.editor.destroy();
+});
+
+/** 各参照点输入换算为同一目标位置，父级位移传播后局部坐标保持不变。 */
+test("五种父容器参照点输入等价并随父容器一起移动", async () => {
+  for (const [point, x, y] of [["top-left", 10, 20], ["top-right", -290, 20], ["bottom-left", 10, -180], ["bottom-right", -290, -180], ["center", -140, -80]]) {
+    const environment = await createCoordinateEditor();
+    const select = (id) => findElements(environment.controlsHost, (node) => node.dataset.layoutNodeId === id)[0].dispatch("click");
+    select("hud.button");
+    environment.point.value = point;
+    environment.point.dispatch("change");
+    environment.x.value = String(x);
+    environment.y.value = String(y);
+    environment.x.dispatch("change");
+    assert.deepEqual(environment.editor.getLayout().offsets["hud.button"], { x: -70, y: -30 });
+    assert.equal(environment.runtimeBounds.get("hud.button").x, 114);
+    assert.equal(environment.runtimeBounds.get("hud.button").y, 126);
+    select("hud.group");
+    environment.mode.value = "absolute";
+    environment.mode.dispatch("change");
+    environment.x.value = "150";
+    environment.y.value = "140";
+    environment.x.dispatch("change");
+    select("hud.button");
+    environment.mode.value = "relative";
+    environment.mode.dispatch("change");
+    assert.equal(Number(environment.x.value), x);
+    assert.equal(Number(environment.y.value), y);
+    assert.equal(environment.runtimeBounds.get("hud.button").x, 160);
+    environment.editor.destroy();
+  }
+});
+
+/** 顶层视口和安全区也支持非零参照点，中心可为小数；锁定与预览禁用切换。 */
+test("视口和安全区中心参照点正确处理尺寸与操作锁", async () => {
+  for (const safeArea of [false, true]) {
+    const fixture = createFixture();
+    if (safeArea) {
+      fixture.nodes[0].parent_layout_node_id = "safe-area";
+      fixture.nodes[0].parent_target_bounds = { x: 12, y: 30, width: 361, height: 161 };
+    }
+    const environment = await createCoordinateEditor({ nodes: fixture.nodes });
+    environment.point.value = "center";
+    environment.point.dispatch("change");
+    assert.equal(Number(environment.x.value), safeArea ? -88.5 : -96);
+    assert.equal(Number(environment.y.value), safeArea ? -4.5 : 6);
+    environment.x.value = "0";
+    environment.y.value = "0";
+    environment.x.dispatch("change");
+    assert.equal(environment.runtimeBounds.get("hud.group").x, safeArea ? 192.5 : 200);
+    assert.equal(environment.runtimeBounds.get("hud.group").y, safeArea ? 110.5 : 100);
+    environment.editor.setInteractionEnabled(false);
+    assert.equal(environment.point.disabled, true);
+    environment.editor.setInteractionEnabled(true);
+    assert.equal(environment.point.disabled, false);
+    environment.editor.setPreviewMode(true);
+    assert.equal(environment.point.disabled, true);
+    environment.editor.destroy();
+  }
 });

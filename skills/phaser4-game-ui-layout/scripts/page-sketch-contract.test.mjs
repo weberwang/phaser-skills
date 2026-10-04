@@ -60,7 +60,7 @@ test("V2/V3图片节点不能被文本容器展示声明覆盖", () => {
 test("canonical内容排除confirmation且递归稳定排序", async () => {
   const sketch = createSketch();
   const first = canonicalPageSketchContent(sketch);
-  sketch.confirmation = { status: "accepted", confirmed_at: "2026-10-01T00:00:00.000Z", confirmed_by: "测试者", content_sha256: SHA };
+  sketch.confirmation = { status: "accepted", confirmed_at: "2026-10-01T00:00:00.000Z", content_sha256: SHA };
   assert.equal(canonicalPageSketchContent(sketch), first);
   assert.equal(await hashPageSketchContent(sketch), await hashPageSketchContent(createSketch()));
 });
@@ -90,4 +90,22 @@ test("背景不作为相对布局父级且不能放入可移动功能容器", ()
   nodes[2].parent_layout_node_id = "group";
   nodes[0].parent_layout_node_id = "group";
   assert.throws(() => assertPageSketchBackgroundLayout(options), /必须独立归属 viewport/);
+});
+
+/** 背景即便没有子节点，也必须保留显示节点职责；普通功能容器仍然允许。 */
+test("背景拒绝容器声明、空容器及容器展示配方", () => {
+  for (const declaration of [{ element_type: "container" }, { is_container: true }, { empty_container: true }, { layout_role: "container" }]) {
+    const options = { nodes: [{ layout_node_id: "back", layer: "background", parent_layout_node_id: "viewport", ...declaration }] };
+    assert.throws(() => assertPageSketchBackgroundLayout(options), /不能声明为容器/);
+  }
+  const options = { nodes: [{ layout_node_id: "back", layout_role: "background", parent_layout_node_id: "viewport" }], nodePresentations: { back: { kind: "container" } } };
+  assert.throws(() => assertPageSketchBackgroundLayout(options), /container presentation/);
+  options.nodePresentations.back.kind = "image";
+  assert.deepEqual(assertPageSketchBackgroundLayout(options), ["back"]);
+  options.nodePresentations.back.kind = "runtime-program";
+  assert.deepEqual(assertPageSketchBackgroundLayout(options), ["back"]);
+  const sketch = createSketch();
+  for (const node of sketch.nodes) node.parent_layout_node_id = "viewport";
+  sketch.nodes[0].layer = "background";
+  assert.throws(() => validatePageSketchDocument(sketch), /不能声明为容器/);
 });

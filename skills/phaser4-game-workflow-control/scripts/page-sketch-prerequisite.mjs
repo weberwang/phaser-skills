@@ -127,7 +127,7 @@ export function loadConfirmedPageSketch(work, projectRoot) {
   validatePageSketchDocument(document, { expectedIdentity });
   if (document.target_sha256 !== v3.value.targetSha256 || document.candidate_version !== v3.value.candidateVersion) throw new Error('草图 target/candidateVersion 与 V3 正式资源验收身份不一致');
   const contentSha = `sha256:${createHash('sha256').update(canonicalPageSketchContent(document), 'utf8').digest('hex')}`;
-  if (document.confirmation?.status !== 'accepted' || !document.confirmation.confirmed_by?.trim() || !Number.isFinite(Date.parse(document.confirmation.confirmed_at)) || contentSha !== document.confirmation.content_sha256) throw new Error('V4 草图缺少有效人工确认，或确认内容摘要已漂移');
+  if (document.confirmation?.status !== 'accepted' || !Number.isFinite(Date.parse(document.confirmation.confirmed_at)) || contentSha !== document.confirmation.content_sha256) throw new Error('V4 草图缺少有效人工确认，或确认内容摘要已漂移');
 
   const workTarget = work.sceneReconstructionContract?.target_conditions;
   if (work.sceneReconstructionContract && (workTarget?.target_sha256 !== expectedIdentity.target_sha256

@@ -74,7 +74,7 @@ function makeFixture({ shared = false } = {}) {
     confirmation: null,
   };
   document.confirmation = {
-    status: 'accepted', confirmed_at: '2026-09-30T08:00:00.000Z', confirmed_by: 'tester',
+    status: 'accepted', confirmed_at: '2026-09-30T08:00:00.000Z',
     content_sha256: HASH(Buffer.from(canonicalPageSketchContent(document), 'utf8')),
   };
   const sketchRef = writeJson(root, 'docs/page-sketch.json', document);
@@ -97,7 +97,7 @@ test('V4 确认门接受 V2 节点、V3 manifest 和正式资源均未漂移的�
   const fixture = makeFixture();
   const result = loadConfirmedPageSketch(fixture.work, fixture.root);
   assert.equal(result.sha256, fixture.sketchRef.sha256);
-  assert.equal(result.document.confirmation.confirmed_by, 'tester');
+  assert.equal(Object.hasOwn(result.document.confirmation, 'confirmed_by'), false);
 });
 
 test('V3 受控 shared 资源可绑定到明确声明的 scene', () => {
@@ -136,12 +136,12 @@ test('initPageSketch 生成的草图可经人工确认后被控制门读取', as
   const generated = JSON.parse(readFileSync(join(fixture.root, 'docs/generated-page-sketch.json'), 'utf8'));
   assert.equal(generated.confirmation, null);
   generated.confirmation = {
-    status: 'accepted', confirmed_at: '2026-10-01T00:00:00.000Z', confirmed_by: 'human-reviewer',
+    status: 'accepted', confirmed_at: '2026-10-01T00:00:00.000Z',
     content_sha256: HASH(Buffer.from(canonicalPageSketchContent(generated), 'utf8')),
   };
   fixture.work.visualStageEvidenceRefs.V4 = writeJson(fixture.root, 'docs/generated-page-sketch.json', generated);
   const loaded = loadConfirmedPageSketch(fixture.work, fixture.root);
-  assert.equal(loaded.document.confirmation.confirmed_by, 'human-reviewer');
+  assert.equal(Object.hasOwn(loaded.document.confirmation, 'confirmed_by'), false);
   assert.equal(loaded.document.v3_assets[0].layout_node_id, 'hero');
 });
 

@@ -100,3 +100,11 @@ test("共享绑定门拒绝把背景节点作为父容器", () => {
   fixture.nodes[1].parent_layout_node_id = "hud.root";
   assert.throws(() => validatePageSketchResourceBindings({ ...fixture, sceneId: "HudScene", stateId: "default" }), /不得相对背景/);
 });
+
+/** 只在正式区域清单标记背景时，也要阻止生成及确认门将背景当成空容器。 */
+test("共享绑定门拒绝正式背景区域的容器展示", () => {
+  const fixture = createBindingFixture();
+  fixture.regions[0].layer = "background";
+  for (const node of fixture.nodes) node.parent_layout_node_id = "viewport";
+  assert.throws(() => validatePageSketchResourceBindings({ ...fixture, sceneId: "HudScene", stateId: "default" }), /背景 hud.root 不能声明为容器/);
+});

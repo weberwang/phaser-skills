@@ -85,6 +85,8 @@ export function validateDecompositionElements(elements, regions = [], canvas = n
   for (const element of elements) {
     if (!isObject(element)) continue;
     if (backgrounds.has(element.parent_element_id)) errors.push(`${label} 元素 ${element.element_id} 不得相对背景 ${element.parent_element_id} 布局，请改用视口、安全区或功能容器`);
+    // 背景的叶子职责与是否已有子元素无关，空容器同样不得冻结进入 V2。
+    if (backgrounds.has(element.element_id) && (explicitlyContainer(element) || element.empty_container === true)) errors.push(`${label} 背景 ${element.element_id} 不能声明为容器（含空容器）`);
     if (backgrounds.has(element.element_id) && element.parent_element_id !== "viewport") errors.push(`${label} 背景 ${element.element_id} 必须独立归属 viewport`);
   }
   validateSemanticGrouping(elements, { canvas }, errors, label);

@@ -140,3 +140,21 @@ test("拆解阶段拒绝以背景作父级与将背景放入功能容器", () =>
   validateDecompositionElements(validElements(), regionBackground, CANVAS, "elements", layerErrors);
   assert(layerErrors.some((message) => message.includes("不得相对背景")));
 });
+
+/** 无论背景身份来自元素还是正式区域，V2 都拒绝冻结背景容器和空容器。 */
+test("拆解阶段拒绝背景容器及空容器", () => {
+  for (const empty of [false, true]) {
+    for (const source of ["role", "region"]) {
+      const elements = validElements();
+      const currentRegions = regions();
+      elements[0].element_type = "container";
+      elements[0].empty_container = empty;
+      elements[0].parent_element_id = "viewport";
+      if (source === "role") elements[0].role = "background";
+      else currentRegions[0].layer = "background";
+      const errors = [];
+      validateDecompositionElements(elements, currentRegions, CANVAS, "elements", errors);
+      assert(errors.some((message) => message.includes(`背景 ${elements[0].element_id} 不能声明为容器`)));
+    }
+  }
+});

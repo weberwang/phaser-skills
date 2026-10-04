@@ -19,6 +19,7 @@ test("在游戏项目新目录生成完整编辑器模板且不覆盖已有目�
     assert.match(html, /id="preview-device"/);
     assert.match(html, /id="toggle-fullscreen"/);
     assert.match(html, /id="reset-sketch"/);
+    assert.doesNotMatch(html, /confirmed-by|确认人/);
     assert.doesNotMatch(html, /grid-template-columns: 1fr;/);
     assert.doesNotMatch(html, /visual-layout-game-adapter/);
     for (const file of ["visual-layout-editor.mjs", "page-sketch-contract.mjs", "page-sketch-file-store.mjs", "page-sketch-preview.mjs", "page-sketch-editor.mjs"]) {
