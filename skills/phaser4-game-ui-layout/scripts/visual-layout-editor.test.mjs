@@ -808,12 +808,12 @@ test("安全区原点与操作锁下的坐标模式保持正确", async () => {
   environment.editor.destroy();
 });
 
-/** 四角与中心都以父容器即时边界换算，切换不得写布局或触发持久化。 */
-test("相对参照点支持父容器四角和中心且切换不移动节点", async () => {
+/** 九个参照点都以父容器即时边界换算，切换不得写布局或触发持久化。 */
+test("相对参照点支持父容器九点且切换不移动节点", async () => {
   const environment = await createCoordinateEditor();
   findElements(environment.controlsHost, (node) => node.dataset.layoutNodeId === "hud.button")[0].dispatch("click");
   const baseline = environment.editor.getLayout();
-  for (const [point, x, y] of [["top-left", 82, 47], ["top-right", -218, 47], ["bottom-left", 82, -153], ["bottom-right", -218, -153], ["center", -68, -53]]) {
+  for (const [point, x, y] of [["top-left", 82, 47], ["top-right", -218, 47], ["bottom-left", 82, -153], ["bottom-right", -218, -153], ["top-center", -68, 47], ["bottom-center", -68, -153], ["left-center", 82, -53], ["right-center", -218, -53], ["center", -68, -53]]) {
     environment.point.value = point;
     environment.point.dispatch("change");
     assert.equal(Number(environment.x.value), x);
@@ -834,8 +834,8 @@ test("相对参照点支持父容器四角和中心且切换不移动节点", as
 });
 
 /** 各参照点输入换算为同一目标位置，父级位移传播后局部坐标保持不变。 */
-test("五种父容器参照点输入等价并随父容器一起移动", async () => {
-  for (const [point, x, y] of [["top-left", 10, 20], ["top-right", -290, 20], ["bottom-left", 10, -180], ["bottom-right", -290, -180], ["center", -140, -80]]) {
+test("九种父容器参照点输入等价并随父容器一起移动", async () => {
+  for (const [point, x, y] of [["top-left", 10, 20], ["top-right", -290, 20], ["bottom-left", 10, -180], ["bottom-right", -290, -180], ["center", -140, -80], ["top-center", -140, 20], ["bottom-center", -140, -180], ["left-center", 10, -80], ["right-center", -290, -80]]) {
     const environment = await createCoordinateEditor();
     const select = (id) => findElements(environment.controlsHost, (node) => node.dataset.layoutNodeId === id)[0].dispatch("click");
     select("hud.button");
@@ -930,12 +930,12 @@ test("显示选择允许锁定节点且遵守操作锁与销毁状态", () => {
   assert.equal(environment.editor.selectNode("hud.button"), false);
 });
 
-/** 新节点默认相对坐标，并依据父级内位置推导四角或中心，不继承其他节点的模式。 */
+/** 新节点默认相对坐标，并依据父级内位置推导九个参照点，不继承其他节点的模式。 */
 test("按节点相对位置推导默认参照点并独立保留手动偏好", () => {
   const fixture = createFixture();
   fixture.layout.offsets = {};
   fixture.nodes[0].target_bounds = { x: 20, y: 10, width: 100, height: 50 };
-  const points = [["top-left", 0.05, 0.05], ["top-right", 0.95, 0.05], ["bottom-left", 0.05, 0.95], ["bottom-right", 0.95, 0.95], ["center", 0.5, 0.5]];
+  const points = [["top-left", 0.05, 0.05], ["top-right", 0.95, 0.05], ["bottom-left", 0.05, 0.95], ["bottom-right", 0.95, 0.95], ["center", 0.5, 0.5], ["top-center", 0.5, 0.05], ["bottom-center", 0.5, 0.95], ["left-center", 0.05, 0.5], ["right-center", 0.95, 0.5]];
   fixture.nodes = [fixture.nodes[0], ...points.map(([id, x, y]) => ({ layout_node_id: id, parent_layout_node_id: "hud.group", target_bounds: { x: 20 + x * 100, y: 10 + y * 50, width: 5, height: 5 } }))];
   const environment = createMountedEditor({ nodes: fixture.nodes, layout: fixture.layout, editorOptions: { saveOnChange: false } });
   const input = (label) => findElements(environment.controlsHost, (node) => node.getAttribute("aria-label") === label)[0];

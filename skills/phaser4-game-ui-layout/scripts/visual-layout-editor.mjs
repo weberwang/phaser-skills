@@ -289,6 +289,10 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     "top-right": { label: "右上角", x: 1, y: 0 },
     "bottom-left": { label: "左下角", x: 0, y: 1 },
     "bottom-right": { label: "右下角", x: 1, y: 1 },
+    "top-center": { label: "上边中点", x: 0.5, y: 0 },
+    "bottom-center": { label: "下边中点", x: 0.5, y: 1 },
+    "left-center": { label: "左边中点", x: 0, y: 0.5 },
+    "right-center": { label: "右边中点", x: 1, y: 0.5 },
     center: { label: "中心点", x: 0.5, y: 0.5 },
   };
   const relativePointRow = makeElement(document, "label", "vle-row", "父容器参照点");
@@ -388,7 +392,7 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
       let pointId = "center";
       let nearest = Infinity;
       // 归一化宽高避免长宽比支配判断；等距时优先中心，拖动过程中不自动跳换参照点。
-      for (const candidate of ["center", "top-left", "top-right", "bottom-left", "bottom-right"]) {
+      for (const candidate of ["center", ...Object.keys(relativePoints).filter((id) => id !== "center")]) {
         const point = relativePoints[candidate];
         const distance = (x - point.x) ** 2 + (y - point.y) ** 2;
         if (distance < nearest) { nearest = distance; pointId = candidate; }
@@ -398,7 +402,7 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     return coordinatePreferences.get(id);
   }
 
-  /** 按父容器即时尺寸计算四角或中心原点；视口及安全区采用各自逻辑边界。 */
+  /** 按父容器即时尺寸计算九个参照原点；视口及安全区采用各自逻辑边界。 */
   function coordinateOrigin() {
     if (coordinateModeInput.value === "absolute") return { x: 0, y: 0 };
     const parentBounds = coordinateParentBounds(selectedId);
