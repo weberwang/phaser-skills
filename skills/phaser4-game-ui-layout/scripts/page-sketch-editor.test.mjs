@@ -106,6 +106,7 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认并�
   let confirmCount = 0;
   let store;
   let editor;
+  let selectDisplayed;
 
   store = {
     getDocument() { return structuredClone(diskDocument); },
@@ -134,7 +135,8 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认并�
       async pickStore() { openCount += 1; return store; },
       async loadSources() { return { assets: new Map(), confirmationError: null, errors: [], referenceUrl: "blob:reference", revoke() {} }; },
       async verifySources() { return { errors: [], healthy: true }; },
-      async mountPreview() {
+      async mountPreview(options) {
+        selectDisplayed = options.onNodeSelect;
         return { destroy() {}, errors: [], getBounds: () => ({ x: 0, y: 0, width: 200, height: 100 }), getViewportRect: () => ({ left: 0, top: 0, width: 200, height: 100 }), isHealthy: () => true, reflow() {} };
       },
       mountEditor(options) {
@@ -145,6 +147,13 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认并�
           interactionEnabled: true,
           previewMode: false,
           geometryRefreshes: 0,
+          selectedId: null,
+          /** 模拟公共选择入口，验证显示节点回调不绕过编辑器操作锁。 */
+          selectNode(id) {
+            if (!this.interactionEnabled || this.previewMode) return false;
+            this.selectedId = id;
+            return true;
+          },
           refreshViewport() { this.geometryRefreshes += 1; },
           destroy() {},
           getLayout() { return structuredClone(layout); },
@@ -171,6 +180,8 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认并�
 
   const [openOperation] = elements.get("open-sketch").dispatch("click");
   await openOperation;
+  assert.equal(selectDisplayed("hud.root"), true);
+  assert.equal(editor.selectedId, "hud.root");
   assert.equal(openCount, 1);
   const originalSketch = structuredClone(diskDocument);
   const device = elements.get("preview-device");
@@ -208,6 +219,8 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认并�
   elements.get("save-sketch").dispatch("click");
   await saveStarted.promise;
   assert.equal(editor.interactionEnabled, false);
+  assert.equal(selectDisplayed("hud.other"), false);
+  assert.equal(editor.selectedId, "hud.root");
   for (const id of ["open-sketch", "toggle-preview", "reset-sketch", "save-sketch", "confirm-sketch"]) assert.equal(elements.get(id).disabled, true);
   const attemptedLayout = { ...createSketch().layout, offsets: { "hud.root": { x: 30, y: 0 } } };
   assert.equal(editor.attemptEdit(attemptedLayout), false);

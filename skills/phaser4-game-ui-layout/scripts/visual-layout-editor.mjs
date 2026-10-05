@@ -501,13 +501,15 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     }
   }
 
-  /** 选择有效节点并同步节点树与几何框。 */
+  /** 显示点击与树点击共用选择入口；选择只同步面板，不产生布局修改或保存。 */
   function selectNode(id) {
+    if (destroyed || !interactionEnabled || previewMode) return false;
     if (!nodeMap.has(id)) throw new TypeError(`未知 layout_node_id：${id}`);
     selectedId = id;
     syncCoordinateInputs();
     renderTree();
     renderFrames();
+    return true;
   }
 
   /** 调用正式 Scene 布局入口；布局始终以隔离副本交给集成方。 */
@@ -869,6 +871,9 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     isPreviewMode: () => previewMode,
     reload,
     resetToInitial,
+    selectNode,
+    // 对外暴露同一个选择状态，供预览显示节点与右侧树联动核验。
+    getSelectedNodeId: () => selectedId,
     // CSS transform 不一定触发 ResizeObserver，设备模拟与全屏切换后由宿主显式刷新覆盖层。
     refreshViewport: onViewportGeometryChange,
     setInteractionEnabled,

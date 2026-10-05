@@ -880,3 +880,42 @@ test("视口和安全区中心参照点正确处理尺寸与操作锁", async ()
     environment.editor.destroy();
   }
 });
+
+/** 显示点击和树点击共享一个选择状态，只同步高亮与坐标，不修改布局或保存。 */
+test("预览框与节点树选择互相同步且不改变草图", () => {
+  const environment = createMountedEditor({ editorOptions: { saveOnChange: false } });
+  const baseline = environment.editor.getLayout();
+  const frame = findElements(environment.document.body, (node) => node.getAttribute("data-layout-node-id") === "hud.button")[0];
+  frame.dispatch("pointerdown", { button: 0, pointerId: 7, clientX: 180, clientY: 150 });
+  assert.equal(environment.editor.getSelectedNodeId(), "hud.button");
+  const button = findElements(environment.controlsHost, (node) => node.dataset.layoutNodeId === "hud.button")[0];
+  assert.equal(button.getAttribute("aria-current"), "true");
+  findElements(environment.controlsHost, (node) => node.dataset.layoutNodeId === "hud.group")[0].dispatch("click");
+  assert.equal(environment.editor.getSelectedNodeId(), "hud.group");
+  assert.equal(findElements(environment.document.body, (node) => node.getAttribute("data-layout-node-id") === "hud.group")[0].getAttribute("class"), "vle-frame vle-frame-selected");
+  assert.deepEqual(environment.editor.getLayout(), baseline);
+  assert.equal(environment.saved.length, 0);
+  environment.editor.destroy();
+});
+
+/** 背景允许从显示内容选中查看，但不开放移动；锁定、正式预览及销毁禁止选择变更。 */
+test("显示选择允许锁定节点且遵守操作锁与销毁状态", () => {
+  const environment = createMountedEditor({ editorOptions: { lockedNodeIds: ["hud.button"], saveOnChange: false } });
+  const baseline = environment.editor.getLayout();
+  assert.equal(environment.editor.selectNode("hud.button"), true);
+  assert.equal(environment.editor.getSelectedNodeId(), "hud.button");
+  const input = findElements(environment.controlsHost, (node) => node.getAttribute("aria-label") === "节点 X 坐标")[0];
+  assert.equal(input.disabled, true);
+  environment.editor.setInteractionEnabled(false);
+  assert.equal(environment.editor.selectNode("hud.group"), false);
+  findElements(environment.controlsHost, (node) => node.dataset.layoutNodeId === "hud.group")[0].dispatch("click");
+  assert.equal(environment.editor.getSelectedNodeId(), "hud.button");
+  environment.editor.setInteractionEnabled(true);
+  environment.editor.setPreviewMode(true);
+  assert.equal(environment.editor.selectNode("hud.group"), false);
+  environment.editor.setPreviewMode(false);
+  assert.equal(environment.editor.selectNode("hud.group"), true);
+  assert.deepEqual(environment.editor.getLayout(), baseline);
+  environment.editor.destroy();
+  assert.equal(environment.editor.selectNode("hud.button"), false);
+});

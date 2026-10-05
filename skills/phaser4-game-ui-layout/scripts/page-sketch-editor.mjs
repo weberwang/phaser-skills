@@ -192,7 +192,10 @@ export async function initializePageSketchApplication({ document, projectRootUrl
       if (sources.backgroundLayoutError) throw new Error(sources.backgroundLayoutError);
       if (!sources.referenceUrl) throw new Error("冻结效果图不能从当前开发服务读取或 SHA 不匹配，请先修复资源路径");
 
-      preview = await mountPreview({ host: surface, sketch, sources });
+      preview = await mountPreview({ host: surface, sketch, sources,
+        // 显示内容与节点树共用编辑器的选择状态；操作锁和预览模式由同一入口约束。
+        onNodeSelect: (layoutNodeId) => editor?.selectNode(layoutNodeId),
+      });
       surface.dataset.viewportWidth = String(sketch.viewport.width);
       surface.dataset.viewportHeight = String(sketch.viewport.height);
       resizeSurface();
@@ -235,7 +238,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
       resizeSurface();
       if (hasAcceptedConfirmation) status.textContent = `V4 草图已确认：${sketch.confirmation.content_sha256}`;
       else if (sources.errors.length || preview.errors.length || !confirmationHashValid) status.textContent = "草图已载入，但存在阻断项；修复全部资源后才能确认。";
-      else status.textContent = "页面草图已载入；拖拽或输入父级偏移后，先保存草图再确认。";
+      else status.textContent = "页面草图已载入；点击显示节点或右侧节点树选择，调整坐标后先保存草图再确认。";
       renderErrors([...sources.errors, ...preview.errors, ...(sources.confirmationError ? [sources.confirmationError] : [])]);
       updateButtons();
     } catch (error) {

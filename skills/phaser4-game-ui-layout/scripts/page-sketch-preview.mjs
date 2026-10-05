@@ -214,10 +214,17 @@ function applyTextStyle(element, presentation) {
 }
 
 /** 按节点 presentation 构建正式资产、文字、结构容器和运行时预览元素。 */
-export async function mountPageSketchPreview({ host, sketch: sketchInput, sources }) {
+export async function mountPageSketchPreview({ host, sketch: sketchInput, sources, onNodeSelect }) {
   const sketch = validatePageSketchDocument(sketchInput);
   if (!host?.ownerDocument || !sources) throw new TypeError("host 与草图预加载 sources 不能为空");
+  if (onNodeSelect !== undefined && typeof onNodeSelect !== "function") throw new TypeError("onNodeSelect 必须是节点选择回调");
   const document = host.ownerDocument;
+  let destroyed = false;
+  /** 显示内容只负责选择，拖动仍由编辑框控制，锁定背景也能被选中查看。 */
+  function onDisplayedNodePointerDown(event) {
+    if (destroyed || (event.button !== undefined && event.button !== 0)) return;
+    onNodeSelect?.(event.currentTarget.dataset.layoutNodeId);
+  }
   const nodeElements = new Map();
   const runtimeInstances = new Map();
   const errors = [...sources.errors];
@@ -232,7 +239,10 @@ export async function mountPageSketchPreview({ host, sketch: sketchInput, source
     wrapper.dataset.layoutNodeId = node.layout_node_id;
     wrapper.style.position = "absolute";
     wrapper.style.boxSizing = "border-box";
-    wrapper.style.pointerEvents = "none";
+    // 空容器没有显示内容，必须穿透命中，防止透明父层遮挡后方实际显示节点。
+    const hasDisplay = presentation.kind !== "container" || Boolean(presentation.style?.fill || presentation.style?.stroke);
+    wrapper.style.pointerEvents = onNodeSelect && hasDisplay ? "auto" : "none";
+    if (onNodeSelect) wrapper.addEventListener("pointerdown", onDisplayedNodePointerDown, true);
     wrapper.style.overflow = presentation.overflow ?? "visible";
     wrapper.style.zIndex = String(presentation.z_index ?? index);
 
@@ -321,6 +331,9 @@ export async function mountPageSketchPreview({ host, sketch: sketchInput, source
 
   /** 释放项目预览程序并清空临时资源节点。 */
   function destroy() {
+    if (destroyed) return;
+    destroyed = true;
+    if (onNodeSelect) for (const element of nodeElements.values()) element.removeEventListener("pointerdown", onDisplayedNodePointerDown, true);
     for (const runtime of runtimeInstances.values()) {
       if (typeof runtime === "function") runtime();
       else runtime?.destroy?.();

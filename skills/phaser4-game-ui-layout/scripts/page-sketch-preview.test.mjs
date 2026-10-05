@@ -45,6 +45,13 @@ function createHost() {
         children: [],
         style: {},
         dataset: {},
+        listeners: new Map(),
+        /** 记录显示选择事件，以便验证预览卸载后不再回调。 */
+        addEventListener(type, callback) { this.listeners.set(type, callback); },
+        /** 模拟浏览器移除事件处理器。 */
+        removeEventListener(type, callback) { if (this.listeners.get(type) === callback) this.listeners.delete(type); },
+        /** 派发实际显示节点的指针事件。 */
+        dispatch(type, event = {}) { this.listeners.get(type)?.({ ...event, currentTarget: this }); },
         append(...children) { this.children.push(...children); },
       };
     },
@@ -173,4 +180,36 @@ test("项目子路径与百分号文件名保持在配置资源根下，控制�
   const invalid = createSketch();
   invalid.reference_file = "refs/bad\u0000name.png";
   await assert.rejects(loadPageSketchSources(invalid, { projectRootUrl: "https://game.test/game/", pageOrigin: "https://game.test" }), /控制字符/);
+});
+
+/** 显示内容的点击携带稳定节点身份，空父容器不得阻挡图片节点。 */
+test("显示内容支持选择且空容器穿透命中并在卸载时释放事件", async () => {
+  const host = createHost();
+  const selections = [];
+  const preview = await mountPageSketchPreview({ host, sketch: createSketch(), sources: createSources(), onNodeSelect: (id) => selections.push(id) });
+  const [container, image] = host.children;
+  assert.equal(container.style.pointerEvents, "none");
+  assert.equal(image.style.pointerEvents, "auto");
+  image.dispatch("pointerdown", { button: 0 });
+  assert.deepEqual(selections, ["hud.hero"]);
+  image.dispatch("pointerdown", { button: 2 });
+  assert.equal(selections.length, 1);
+  preview.destroy();
+  image.dispatch("pointerdown", { button: 0 });
+  assert.equal(selections.length, 1);
+});
+
+/** 有可见装饰的容器可以点击选择，纯预览不提供选择回调时保留穿透行为。 */
+test("可见容器显示内容可选择且无回调时不截获输入", async () => {
+  const host = createHost();
+  const selections = [];
+  const sketch = createSketch({ rootPresentation: { kind: "container", style: { fill: "#123456" } } });
+  const preview = await mountPageSketchPreview({ host, sketch, sources: createSources(), onNodeSelect: (id) => selections.push(id) });
+  assert.equal(host.children[0].style.pointerEvents, "auto");
+  host.children[0].dispatch("pointerdown", { button: 0 });
+  assert.deepEqual(selections, ["hud.root"]);
+  preview.destroy();
+  const plain = await mountPageSketchPreview({ host, sketch, sources: createSources() });
+  assert.equal(host.children[0].style.pointerEvents, "none");
+  plain.destroy();
 });
