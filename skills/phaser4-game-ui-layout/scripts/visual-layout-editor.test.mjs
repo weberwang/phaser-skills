@@ -418,6 +418,9 @@ test("连续键盘微调恢复节点焦点并累计位置", async () => {
 /** 数值字段直接编辑相对父容器的最终坐标，并复用正式同步重排及持久化链路。 */
 test("数值坐标输入设置所选节点的最终坐标", async () => {
   const environment = createMountedEditor();
+  const point = findElements(environment.controlsHost, (node) => node.getAttribute("aria-label") === "父容器参照点")[0];
+  point.value = "top-left";
+  point.dispatch("change");
   const xInput = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "节点 X 坐标")[0];
   const yInput = findElements(environment.document.body, (node) => node.getAttribute("aria-label") === "节点 Y 坐标")[0];
   xInput.value = "24";
@@ -713,6 +716,13 @@ async function createCoordinateEditor(options = {}) {
   });
   await environment.editor.reload(environment.editor.getLayout());
   const input = (label) => findElements(environment.controlsHost, (node) => node.getAttribute("aria-label") === label)[0];
+  // 显式固定已有换算用例的左上角原点；自动推导及节点独立偏好由专门用例覆盖。
+  for (const node of environment.nodes) {
+    environment.editor.selectNode(node.layout_node_id);
+    input("父容器参照点").value = "top-left";
+    input("父容器参照点").dispatch("change");
+  }
+  environment.editor.selectNode(environment.nodes[0].layout_node_id);
   return { ...environment, x: input("节点 X 坐标"), y: input("节点 Y 坐标"), mode: input("坐标模式"), point: input("父容器参照点") };
 }
 
@@ -918,4 +928,57 @@ test("显示选择允许锁定节点且遵守操作锁与销毁状态", () => {
   assert.deepEqual(environment.editor.getLayout(), baseline);
   environment.editor.destroy();
   assert.equal(environment.editor.selectNode("hud.button"), false);
+});
+
+/** 新节点默认相对坐标，并依据父级内位置推导四角或中心，不继承其他节点的模式。 */
+test("按节点相对位置推导默认参照点并独立保留手动偏好", () => {
+  const fixture = createFixture();
+  fixture.layout.offsets = {};
+  fixture.nodes[0].target_bounds = { x: 20, y: 10, width: 100, height: 50 };
+  const points = [["top-left", 0.05, 0.05], ["top-right", 0.95, 0.05], ["bottom-left", 0.05, 0.95], ["bottom-right", 0.95, 0.95], ["center", 0.5, 0.5]];
+  fixture.nodes = [fixture.nodes[0], ...points.map(([id, x, y]) => ({ layout_node_id: id, parent_layout_node_id: "hud.group", target_bounds: { x: 20 + x * 100, y: 10 + y * 50, width: 5, height: 5 } }))];
+  const environment = createMountedEditor({ nodes: fixture.nodes, layout: fixture.layout, editorOptions: { saveOnChange: false } });
+  const input = (label) => findElements(environment.controlsHost, (node) => node.getAttribute("aria-label") === label)[0];
+  const mode = input("坐标模式"), point = input("父容器参照点");
+  const baseline = environment.editor.getLayout();
+  for (const [id] of points) {
+    environment.editor.selectNode(id);
+    assert.equal(mode.value, "relative");
+    assert.equal(point.value, id);
+  }
+  environment.editor.selectNode("top-left");
+  mode.value = "absolute";
+  mode.dispatch("change");
+  environment.editor.selectNode("top-right");
+  assert.equal(mode.value, "relative");
+  assert.equal(point.value, "top-right");
+  point.value = "bottom-left";
+  point.dispatch("change");
+  environment.editor.selectNode("top-left");
+  assert.equal(mode.value, "absolute");
+  environment.editor.selectNode("top-right");
+  assert.equal(point.value, "bottom-left");
+  assert.deepEqual(environment.editor.getLayout(), baseline);
+  assert.equal(environment.saved.length, 0);
+  environment.editor.destroy();
+});
+
+/** 顶层安全区原点同样参与推导，父容器移动与重置不隐式改变已选择的参照点。 */
+test("安全区自动参照点保持稳定且使用实际相对坐标", () => {
+  const fixture = createFixture();
+  fixture.layout.offsets = {};
+  fixture.nodes[0].parent_layout_node_id = "safe-area";
+  fixture.nodes[0].parent_target_bounds = { x: 10, y: 20, width: 200, height: 100 };
+  fixture.nodes[0].target_bounds = { x: 200, y: 110, width: 10, height: 10 };
+  const environment = createMountedEditor({ nodes: fixture.nodes, layout: fixture.layout, editorOptions: { saveOnChange: false } });
+  const input = (label) => findElements(environment.controlsHost, (node) => node.getAttribute("aria-label") === label)[0];
+  assert.equal(input("父容器参照点").value, "bottom-right");
+  assert.equal(input("节点 X 坐标").value, "-10");
+  assert.equal(input("节点 Y 坐标").value, "-10");
+  input("节点 X 坐标").value = "-180";
+  input("节点 X 坐标").dispatch("change");
+  assert.equal(input("父容器参照点").value, "bottom-right");
+  environment.editor.resetToInitial();
+  assert.equal(input("父容器参照点").value, "bottom-right");
+  environment.editor.destroy();
 });

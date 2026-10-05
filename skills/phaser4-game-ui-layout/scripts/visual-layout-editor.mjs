@@ -332,6 +332,8 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
   document.body.append(root);
   controlsHost.append(panel);
 
+  // 每个节点拥有独立的坐标显示偏好，避免上一个节点的绝对模式或参照点影响下一节点。
+  const coordinatePreferences = new Map();
   let selectedId = nodes[0].layout_node_id;
   let snapping = true;
   let destroyed = false;
@@ -367,20 +369,48 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     status.textContent = message;
   }
 
+  /** 返回父容器当前逻辑边界，供相对点推导及坐标换算共用。 */
+  function coordinateParentBounds(id) {
+    const node = nodeMap.get(id);
+    const parentId = node.parent_layout_node_id;
+    return nodeMap.has(parentId) ? readCurrentBounds(parentId)
+      : parentId === "viewport" ? { x: 0, y: 0, width: logicalViewport.width, height: logicalViewport.height }
+        : normalizeBounds(node.parent_target_bounds, `节点 ${id}.parent_target_bounds`);
+  }
+
+  /** 首次选择时根据节点左上角的相对位置推导最近参照点，随后保留用户的独立选择。 */
+  function coordinatePreference(id) {
+    if (!coordinatePreferences.has(id)) {
+      const bounds = readCurrentBounds(id);
+      const parent = coordinateParentBounds(id);
+      const x = (bounds.x - parent.x) / parent.width;
+      const y = (bounds.y - parent.y) / parent.height;
+      let pointId = "center";
+      let nearest = Infinity;
+      // 归一化宽高避免长宽比支配判断；等距时优先中心，拖动过程中不自动跳换参照点。
+      for (const candidate of ["center", "top-left", "top-right", "bottom-left", "bottom-right"]) {
+        const point = relativePoints[candidate];
+        const distance = (x - point.x) ** 2 + (y - point.y) ** 2;
+        if (distance < nearest) { nearest = distance; pointId = candidate; }
+      }
+      coordinatePreferences.set(id, { mode: "relative", point: pointId });
+    }
+    return coordinatePreferences.get(id);
+  }
+
   /** 按父容器即时尺寸计算四角或中心原点；视口及安全区采用各自逻辑边界。 */
   function coordinateOrigin() {
     if (coordinateModeInput.value === "absolute") return { x: 0, y: 0 };
-    const node = nodeMap.get(selectedId);
-    const parentId = node.parent_layout_node_id;
-    const parentBounds = nodeMap.has(parentId) ? readCurrentBounds(parentId)
-      : parentId === "viewport" ? { x: 0, y: 0, width: logicalViewport.width, height: logicalViewport.height }
-        : normalizeBounds(node.parent_target_bounds, `节点 ${selectedId}.parent_target_bounds`);
+    const parentBounds = coordinateParentBounds(selectedId);
     const point = relativePoints[relativePointInput.value];
     return { x: parentBounds.x + parentBounds.width * point.x, y: parentBounds.y + parentBounds.height * point.y };
   }
 
   /** 显示最终坐标而非冻结布局的增量；模式切换只改变读数，不修改保存数据。 */
   function syncCoordinateInputs() {
+    const preference = coordinatePreference(selectedId);
+    coordinateModeInput.value = preference.mode;
+    relativePointInput.value = preference.point;
     const bounds = readCurrentBounds(selectedId);
     const origin = coordinateOrigin();
     xCoordinateInput.value = String(bounds.x - origin.x);
@@ -795,6 +825,7 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
   /** 模式或父容器参照点切换只换算读数，不触发布局变更或保存。 */
   function onCoordinateModeChange() {
     if (destroyed || !interactionEnabled || previewMode) return;
+    coordinatePreferences.set(selectedId, { mode: coordinateModeInput.value, point: relativePointInput.value });
     syncCoordinateInputs();
   }
 
