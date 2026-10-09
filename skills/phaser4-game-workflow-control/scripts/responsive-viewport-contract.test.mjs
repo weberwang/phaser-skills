@@ -29,8 +29,8 @@ function makeContract() {
     visualBaselineVersion: 'visual-baseline/1.0',
     logicalViewportSpace: { unit: 'css-logical-px', coordinateSpace: 'css-logical' },
     designResolutionPolicy: {
-      portrait: { width: 1080, height: 1920, fitAxis: 'height' },
-      landscape: { width: 1920, height: 1080, fitAxis: 'width' },
+      portrait: { width: 1080, height: 1920, fitAxis: 'width' },
+      landscape: { width: 1920, height: 1080, fitAxis: 'height' },
       canvasFit: 'fill-viewport',
       crossAxis: 'extend-or-crop',
       backgroundFit: { mode: 'cover-v1', sourceFocalPoint: { x: 0.5, y: 0.5 }, targetPoint: { x: 0.5, y: 0.5 } },
@@ -198,12 +198,12 @@ test('固定横竖屏设计基准、填满画布和背景 cover 必须符合合�
   assert.match(validateResponsiveContract(missing).join('\n'), /designResolutionPolicy/);
 
   const portrait = makeContract();
-  portrait.designResolutionPolicy.portrait.fitAxis = 'width';
-  assert.match(validateResponsiveContract(portrait).join('\n'), /portrait 必须为 1080×1920 且按 height 适配/);
+  portrait.designResolutionPolicy.portrait.fitAxis = 'height';
+  assert.match(validateResponsiveContract(portrait).join('\n'), /portrait 必须为 1080×1920 且按 width 适配/);
 
   const landscape = makeContract();
   landscape.designResolutionPolicy.landscape.width = 1280;
-  assert.match(validateResponsiveContract(landscape).join('\n'), /landscape 必须为 1920×1080 且按 width 适配/);
+  assert.match(validateResponsiveContract(landscape).join('\n'), /landscape 必须为 1920×1080 且按 height 适配/);
 
   const canvasBars = makeContract();
   canvasBars.designResolutionPolicy.canvasFit = 'fit';
@@ -262,7 +262,7 @@ test('V5 证据验证 CSS/backing、动态 DPR、矩阵和候选身份', () => {
   const contract = makeContract();
   const evidence = makeEvidence();
   assert.deepEqual(validateResponsiveEvidenceRecord(evidence, contract, { candidateSha256: CANDIDATE }), []);
-  const wrongAxis = makeEvidence({ designTransform: { ...evidence.designTransform, scale: 320 / 1080 } });
+  const wrongAxis = makeEvidence({ designTransform: { ...evidence.designTransform, scale: 800 / 1920 } });
   assert.match(validateResponsiveEvidenceRecord(wrongAxis, contract).join('\n'), /designTransform.scale/);
   const bars = makeEvidence({ canvasRect: { x: 0, y: 25, width: 320, height: 775 } });
   assert.match(validateResponsiveEvidenceRecord(bars, contract).join('\n'), /Canvas 必须填满真实 CSS 视口/);

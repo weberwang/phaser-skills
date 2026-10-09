@@ -18,7 +18,8 @@
     input[type=text], select { width: 100%; padding: 7px 8px; color: #f5f8fc; background: #0d1828; border: 1px solid #58718e; border-radius: 5px; }
     #stage-frame { position: relative; min-width: 0; min-height: 0; overflow: hidden; background-color: #172536; background-image: linear-gradient(45deg,#1f3043 25%,transparent 25%),linear-gradient(-45deg,#1f3043 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#1f3043 75%),linear-gradient(-45deg,transparent 75%,#1f3043 75%); background-size: 28px 28px; background-position: 0 0,0 14px,14px -14px,-14px 0; border: 1px solid #405670; }
     #stage-device { position: absolute; left: 0; top: 0; transform-origin: top left; background: #080d15; overflow: hidden; outline: 2px solid #627b99; }
-    #stage-surface { position: absolute; left: 0; top: 0; transform-origin: top left; background: #101827; overflow: hidden; }
+    /* 可见区域可超出冻结草图；由设备外框裁切，避免背景扩展在内层被截断。 */
+    #stage-surface { position: absolute; left: 0; top: 0; transform-origin: top left; background: #101827; overflow: visible; }
     #workspace-controls { min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 14px; padding: 14px; background: #172438; border: 1px solid #344861; }
     .control-section { display: grid; gap: 9px; }
     .control-row { display: flex; gap: 8px; }
@@ -57,14 +58,15 @@
       </section>
       <div id="layout-controls"></div>
       <div id="resource-errors" aria-live="polite"></div>
-      <p class="help">左侧仅显示预览和节点对齐框，右侧进行全部操作。设备选择只影响显示尺寸，草图逻辑坐标保持不变；不同宽高比按比例居中留边。保存后点击“确认草图”才能进入 V5。</p>
+      <p class="help">左侧仅显示预览和节点对齐框，右侧进行全部操作。设备选择只影响显示尺寸，草图逻辑坐标保持不变；不同宽高比使用共享设计空间映射，背景铺满可见区域。保存后点击“确认草图”才能进入 V5。</p>
     </aside>
   </main>
   <script type="module">
+    import Phaser from "phaser";
     import { initializePageSketchApplication } from "./page-sketch-editor.mjs";
 
     const rootPath = document.querySelector('meta[name="page-sketch-project-root"]')?.content || "/";
-    await initializePageSketchApplication({ document, projectRootUrl: new URL(rootPath, location.href) });
+    await initializePageSketchApplication({ document, projectRootUrl: new URL(rootPath, location.href), adapters: { Phaser } });
   </script>
 </body>
 </html>

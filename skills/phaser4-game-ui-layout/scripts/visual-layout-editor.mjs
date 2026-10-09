@@ -188,7 +188,7 @@ function errorMessage(error) {
 }
 
 /** 以隔离的开发期 DOM 层挂载 Phaser 逻辑坐标布局编辑器；reflow 必须同步返回。 */
-export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, viewport, nodes: inputNodes, layout, lockedNodeIds = [], getBounds, getViewportRect, reflow, save, saveOnChange = true, showSaveButton = true, saveButtonLabel = "保存布局", onLayoutChange, onPreviewHealthChange }) {
+export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, viewport, nodes: inputNodes, layout, lockedNodeIds = [], getBounds, getViewportRect, getClipRect, reflow, save, saveOnChange = true, showSaveButton = true, saveButtonLabel = "保存布局", onLayoutChange, onPreviewHealthChange }) {
   const logicalViewport = validateViewport(viewport);
   const nodes = snapshotLayoutNodes(inputNodes);
   const nodeMap = validateLayoutNodes(nodes);
@@ -213,6 +213,7 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
   if (typeof referenceUrl !== "string" || referenceUrl.trim() === "") throw new TypeError("referenceUrl 必须指向开发预览使用的冻结效果图");
   if (typeof getBounds !== "function") throw new TypeError("getBounds 必须是读取正式 Scene 逻辑 bounds 的回调");
   if (getViewportRect !== undefined && typeof getViewportRect !== "function") throw new TypeError("getViewportRect 必须是读取目标 viewport CSS client rect 的回调");
+  if (getClipRect !== undefined && typeof getClipRect !== "function") throw new TypeError("getClipRect 必须是读取实际可见 CSS 矩形的回调");
   if (typeof reflow !== "function") throw new TypeError("reflow 必须接入正式布局入口");
   if (typeof save !== "function") throw new TypeError("save 必须是实际持久化回调；缺少时禁止挂载编辑器");
   if (typeof saveOnChange !== "boolean" || typeof showSaveButton !== "boolean") throw new TypeError("saveOnChange/showSaveButton 必须是布尔值");
@@ -365,6 +366,18 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     root.style.top = `${rect.top}px`;
     root.style.width = `${rect.width}px`;
     root.style.height = `${rect.height}px`;
+    // 覆盖层挂在 body，不能继承设备框裁切；只裁显示与命中，输入仍用完整 surface 的逆变换。
+    if (getClipRect) {
+      const clip = getClipRect();
+      if (![clip?.left, clip?.top, clip?.width, clip?.height].every(Number.isFinite) || clip.width <= 0 || clip.height <= 0) {
+        throw new TypeError("实际可见 CSS 矩形必须包含有限位置和正数宽高");
+      }
+      const top = Math.max(0, clip.top - rect.top);
+      const right = Math.max(0, rect.left + rect.width - clip.left - clip.width);
+      const bottom = Math.max(0, rect.top + rect.height - clip.top - clip.height);
+      const left = Math.max(0, clip.left - rect.left);
+      root.style.clipPath = `inset(${top}px ${right}px ${bottom}px ${left}px)`;
+    }
   }
 
   /** 用状态文本区分未保存、保存中、保存成功和失败。 */

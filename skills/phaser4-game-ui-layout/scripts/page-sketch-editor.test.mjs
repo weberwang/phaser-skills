@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { calculateDevicePreviewGeometry, initializePageSketchApplication } from "./page-sketch-editor.mjs";
+import { calculateFixedDesignPreview } from "./fixed-design-viewport.mjs";
+import { mapClientToLogical } from "./visual-layout-editor.mjs";
 
 const SHA = `sha256:${"e".repeat(64)}`;
 
@@ -94,6 +96,62 @@ function createSketch() {
   };
 }
 
+/** 异步复核资源期间 Scene 可能失效，确认落盘必须检查最新渲染状态。 */
+test("来源 SHA 复核通过但 Scene 已关闭时不得确认", async () => {
+  const { document, elements } = createPageDocument();
+  let healthy = true;
+  let confirmations = 0;
+  let disk = createSketch();
+  await initializePageSketchApplication({ document, projectRootUrl: new URL("https://game.test/"), adapters: {
+    async pickStore() {
+      return { getDocument: () => structuredClone(disk),
+        async saveDraft(layout) { disk = { ...disk, layout }; return structuredClone(disk); },
+        async confirm() { confirmations += 1; return structuredClone(disk); },
+      };
+    },
+    async loadSources() { return { errors: [], referenceUrl: "blob:reference", assets: new Map(), revoke() {} }; },
+    async verifySources() { healthy = false; return { healthy: true, errors: [] }; },
+    async mountPreview() { return { errors: [], destroy() {}, reflow() {}, setViewport() {},
+      getBounds: () => disk.nodes[0].target_bounds, getViewportRect: () => ({ left: 0, top: 0, width: 200, height: 100 }), isHealthy: () => healthy }; },
+    mountEditor() { return { destroy() {}, refreshViewport() {}, setInteractionEnabled() {}, getLayout: () => structuredClone(disk.layout) }; },
+  } });
+  await elements.get("open-sketch").dispatch("click")[0];
+  await elements.get("save-sketch").dispatch("click")[0];
+  await new Promise(setImmediate);
+  await elements.get("confirm-sketch").dispatch("click")[0];
+  await new Promise(setImmediate);
+  assert.equal(confirmations, 0);
+  assert.equal(disk.confirmation, null);
+  assert.match(elements.get("page-status").textContent, /正式画面未就绪或渲染已失效/);
+});
+
+/** 关闭工作台后，晚完成的 Phaser 挂载必须被销毁而不能重新安装编辑器。 */
+test("页面清理阻断异步预览复活并回收晚到实例", async () => {
+  const { document, elements } = createPageDocument();
+  const gate = deferred();
+  const started = deferred();
+  let destroyed = 0;
+  let revoked = 0;
+  let mountedEditors = 0;
+  const app = await initializePageSketchApplication({ document, projectRootUrl: new URL("https://game.test/"), adapters: {
+    async pickStore() { return { getDocument: () => createSketch() }; },
+    async loadSources() { return { errors: [], referenceUrl: "blob:reference", assets: new Map(), revoke() { revoked += 1; } }; },
+    async mountPreview() { started.resolve(); return gate.promise; },
+    mountEditor() { mountedEditors += 1; throw new Error("不应挂载"); },
+    async verifySources() { return { healthy: true, errors: [] }; },
+  } });
+  const opening = elements.get("open-sketch").dispatch("click")[0];
+  await started.promise;
+  app.clearCurrentPreview();
+  gate.resolve({ destroy() { destroyed += 1; } });
+  await opening;
+  assert.equal(destroyed, 1);
+  assert.equal(revoked, 1);
+  assert.equal(mountedEditors, 0);
+  assert.equal(elements.get("confirm-sketch").disabled, true);
+  assert.equal(elements.get("stage-surface").dataset.viewportWidth, undefined);
+});
+
 test("应用层保存和确认期间锁住节点、打开、保存、确认并最终解锁", async () => {
   const { document, elements } = createPageDocument();
   const saveGate = deferred();
@@ -107,6 +165,7 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认并�
   let store;
   let editor;
   let selectDisplayed;
+  let deviceReflowFails = false;
 
   store = {
     getDocument() { return structuredClone(diskDocument); },
@@ -137,7 +196,10 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认并�
       async verifySources() { return { errors: [], healthy: true }; },
       async mountPreview(options) {
         selectDisplayed = options.onNodeSelect;
-        return { destroy() {}, errors: [], getBounds: () => ({ x: 0, y: 0, width: 200, height: 100 }), getViewportRect: () => ({ left: 0, top: 0, width: 200, height: 100 }), isHealthy: () => true, reflow() {} };
+        return { destroy() {}, errors: [], getBounds: () => ({ x: 0, y: 0, width: 200, height: 100 }), getViewportRect: () => ({ left: 0, top: 0, width: 200, height: 100 }), isHealthy: () => true, reflow() {},
+          /** 模拟设备变化时程序节点同步重排失败。 */
+          setViewport() { if (deviceReflowFails) throw new Error("程序节点无法重排"); },
+        };
       },
       mountEditor(options) {
         assert.equal(options.controlsHost, elements.get("layout-controls"));
@@ -189,7 +251,7 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认并�
   device.dispatch("change");
   assert.equal(elements.get("stage-device").style.width, "390px");
   assert.equal(elements.get("stage-device").style.height, "844px");
-  assert.equal(elements.get("stage-surface").style.transform, "scale(1.95)");
+  assert.equal(elements.get("stage-surface").style.transform, `scale(${calculateFixedDesignPreview(diskDocument.viewport, { width: 390, height: 844 }).scale})`);
   const refreshBeforeRotate = editor.geometryRefreshes;
   elements.get("device-orientation").value = "landscape";
   elements.get("device-orientation").dispatch("change");
@@ -234,6 +296,14 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认并�
   assert.deepEqual(diskDocument.layout.offsets, {});
   assert.equal(elements.get("confirm-sketch").disabled, false);
 
+  deviceReflowFails = true;
+  device.dispatch("change");
+  assert.equal(elements.get("confirm-sketch").disabled, true);
+  assert.match(elements.get("page-status").textContent, /设备预览重排失败/);
+  deviceReflowFails = false;
+  device.dispatch("change");
+  assert.equal(elements.get("confirm-sketch").disabled, false);
+
   elements.get("confirm-sketch").dispatch("click");
   await confirmStarted.promise;
   assert.equal(editor.interactionEnabled, false);
@@ -263,17 +333,26 @@ test("应用层保存和确认期间锁住节点、打开、保存、确认并�
 });
 
 
-test("设备预览两层缩放保持逻辑坐标，手机、平板和全屏留边都位于可用区域", () => {
+test("设备外框适配工作台，内容共享设计几何并允许中心裁切", () => {
   for (const device of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1440, height: 900 }]) {
     for (const available of [{ width: 600, height: 400 }, { width: 1500, height: 1000 }]) {
       const viewport = { width: 1280, height: 720 };
       const result = calculateDevicePreviewGeometry(viewport, device, available);
       assert(result.deviceLeft >= 0 && result.deviceTop >= 0);
-      assert(result.contentLeft >= 0 && result.contentTop >= 0);
+      const shared = calculateFixedDesignPreview(viewport, device);
+      assert.equal(result.contentLeft, shared.x);
+      assert.equal(result.contentTop, shared.y);
+      assert.equal(result.contentScale, shared.scale);
+      assert.deepEqual(result.designTransform, shared.target);
+      // 输入使用变换后的完整 surface rect，等价于撤销同一复合变换；裁切外框不能替代此 rect。
+      const point = { x: 320, y: 240 };
+      const rect = { left: result.contentLeft * result.deviceScale, top: result.contentTop * result.deviceScale,
+        width: viewport.width * result.contentScale * result.deviceScale, height: viewport.height * result.contentScale * result.deviceScale };
+      const input = mapClientToLogical({ clientX: rect.left + point.x * result.contentScale * result.deviceScale,
+        clientY: rect.top + point.y * result.contentScale * result.deviceScale, rect, viewport });
+      assert(Math.abs(input.x - point.x) < 1e-8 && Math.abs(input.y - point.y) < 1e-8);
       assert(device.width * result.deviceScale <= available.width + 1e-8);
       assert(device.height * result.deviceScale <= available.height + 1e-8);
-      assert(viewport.width * result.contentScale <= device.width + 1e-8);
-      assert(viewport.height * result.contentScale <= device.height + 1e-8);
       assert.deepEqual(viewport, { width: 1280, height: 720 });
     }
   }

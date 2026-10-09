@@ -1,5 +1,6 @@
 import { assertPageSketchBackgroundLayout, hashPageSketchContent, validatePageSketchDocument, validateProjectRelativePath } from "./page-sketch-contract.mjs";
-import { validateVisualLayoutDocument } from "./visual-layout-editor.mjs";
+import { createPageSketchRenderer } from "./page-sketch-phaser.mjs";
+import { calculateFixedDesignPreview } from "./fixed-design-viewport.mjs";
 
 /** 以 WebCrypto 校验已下载源文件的真实内容身份。 */
 async function hashBytes(bytes) {
@@ -119,7 +120,7 @@ export async function loadPageSketchSources(sketchInput, { projectRootUrl, fetch
     try {
       moduleUrl = urlApi.createObjectURL(new BlobCtor([loaded.bytes], { type: "text/javascript" }));
       const imported = await import(moduleUrl);
-      const exportName = presentation.export_name ?? "mountPreview";
+      const exportName = presentation.export_name ?? "mountPhaser";
       if (typeof imported[exportName] !== "function") throw new Error(`模块必须导出 ${exportName}(context)`);
       runtimePrograms.set(nodeId, imported[exportName]);
     } catch (error) {
@@ -144,7 +145,8 @@ export async function loadPageSketchSources(sketchInput, { projectRootUrl, fetch
     errors,
     referenceUrl,
     runtimePrograms,
-    revoke() { for (const url of objectUrls) urlApi.revokeObjectURL(url); },
+    /** 多个失败/关闭入口可重复清理，所有 Blob 只撤销一次。 */
+    revoke() { for (const url of objectUrls.splice(0)) urlApi.revokeObjectURL(url); },
   };
 }
 
@@ -171,185 +173,79 @@ export async function verifyPageSketchSources(sketchInput, { projectRootUrl, fet
   return { errors, healthy: errors.length === 0 };
 }
 
-/** 计算节点显示 bounds；每个祖先偏移只累加一次，使父节点拖动自然带动子孙。 */
-export function calculatePageSketchNodeBounds(layout, nodes, layoutNodeId) {
-  const nodeById = new Map(nodes.map((node) => [node.layout_node_id, node]));
-  const node = nodeById.get(layoutNodeId);
-  if (!node) throw new TypeError(`未知 layout_node_id：${layoutNodeId}`);
-  let xOffset = 0;
-  let yOffset = 0;
-  let current = node;
-  const visited = new Set();
-  while (current) {
-    const id = current.layout_node_id;
-    if (visited.has(id)) throw new TypeError(`节点父级存在循环：${id}`);
-    visited.add(id);
-    const offset = layout.offsets?.[id] ?? { x: 0, y: 0 };
-    xOffset += offset.x;
-    yOffset += offset.y;
-    const parentId = current.parent_layout_node_id;
-    current = nodeById.get(parentId);
-  }
-  return { ...node.target_bounds, x: node.target_bounds.x + xOffset, y: node.target_bounds.y + yOffset };
-}
-
-/** 安全创建 DOM 元素；文本和资源名称均作为纯文本插入页面。 */
-function createElement(document, tag, className, text) {
-  const element = document.createElement(tag);
-  if (className) element.className = className;
-  if (text !== undefined) element.textContent = text;
-  return element;
-}
-
-/** 把明确的文字节点样式映射到 DOM，避免以占位图替代正式文本。 */
-function applyTextStyle(element, presentation) {
-  const style = presentation.style;
-  element.textContent = presentation.text;
-  element.style.fontFamily = style.font_family;
-  element.style.fontSize = `${style.font_size_px}px`;
-  element.style.color = style.color;
-  if (style.font_weight !== undefined) element.style.fontWeight = String(style.font_weight);
-  if (style.text_align !== undefined) element.style.textAlign = style.text_align;
-  if (style.line_height !== undefined) element.style.lineHeight = String(style.line_height);
-}
-
-/** 按节点 presentation 构建正式资产、文字、结构容器和运行时预览元素。 */
-export async function mountPageSketchPreview({ host, sketch: sketchInput, sources, onNodeSelect }) {
+/** 创建与正式 Scene 共用的 Phaser 画面；DOM 宿主仅承载 Canvas，编辑层由工作台另行管理。 */
+export async function mountPageSketchPreview({ host, sketch: sketchInput, sources, onNodeSelect, Phaser = globalThis.Phaser, createRenderer = createPageSketchRenderer, readyTimeoutMs = 15000 }) {
   const sketch = validatePageSketchDocument(sketchInput);
-  if (!host?.ownerDocument || !sources) throw new TypeError("host 与草图预加载 sources 不能为空");
-  if (onNodeSelect !== undefined && typeof onNodeSelect !== "function") throw new TypeError("onNodeSelect 必须是节点选择回调");
-  const document = host.ownerDocument;
-  let destroyed = false;
-  /** 显示内容只负责选择，拖动仍由编辑框控制，锁定背景也能被选中查看。 */
-  function onDisplayedNodePointerDown(event) {
-    if (destroyed || (event.button !== undefined && event.button !== 0)) return;
-    onNodeSelect?.(event.currentTarget.dataset.layoutNodeId);
-  }
-  const nodeElements = new Map();
-  const runtimeInstances = new Map();
+  if (!host?.ownerDocument || !sources || !Phaser?.Game || !Phaser?.Scene) throw new TypeError('需要项目实际使用的 Phaser、DOM 宿主与已验证资源');
   const errors = [...sources.errors];
+  let renderer;
+  let game;
+  let destroyed = false;
+  let transform = calculateFixedDesignPreview(sketch.viewport, sketch.viewport);
+  let settle;
+  let rejectReady;
+  const ready = new Promise((resolve, reject) => { settle = resolve; rejectReady = reject; });
+  // 引擎启动中断时不能无限等待并保留资源；超时始终关闭确认入口。
+  const readyTimer = setTimeout(() => rejectReady(new Error("Phaser 预览启动或字体就绪超时")), readyTimeoutMs);
+  const keys = new Map([...sources.assets.keys()].map((id, index) => [id, 'page-sketch-' + index]));
+  /** 隔离预览启动流程；正式对象始终交由共享渲染器创建。 */
+  class PreviewScene extends Phaser.Scene {
+    /** 为预览使用独立 Scene 身份，避免复用正式业务 Scene 的副作用。 */
+    constructor() { super({ key: 'PageSketchPreview' }); }
+    /** Loader 只消费通过 SHA 和解码复核的 Blob，不加载参考底图。 */
+    preload() {
+      this.load.on('loaderror', (file) => errors.push('Phaser 资源加载失败：' + file.key));
+      for (const [id, url] of sources.assets) this.load.image(keys.get(id), url);
+    }
+    /** 字体和对象创建全部完成后才开放保存确认所需的健康状态。 */
+    create() {
+      Promise.resolve().then(async () => {
+        if (errors.length) throw new Error(errors.join('；'));
+        renderer = await createRenderer({ scene: this, sketch, assets: keys, runtimePrograms: sources.runtimePrograms,
+          lockedNodeIds: sources.lockedNodeIds, fonts: host.ownerDocument.fonts, onNodeSelect });
+        await renderer.ready;
+        if (!renderer.isHealthy()) throw new Error(renderer.errors?.join("；") || "Phaser 画面未就绪");
+        if (destroyed) { renderer.destroy(); throw new Error('预览已清理'); }
+        settle();
+      }).catch(rejectReady);
+    }
+  }
   host.replaceChildren();
-  host.style.position = "relative";
-  host.style.width = `${sketch.viewport.width}px`;
-  host.style.height = `${sketch.viewport.height}px`;
-
-  for (const [index, node] of sketch.nodes.entries()) {
-    const presentation = sketch.node_presentations[node.layout_node_id];
-    const wrapper = createElement(document, "div", "page-sketch-node");
-    wrapper.dataset.layoutNodeId = node.layout_node_id;
-    wrapper.style.position = "absolute";
-    wrapper.style.boxSizing = "border-box";
-    // 空容器没有显示内容，必须穿透命中，防止透明父层遮挡后方实际显示节点。
-    const hasDisplay = presentation.kind !== "container" || Boolean(presentation.style?.fill || presentation.style?.stroke);
-    wrapper.style.pointerEvents = onNodeSelect && hasDisplay ? "auto" : "none";
-    if (onNodeSelect) wrapper.addEventListener("pointerdown", onDisplayedNodePointerDown, true);
-    wrapper.style.overflow = presentation.overflow ?? "visible";
-    wrapper.style.zIndex = String(presentation.z_index ?? index);
-
-    if (presentation.kind === "image") {
-      for (const [layerIndex, assetId] of presentation.asset_ids.entries()) {
-        const url = sources.assets.get(assetId);
-        if (!url) {
-          errors.push(`正式图片资源 ${assetId} 未加载，不能确认草图`);
-          continue;
-        }
-        const image = createElement(document, "img", "page-sketch-asset");
-        image.alt = "";
-        image.draggable = false;
-        image.src = url;
-        // 同节点可声明多张正式图层；必须重叠铺满边界，不能按普通文档流横向/纵向排开。
-        image.style.position = "absolute";
-        image.style.inset = "0";
-        image.style.zIndex = String(layerIndex);
-        image.style.width = "100%";
-        image.style.height = "100%";
-        image.style.objectFit = presentation.object_fit;
-        wrapper.append(image);
-      }
-      if (presentation.asset_ids.some((assetId) => !sources.assets.has(assetId))) wrapper.append(createElement(document, "span", "page-sketch-error", "正式图片资源无法预览"));
-    } else if (presentation.kind === "text") {
-      applyTextStyle(wrapper, presentation);
-    } else if (presentation.kind === "container") {
-      if (presentation.style?.fill) wrapper.style.backgroundColor = presentation.style.fill;
-      if (presentation.style?.stroke) wrapper.style.border = presentation.style.stroke;
-      if (presentation.style?.radius_px !== undefined) wrapper.style.borderRadius = `${presentation.style.radius_px}px`;
-    } else if (presentation.kind === "runtime-program") {
-      const mountPreview = sources.runtimePrograms.get(node.layout_node_id);
-      if (!mountPreview) {
-        wrapper.append(createElement(document, "span", "page-sketch-error", "运行时节点无法预览；草图不能确认"));
-        errors.push(`运行时节点 ${node.layout_node_id} 缺少可用预览程序`);
-      } else {
-        try {
-          const instance = mountPreview({ element: wrapper, node: structuredClone(node), viewport: { ...sketch.viewport }, layout: structuredClone(sketch.layout) });
-          if (instance && typeof instance.then === "function") {
-            // 运行时预览布局必须同步；及时消费拒绝，避免失败模块泄漏未处理 Promise。
-            Promise.resolve(instance).catch(() => {});
-            throw new Error("mountPreview 必须同步完成布局更新");
-          }
-          runtimeInstances.set(node.layout_node_id, instance ?? null);
-        } catch (error) {
-          wrapper.append(createElement(document, "span", "page-sketch-error", "运行时节点预览失败；草图不能确认"));
-          errors.push(`运行时节点 ${node.layout_node_id} 预览失败：${error.message}`);
-        }
-      }
-    }
-    host.append(wrapper);
-    nodeElements.set(node.layout_node_id, wrapper);
+  host.style.position = 'relative';
+  host.style.width = sketch.viewport.width + 'px';
+  host.style.height = sketch.viewport.height + 'px';
+  try {
+    game = new Phaser.Game({ type: Phaser.AUTO, parent: host, width: sketch.viewport.width, height: sketch.viewport.height,
+      transparent: true, scene: PreviewScene, scale: { mode: Phaser.Scale.NONE },
+      callbacks: { postBoot(booted) { booted.events.once('destroy', () => rejectReady(new Error('Phaser 预览提前终止'))); } } });
+    await ready;
+  } catch (error) {
+    destroyed = true; renderer?.destroy(); game?.destroy(true); sources.revoke?.(); host.replaceChildren(); throw error;
+  } finally { clearTimeout(readyTimer); }
+  /** Canvas 抵消工作台对编辑坐标的变换，正式根容器再应用同一共享视口计算。 */
+  function setViewport(size) {
+    if (destroyed) throw new Error('预览已清理');
+    transform = calculateFixedDesignPreview(sketch.viewport, size);
+    game.scale.resize(size.width, size.height);
+    const result = renderer.setViewport(size);
+    Object.assign(game.canvas.style, { position: 'absolute', left: -transform.x / transform.scale + 'px',
+      top: -transform.y / transform.scale + 'px', width: size.width / transform.scale + 'px', height: size.height / transform.scale + 'px' });
+    return result;
   }
-
-  let currentLayout = validateVisualLayoutDocument(sketch.layout, sketch.nodes);
-  let healthy = errors.length === 0;
-
-  /** 同步节点 DOM 和运行时绘制器的位置；异步更新会被拒绝以保持同一帧一致。 */
-  function reflow(layoutInput) {
-    currentLayout = validateVisualLayoutDocument(layoutInput, sketch.nodes);
-    try {
-      for (const node of sketch.nodes) {
-        const bounds = calculatePageSketchNodeBounds(currentLayout, sketch.nodes, node.layout_node_id);
-        const element = nodeElements.get(node.layout_node_id);
-        element.style.left = `${bounds.x}px`;
-        element.style.top = `${bounds.y}px`;
-        element.style.width = `${bounds.width}px`;
-        element.style.height = `${bounds.height}px`;
-        const runtime = runtimeInstances.get(node.layout_node_id);
-        if (runtime && typeof runtime.update === "function") {
-          const result = runtime.update({ element, node, viewport: sketch.viewport, bounds, layout: currentLayout });
-          if (result && typeof result.then === "function") {
-            // update 的异步副作用无法与 DOM 重排保持同帧，立即标记不健康并消费拒绝。
-            Promise.resolve(result).catch(() => {});
-            throw new Error(`运行时节点 ${node.layout_node_id} update 必须同步完成`);
-          }
-        }
-      }
-      healthy = errors.length === 0;
-      return currentLayout;
-    } catch (error) {
-      healthy = false;
-      throw error;
-    }
-  }
-
-  /** 释放项目预览程序并清空临时资源节点。 */
-  function destroy() {
-    if (destroyed) return;
-    destroyed = true;
-    if (onNodeSelect) for (const element of nodeElements.values()) element.removeEventListener("pointerdown", onDisplayedNodePointerDown, true);
-    for (const runtime of runtimeInstances.values()) {
-      if (typeof runtime === "function") runtime();
-      else runtime?.destroy?.();
-    }
-    host.replaceChildren();
-    sources.revoke?.();
-  }
-
-  try { reflow(currentLayout); }
-  catch (error) { healthy = false; errors.push(`正式预览布局重排失败：${error.message}`); }
+  try { setViewport(sketch.viewport); }
+  catch (error) { destroyed = true; try { renderer.destroy(); } finally { game.destroy(true); sources.revoke?.(); host.replaceChildren(); } throw error; }
   return {
-    destroy,
-    errors,
-    getBounds: (layoutNodeId) => calculatePageSketchNodeBounds(currentLayout, sketch.nodes, layoutNodeId),
+    get errors() { return [...errors, ...(renderer.errors ?? [])]; },
+    reflow: (layout) => renderer.reflow(layout),
+    getBounds: (id) => renderer.getBounds(id),
     getViewportRect: () => host.getBoundingClientRect(),
-    isHealthy: () => healthy && errors.length === 0,
-    reflow,
+    isHealthy: () => !destroyed && errors.length === 0 && renderer.isHealthy(),
+    setViewport,
+    /** 先停止 Phaser 和监听器，再撤销仍被纹理使用的 Blob。 */
+    destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      try { renderer.destroy(); } finally { game.destroy(true); sources.revoke?.(); host.replaceChildren(); }
+    },
   };
 }

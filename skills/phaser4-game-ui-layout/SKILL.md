@@ -19,9 +19,9 @@ description: 为 Phaser 4 游戏建立可验证的 UI 布局合同、坐标空�
 
 ## 全局视口与高分屏合同
 
-所有可见 Scene、HUD、弹窗和 `DISPLAY_LAYER` 都必须在布局合同中填写 `logicalViewportSpace`、`designResolutionPolicy`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr`、`scaleMode`、`cameraViewportPolicy`、`cameraZoomPolicy`、`cameraOriginPolicy`、`inputCoordinatePolicy`、`safeAreaPolicy`、`resizePolicy`、`orientationPolicy`、`textResolutionPolicy`、`assetResolutionPolicy`、`performanceBudget`、`representativeViewports` 和 `requiredRuntimeEvidence`。`orientationPolicy.allowed` 声明项目支持的方向；`designResolutionPolicy` 只需提供这些方向的分支，`targets.orientations` 与其一致。竖屏以 1080×1920 为设计基准并按高度适配，横屏以 1920×1080 为设计基准并按宽度适配；另一轴随视口展开或裁切。Canvas 填满 CSS 视口，装饰性背景等比 cover，禁止黑边。Canvas backing 由 CSS 尺寸乘有效 DPR（向上取整）得到，物理像素不得直接用于布局或命中。
+所有可见 Scene、HUD、弹窗和 `DISPLAY_LAYER` 都必须在布局合同中填写 `logicalViewportSpace`、`designResolutionPolicy`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr`、`scaleMode`、`cameraViewportPolicy`、`cameraZoomPolicy`、`cameraOriginPolicy`、`inputCoordinatePolicy`、`safeAreaPolicy`、`resizePolicy`、`orientationPolicy`、`textResolutionPolicy`、`assetResolutionPolicy`、`performanceBudget`、`representativeViewports` 和 `requiredRuntimeEvidence`。`orientationPolicy.allowed` 声明项目支持的方向；`designResolutionPolicy` 只需提供这些方向的分支，`targets.orientations` 与其一致。竖屏以 1080×1920 为设计基准并按宽度适配，横屏以 1920×1080 为设计基准并按高度适配；另一轴随视口展开或裁切。Canvas 填满 CSS 视口，装饰性背景等比 cover，禁止黑边。Canvas backing 由 CSS 尺寸乘有效 DPR（向上取整）得到，物理像素不得直接用于布局或命中。
 
-运行时 DPR 从设备动态读取，非法输入回退 1，正有限值封顶 2，且必须覆盖 resize、显示密度变化以及双方向项目的方向切换并清理监听器。资源生产 DPR 固定基线为 2，必须与运行时 DPR 分离。ScaleMode 采用 `RESIZE` 或同等填屏的 `custom`，实施包必须证明 `gameSize`、Camera viewport/zoom/origin 和 CSS/物理映射；声明模式或构建成功不能单独作为高分屏证据。弹窗默认继承宿主逻辑视口、DPR、安全区、Camera 和输入合同，V5 必须独立记录其运行轨迹。
+运行时 DPR 从设备动态读取，非法输入回退 1，正有限值封顶 2，且必须覆盖 resize、显示密度变化以及双方向项目的方向切换并清理监听器。资源生产 DPR 固定基线为 1（逻辑尺寸 1:1），必须与运行时 DPR 分离。ScaleMode 采用 `RESIZE` 或同等填屏的 `custom`，实施包必须证明 `gameSize`、Camera viewport/zoom/origin 和 CSS/物理映射；声明模式或构建成功不能单独作为高分屏证据。弹窗默认继承宿主逻辑视口、DPR、安全区、Camera 和输入合同，V5 必须独立记录其运行轨迹。
 
 ## 视觉语言默认原则
 
@@ -35,10 +35,12 @@ UI 设计与实现优先用符合全局视觉基线且含义清晰、熟悉的�
 
 1. 读取项目的 GDD/TDD、当前候选、总控审核漏斗和适用视觉阶段；确定稳定 UI ID、坐标空间、参照物、状态与平台输入。
 2. 复制 schema 1.2.0 [合同模板](assets/ui-layout-contract-template.yaml)。普通布局使用 `not-applicable` 并保持 `layout_nodes: []`；冻结视觉目标先用 `frozen-target/specified`。同时冻结上述根级视口/DPR/Camera/Input/性能字段，禁止使用旧 `targets.scale` 字段绕过新门禁。V2 先按位置依赖建立父子、按共同信息建立同级分组，再生成拆解图、技术 JSON 和 `decomposition_elements`，人工修改并确认；屏幕 UI 同时确认 `ui_layout` 职责字段。确认后由智能视觉判断生成逐元素 `left/center/right × top/center/bottom` 决策，再由同一入口同步生成布局 PNG、`layout-nodes.json`、`layout-decision.json`、离线 `review.html` 和 `generation-result.json`。随后登记由确认元素和视觉决策共同推导的非空 `layout_nodes` 与关键对齐合同。
-3. V3 资源验收后在独立 V4 阶段执行[页面还原草图](../phaser4-game-asset-integration/references/visual-alignment-authoring.md)：生成草图数据，页面读取正式资源，提供可调透明度的效果图底板、显示树、节点选择与坐标调整。父节点移动带动子孙，保存后经用户确认才进入 V5。V5 用 [Phaser 适配器](references/phaser-adapter.md) 消费同一确认草图，复用幂等布局入口并绑定 `pageSketchSha256`；V2 目标节点保持只读。
+3. V3 资源验收后在独立 V4 阶段执行[页面还原草图](../phaser4-game-asset-integration/references/visual-alignment-authoring.md)：生成草图数据，DOM 工作台保留控制面板、显示树、保存和确认；正式组合画面在 Phaser Canvas 中预览，参考底图和编辑框留在隔离的编辑辅助层。父节点移动带动子孙，保存后经用户确认才进入 V5。V5 用 [Phaser 适配器](references/phaser-adapter.md) 消费同一确认草图，复用幂等布局入口并绑定 `pageSketchSha256`；V2 目标节点保持只读。
 4. specified 阶段运行结构检查 `node scripts/validate_ui_layout_contract.mjs <contract>`；verified 正式验收必须运行 `node scripts/validate_ui_layout_contract.mjs <contract> --check-files --project-root .`，复算冻结原图 SHA 并检查目标/运行/parity 证据文件。
 5. 按 [证据矩阵](references/evidence-matrix.md) 生成 `orientationPolicy.allowed` 对应的代表性视口、关键状态和窄/宽尺寸证据；只支持单一方向时不验证另一方向，但仍覆盖同方向尺寸、DPR 和同页连续 resize。关键 UI/HUD 记录稳定 element/reference ID、双轴关系、目标/运行测量、实际测试 ID/状态、视觉证据和项目定义容差。V5 还必须记录 CSS/backing 尺寸、raw/effective DPR、Camera、输入命中、同页 resize 和独立 DISPLAY_LAYER 轨迹。`exact` 或明确的全覆盖需求才扩展到完整矩阵和严格 delta，方向轴仅覆盖项目支持方向。
 6. 按 [工作流门禁](references/workflow-gates.md) 接入 V0–V5、F0–F4 和 G0–G3；只有布局结构、父子归属或参照关系真实变化才退回 V1，普通位置/尺寸调整更新计划并重验受影响区域，F3 只接受绑定当前候选的工程证据。
+
+V4 与 V5 必须共用 `scripts/page-sketch-layout.mjs` 的纯布局结果和 `scripts/page-sketch-phaser.mjs` 的 Phaser 渲染适配器；删除 DOM/CSS 正式组合渲染路径。V2 锚点先由布局函数解析，资源 origin 独立作用于 Phaser 对象；全局目标 bounds 先计入祖先偏移，再换算父级局部坐标，父偏移只传递一次。V5 模板消费同一次 `loadPageSketchSources` 返回的资源集合，并透传其中从 V3 manifest 解析的 `lockedNodeIds`，确保未声明自身 background 字段的背景节点也保持锁定。图片 fit 和真实 Phaser 文字字段按适配器参考执行；不支持的呈现属性、资源/字体未就绪、异步 runtime-program 或渲染异常必须令健康检查失败并阻断确认。Scene 创建、唤醒和 resize 调用同一幂等入口；发布画面不含参考底图、编辑框或编辑输入。草图 SHA 绑定身份，V5 仍需实际运行就绪及画面对照证据。
 
 ## effect-image 场景绑定
 

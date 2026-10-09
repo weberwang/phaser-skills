@@ -28,8 +28,8 @@
     "coordinateOrigin": "top-left"
   },
   "designResolutionPolicy": {
-    "portrait": {"width": 1080, "height": 1920, "fitAxis": "height"},
-    "landscape": {"width": 1920, "height": 1080, "fitAxis": "width"},
+    "portrait": {"width": 1080, "height": 1920, "fitAxis": "width"},
+    "landscape": {"width": 1920, "height": 1080, "fitAxis": "height"},
     "canvasFit": "fill-viewport",
     "crossAxis": "extend-or-crop",
     "backgroundFit": {"mode": "cover-v1", "sourceFocalPoint": {"x": 0.5, "y": 0.5}, "targetPoint": {"x": 0.5, "y": 0.5}}

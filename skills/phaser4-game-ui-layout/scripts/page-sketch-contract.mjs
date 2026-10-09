@@ -1,4 +1,5 @@
 import { validateVisualLayoutDocument } from "./visual-layout-editor.mjs";
+import { validatePageSketchPresentation } from "./page-sketch-layout.mjs";
 
 export const PAGE_SKETCH_SCHEMA = "phaser-page-sketch/1.0";
 export const PAGE_SKETCH_RESOURCE_MAP_SCHEMA = "phaser-page-sketch-resources/1.0";
@@ -111,6 +112,8 @@ function validatePresentation(layoutNodeId, presentation, assetsById) {
     if (presentation.export_name !== undefined) requireText(presentation.export_name, `node_presentations.${layoutNodeId}.export_name`);
   }
   if (presentation.z_index !== undefined && !Number.isFinite(presentation.z_index)) throw new TypeError(`node_presentations.${layoutNodeId}.z_index 必须是有限数`);
+  // 合同与 Phaser 映射共用样式能力门，禁止确认无法被正式渲染器实现的样式。
+  validatePageSketchPresentation(presentation);
   return structuredClone(presentation);
 }
 

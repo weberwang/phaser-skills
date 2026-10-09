@@ -43,6 +43,12 @@
 - `contextual layer images`：每个瞬态层的 required state 都单独出图，但必须包含宿主场景、遮罩/层级、显示层和当前状态，并绑定宿主 target SHA、显示层 target SHA、viewport；孤立组件图只能作为 V3 生产参考。
 - `V2 component × state plan`：在拆解确认阶段独立拆解组件和状态，随后 V4 以草图确认宿主组合、V5 在正式场景验证，重放打开→交互→关闭→底层状态/焦点恢复轨迹。
 
+### V4/V5 共享 Phaser 草图渲染
+
+V4 DOM 工作台保留设备控制、显示树、保存和确认；正式组合预览由 Phaser Canvas 呈现。参考底图、编辑框和编辑输入只能放在隔离的工作台辅助层，不能进入发布 Scene。V4 与 V5 共用 `page-sketch-layout.mjs` 纯布局计算和 `page-sketch-phaser.mjs` 的 `createPageSketchRenderer`，禁止 DOM/CSS 正式组合渲染与第二套坐标公式。
+
+正式 Scene 使用 [`createFormalPageSketchScene`](../../phaser4-game-ui-layout/assets/visual-layout-game-adapter.mjs) 模板，并把同一 `loadPageSketchSources` 返回值作为 `sources` 传入。`sources.assets` 为 asset_id 到已核验资源 Blob URL 的 Map，`sources.lockedNodeIds` 保留从 V3 manifest 背景 regions 解析出的锁定节点；即使节点没有自身 background layer/role，也必须原样透传。模板按场景、状态、asset_id 和 V3 SHA 生成稳定纹理键，复用已有同键 Phaser 纹理，并在异步 create 中验证草图为 accepted 且 `hashPageSketchContent` 匹配确认摘要。V2 anchor、目标 bounds、资源 origin 与父级局部坐标分开处理；全局 bounds 只累计祖先偏移一次。布局入口必须在创建、唤醒和 resize 共用且幂等，渲染器负责生命周期监听与清理。资源、字体、runtime-program 或渲染错误使 ready/健康检查失败；草图 SHA 只绑定身份，V5 仍要采集真实运行画面对照。
+
 ## 增量流程
 
 1. 冻结玩家行为、模块契约、所有权、验收、服务复用和 V0 类型。模块边界变化先查事实，仅实质取舍触发模块门和 grilling。F4 只处理带副作用的 A4-A6 决定。

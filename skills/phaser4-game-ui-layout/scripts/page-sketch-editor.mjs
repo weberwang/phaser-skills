@@ -1,6 +1,7 @@
 import { mountVisualLayoutEditor } from "./visual-layout-editor.mjs";
 import { pickPageSketchFileStore } from "./page-sketch-file-store.mjs";
 import { loadPageSketchSources, mountPageSketchPreview, verifyPageSketchSources } from "./page-sketch-preview.mjs";
+import { calculateFixedDesignPreview } from "./fixed-design-viewport.mjs";
 
 /** 开发预览设备尺寸使用 CSS 像素，不代表设备物理分辨率或修改草图 viewport。 */
 export const PREVIEW_DEVICES = Object.freeze([
@@ -12,19 +13,19 @@ export const PREVIEW_DEVICES = Object.freeze([
   { id: "desktop", label: "桌面 · 1440 × 900", width: 1440, height: 900 },
 ]);
 
-/** 分两层等比缩放：设备适配左侧空间，固定草图适配设备屏幕，避免显示选择改变已确认坐标。 */
+/** 外框适配工作台；内容经共享设计空间映射，允许非匹配轴展开或裁切。 */
 export function calculateDevicePreviewGeometry(viewport, device, available) {
   for (const size of [viewport, device, available]) {
     if (![size?.width, size?.height].every((value) => Number.isFinite(value) && value > 0)) throw new TypeError("预览尺寸必须是正有限数");
   }
   const deviceScale = Math.min(available.width / device.width, available.height / device.height);
-  const contentScale = Math.min(device.width / viewport.width, device.height / viewport.height);
+  const transform = calculateFixedDesignPreview(viewport, device);
   return {
-    deviceScale, contentScale,
+    deviceScale, contentScale: transform.scale, designTransform: transform.target,
     deviceLeft: (available.width - device.width * deviceScale) / 2,
     deviceTop: (available.height - device.height * deviceScale) / 2,
-    contentLeft: (device.width - viewport.width * contentScale) / 2,
-    contentTop: (device.height - viewport.height * contentScale) / 2,
+    contentLeft: transform.x,
+    contentTop: transform.y,
   };
 }
 
@@ -66,6 +67,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
   let operationInFlight = false;
   let previewMode = false;
   let fullscreenInFlight = false;
+  let previewGeneration = 0;
 
   /** 用安全纯文本方式展示资源读取和解码失败项。 */
   function renderErrors(items) {
@@ -118,6 +120,15 @@ export async function initializePageSketchApplication({ document, projectRootUrl
     surface.style.transform = `scale(${geometry.contentScale})`;
     surface.style.left = `${geometry.contentLeft}px`;
     surface.style.top = `${geometry.contentTop}px`;
+    try {
+      preview?.setViewport?.(device);
+      if (preview) previewHealthy = preview.isHealthy() && sources?.errors.length === 0;
+    } catch (error) {
+      // 设备切换也会触发程序节点重排；失败必须关闭确认入口，不能沿用上一视口的健康状态。
+      previewHealthy = false;
+      status.textContent = `设备预览重排失败：${error.message}`;
+    }
+    updateButtons();
     deviceSummary.textContent = `设备 ${device.width} × ${device.height} · 草图 ${viewport.width} × ${viewport.height} · 显示 ${Math.round(geometry.deviceScale * 100)}%`;
     // CSS transform 不触发 ResizeObserver，主动同步叠图以保持拖拽与显示位置一致。
     editor?.refreshViewport?.();
@@ -157,6 +168,8 @@ export async function initializePageSketchApplication({ document, projectRootUrl
 
   /** 销毁当前草图叠图、运行时节点预览程序和临时对象 URL。 */
   function clearCurrentPreview() {
+    // 页面关闭使所有未完成加载失效，晚到的资源或 Phaser 实例必须由对应操作回收。
+    previewGeneration += 1;
     editor?.destroy();
     if (preview) preview.destroy();
     else sources?.revoke?.();
@@ -180,22 +193,29 @@ export async function initializePageSketchApplication({ document, projectRootUrl
     operationInFlight = true;
     updateButtons();
     clearCurrentPreview();
+    const generation = previewGeneration;
     status.textContent = "请选择生成的 page-sketch.json…";
     try {
-      fileStore = await pickStore();
+      const openedStore = await pickStore();
+      if (generation !== previewGeneration) return;
+      fileStore = openedStore;
       const sketch = fileStore.getDocument();
       status.textContent = `正在复核 V2/V3 来源、底图和 ${sketch.v3_assets.length} 个正式资源…`;
-      sources = await loadSources(sketch, { projectRootUrl, pageOrigin: window.location.origin });
+      const loadedSources = await loadSources(sketch, { projectRootUrl, pageOrigin: window.location.origin });
+      if (generation !== previewGeneration) { loadedSources.revoke?.(); return; }
+      sources = loadedSources;
       confirmationHashValid = !sources.confirmationError;
       if (sources.confirmationError) renderErrors([sources.confirmationError, ...sources.errors]);
       else renderErrors(sources.errors);
       if (sources.backgroundLayoutError) throw new Error(sources.backgroundLayoutError);
       if (!sources.referenceUrl) throw new Error("冻结效果图不能从当前开发服务读取或 SHA 不匹配，请先修复资源路径");
 
-      preview = await mountPreview({ host: surface, sketch, sources,
+      const mountedPreview = await mountPreview({ host: surface, sketch, sources, Phaser: adapters.Phaser,
         // 显示内容与节点树共用编辑器的选择状态；操作锁和预览模式由同一入口约束。
         onNodeSelect: (layoutNodeId) => editor?.selectNode(layoutNodeId),
       });
+      if (generation !== previewGeneration) { mountedPreview.destroy(); return; }
+      preview = mountedPreview;
       surface.dataset.viewportWidth = String(sketch.viewport.width);
       surface.dataset.viewportHeight = String(sketch.viewport.height);
       resizeSurface();
@@ -218,6 +238,8 @@ export async function initializePageSketchApplication({ document, projectRootUrl
         layout: sketch.layout,
         getBounds: preview.getBounds,
         getViewportRect: preview.getViewportRect,
+        // 设备框限制可见与可点击区域，完整 surface rect 保留用于坐标逆变换。
+        getClipRect: () => deviceFrame.getBoundingClientRect(),
         reflow: preview.reflow,
         save: fileStore.saveDraft,
         saveOnChange: false,
@@ -242,8 +264,11 @@ export async function initializePageSketchApplication({ document, projectRootUrl
       renderErrors([...sources.errors, ...preview.errors, ...(sources.confirmationError ? [sources.confirmationError] : [])]);
       updateButtons();
     } catch (error) {
+      if (generation !== previewGeneration) return;
+      const loadingErrors = [...(sources?.errors ?? []), error.message];
+      clearCurrentPreview();
       status.textContent = `无法加载草图：${error.message}`;
-      if (sources?.errors.length) renderErrors(sources.errors);
+      renderErrors(loadingErrors);
       updateButtons();
     } finally {
       operationInFlight = false;
@@ -307,7 +332,9 @@ export async function initializePageSketchApplication({ document, projectRootUrl
         renderErrors([...sources.errors, ...sourceErrors]);
         throw new Error(sourceErrors.length ? `确认前来源复核失败：${sourceErrors.join("；")}` : "确认前来源复核未通过");
       }
-      const saved = await fileStore.confirm({ previewReady: true, layout: lockedEditor.getLayout() });
+      // 来源复核为异步操作，期间 Scene 可能关闭或重排失败；落盘前再次检查实际渲染状态。
+      if (!preview.isHealthy()) throw new Error("正式画面未就绪或渲染已失效，不能确认");
+      const saved = await fileStore.confirm({ previewReady: preview.isHealthy(), layout: lockedEditor.getLayout() });
       confirmationHashValid = true;
       status.textContent = `草图已确认，可推进 V5：${saved.confirmation.content_sha256}`;
       renderErrors([]);

@@ -9,7 +9,7 @@ import {
   validateVisualLayoutDocument,
 } from "./visual-layout-editor.mjs";
 
-import { calculatePageSketchNodeBounds } from "./page-sketch-preview.mjs";
+import { calculatePageSketchNodeBounds } from "./page-sketch-layout.mjs";
 
 const targetSha = `sha256:${"a".repeat(64)}`;
 
@@ -385,6 +385,22 @@ test("视口事件回调忽略事件参数并在销毁时移除", () => {
 });
 
 /** viewport 尺寸变化后拖动仍按新 client rect 换算，不受右栏 DOM 层级影响。 */
+test("设备可见区域裁剪 body 叠层，输入仍使用完整设计 surface", () => {
+  let clip = { left: 140, top: 50, width: 320, height: 200 };
+  const environment = createMountedEditor({ getViewportRect: true, editorOptions: { getClipRect: () => clip } });
+  const root = findElements(environment.document.body, (node) => node.getAttribute("data-phaser-visual-layout-editor"))[0];
+  assert.equal(root.style.clipPath, "inset(0px 40px 0px 40px)");
+  assert.equal(root.style.width, "400px");
+  // 裁切只影响可见边界，不能把指针归一到裁切后的宽度而使坐标漂移。
+  assert.deepEqual(mapClientToLogical({ clientX: 180, clientY: 100,
+    rect: { left: 100, top: 50, width: 400, height: 200 }, viewport: { width: 400, height: 200 } }), { x: 80, y: 50 });
+  clip = { left: 100, top: 70, width: 400, height: 160 };
+  environment.editor.refreshViewport();
+  assert.equal(root.style.clipPath, "inset(20px 0px 20px 0px)");
+  environment.editor.destroy();
+});
+
+/** 指针拖动使用完整视口比例，设备外框裁切不参与坐标归一化。 */
 test("独立右栏挂载后拖动按缩放后的视口映射逻辑坐标", async () => {
   const environment = createMountedEditor({ getViewportRect: true });
   const frame = findElements(environment.document.body, (node) => node.getAttribute("data-layout-node-id") === "hud.group")[0];

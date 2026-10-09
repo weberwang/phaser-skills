@@ -2,8 +2,8 @@ import { calculateFullBleedCoverTransform } from "../../phaser4-game-asset-integ
 
 /** 横竖屏共享的固定设计基准，避免合同校验与运行计算各自维护尺寸。 */
 export const DESIGN_RESOLUTIONS = Object.freeze({
-  portrait: Object.freeze({ width: 1080, height: 1920, fitAxis: "height" }),
-  landscape: Object.freeze({ width: 1920, height: 1080, fitAxis: "width" }),
+  portrait: Object.freeze({ width: 1080, height: 1920, fitAxis: "width" }),
+  landscape: Object.freeze({ width: 1920, height: 1080, fitAxis: "height" }),
 });
 
 /**
@@ -16,7 +16,7 @@ export function calculateFixedDesignViewport({ width, height }) {
   }
   const orientation = width < height ? "portrait" : "landscape";
   const design = DESIGN_RESOLUTIONS[orientation];
-  const scale = orientation === "portrait" ? height / design.height : width / design.width;
+  const scale = design.fitAxis === "width" ? width / design.width : height / design.height;
   const visibleWidth = width / scale;
   const visibleHeight = height / scale;
   return {
@@ -30,6 +30,24 @@ export function calculateFixedDesignViewport({ width, height }) {
     offsetX: (visibleWidth - design.width) / 2,
     offsetY: (visibleHeight - design.height) / 2,
   };
+}
+
+/** 将设计坐标映射到 CSS 局部坐标；居中偏移只在这一层应用一次。 */
+export function designPointToCss({ x, y }, viewport) {
+  return { x: (x + viewport.offsetX) * viewport.scale, y: (y + viewport.offsetY) * viewport.scale };
+}
+
+/** 输入先减去画布 client rect 原点，再使用此逆变换还原设计坐标，不引入 DPR。 */
+export function cssPointToDesign({ x, y }, viewport) {
+  return { x: x / viewport.scale - viewport.offsetX, y: y / viewport.scale - viewport.offsetY };
+}
+
+/** 将冻结草图的 CSS 坐标经设计空间映射到目标视口，供 V4 与项目 V5 共同消费。 */
+export function calculateFixedDesignPreview(sourceSize, targetSize) {
+  const source = calculateFixedDesignViewport(sourceSize);
+  const target = calculateFixedDesignViewport(targetSize);
+  const origin = designPointToCss(cssPointToDesign({ x: 0, y: 0 }, source), target);
+  return { source, target, scale: target.scale / source.scale, x: origin.x, y: origin.y };
 }
 
 /** 背景 cover 的可见区域原点转换为设计坐标，避免主轴适配后的居中偏移露出边缘。 */

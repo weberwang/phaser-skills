@@ -35,91 +35,93 @@ function createSketch({ rootPresentation, imageAssets = ["hero", "badge"] } = {}
   };
 }
 
-/** 提供预览模块需要的最小 DOM 元素，便于断言实际渲染 bounds。 */
-function createHost() {
-  const document = {
-    createElement(tagName) {
-      return {
-        tagName,
-        ownerDocument: document,
-        children: [],
-        style: {},
-        dataset: {},
-        listeners: new Map(),
-        /** 记录显示选择事件，以便验证预览卸载后不再回调。 */
-        addEventListener(type, callback) { this.listeners.set(type, callback); },
-        /** 模拟浏览器移除事件处理器。 */
-        removeEventListener(type, callback) { if (this.listeners.get(type) === callback) this.listeners.delete(type); },
-        /** 派发实际显示节点的指针事件。 */
-        dispatch(type, event = {}) { this.listeners.get(type)?.({ ...event, currentTarget: this }); },
-        append(...children) { this.children.push(...children); },
-      };
-    },
-  };
-  const host = document.createElement("div");
-  host.ownerDocument = document;
-  host.replaceChildren = (...children) => { host.children = [...children]; };
-  host.getBoundingClientRect = () => ({ left: 0, top: 0, width: 200, height: 100 });
-  return host;
+/** 模拟 Phaser 启动边界，不创建浏览器、Canvas 或真实游戏。 */
+function createHarness({ failLoad = false, neverCreate = false } = {}) {
+  const host = { ownerDocument: { fonts: {} }, style: {}, children: [], replaceChildren() { this.children = []; },
+    getBoundingClientRect() { return { left: 0, top: 0, width: 200, height: 100 }; } };
+  let game;
+  /** 只保留预览 Scene 所需的构造接口。 */
+  class Scene {}
+  /** 模拟 Loader 和 ScaleManager，使测试检查桥接及销毁次序。 */
+  class Game {
+    /** 使用微任务模拟 Phaser 在构造之后完成 preload/create。 */
+    constructor(config) {
+      game = this;
+      this.canvas = { style: {} };
+      this.scale = { resize(width, height) { game.size = { width, height }; } };
+      this.loaded = [];
+      const scene = new config.scene();
+      scene.load = { on(type, callback) { game.loadError = callback; }, image(key, url) { game.loaded.push({ key, url }); } };
+      queueMicrotask(() => { scene.preload(); if (failLoad) game.loadError({ key: 'broken' }); if (!neverCreate) scene.create(); });
+    }
+    /** 记录销毁而不启动任何图形运行时。 */
+    destroy() { this.destroyed = true; }
+  }
+  const renderer = { errors: [], ready: Promise.resolve(), isHealthy: () => true,
+    reflow(layout) { this.layout = layout; }, setViewport(size) { this.viewport = size; return size; },
+    getBounds: () => ({ x: 20, y: 10, width: 48, height: 48 }), destroy() { this.destroyed = true; } };
+  let context;
+  return { host, Phaser: { Game, Scene, AUTO: 0, Scale: { NONE: 0 } }, renderer,
+    get game() { return game; }, get context() { return context; },
+    async createRenderer(input) { context = input; return renderer; } };
 }
 
-/** 创建已验证资源映射，避免本组测试依赖网络和 Phaser 运行时。 */
-function createSources(assetIds = ["hero", "badge"], runtimePrograms = new Map()) {
-  return {
-    assets: new Map(assetIds.map((id) => [id, `blob:${id}`])),
-    errors: [],
-    runtimePrograms,
-    revoke() {},
-  };
+/** 创建通过身份验证的资源集合，参考底图只能交给 DOM 编辑辅助层。 */
+function createSources() {
+  return { assets: new Map([['hero', 'blob:hero'], ['badge', 'blob:badge']]), runtimePrograms: new Map(), errors: [], referenceUrl: 'blob:reference',
+    revoke() { this.revoked = true; } };
 }
 
-test("父级偏移进入预览实际bounds，子节点与同节点图片按绝对图层叠放", async () => {
-  const host = createHost();
-  const preview = await mountPageSketchPreview({ host, sketch: createSketch(), sources: createSources() });
-  assert.deepEqual(preview.getBounds("hud.hero"), { x: 20, y: 10, width: 48, height: 48 });
-  const moved = {
-    ...createSketch().layout,
-    offsets: { "hud.root": { x: 13, y: -4 } },
-  };
-  preview.reflow(moved);
-  assert.deepEqual(preview.getBounds("hud.hero"), { x: 33, y: 6, width: 48, height: 48 });
-  const imageNode = host.children.find((child) => child.dataset.layoutNodeId === "hud.hero");
-  assert.equal(imageNode.style.left, "33px");
-  assert.deepEqual(imageNode.children.map((image) => [image.style.position, image.style.inset]), [["absolute", "0"], ["absolute", "0"]]);
-  assert.deepEqual(imageNode.children.map((image) => image.style.zIndex), ["0", "1"]);
+test('V4 使用共享渲染器且 Loader 不包含编辑底图，重排参数直接传递', async () => {
+  const harness = createHarness();
+  const sources = createSources();
+  const sketch = createSketch();
+  const preview = await mountPageSketchPreview({ ...harness, sketch, sources });
+  assert.deepEqual(harness.game.loaded.map((item) => item.url), ['blob:hero', 'blob:badge']);
+  assert.equal(harness.context.sketch.reference_file, sketch.reference_file);
+  assert.equal(harness.context.assets.get('hero'), 'page-sketch-0');
+  const layout = { ...sketch.layout, offsets: { 'hud.root': { x: 13, y: -4 } } };
+  preview.reflow(layout);
+  assert.equal(harness.renderer.layout, layout);
+  preview.setViewport({ width: 2560, height: 1080 });
+  const geometry = { ...harness.game.canvas.style };
+  preview.setViewport({ width: 2560, height: 1080 });
+  assert.deepEqual(harness.game.canvas.style, geometry);
+  assert.deepEqual(harness.renderer.viewport, { width: 2560, height: 1080 });
   assert.equal(preview.isHealthy(), true);
-  preview.destroy();
-});
-
-test("图片资源缺失时画布明确报错且预览不能确认", async () => {
-  const host = createHost();
-  const preview = await mountPageSketchPreview({ host, sketch: createSketch(), sources: createSources([]) });
+  preview.destroy(); preview.destroy();
+  assert.equal(harness.renderer.destroyed, true);
+  assert.equal(harness.game.destroyed, true);
+  assert.equal(sources.revoked, true);
   assert.equal(preview.isHealthy(), false);
-  assert.equal(preview.errors.filter((message) => message.includes("正式图片资源")).length, 2);
-  preview.destroy();
 });
 
-test("runtime mount/update Promise 被拒绝为异步布局并阻断预览", async () => {
-  const mountHost = createHost();
-  const mountPreview = await mountPageSketchPreview({
-    host: mountHost,
-    sketch: createSketch({ rootPresentation: { kind: "runtime-program", module_file: "runtime.js", module_sha256: SHA } }),
-    sources: createSources(["hero", "badge"], new Map([["hud.root", () => Promise.reject(new Error("async mount"))]])),
-  });
-  assert.equal(mountPreview.isHealthy(), false);
-  assert.ok(mountPreview.errors.some((message) => message.includes("mountPreview 必须同步")));
-  mountPreview.destroy();
-
-  const updatePreview = await mountPageSketchPreview({
-    host: createHost(),
-    sketch: createSketch({ rootPresentation: { kind: "runtime-program", module_file: "runtime.js", module_sha256: SHA } }),
-    sources: createSources(["hero", "badge"], new Map([["hud.root", () => ({ update() { return Promise.reject(new Error("async update")); } })]])),
-  });
-  assert.equal(updatePreview.isHealthy(), false);
-  assert.ok(updatePreview.errors.some((message) => message.includes("布局重排失败")));
-  updatePreview.destroy();
+test('Phaser 加载失败和共享渲染失败均清理并禁止返回可确认预览', async () => {
+  for (const failLoad of [true, false]) {
+    const harness = createHarness({ failLoad });
+    const sources = createSources();
+    if (!failLoad) harness.createRenderer = async () => { throw new Error('字体未就绪'); };
+    await assert.rejects(mountPageSketchPreview({ ...harness, sketch: createSketch(), sources }), /加载失败|字体未就绪/);
+    assert.equal(harness.game.destroyed, true);
+    assert.equal(sources.revoked, true);
+  }
 });
 
+/** 引擎不进入 create 或首轮视口布局失败时同样要释放 Game 和资源。 */
+test('预览启动超时及初始视口失败都回收资源', async () => {
+  const stalled = createHarness({ neverCreate: true });
+  const stalledSources = createSources();
+  await assert.rejects(mountPageSketchPreview({ ...stalled, sketch: createSketch(), sources: stalledSources, readyTimeoutMs: 5 }), /超时/);
+  assert.equal(stalled.game.destroyed, true);
+  assert.equal(stalledSources.revoked, true);
+  const failed = createHarness();
+  failed.renderer.setViewport = () => { throw new Error('初始视口失败'); };
+  const failedSources = createSources();
+  await assert.rejects(mountPageSketchPreview({ ...failed, sketch: createSketch(), sources: failedSources }), /初始视口失败/);
+  assert.equal(failed.renderer.destroyed, true);
+  assert.equal(failed.game.destroyed, true);
+  assert.equal(failedSources.revoked, true);
+});
 test("项目子路径与百分号文件名保持在配置资源根下，控制字符路径被拒绝", async () => {
   const referenceBytes = new TextEncoder().encode("reference bytes");
   const hashes = new Map([
@@ -180,36 +182,4 @@ test("项目子路径与百分号文件名保持在配置资源根下，控制�
   const invalid = createSketch();
   invalid.reference_file = "refs/bad\u0000name.png";
   await assert.rejects(loadPageSketchSources(invalid, { projectRootUrl: "https://game.test/game/", pageOrigin: "https://game.test" }), /控制字符/);
-});
-
-/** 显示内容的点击携带稳定节点身份，空父容器不得阻挡图片节点。 */
-test("显示内容支持选择且空容器穿透命中并在卸载时释放事件", async () => {
-  const host = createHost();
-  const selections = [];
-  const preview = await mountPageSketchPreview({ host, sketch: createSketch(), sources: createSources(), onNodeSelect: (id) => selections.push(id) });
-  const [container, image] = host.children;
-  assert.equal(container.style.pointerEvents, "none");
-  assert.equal(image.style.pointerEvents, "auto");
-  image.dispatch("pointerdown", { button: 0 });
-  assert.deepEqual(selections, ["hud.hero"]);
-  image.dispatch("pointerdown", { button: 2 });
-  assert.equal(selections.length, 1);
-  preview.destroy();
-  image.dispatch("pointerdown", { button: 0 });
-  assert.equal(selections.length, 1);
-});
-
-/** 有可见装饰的容器可以点击选择，纯预览不提供选择回调时保留穿透行为。 */
-test("可见容器显示内容可选择且无回调时不截获输入", async () => {
-  const host = createHost();
-  const selections = [];
-  const sketch = createSketch({ rootPresentation: { kind: "container", style: { fill: "#123456" } } });
-  const preview = await mountPageSketchPreview({ host, sketch, sources: createSources(), onNodeSelect: (id) => selections.push(id) });
-  assert.equal(host.children[0].style.pointerEvents, "auto");
-  host.children[0].dispatch("pointerdown", { button: 0 });
-  assert.deepEqual(selections, ["hud.root"]);
-  preview.destroy();
-  const plain = await mountPageSketchPreview({ host, sketch, sources: createSources() });
-  assert.equal(host.children[0].style.pointerEvents, "none");
-  plain.destroy();
 });

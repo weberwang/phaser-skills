@@ -51,6 +51,20 @@ test("共享正式资源可映射到多个 V2 placement，nodes保持独立快�
   assert.deepEqual(validated.layout.offsets, {});
 });
 
+/** 合同必须在确认前拒绝正式渲染器无法表达的文字样式。 */
+test("文字、图片和容器样式复用共享渲染能力门", () => {
+  const sketch = createSketch();
+  sketch.node_presentations.group = { kind: "text", text: "第一行\n第二行", style: { font_family: "sans-serif", font_size_px: 18, color: "#fff", word_wrap: true, line_height: 1.2 } };
+  assert.doesNotThrow(() => validatePageSketchDocument(sketch));
+  sketch.node_presentations.group.style.text_transform = "uppercase";
+  assert.throws(() => validatePageSketchDocument(sketch), /text_transform/);
+  sketch.node_presentations.group = { kind: "container", style: { unsupported: true } };
+  assert.throws(() => validatePageSketchDocument(sketch), /unsupported/);
+  sketch.node_presentations.group = { kind: "container" };
+  sketch.node_presentations["image-a"].alignment = { x: 2, y: 0 };
+  assert.throws(() => validatePageSketchDocument(sketch), /alignment/);
+});
+
 test("V2/V3图片节点不能被文本容器展示声明覆盖", () => {
   const sketch = createSketch();
   sketch.node_presentations["image-a"] = { kind: "text", text: "伪占位", style: { font_family: "sans-serif", font_size_px: 12, color: "#fff" } };

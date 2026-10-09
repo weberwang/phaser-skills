@@ -16,10 +16,42 @@
     "v3_evidence_file": {"type": "string", "minLength": 1}, "v3_evidence_sha256": {"$ref": "#/$defs/sha256"},
     "v3_assets": {"type": "array", "items": {"type": "object", "required": ["asset_id", "file", "sha256", "layout_node_id"], "properties": {"asset_id": {"type": "string", "minLength": 1}, "file": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}, "layout_node_id": {"type": "string", "minLength": 1}}}},
     "nodes": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["layout_node_id", "parent_layout_node_id", "target_bounds"]}},
-    "node_presentations": {"type": "object", "additionalProperties": {"type": "object", "required": ["kind"], "properties": {"kind": {"enum": ["image", "text", "container", "runtime-program"]}}}},
+    "node_presentations": {"type": "object", "additionalProperties": {"$ref": "#/$defs/presentation"}},
     "layout": {"type": "object", "required": ["schema", "target_sha256", "scene_id", "state_id", "offsets"], "properties": {"schema": {"const": "phaser-visual-layout/1.0"}, "offsets": {"type": "object", "additionalProperties": {"type": "object", "required": ["x", "y"], "properties": {"x": {"type": "number"}, "y": {"type": "number"}}}}}},
     "confirmation": {"oneOf": [{"type": "null"}, {"type": "object", "required": ["status", "confirmed_at", "content_sha256"], "properties": {"status": {"const": "accepted"}, "confirmed_at": {"type": "string", "format": "date-time"}, "content_sha256": {"$ref": "#/$defs/sha256"}}}]}
   },
-  "$defs": {"sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}},
-  "description": "结构声明之外，路径、节点与资源关联、真实文件 SHA 及确认内容摘要由 page-sketch-contract 和 page-sketch-prerequisite 校验。"
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "color": {"type": "string", "pattern": "^\\s*#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\\s*$"},
+    "point": {"type": "object", "required": ["x", "y"], "additionalProperties": false, "properties": {"x": {"type": "number", "minimum": 0, "maximum": 1}, "y": {"type": "number", "minimum": 0, "maximum": 1}}},
+    "presentation": {
+      "type": "object", "required": ["kind"], "additionalProperties": false,
+      "properties": {
+        "kind": {"enum": ["image", "text", "container", "runtime-program"]},
+        "asset_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "object_fit": {"enum": ["fill", "contain", "cover", "none", "scale-down"]},
+        "alignment": {"$ref": "#/$defs/point"}, "origin": {"$ref": "#/$defs/point"},
+        "z_index": {"type": "number"}, "overflow": {"const": "visible"}, "text": {"type": "string"},
+        "module_file": {"type": "string", "minLength": 1}, "module_sha256": {"$ref": "#/$defs/sha256"}, "export_name": {"type": "string", "minLength": 1},
+        "style": {"type": "object"}
+      },
+      "allOf": [
+        {"if": {"properties": {"kind": {"const": "image"}}}, "then": {"required": ["asset_ids", "object_fit"]}},
+        {"if": {"properties": {"kind": {"const": "text"}}}, "then": {"required": ["text", "style"], "properties": {"style": {"$ref": "#/$defs/textStyle"}}}},
+        {"if": {"properties": {"kind": {"const": "container"}}}, "then": {"properties": {"style": {"$ref": "#/$defs/containerStyle"}}}},
+        {"if": {"properties": {"kind": {"const": "runtime-program"}}}, "then": {"required": ["module_file", "module_sha256"]}}
+      ]
+    },
+    "textStyle": {
+      "type": "object", "required": ["font_family", "font_size_px", "color"], "additionalProperties": false,
+      "properties": {
+        "font_family": {"type": "string", "minLength": 1}, "font_size_px": {"type": "number", "exclusiveMinimum": 0}, "color": {"$ref": "#/$defs/color"},
+        "font_weight": {"enum": ["normal", "bold", 400, 700, "400", "700"]}, "text_align": {"enum": ["left", "center", "right", "justify"]},
+        "line_height": {"type": "number", "exclusiveMinimum": 0}, "word_wrap": {"type": "boolean"}, "stroke": {"$ref": "#/$defs/color"}, "stroke_thickness": {"type": "number", "minimum": 0}, "letter_spacing": {"type": "number"},
+        "shadow": {"type": "object", "required": ["color"], "additionalProperties": false, "properties": {"color": {"$ref": "#/$defs/color"}, "offset_x": {"type": "number"}, "offset_y": {"type": "number"}, "blur": {"type": "number", "minimum": 0}, "stroke": {"type": "boolean"}, "fill": {"type": "boolean"}}}
+      }
+    },
+    "containerStyle": {"type": "object", "additionalProperties": false, "properties": {"fill": {"$ref": "#/$defs/color"}, "stroke": {"$ref": "#/$defs/color"}, "stroke_thickness": {"type": "number", "minimum": 0}, "radius_px": {"type": "number", "minimum": 0}}}
+  },
+  "description": "V4/V5 共享纯布局与 Phaser 渲染。target_bounds 是冻结全局盒，anchor 已在 V2 解析，origin 单独决定对象原点。父偏移只传递一次；行高为字号倍数；alignment 为剩余空间比例。未知样式失败。身份 SHA 不替代实际画面对照；路径、资源关联和落盘确认由合同及门禁复核。"
 }
