@@ -201,6 +201,7 @@ interface AdUiNoticeEvent {
 - `request-dispatched`：已向原生 MAX 发起展示请求；这不是展示成功确认。
 - `already-ready`：当前全屏广告实例就绪属性已为 true，预加载无需再次发起。
 - `load-started`、`load-in-flight`、`retry-scheduled`：预加载已发起、已有加载或已登记退避。
+- `banner-create-failed`：本次 Banner 创建失败；当前展示请求仍有效时已登记独立退避恢复。
 - `banner-load-started`：Banner 展示请求已受理并按需创建/加载，不表示已经可见。
 - `banner-shown`、`banner-hidden`：Banner 已按当前状态立即显示或隐藏。
 - `config-error`、`adapter-error`、`load-failed`、`display-failed`：可诊断失败。
@@ -286,10 +287,10 @@ n = consecutiveLoadFailures（本次失败递增后的值，n >= 1）
 广告位独立定时规则：
 
 1. 每个广告位的 `RetryState` 独立保存失败计数、`retryDeadlineMonotonicMs` 和 timer 引用；每次主动 load 生成唯一 `loadOperationId`。同一广告位最多一个待执行 timer 和一个 in-flight load，重排或取消只作用于该广告位。
-2. timer 回调开始时先清空本广告位的 timer 引用，再检查实例代次、广告位启用状态、前台、在线、隐私、宿主及该广告位 phase；Banner 还必须已有视图且业务仍请求可见；条件满足时只为该广告位投递一次 load，不扫描或触发其他广告位。
+2. timer 回调开始时先清空本广告位的 timer 引用，再检查实例代次、广告位启用状态、前台、在线、隐私、宿主及该广告位 phase；Banner 还必须处于当前有效展示场景且业务仍请求可见；待恢复操作为 create 时允许尚无视图，为 load 时必须已有有效视图；条件满足时只为该广告位投递一次 load，不扫描或触发其他广告位。
 3. 后台或离线暂停时分别取消每个广告位的 timer，但保留各自基于单调时钟的 deadline，不把剩余时间改写成墙上时间。恢复前台、在线且 privacy ready 后，每个已到期广告位独立恢复至多一次请求；未到期广告位按自己的 deadline 重建 timer。
 4. 每次加载失败只登记到发生失败广告位的 `RetryState`，不在 failure callback 内同步递归 `load`；不要使用零延迟轮询、组件级定时器、同一广告位的重复 timer 或重复事件订阅。
-5. 已收到的 `loadFailed` 无论错误类别都登记持续退避重试，不因 configuration、adapter 或 unknown 类别停止或设置次数上限，并把诊断原因报告给控制面。隐私、前后台、网络和宿主 gates 关闭时保留重试任务但暂停请求，恢复后继续；初始化尚未成功仍使用显式初始化重试，不绕过隐私门。Banner 只恢复由展示请求发起的加载，隐藏后取消待执行恢复，不能借重试创建从未请求展示的视图。
+5. 已收到的 `loadFailed` 无论错误类别都登记持续退避重试，不因 configuration、adapter 或 unknown 类别停止或设置次数上限，并把诊断原因报告给控制面。隐私、前后台、网络和宿主 gates 关闭时保留重试任务但暂停请求，恢复后继续；初始化尚未成功仍使用显式初始化重试，不绕过隐私门。Banner 只恢复由当前展示场景请求发起的创建或加载，隐藏或离开展示场景后取消待执行恢复；创建失败时可以在原展示请求有效期间重试创建，不能借重试创建从未请求展示的视图。
 6. `displayFailed` 使用对应广告位的服务入口清理展示状态并立即请求一次静默预加载，不等待退避；若该加载随后失败，再从 2 秒开始计算并调度该广告位自己的加载重试 timer。不得把展示失败当作展示成功。
 
 ### 快速返回语义
@@ -318,9 +319,17 @@ n = consecutiveLoadFailures（本次失败递增后的值，n >= 1）
 
 ### 显隐快速返回
 
-- `setBannerVisibility(slotId, true)` 检查平台、初始化、前台/宿主/网络/隐私 gate 和可见性仲裁；门关闭或冲突时立即返回原因。条件满足时记录可见请求，未创建则创建视图并加载、返回 `banner-load-started`；已有视图但处于 idle 或隐藏时取消了恢复任务的，复用视图，保留失败计数并按原 deadline 恢复加载，不重新创建。加载中或重试中复用现有任务并立即返回。ready 且布局安全时立即显示并返回 `banner-shown`；布局未就绪时保持隐藏并返回 `layout-not-ready`。首次加载完成后仅在可见请求仍有效且 gates/layout 满足时显示，禁止等待网络完成。
-- `setBannerVisibility(slotId, false)` 无论当前 phase 如何都应幂等隐藏并返回 `banner-hidden`。Banner 未 ready、显隐失败或 loadFailed 都不显示视频不可用 Toast，也不阻塞 Phaser 场景。
+- `setBannerVisibility(slotId, true)` 检查平台、初始化、前台/宿主/网络/隐私 gate 和可见性仲裁；门关闭或冲突时立即返回原因。条件满足时记录当前场景的可见请求；已有创建/加载请求或重试任务时先复用并立即返回，不因视图尚未创建而绕过退避。无现有任务且未创建时才创建视图并加载、返回 `banner-load-started`；已有视图但处于 idle 或隐藏时取消了恢复任务的，复用视图，保留失败计数并按原 deadline 恢复加载，不重新创建。加载中或重试中复用现有任务并立即返回。ready 且布局安全时立即显示并返回 `banner-shown`；布局未就绪时保持隐藏并返回 `layout-not-ready`。首次加载完成后仅在可见请求仍有效且 gates/layout 满足时显示，禁止等待网络完成。
+- `setBannerVisibility(slotId, false)` 无论当前 phase 如何都清除可见请求、使其请求代次失效、取消创建/加载重试与待恢复操作，幂等停止刷新并隐藏，返回 `banner-hidden`；离开展示场景必须调用此入口。Banner 未 ready、显隐失败或 loadFailed 都不显示视频不可用 Toast，也不阻塞 Phaser 场景。
 - Banner 不使用全屏 `showRequestId`、`displayed`/`hidden`、激励账本。点击、展开和收起使用 Banner 专属回调；不得依赖官方标记为全屏保留的 displayed/hidden 回调判断 Banner 可见性。
+
+### 创建失败重试与场景退出
+
+- Banner 创建调用被拒绝、抛出异常或适配器确认创建失败时，保持视图未创建、广告隐藏，保留当前展示场景的可见请求；立即返回结构化 `banner-create-failed` 与 `retryScheduled`，不等待重试、不弹 Toast。适配器不得把调用受理或无返回值误判为创建成功，应按所锁定插件可观测的结果确认；不得臆造官方创建成功/失败事件。
+- 创建与加载恢复共用该广告位唯一的 `RetryState` 和 timer，并记录待恢复操作为 create 或 load。创建失败计入同一连续失败计数，按 2/4/8/16/32/64 秒退避无限重试；timer 到期若尚无有效视图就重试创建，已有视图则复用并恢复加载。创建成功但加载尚未成功时不清零失败计数，收到有效 loaded 后才清零；不新增另一套创建重试 timer，也不在异常回调中递归创建。存在部分创建资源时，适配器先确认复用或清理失效资源，不能叠加多个视图。
+- 可见请求必须关联当前展示场景的请求代次；每次创建/加载恢复都携带该代次。离开允许展示的场景（含 shutdown、destroy 或导航到不展示 Banner 的页面）时，场景通过共享门面调用 `setBannerVisibility(slotId, false)`：立即清除可见请求、使请求代次失效、取消 timer 和待恢复操作、停止刷新并隐藏视图；未创建时只取消任务，不创建视图。此处是取消，不是后台/离线时的暂停，不影响其他广告位或全屏预加载。
+- 已发出的原生调用无法撤销时，迟到完成或失败仍按失效请求代次隔离；不得重新登记重试、显示广告、启动刷新或调整 UI。已创建的有效视图可以由服务保持隐藏供后续复用，失效的部分资源由适配器清理；不得保存已销毁的场景引用。
+- 再次进入允许展示的场景时先按既定规则准备 UI 布局，由新展示请求建立新代次；旧 timer 和旧回调不能作用于新请求。重复请求仍去重，创建失败重试期间 UI 预留区域不变。
 
 ### 刷新单一所有者
 
@@ -328,7 +337,7 @@ n = consecutiveLoadFailures（本次失败递增后的值，n >= 1）
 - 按当前 Android/iOS 官方 Banner 文档，在需要可靠暂停刷新时先对 ad view 设置 `allow_pause_auto_refresh_immediately=true`，再调用 `stopAutoRefresh()`；实现阶段必须按项目锁定 SDK 的当前文档复核该参数是否仍必需，并用平台测试证明停止后不再发起刷新，不能只根据方法已调用就判定成功。
 - Banner 隐藏、App 进入后台、宿主失效或 privacy gate 关闭时停止/暂停 auto-refresh；重新请求显示时按 ready 状态立即显示，或按独立恢复任务继续加载；auto-refresh 仅在 ready 且 gates open 后恢复。显隐重复调用不得重复 start/stop 或注册 listener。
 - 每次启动 Banner auto-refresh 都递增 `refreshEpoch`；正常刷新可在同一 epoch 内产生多轮 `loaded`。MAX 暴露给应用层的 load failure 必须先使 epoch 失效、可靠停止 auto-refresh、隐藏视图但保留当前可见请求，再仅在业务仍请求可见时由该 Banner 广告位自己的 `RetryState` 按退避公式登记一个 timer，避免 SDK 与手动恢复双重请求。恢复 `loaded` 后仅在业务仍请求可见且 gates/layout 满足时显示并开启新 epoch；业务隐藏后到达的回调不得重新显示，也不得启动重试或刷新。
-- Banner 展开期间保持视图归属但禁止布局抖动；收起后恢复已确认尺寸。页面离开或长期隐藏时停止刷新但保留可复用视图，只有服务销毁或配置移除才销毁对象。
+- Banner 展开期间保持视图归属但禁止布局抖动；收起后恢复已确认尺寸。离开展示场景时取消创建/加载恢复任务并停止刷新；长期隐藏时停止刷新，均可保留已创建的有效视图，只有服务销毁或配置移除才销毁对象。
 
 ## 展示触发与视频失败提示
 
@@ -350,7 +359,7 @@ n = consecutiveLoadFailures（本次失败递增后的值，n >= 1）
 
 - MAX `displayFailed` 要记录脱敏原因码、结束该广告位当前展示状态、清除对应广告位失效 ready 标记、发布一次去重的 `video-ad-unavailable` UI 提示事件，并通过对应广告位的服务入口静默预加载；不得立即递归 show。
 - MAX `hidden` 要结束该广告位展示状态并立即静默预加载同一广告位的下一条；匹配当前激励视频展示的事件还要先更新 30 秒插页保护截止时间。如果用户快速离开场景，预加载请求仍不得持有已销毁的 Phaser/Activity/ViewController。
-- App 进入后台时禁止新的 show，并暂停 retry timer；回到前台后检查宿主、隐私和网络，再恢复各全屏广告位待执行的预加载；Banner 仅在已有视图且业务仍请求可见时恢复加载。不要因为前后台切换重置成功加载计数或重复注册 MAX listener。
+- App 进入后台时禁止新的 show，并暂停 retry timer；回到前台后检查宿主、隐私和网络，再恢复各全屏广告位待执行的预加载；Banner 仅在当前展示场景和可见请求仍有效时恢复待执行的创建或加载；离开场景取消的任务不得随前台或网络恢复自动重启。不要因为前后台切换重置成功加载计数或重复注册 MAX listener。
 - 网络不可用时不发起新 load/show，保留退避 attempt；网络恢复后按当前 attempt 恢复一次。离线期间调用 `tryShow` 必须快速返回 `offline`。
 - 原生宿主暂不可用、旋转/导航期间 ViewController 不合法、Android Activity 被销毁时，立即返回 `no-host`；不阻塞等待宿主出现。
 
@@ -395,6 +404,8 @@ n = consecutiveLoadFailures（本次失败递增后的值，n >= 1）
 - 不存在全屏共享锁、fullscreen gate 或跨广告位 already-showing 判定；不同广告位独立展示，同一广告位重复请求仍去重。
 - 多广告位同时失败时，各广告位的任务、deadline 和 timer 完全独立；取消或触发一个广告位的 timer 不改变其他广告位。后台、离线、无宿主和隐私阻断时分别暂停，恢复后每个到期广告位只恢复一次，不产生递归风暴、零延迟循环或同广告位重复 timer。
 - 初始化不创建任何广告视图或主动创建全屏对象，只立即预加载插页/激励；Banner 不参与预加载，`preload(bannerSlotId)` 返回 `format-mismatch`。首次有效展示请求创建并加载 Banner，重复请求不重复创建或 load；loaded 仅在可见请求仍有效且 gates/layout 满足时显示；隐藏取消恢复任务，迟到回调不重新显示，未创建时隐藏不创建。
+- Banner 创建同步异常、调用拒绝或可观测创建失败均持续退避重试，创建与加载共用一个 timer 和失败计数；重复失败不递归创建、不叠加视图，创建成功不提前清零计数。
+- 在创建重试、加载重试或原生请求进行中离开展示场景，立即取消待执行任务并失效请求代次；随后 timer、创建完成、loaded/loadFailed、网络或前台恢复均不重启任务、不显示广告。重新进入后的新展示请求不受旧回调影响，且不改变其他广告位任务或提前预留的 UI 布局。
 - 两个 Banner 同时按需加载，loaded/恢复/布局就绪再次原子检查可见权，最多显示一个；隐藏后再次展示复用视图并按原 deadline 恢复加载，不重复创建或丢失失败计数。
 - 可展示 Banner 的页面首帧前已预留区域；规划期间不创建 Banner、不发起 load。加载成功/失败、无填充、持续重试、显隐及刷新前后，游戏 UI 位置、内容 inset 和可用游戏区域保持一致；不支持、禁用或页面禁止 Banner 时首帧不预留。
 - 实际 Banner 尺寸超出预留区域或布局未就绪时保持隐藏，不在广告回调中重排游戏 UI；方向/窗口/safe-area 变化先隐藏并由布局模块重新提交，旧回调不污染新布局；主要按钮和手势区不遮挡，内容 inset 不修改 Phaser DPR。
