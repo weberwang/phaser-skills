@@ -26,7 +26,7 @@ description: "Phaser 4 + Capacitor 移动项目通过 AppLovin 官方 MAX Cordov
 
 1. 读取当前 Work Item、项目 TDD/依赖能力档、Capacitor 平台状态及官方插件安装状态；按 [AppLovin MAX 接入合同](references/applovin-max-contract.md)登记范围、非目标、公开接口、状态所有权、生命周期和失败边界。广告属于可选商业能力，不能把它作为 Phaser Web 核心循环的运行前置。
 2. 提交最小模块提议：Web/小游戏 no-op、AppLovin 官方 Cordova 插件、共享 TypeScript 业务门面与插件 API 适配器、测试替身。核对官方插件发布版本、许可证、Android/iOS 支持、Capacitor 兼容方式、回调语义和隐私能力；不得提出社区插件或自建原生桥作为备用实现。
-3. 冻结插件适配契约：`initialize`、`preload(slotId)`、`tryShow(context)`、`setBannerVisibility(slotId, visible)`、`isReady(slotId)` 均为非阻塞调用并返回结构化结果；适配器把官方插件的 callback/event API 归一化为该契约。初始化失败进入 `failed`，瞬时失败只能通过显式初始化重试入口恢复，且不能与加载重试混用。服务初始化幂等，每个广告位只有一个业务状态所有者，原生格式对象由官方插件内部管理。初始化成功后立即静默预加载全部启用的插页与激励视频广告位；所有已发起的加载失败都由各广告位自己的重试 timer 持续调度，不按错误类别终止、不设次数上限，直到成功；禁用、移除或服务销毁终止重试，运行 gates 关闭仅暂停。各广告位独立保存计数与 deadline，并应用同一套 `2/4/8/16/32/64 秒`退避、抖动、去重、后台/离线暂停和恢复规则。一个广告位取消、重排或触发重试不得改变其他广告位的 timer。
+3. 冻结插件适配契约：`initialize`、`preload(slotId)`、`tryShow(context)`、`setBannerVisibility(slotId, visible)`、`isReady(slotId)` 均为非阻塞调用并返回结构化结果；适配器把官方插件的 callback/event API 归一化为该契约。初始化失败进入 `failed`：明确的瞬时故障由服务唯一的初始化重试任务按 2/4/8/16/32/64 秒持续退避；后台、离线、宿主或隐私条件未满足时暂停，恢复后继续；配置或依赖错误修正后显式重试。初始化重试与广告位加载重试隔离，不混用 timer 或计数。服务初始化幂等，每个广告位只有一个业务状态所有者，原生格式对象由官方插件内部管理。初始化成功后立即静默预加载全部启用的插页与激励视频广告位；所有已发起的加载失败都由各广告位自己的重试 timer 持续调度，不按错误类别终止、不设次数上限，直到成功；禁用、移除或服务销毁终止重试，运行 gates 关闭仅暂停。各广告位独立保存计数与 deadline，并应用同一套 `2/4/8/16/32/64 秒`退避、抖动、去重、后台/离线暂停和恢复规则。一个广告位取消、重排或触发重试不得改变其他广告位的 timer。
 4. 将 MAX 控制台、官方插件及其原生依赖、Capacitor Cordova 兼容配置、隐私/CMP/ATT、广告位配置和遥测分别登记责任人。固定聚合渠道为 AppLovin、Google AdMob、Mintegral、Pangle、Unity Ads、DT Exchange（Fyber）和 Verve（PubNative/HyBid）；插件、MAX SDK 与 adapter 的版本组合以官方插件和官方渠道文档当前声明的兼容范围为准，不在 Skill 或业务代码中写死版本号，也不绕过插件重复引入 MAX SDK。
 5. 在自然中断点调用 `tryShow`；调用读取指定广告位当前有效实例的就绪属性和业务快照，绝不触发前台加载。匹配的激励视频 `hidden` 回调到达后，广告服务使用单调时钟记录 30 秒插页保护截止时间；保护期内的插页 `tryShow` 必须立即返回 `rewarded-interstitial-delay`，不得调用 MAX show、创建冷却 timer 或弹不可用 Toast。保护期结束后，只要目标广告位 ready、所有 gates open、自然中断条件成立，就可以发起展示。未 ready、同广告位正在展示、隐私未决、网络不可用或平台不支持都立即返回并继续游戏；视频广告不可用或展示失败时，由统一 UI 层消费结构化结果/事件并显示一次不可用 Toast。激励只由匹配的 `rewarded` 回调异步发放且保持幂等；关闭或展示失败后立即静默预加载对应全屏广告位。
 6. 进入可展示 Banner 的页面时，先按当前平台格式、可用宽度和安全区确定预留尺寸与内容 inset，在页面首帧前完成 UI 布局；布局规划不创建广告视图、不请求广告。Banner 展示时只放入预留区域，不调整游戏 UI；实际尺寸无法安全容纳时保持隐藏，在下一次页面或 viewport 布局周期处理。Banner 使用原生广告视图；业务只控制显隐，不自行创建刷新 timer。隐藏、切后台或页面不允许广告时暂停刷新，恢复显示时按合同恢复；不得覆盖游戏按钮、手势区、系统安全区或把空白占位当成已加载广告。
@@ -39,7 +39,7 @@ description: "Phaser 4 + Capacitor 移动项目通过 AppLovin 官方 MAX Cordov
 
 ```ts
 initialize(config): Promise<InitResult> // 只确认桥接请求受理/初始化状态，不等待广告加载
-retryInitialize(): Promise<InitResult>  // 仅显式重试初始化，不与 load 重试共用语义
+retryInitialize(): Promise<InitResult>  // 手动入口复用初始化恢复任务，不绕过退避或配置阻断
 preload(slotId): Promise<PreloadResult> // 仅插页/激励后台加载；Banner 返回 format-mismatch
 isReady(slotId): ReadyResult            // 全屏读取实例就绪属性；Banner 读取加载状态，不创建或加载
 tryShow(context): Promise<ShowResult>   // 复核实例就绪属性和业务门，通过后才展示
@@ -57,6 +57,7 @@ setBannerVisibility(slotId, visible): Promise<BannerVisibilityResult> // 展示�
 - 原生门：Activity/ViewController provider、前台状态、网络连通性、privacy readiness 属于原生服务依赖；`phase` 只表示广告资源/展示阶段，门状态独立计算，不混入 Phaser 场景状态。
 - 节奏：插页只在自然中断点展示；匹配的激励视频 `hidden` 事件从其单调时间戳起阻断插页 30 秒，保护期只阻断插页，不阻断 Banner、激励视频、后台预加载或奖励结算。保护期内立即静默返回剩余毫秒数，过期后无需 timer 唤醒即可恢复判定；`hidden` 与 `displayFailed` 都会触发对应广告位的后台预加载。
 - 就绪判断：全屏广告实例的就绪属性是预加载成功的唯一依据；适配器通过官方 isInterstitialReady/isRewardedAdReady 读取插件内部实例状态，不另存独立 ready 布尔值。loaded 仅触发复核；展示与重试前重新读取，实例不存在、失效或读取失败均视为未就绪；Banner 仍按创建后的加载事件管理，不参与预加载。
+- 初始化恢复：服务最多一个初始化请求和一个待执行重试 timer；瞬时失败持续退避，运行门关闭保留 deadline，恢复时去重调度；配置错误不自动重试。成功、禁用或销毁清理初始化恢复任务，成功后只启动一次全屏预加载。
 - 失败恢复：每个广告位使用独立加载重试 timer，并遵循同一套退避公式持续重试直到成功，不设次数上限；计数、deadline、timer 引用和 in-flight 标记均按广告位隔离，同一广告位只允许一个待执行 timer。后台或离线时分别暂停，恢复后每个到期广告位最多恢复一次；展示失败独立记录并重新预加载，不进入另一套重试逻辑。
 - 用户反馈：后台加载、重试和状态变化保持静默；视频广告展示触发在立即判定不可用或异步 `displayFailed` 时只显示一次本地化不可用 Toast，重复/迟到回调不会重复提示；`rewarded-interstitial-delay` 是预期节奏控制，不显示不可用 Toast。
 - Banner：不预加载、不默认创建；首次展示请求创建并加载，创建失败和加载失败共用一个持续退避重试任务；离开展示场景立即取消任务并使旧请求失效，再次进入须重新请求展示；ready 且布局安全后按当前可见请求显示，失败保持隐藏且无 Toast；页面首帧前按平台 Banner 尺寸规则和安全区预留区域，加载、失败、重试与显隐回调不改变内容 inset；实际尺寸只用于验证能否安全放入预留区域，布局不遮挡游戏交互；刷新只有一个所有者，禁止 JS/Phaser 自建刷新 timer。

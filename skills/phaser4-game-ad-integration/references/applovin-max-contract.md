@@ -73,7 +73,7 @@ SDK key 与 MAX ad unit ID 是官方插件 API 所需的客户端配置，由生
 
 ```ts
 initialize(config: InitConfig): Promise<InitResult> // 初始化请求，仅等待本地受理/拒绝
-retryInitialize(): Promise<InitResult>        // failed 后的显式初始化重试
+retryInitialize(): Promise<InitResult>        // 手动入口复用初始化恢复任务，不绕过退避或配置阻断
 preload(slotId: AdSlotId): Promise<PreloadResult> // 仅插页/激励后台加载；Banner 返回 format-mismatch
 isReady(slotId: AdSlotId): ReadyResult        // 全屏读取实例就绪属性；Banner 读取加载状态，不创建或加载
 tryShow(context: ShowContext): Promise<ShowResult> // 复核当前实例就绪属性后展示或立即拒绝
@@ -244,13 +244,16 @@ Phaser 场景只提供 `slotId` 与自然中断点上下文并消费结构化结
 
 每广告位的 deadline、失败计数、加载重试 timer 和正在加载标记，以及各广告位自己的正在展示标记、共享的奖励待决账本、插页保护截止时间和实例代次，都属于广告服务这个单一状态所有者。独立表示加载重试 timer 按 `slotId` 隔离，不表示由 Phaser 场景或组件自行创建；不得让场景、多个组件或多个原生回调各自维护另一份重试、保护时间或奖励状态。
 
-### 初始化失败与显式重试
+### 初始化失败分类与独立自动重试
 
-- 官方插件初始化失败必须显式进入 `failed`，结果包含稳定错误类别；在 `failed` 状态重复调用相同的 `initialize` 只返回当前失败快照，不自动递归或热重试。
-- 缺失 SDK/adapter、无效配置或 ad unit、平台不支持、策略阻断和隐私未 ready 属于确定性失败：不创建初始化重试 timer，修正配置或隐私状态后由调用方显式调用 `retryInitialize()`。
-- 网络超时、暂时无网络、原生服务瞬时错误等也进入 `failed`，不自动创建初始化重试 timer。只有 `host`、`foreground`、`connectivity` 和 `privacy=ready` 全部 open 后，调用方才能通过 `retryInitialize()` 显式恢复；后台、离线、宿主不可用或隐私未决时立即拒绝该请求。
-- 初始化重试与广告 load 重试是不同任务类型。初始化未成功前不得创建 load 任务；初始化成功后，每个广告位的预加载与退避都由该广告位自己的 `RetryState` 和 timer 管理，初始化重试不得创建或重置任何广告位的加载重试 timer 与计数。
-- `retryInitialize()` 只允许一次显式 `failed → initializing`，并复用同一 `instanceGeneration`；原生 SDK/宿主实例重建时先递增 generation，再接受新初始化，旧回调全部失效。
+- 官方插件初始化失败进入 `failed`，立即返回稳定错误类别及 `retryScheduled`，全程静默、不阻塞游戏。相同配置的重复 `initialize` 复用当前请求或失败/恢复快照，不递归初始化，也不重置退避。
+- 网络超时、网络服务暂不可用和明确的原生服务瞬时错误，由服务唯一的初始化恢复任务自动重试。独立保存初始化连续失败计数、单调时钟 deadline、timer 引用和 in-flight 标记；沿用加载重试的 2/4/8/16/32/64 秒公式及抖动规则，最高 64 秒、无次数上限，直到成功、服务禁用或销毁。失败回调只登记任务，不同步递归初始化。
+- `host`、`foreground`、`connectivity` 或 `privacy=ready` 条件未满足时，不发起初始化请求；服务保留初始化意图并监听条件恢复。已存在退避时取消 timer 但保留失败计数与 deadline；条件变化本身不增加失败计数。全部条件满足且不存在配置/策略阻断或待诊断未知错误时，尚无失败 deadline 的待初始化请求执行一次；已有 deadline 的请求到期后执行一次，未到期则按剩余时间恢复 timer。重复恢复事件不得重复请求。
+- 缺失 SDK/adapter、无效配置、平台不支持或明确策略阻断不自动重试：取消初始化恢复任务并报告原因。修正受控配置或依赖、解除策略阻断后由调用方显式 `retryInitialize()`；未修正时返回原阻断；前台、网络、宿主或隐私恢复事件不能解除该阻断或自动发起初始化。隐私未决或同意未获准由隐私门管理，不绕过隐私条件；恢复到 ready 后才继续待初始化意图。无法归类的错误先诊断，不凭自由文本默认无限重试，只有确认瞬时故障后才纳入自动退避。
+- `retryInitialize()` 是同一恢复任务的手动入口：初始化进行中复用请求；已有自动退避时复用原 deadline，不取消退避抢跑、不重置计数；运行门关闭时立即返回原因并保留待恢复意图；确定性问题修正后清除对应配置阻断及旧失败计数，受理一次新初始化。已成功时返回成功快照，不再次初始化。
+- timer 执行前先清空自身引用，校验服务仍启用、实例代次、当前初始化请求有效性、全部运行门及非 in-flight 状态，最多投递一次请求。每次尝试在适配器内部关联唯一操作标识；重复、迟到或旧尝试回调不得覆盖当前状态、增加计数或重复启动预加载。重试复用 `instanceGeneration`，实例重建时先递增 generation 并失效旧请求和 timer。
+- 初始化成功立即清零初始化失败计数，取消 timer、清空 deadline 和恢复意图，再通过各广告位入口去重启动全部启用的插页/激励预加载；Banner 仍不创建、不预加载。服务禁用、销毁或配置替换时取消旧初始化恢复任务并失效旧操作；配置替换后的初始化由新配置入口重新登记。
+- 初始化恢复与广告位 load/create 恢复是不同任务。初始化成功前不创建广告位加载任务；初始化恢复不得共享、重置或触发广告位的重试 timer 与计数。Banner 离开展示场景仅取消该 Banner 恢复任务，不取消广告服务初始化恢复；任何恢复任务均不得持有已销毁场景引用。
 
 ## 初始化与隐私时序
 
@@ -258,7 +261,7 @@ Phaser 场景只提供 `slotId` 与自然中断点上下文并消费结构化结
 2. 若使用自己的 CMP，先完成适用地区的同意收集，再设置 MAX 所需的 consent、do-not-sell、年龄/限制标志，之后才初始化 MAX 和请求广告。若使用 MAX/Google UMP 集成流程，按官方当前流程等待其完成回调；不要在 CMP 结束前初始化第三方网络。
 3. iOS 在产品允许的时机请求 ATT，并按当前授权状态与 AppLovin 隐私文档配置 MAX；不要为了等待 ATT 阻塞游戏，也不要在未满足平台规则时请求个性化广告。
 4. iOS `Info.plist` 按当前 AppLovin SKAdNetwork 页面和已实际启用的每个 mediated network 生成/维护 `SKAdNetworkItems`，不能复制过期的固定清单。Android/iOS 的隐私 manifest、数据安全声明、商店隐私资料和目标地区限制同样由发布责任人核对。
-5. 初始化成功后立即通过每个启用的插页与激励视频广告位自己的服务入口静默预加载。初始化失败只返回结构化错误并保留可重试状态，不在初始化回调里递归重试或阻塞 Phaser。
+5. 初始化成功后立即通过每个启用的插页与激励视频广告位自己的服务入口静默预加载。初始化失败立即返回结构化错误；瞬时故障由独立任务自动退避，运行条件未满足时暂停，配置错误修正后显式重试，不在初始化回调里递归重试或阻塞 Phaser。
 
 Google AdMob 通过 MAX 提供需求时，EEA/英国等适用区域需使用 Google 认可且支持 IAB TCF 的 CMP，并确认 CMP 覆盖本合同中的实际网络集合。隐私状态必须在 MAX 使用前按官方 API 正确传递；儿童数据、年龄限制和地区义务不能由广告模块自行假设或绕过。
 
@@ -290,7 +293,7 @@ n = consecutiveLoadFailures（本次失败递增后的值，n >= 1）
 2. timer 回调开始时先清空本广告位的 timer 引用，再检查实例代次、广告位启用状态、前台、在线、隐私、宿主及该广告位 phase；Banner 还必须处于当前有效展示场景且业务仍请求可见；待恢复操作为 create 时允许尚无视图，为 load 时必须已有有效视图；条件满足时只为该广告位投递一次 load，不扫描或触发其他广告位。
 3. 后台或离线暂停时分别取消每个广告位的 timer，但保留各自基于单调时钟的 deadline，不把剩余时间改写成墙上时间。恢复前台、在线且 privacy ready 后，每个已到期广告位独立恢复至多一次请求；未到期广告位按自己的 deadline 重建 timer。
 4. 每次加载失败只登记到发生失败广告位的 `RetryState`，不在 failure callback 内同步递归 `load`；不要使用零延迟轮询、组件级定时器、同一广告位的重复 timer 或重复事件订阅。
-5. 已收到的 `loadFailed` 无论错误类别都登记持续退避重试，不因 configuration、adapter 或 unknown 类别停止或设置次数上限，并把诊断原因报告给控制面。隐私、前后台、网络和宿主 gates 关闭时保留重试任务但暂停请求，恢复后继续；初始化尚未成功仍使用显式初始化重试，不绕过隐私门。Banner 只恢复由当前展示场景请求发起的创建或加载，隐藏或离开展示场景后取消待执行恢复；创建失败时可以在原展示请求有效期间重试创建，不能借重试创建从未请求展示的视图。
+5. 已收到的 `loadFailed` 无论错误类别都登记持续退避重试，不因 configuration、adapter 或 unknown 类别停止或设置次数上限，并把诊断原因报告给控制面。隐私、前后台、网络和宿主 gates 关闭时保留重试任务但暂停请求，恢复后继续；初始化尚未成功使用独立的分类恢复任务，不绕过隐私门。Banner 只恢复由当前展示场景请求发起的创建或加载，隐藏或离开展示场景后取消待执行恢复；创建失败时可以在原展示请求有效期间重试创建，不能借重试创建从未请求展示的视图。
 6. `displayFailed` 使用对应广告位的服务入口清理展示状态并立即请求一次静默预加载，不等待退避；若该加载随后失败，再从 2 秒开始计算并调度该广告位自己的加载重试 timer。不得把展示失败当作展示成功。
 
 ### 快速返回语义
@@ -370,21 +373,21 @@ n = consecutiveLoadFailures（本次失败递增后的值，n >= 1）
 | 类别 | 常见含义/官方码示例 | 处理 |
 | --- | --- | --- |
 | `unsupported` | Web/小游戏或未实现的平台 | 立即 no-op，不初始化、不重试。 |
-| `configuration` | 无效 ad unit、缺失 SDK/adapter、包名不匹配；例如 `-5603` | 初始化失败显式重试；加载失败持续退避重试并报告配置问题。 |
+| `configuration` | 无效 ad unit、缺失 SDK/adapter、包名不匹配；例如 `-5603` | 初始化配置错误修正后显式重试；加载失败持续退避重试并报告配置问题。 |
 | `privacy` | `privacy-pending`、同意被拒、ATT/CMP/SKAN 前置未完成 | 不请求广告；监听隐私状态变化后重新评估 gates。 |
 | `lifecycle` | 无有效 Activity/ViewController、后台、宿主已销毁 | 快速返回并暂停调度；前台/宿主恢复后最多恢复一次。 |
-| `connectivity` | 无网络、超时、网络错误；例如 `-1009`、`-1001`、`-1000` | 初始化失败仅允许 gates open 后显式重试；load 失败在 gates open 时进入退避，离线暂停。 |
+| `connectivity` | 无网络、超时、网络错误；例如 `-1009`、`-1001`、`-1000` | 初始化瞬时失败独立自动退避，离线暂停，gates open 后按原 deadline 恢复；load 失败使用广告位独立退避。 |
 | `no-fill` | 当前设备/地区无可用填充；例如 `204` | 视为瞬时 load failure，使用统一指数退避。 |
 | `adapter` | adapter/第三方 SDK 载入失败、内部错误；例如 `-5001`、`-5209` | 记录渠道别名和类别，按 load 退避；依赖缺失则升级为 configuration。 |
 | `concurrency` | 同广告位已有展示请求、广告未 ready 或 Banner 可见性冲突 | 不重试 show、不设置跨广告位全屏互斥；Banner 保持隐藏。 |
 | `display` | 展示过程失败；iOS 例如 `-4205` | 独立记录，结束对应广告位展示状态并立即重新预加载。 |
-| `unknown` | 无法归类的 SDK/桥接异常；例如 `-1` | 加载失败持续退避重试并记录诊断；gates 关闭时暂停，恢复后继续。 |
+| `unknown` | 无法归类的 SDK/桥接异常；例如 `-1` | 初始化未知错误先诊断，确认瞬时后自动退避；加载失败持续退避重试。gates 关闭时暂停，恢复后继续。 |
 
 这些数字只是官方页面当前可能出现的示例，不是跨平台、跨版本的稳定接口；对外只保证类别、`code` 字符串和结构化状态。未知错误不得通过解析自由文本来决定是否展示，也不得因为错误回调重复而开启多个初始化或 load 任务。
 
 ## 遥测与安全
 
-允许记录聚合且脱敏的事件：`initialize_started`、`initialize_completed`、`preload_requested`、`load_succeeded`、`load_failed`、`retry_scheduled`、`show_requested`、`show_skipped_rewarded_delay`、`ad_displayed`、`display_failed`、`ad_hidden`、`banner_shown`、`banner_hidden`、`banner_expanded`、`banner_collapsed`、`banner_size_changed`、`reward_granted`、`ui_notice_requested`、`paused`、`resumed`。每条事件只保留事件名、平台、业务广告位、广告格式、稳定原因码、`consecutiveLoadFailures`、保护期剩余毫秒数、延迟/耗时、phase 和可选的 canonical 网络别名。
+允许记录聚合且脱敏的事件：`initialize_started`、`initialize_completed`、`initialize_failed`、`initialize_retry_scheduled`、`preload_requested`、`load_succeeded`、`load_failed`、`retry_scheduled`、`show_requested`、`show_skipped_rewarded_delay`、`ad_displayed`、`display_failed`、`ad_hidden`、`banner_shown`、`banner_hidden`、`banner_expanded`、`banner_collapsed`、`banner_size_changed`、`reward_granted`、`ui_notice_requested`、`paused`、`resumed`。每条事件只保留事件名、平台、业务广告位、广告格式、稳定原因码、`consecutiveLoadFailures` 或初始化连续失败计数、保护期剩余毫秒数、延迟/耗时、phase 和可选的 canonical 网络别名。
 
 禁止记录或上传 SDK key、MAX ad unit ID、网络 placement/账号凭证、IDFA/AAID、设备标识、用户标识、IP、完整插件错误消息、完整 waterfall、竞价凭证、CMP 原文或可反推出个人的自由文本。官方插件错误对象只取稳定分类/数值码；原始日志仅限受控本地 debug，发布构建关闭敏感日志。
 
@@ -399,6 +402,9 @@ n = consecutiveLoadFailures（本次失败递增后的值，n >= 1）
 - Web/小游戏所有入口均为 no-op，`isReady=false`，且不导入或触发原生 API。
 - 重复 `initialize`、同广告位重复 `preload`、重复 `tryShow` 和重复 listener 回调保持幂等；每广告位最多一个 in-flight load 和一个待执行加载重试 timer，服务不存在共享加载重试 timer。
 - 全屏 loaded 到达但实例就绪属性为 false 时不确认成功、不清零失败计数且继续退避；旧 phase 为 ready 但属性为 false 时禁止 show；phase 尚未同步但属性为 true 时按当前属性判断。重试执行前属性已为 true 时取消重试且不重复 load，成功只清理自身任务；实例缺失/销毁/旧代次/读取异常均不判成功，同广告位 showing 不被就绪查询覆盖。
+- 初始化瞬时失败按 2/4/8/16/32/64 秒持续重试，配置/依赖错误修正前不自动请求，未知错误确认前不自动退避，运行门恢复不能绕过这些阻断；初始化与广告位任务、计数和 deadline 独立。
+- 初始化退避中重复 initialize/retryInitialize、重复生命周期或网络恢复事件最多复用一次请求；后台、离线、宿主及隐私门关闭暂停且保留 deadline，恢复不抢跑、不重置计数。成功取消 timer 并只启动一次全屏预加载，Banner 不创建；禁用、销毁、配置替换和旧/重复尝试回调不能重新启动旧任务。
+- Banner 离开展示场景不影响初始化恢复；初始化恢复也不能重建该 Banner 的已取消任务。
 - 初始化成功立即静默预加载全部启用的插页与激励视频广告位；任一广告位 load success 只清零自身计数；所有已发起加载的广告位 load failure 都使用相同的 2/4/8/16/32/64 秒公式并封顶，抖动在 0.8–1.2 范围内且最终不超过 64 秒。
 - 重试超过六次乃至任意次数仍继续，configuration、adapter、unknown 加载失败不停止；禁用/移除/销毁终止重试，gates 暂停后恢复，初始化失败不混入 load 重试。
 - 不存在全屏共享锁、fullscreen gate 或跨广告位 already-showing 判定；不同广告位独立展示，同一广告位重复请求仍去重。
