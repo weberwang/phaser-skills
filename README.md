@@ -78,7 +78,7 @@ UI 响应式验证按合同的 `orientationPolicy.allowed` 选择视口方向：
 - [`$phaser4-frame-animation`](skills/phaser4-frame-animation/SKILL.md)：生成视频提示词，等待视频文件，再可调 FPS、尺寸与背景处理，抽帧输出 Phaser 图集和网页预览。
 - `$phaser4-spine-generative-reskin`、`$phaser4-game-image-optimization`：Spine 与图片处理。
 - `$phaser4-game-audio`、`$phaser4-game-balance`：音频和数值平衡。
-- [`$phaser4-game-ad-integration`](skills/phaser4-game-ad-integration/SKILL.md)：通过 AppLovin 官方 MAX Cordova 原生插件接入移动端 Banner、插页与激励视频，管理多广告位静默预加载、广告位独立加载重试、Banner 布局刷新、视频不可用提示和隐私验收。
+- [`$phaser4-game-ad-integration`](skills/phaser4-game-ad-integration/SKILL.md)：通过 AppLovin 官方 MAX Cordova 原生插件接入移动端 Banner、插页与激励视频，管理全屏广告位静默预加载与持续重试、Banner 按需创建与布局刷新、视频不可用提示和隐私验收。
 - `$phaser4-game-qa-performance`：质量、测试和性能验证。
 - [`$phaser4-game-artifact-cleanup`](skills/phaser4-game-artifact-cleanup/SKILL.md)：核对引用、保留策略与文件归属，清理过期记录和未使用中间产物，保留有效证据与审计链。
 - `$phaser4-game-release`：发布候选、渠道和合规交付。
