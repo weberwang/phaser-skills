@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { nativeRenderContract, nativeRuntimeEvidence } from "../../phaser4-game-workflow-control/scripts/native-render-test-fixtures.mjs";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
@@ -13,7 +14,8 @@ import { annotationProductionContract, decodePngRgba } from "./effect_image_rast
 import { renderEffectImageAnnotation } from "./effect_image_annotation_core.mjs";
 import { deriveAtomicImageRequirements } from "../../phaser4-game-workflow-control/scripts/visual-atomic-contract.mjs";
 import { buildEffectImageAssetPrompt, buildEffectImageFullPrompt, EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, EFFECT_IMAGE_NEGATIVE_PROMPT, resolveProductionContract } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
-import { DEFAULT_SOURCE_BACKGROUND_COLOR } from "../../phaser4-game-workflow-control/scripts/visual-transparent-background-contract.mjs";
+import { configureManifestTransparentFixture, writeManifestTransparentFixtures } from "./visual-manifest-transparent-fixtures.mjs";
+import { IMAGE_PRODUCTION_DPR } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
 import { loadVisualConfirmationAuthority } from "../../phaser4-game-workflow-control/scripts/visual-confirmation-authority.mjs"; import { computeLayoutAnnotationConfirmationSha256, computeLayoutUserMessageSha256 } from "../../phaser4-game-workflow-control/scripts/layout_annotation_confirmation.mjs"; import { writeLayoutReviewFixtureArtifacts } from "./layout-review-fixtures.mjs";
 import { CORE_TEMPLATES, OPTIONAL_TEMPLATES } from "../../phaser4-game-orchestrator/scripts/project_doc_templates.mjs";
 
@@ -138,7 +140,7 @@ function validManifest() {
 function attachSceneReconstructionContract(manifest) {
   const targetSha = manifest.reference_target.target_sha256;
   const candidateSha = manifest.candidate_identity.sha256;
-  // 测试夹具也必须绑定布局合同身份，避免新版 V5 场景门把布局证据误当作可选字段。
+  // 夹具同时覆盖静态原生框体和动态数据，并绑定布局身份，避免路线门再次以静态为由强制产图。
   const layoutContractSha = `sha256:${"3".repeat(64)}`;
   const layoutDecompositionVersion = "1.0.0";
   const regionFacts = manifest.coverage_audit.regions.map((region) => {
@@ -162,21 +164,20 @@ function attachSceneReconstructionContract(manifest) {
         delivery_kind: region.delivery_kind,
       }
       : {
-        element_type: "dynamic-data",
-        visual_complexity: "simple",
-        distinctive_visual: false,
-        observed_features: ["运行时数据/绘制", "目标布局边界"],
+        element_type: region.id === "region-background" ? "panel-frame" : "dynamic-data",
+        visual_complexity: "simple", distinctive_visual: false,
+        observed_features: region.id === "region-background" ? ["纯色矩形和规则边框"] : ["运行时数据/绘制", "目标布局边界"],
         asset_first_decision: "native-allowed",
         selected_route: "phaser-native",
         route_reason: "运行时区域由 Phaser 对象或程序绘制承担，不生产固定图片资产",
-        dynamic_requirements: { is_dynamic: true, description: "运行时内容可能变化" },
-        native_suitability: { eligible: true, primitive_basis: ["dynamic-data"], evidence: [`evidence/route/${region.id}-native.json`] },
+        dynamic_requirements: { is_dynamic: region.id !== "region-background", description: region.id === "region-background" ? "固定纯色框体" : "运行时内容可能变化" },
+        native_suitability: { render_contract: nativeRenderContract(), eligible: true, primitive_basis: region.id === "region-background" ? ["pure-color", "basic-geometry", "regular-line"] : ["dynamic-data"], evidence: [`evidence/route/${region.id}-native.json`] },
         reuse_suitability: { eligible: false, exact_asset_identity: "not-applicable", evidence: [`evidence/route/${region.id}-reuse-not-applicable.json`] },
         final_owner: runtimeOwner,
         implementation_plan_mode: "runtime-program",
-        production_method: "runtime-program",
-        delivery_kind: "runtime-program",
+        production_method: "runtime-program", delivery_kind: "runtime-program",
       };
+    if (runtimeOwner.startsWith("runtime")) { region.runtime_implementation.render_contract = visualRouteAnalysis.native_suitability.render_contract; region.confirmation.region_definition_sha256 = computeRegionDefinitionSha256(region); }
     return {
       annotation_number: region.annotation_number,
       region_id: region.id,
@@ -202,7 +203,7 @@ function attachSceneReconstructionContract(manifest) {
       implementation_owner: runtimeOwner,
       implementation_plan: region.implementation_plan,
       assembly_analysis: { strategy: "atomic-scene-composition", uses_full_screen_capture: false, allows_atomic_image_assets: true, evidence: [`evidence/route/${region.id}-assembly.json`] },
-      visual_route_analysis: visualRouteAnalysis,
+      visual_route_analysis: visualRouteAnalysis, ...(runtimeOwner.startsWith("runtime") ? { native_runtime_evidence: nativeRuntimeEvidence(visualRouteAnalysis, { candidate: candidateSha, target: targetSha, baseline: manifest.visual_baseline.style_fingerprint, diff: "diff-1" }) } : {}),
       applicable_states: [region.state_id],
       evidence: [region.ownership_evidence],
       tolerance_reference: "layout-tolerance",
@@ -219,7 +220,7 @@ function attachSceneReconstructionContract(manifest) {
         scene_asset_usage: {
           target_display_size: { width: region.bounds.width, height: region.bounds.height },
           intended_scale_range: { min: 1, max: 1 },
-          max_dpr: 2,
+          max_dpr: IMAGE_PRODUCTION_DPR,
           padding_policy: "none",
           origin: { x: 0.5, y: 0.5 },
           anchor: "target-bound",
@@ -331,13 +332,13 @@ function validOrdinaryManifest() {
 
 /** 构造包含完整生成包的 AI 合成栅格清单。 */
 function validAiManifest() {
-  const manifest = validManifest(); const asset = manifest.assets[0]; const region = manifest.coverage_audit.regions[1]; const width = 128; const height = 192; region.expected_assets[0].width = width; region.expected_assets[0].height = height; asset.expected_assets[0].width = width; asset.expected_assets[0].height = height; manifest.production_contract_audit.units[0].expected_assets[0].width = width; manifest.production_contract_audit.units[0].expected_assets[0].height = height; manifest.production_contract_audit.units[0].actual_assets[0].width = width; manifest.production_contract_audit.units[0].actual_assets[0].height = height; asset.route = "ai-composite-raster"; asset.production_method = "image-generation"; asset.delivery_kind = "raster-image"; asset.image_generation_required = true; asset.generation_record_required = true; asset.source_file = "art/hero-cutout.png"; region.expected_assets[0].source_file = "art/hero-cutout.png"; asset.expected_assets[0].source_file = "art/hero-cutout.png"; asset.output_file = "public/assets/hero.png"; asset.mime_type = "image/png"; asset.width = width; asset.height = height; asset.alpha = true; asset.sha256 = sha256Bytes(minimalPng(width, height)); region.expected_assets[0].alpha = true; asset.expected_assets[0].alpha = true; manifest.production_contract_audit.units[0].expected_assets[0].alpha = true; region.expected_assets[0].sha256 = asset.sha256; asset.expected_assets[0].sha256 = asset.sha256; manifest.production_contract_audit.units[0].expected_assets[0].sha256 = asset.sha256; asset.normalization_record = imageNormalizationRecord({ sourceFile: asset.source_file, outputFile: asset.output_file, width, height, alpha: asset.alpha, sha256: asset.sha256 }); asset.runtime_consumption.runtime_sha256 = asset.sha256; asset.runtime_consumption.component_usages[0].runtime_sha256 = asset.sha256; manifest.production_contract_audit.units[0].actual_assets[0].sha256 = asset.sha256;
+  const manifest = validManifest(); const asset = manifest.assets[0]; const region = manifest.coverage_audit.regions[1]; const width = 64; const height = 96; region.expected_assets[0].width = width; region.expected_assets[0].height = height; asset.expected_assets[0].width = width; asset.expected_assets[0].height = height; manifest.production_contract_audit.units[0].expected_assets[0].width = width; manifest.production_contract_audit.units[0].expected_assets[0].height = height; manifest.production_contract_audit.units[0].actual_assets[0].width = width; manifest.production_contract_audit.units[0].actual_assets[0].height = height; asset.route = "ai-composite-raster"; asset.production_method = "image-generation"; asset.delivery_kind = "raster-image"; asset.image_generation_required = true; asset.generation_record_required = true; asset.source_file = "art/hero-cutout.png"; region.expected_assets[0].source_file = "art/hero-cutout.png"; asset.expected_assets[0].source_file = "art/hero-cutout.png"; asset.output_file = "public/assets/hero.png"; asset.mime_type = "image/png"; asset.width = width; asset.height = height; asset.alpha = true; asset.sha256 = sha256Bytes(minimalPng(width, height)); region.expected_assets[0].alpha = true; asset.expected_assets[0].alpha = true; manifest.production_contract_audit.units[0].expected_assets[0].alpha = true; region.expected_assets[0].sha256 = asset.sha256; asset.expected_assets[0].sha256 = asset.sha256; manifest.production_contract_audit.units[0].expected_assets[0].sha256 = asset.sha256; asset.normalization_record = imageNormalizationRecord({ sourceFile: asset.source_file, outputFile: asset.output_file, width, height, alpha: asset.alpha, sha256: asset.sha256 }); asset.runtime_consumption.runtime_sha256 = asset.sha256; asset.runtime_consumption.component_usages[0].runtime_sha256 = asset.sha256; manifest.production_contract_audit.units[0].actual_assets[0].sha256 = asset.sha256;
   region.expected_assets[0].mime_type = "image/png"; asset.expected_assets[0].mime_type = "image/png"; manifest.production_contract_audit.units[0].expected_assets[0].mime_type = "image/png"; manifest.production_contract_audit.units[0].expected_assets[0].source_file = "art/hero-cutout.png";
   const promptRegion = manifest.scene_reconstruction_contract.coverage_regions.find((item) => item.region_id === "region-hero");
   const assetPrompt = buildEffectImageAssetPrompt({ region: promptRegion, component: promptRegion ? { component_id: "hero-component", role: "visual-component", atomic_visual_key: "hero-component-atomic" } : undefined, state: "default" }).prompt;
   const statePrompt = "状态段：default；严格保持冻结区域状态，不新增文字、数值或运行时热区。";
-  const fullPrompt = buildEffectImageFullPrompt({ assetPrompt, statePrompt, expectedAlpha: true });
-  asset.generation_record = { record_id: "gen-hero-1", generator: "image-generation", generator_version: "1", created_at: "2026-08-15T00:00:00Z", command_or_recipe: "render hero-idle -> background-removal once", input_sources: ["prompt:hero-idle"], parameters: { size: `${width}x${height}` }, reconstruction_mode: "reference-faithful", reference_input_mode: "full-reference-guidance", pixel_reuse_policy: "forbid-output-reuse", source_background_mode: "opaque", source_background_color: DEFAULT_SOURCE_BACKGROUND_COLOR, final_background_mode: "transparent", transparency_strategy: "background-removal", global_prompt_prefix: EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, asset_prompt: assetPrompt, state_prompt: statePrompt, negative_prompt: EFFECT_IMAGE_NEGATIVE_PROMPT, full_prompt: fullPrompt, raw_source_file: "art/hero-raw.png", raw_source_has_alpha: false, source_file: "art/hero-cutout.png", source_has_alpha: true, runtime_file: "public/assets/hero.png", output_file: "public/assets/hero.png", background_removal_attempts: [{ operation: "background-removal", status: "completed", source_file: "art/hero-raw.png", output_file: "art/hero-cutout.png", source_has_alpha: false, output_has_alpha: true, completed_at: "2026-08-15T00:00:00Z", evidence: { record_id: "br-hero-1", report: "evidence/visual/hero-background-removal.json", solid_background_check: { status: "passed", background_color: DEFAULT_SOURCE_BACKGROUND_COLOR, tolerance: 0, boundary_pixels: 4, matched_boundary_pixels: 4, opaque: true } } }], model: "image-model", model_version: "1", seed: 42, reference_inputs: [manifest.reference_target.original_file], style_reference_inputs: ["evidence/visual/ai-reference.png"], postprocess: ["background-removal"], annotation_number: 2, region_id: "region-hero", component_id: "hero-component", state_id: "default", asset_id: "hero-idle", target_sha256: manifest.reference_target.target_sha256, candidate_sha256: manifest.candidate_identity.sha256, diff_fingerprint: manifest.candidate_identity.diff_fingerprint, candidate_version: manifest.candidateVersion, normalization_record: asset.normalization_record };
+  const fullPrompt = buildEffectImageFullPrompt({ assetPrompt, statePrompt, expectedAlpha: true, transparencyStrategy: "direct-alpha", edgeProfile: "hard-edge", capability: { supports_true_alpha: true, verified_edge_profiles: ["hard-edge"] } });
+  asset.generation_record = { record_id: "gen-hero-1", generator: "image-generation", generator_version: "1", created_at: "2026-08-15T00:00:00Z", command_or_recipe: "fixture: preserve a verified true-alpha PNG through normalization", input_sources: ["prompt:hero-idle"], parameters: { size: `${width}x${height}` }, reconstruction_mode: "reference-faithful", reference_input_mode: "full-reference-guidance", pixel_reuse_policy: "forbid-output-reuse", source_background_mode: "transparent", final_background_mode: "transparent", transparency_strategy: "direct-alpha", global_prompt_prefix: EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, asset_prompt: assetPrompt, state_prompt: statePrompt, negative_prompt: EFFECT_IMAGE_NEGATIVE_PROMPT, full_prompt: fullPrompt, raw_source_file: "art/hero-cutout.png", raw_source_has_alpha: true, source_file: "art/hero-cutout.png", source_has_alpha: true, runtime_file: "public/assets/hero.png", output_file: "public/assets/hero.png", model: "image-model", model_version: "1", seed: 42, reference_inputs: [manifest.reference_target.original_file], style_reference_inputs: ["evidence/visual/ai-reference.png"], postprocess: [], annotation_number: 2, region_id: "region-hero", component_id: "hero-component", state_id: "default", asset_id: "hero-idle", target_sha256: manifest.reference_target.target_sha256, candidate_sha256: manifest.candidate_identity.sha256, diff_fingerprint: manifest.candidate_identity.diff_fingerprint, candidate_version: manifest.candidateVersion, normalization_record: asset.normalization_record };
   asset.origin = "generated";
   Object.assign(asset.generation_record, {
     origin: "generated",
@@ -364,7 +365,7 @@ function validAiManifest() {
   sceneHeroRegion.delivery_kind = "raster-image";
   manifest.coverage_audit.regions[1].atomic_image_requirements = deriveAtomicImageRequirements(manifest.coverage_audit.regions[1]);
   asset.atomic_image_requirements = manifest.coverage_audit.regions[1].atomic_image_requirements;
-  addManualConfirmationRecords(manifest);
+  configureManifestTransparentFixture(manifest); addManualConfirmationRecords(manifest);
   manifest.coverage_audit.regions[1].confirmation.region_definition_sha256 = computeRegionDefinitionSha256(manifest.coverage_audit.regions[1]);
   Object.assign(manifest.production_contract_audit.units[0], { observed_method: "image-generation", observed_delivery_kind: "raster-image", atomic_image_requirements: manifest.coverage_audit.regions[1].atomic_image_requirements });
   manifest.scene_reconstruction_contract.combination_preacceptance.prompt_contract_binding = [{ record_id: asset.generation_record.record_id, target_sha256: manifest.reference_target.target_sha256, region_id: "region-hero", candidate_sha256: manifest.candidate_identity.sha256, diff_fingerprint: manifest.candidate_identity.diff_fingerprint, generation_record: asset.generation_record }];
@@ -437,15 +438,15 @@ function minimalPng(width = 1, height = 1, raw = Buffer.alloc(height * (width * 
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
 }
 
-/** 创建文件检查所需的空夹具。 */
-async function createFixtureFiles(root, includeAi = false) {
+/** 创建文件检查所需的空夹具。 */ async function createFixtureFiles(root, includeAi = false, manifest = null) {
   const paths = ["docs/visual-baseline.md", "evidence/visual/main-anchor.png", "evidence/visual/mockup.png", "evidence/visual/reference.png", "evidence/visual/candidate.png", "evidence/coverage/summary.md", "evidence/coverage/state-analysis.md", "evidence/coverage/region-background.md", "evidence/coverage/region-hero.md", "evidence/coverage/region-score.md", "art/hero.aseprite", "docs/license.md", "public/assets/hero.png", "evidence/phaser.png", "evidence/gameplay.mp4", "evidence/visual/hero-consistency.png", "src/region-background.mjs", "src/region-score.mjs", "evidence/fidelity/layout-background.json", "evidence/fidelity/hero-component-layout-node.json", "evidence/fidelity/layout-score.json", ...["scope", "state-machine", "input", "collision", "module-scene-ownership", "coordinate-space", "layout", "budget"].map((domain) => `evidence/reconcile/${domain}.md`)];
   if (includeAi) paths.push("evidence/visual/ai-reference.png", "evidence/visual/ai-consistency.json", "art/hero-raw.png", "art/hero-cutout.png");
-  for (const path of paths) { const target = join(root, path); await mkdir(dirname(target), { recursive: true }); await writeFile(target, ["evidence/visual/mockup.png"].includes(path) ? minimalPng(390, 844) : ["public/assets/hero.png", "art/hero-raw.png", "art/hero-cutout.png"].includes(path) ? minimalPng(includeAi ? 128 : 64, includeAi ? 192 : 96) : ""); }
+  // 固定视觉合同是 64×96；includeAi 只增加证据文件，不再把输出位图扩大为旧的双倍尺寸。
+  for (const path of paths) { const target = join(root, path); await mkdir(dirname(target), { recursive: true }); await writeFile(target, ["evidence/visual/mockup.png"].includes(path) ? minimalPng(390, 844) : ["public/assets/hero.png", "art/hero-raw.png", "art/hero-cutout.png"].includes(path) ? minimalPng(64, 96) : ""); }
   for (const path of ["evidence/runtime/hero.json", "evidence/f2/visual.md", "evidence/f2/production.md", "evidence/f3/replay.json", "evidence/fidelity/main.json", "evidence/visual/hero-consistency.json"]) { const target = join(root, path); await mkdir(dirname(target), { recursive: true }); await writeFile(target, path.endsWith("hero-consistency.json") ? JSON.stringify({ status: "passed" }) : ""); }
   // 独立生产资源必须与冻结原图保持不同内容，文件夹具用非空字节避免把两者误设为同一份证据。
   await writeFile(join(root, "art/hero.aseprite"), "independent-source");
-  await writeFile(join(root, "art/hero.png"), minimalPng(includeAi ? 128 : 64, includeAi ? 192 : 96));
+  await writeFile(join(root, "art/hero.png"), minimalPng(64, 96)); if (includeAi && manifest) await writeManifestTransparentFixtures(root, manifest);
 }
 
 /** 构造新版不可变位图复用快照；旧 reuse_source 字段不再进入测试合同。 */
@@ -713,7 +714,7 @@ test("V3/V5 效果图 API 和 CLI 缺少文件门必须拒绝，显式文件门�
   const v5 = validManifest();
   assert(validateManifest(v5, { stage: "V5" }).some((item) => item.includes("checkFiles=true") && item.includes("projectRoot")));
   const imagegen = validAiManifest(); imagegen.effect_image_reconstruction.lifecycle = "v2-ready";
-  assert(validateManifest(imagegen, { stage: "V5" }).some((item) => item.includes("checkFiles=true") && item.includes("projectRoot")));
+  const generatedV5 = validAiManifest(); const generatedRoot = await mkdtemp(join(tmpdir(), "visual-manifest-alpha-")); await createFixtureFiles(generatedRoot, true, generatedV5); assert.deepEqual(validateManifest(generatedV5, { stage: "V5", ...STRUCTURAL_FILE_GATE_OPTIONS, projectRoot: generatedRoot }), []); assert(validateManifest(imagegen, { stage: "V5" }).some((item) => item.includes("checkFiles=true") && item.includes("projectRoot")));
   assert.deepEqual(validateManifest(v5, STRUCTURAL_FILE_GATE_OPTIONS), []);
   assert.deepEqual(validateManifest(imagegen, STRUCTURAL_FILE_GATE_OPTIONS), []);
   const root = await mkdtemp(join(tmpdir(), "visual-file-gate-cli-")); const path = join(root, "visual-assets.json"); await writeFile(path, JSON.stringify(v5));
@@ -786,15 +787,15 @@ test("视觉基线必须存在且使用明确静态冻结语义", () => { const 
 test("风格指纹格式固定", () => { const manifest = validManifest(); manifest.visual_baseline.style_fingerprint = "sha256:ABC"; assert(validateManifest(manifest).some((item) => item.includes("64 位小写十六进制"))); });
 test("阶段证据文档不得作为冻结基线哈希正文", () => { const manifest = validManifest(); manifest.visual_baseline.document = "docs/visual-design.md"; assert(validateManifest(manifest).some((item) => item.includes("不可变 docs/visual-baseline.md"))); });
 test("资源基线绑定必须一致", () => { for (const [field, value] of [["visual_baseline_version", "2.0.0"], ["style_fingerprint", "sha256:drifted"]]) { const manifest = validManifest(); manifest.assets[0][field] = value; assert(validateManifest(manifest).some((item) => item.includes(`${field} 与`))); } });
-test("AI 生成包字段完整", () => { assert.deepEqual(validateManifest(validAiManifest(), STRUCTURAL_FILE_GATE_OPTIONS), []); const manifest = validAiManifest(); delete manifest.assets[0].generation_record.global_prompt_prefix; assert(validateManifest(manifest).some((item) => item.includes("global_prompt_prefix"))); });
+test("AI 生成包字段完整", async () => { const root = await mkdtemp(join(tmpdir(), "visual-manifest-ai-package-")); const valid = validAiManifest(); await createFixtureFiles(root, true, valid); assert.deepEqual(validateManifest(valid, { ...STRUCTURAL_FILE_GATE_OPTIONS, projectRoot: root }), []); const manifest = validAiManifest(); delete manifest.assets[0].generation_record.global_prompt_prefix; assert(validateManifest(manifest, { ...STRUCTURAL_FILE_GATE_OPTIONS, projectRoot: root }).some((item) => item.includes("global_prompt_prefix"))); });
 test("任意路线使用 generation_record 时必须提供完整公共生成身份", () => { const forged = validManifest(); delete forged.assets[0].source_file; forged.assets[0].generation_record = { x: 1 }; assert(validateManifest(forged).some((item) => item.includes("generation_record.record_id"))); const generated = validManifest(); delete generated.assets[0].source_file; generated.assets[0].generation_record = { record_id: "gen-1", generator: "aseprite-cli", generator_version: "1.3", created_at: "2026-08-15T00:00:00Z", command_or_recipe: "aseprite -b hero.aseprite --save-as hero.png", input_sources: ["spec:hero-idle"], parameters: { scale: 1 } }; assert.deepEqual(validateManifest(generated, STRUCTURAL_FILE_GATE_OPTIONS), []); });
 test("预算必须是正数", () => { const manifest = validManifest(); manifest.budgets.max_texture_size = null; assert(validateManifest(manifest).some((item) => item.includes("max_texture_size 必须是正数"))); });
 test("PNG 必须具备支持的 IHDR 组合和完整扫描行", () => { assert.deepEqual(readPngDimensions(minimalPng(1, 1)), { width: 1, height: 1 }); assert.equal(readPngDimensions(minimalPng(1, 1, Buffer.alloc(0))), null); assert.equal(readPngDimensions(minimalPng(1, 1, Buffer.from([5, 0, 0, 0, 0]))), null); });
-test("文件检查覆盖存在性、哈希与 AI 引用", async () => { const root = await mkdtemp(join(tmpdir(), "visual-manifest-")); const manifest = validAiManifest(); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("文件不存在"))); await createFixtureFiles(root, true); await writeConfirmationFixtureFiles(root, manifest); assert.deepEqual(await checkManifestFiles(manifest, root), []); await writeFile(join(root, "docs/visual-baseline.md"), "修改"); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("SHA-256 不一致"))); });
+test("文件检查覆盖存在性、哈希与 AI 引用", async () => { const root = await mkdtemp(join(tmpdir(), "visual-manifest-")); const manifest = validAiManifest(); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("文件不存在"))); await createFixtureFiles(root, true, manifest); await writeConfirmationFixtureFiles(root, manifest); assert.deepEqual(await checkManifestFiles(manifest, root), []); await writeFile(join(root, "docs/visual-baseline.md"), "修改"); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("SHA-256 不一致"))); });
 test("全局锚点和一致性证据内容篡改时文件门拒绝", async () => {
   const root = await mkdtemp(join(tmpdir(), "visual-global-file-gate-"));
   const manifest = validAiManifest();
-  await createFixtureFiles(root, true);
+  await createFixtureFiles(root, true, manifest);
   await writeConfirmationFixtureFiles(root, manifest);
   await writeFile(join(root, "evidence/visual/main-anchor.png"), "anchor-drift");
   assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("visual_baseline.anchor_evidence") && item.includes("sha256")));
@@ -817,7 +818,7 @@ test("V5 check-files 与 CLI 拒绝旧 F2 baseline 或旧 diff 身份", async ()
 test("V5 文件审计拒绝扩展名伪装的 mjs raster", async () => { const root = await mkdtemp(join(tmpdir(), "visual-fake-raster-")); const manifest = validManifest(); await createFixtureFiles(root); const fake = join(root, "public/assets/fake.mjs"); await mkdir(dirname(fake), { recursive: true }); await writeFile(fake, "export default 1;"); manifest.assets[0].runtime_outputs = ["public/assets/fake.mjs"]; manifest.production_contract_audit.units[0].actual_assets[0].file = "public/assets/fake.mjs"; manifest.production_contract_audit.units[0].actual_assets[0].sha256 = sha256Bytes(Buffer.from("export default 1;")); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("不是可解码 PNG/JPEG/WebP"))); });
 test("V5 check-files 不得因缺少 production_contract_audit 而静默放行", async () => { const root = await mkdtemp(join(tmpdir(), "visual-v5-audit-")); const manifest = validManifest(); delete manifest.production_contract_audit; await createFixtureFiles(root); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("production_contract_audit 缺失"))); });
 test("编号图文件缺失或哈希不匹配时文件检查失败", async () => { const root = await mkdtemp(join(tmpdir(), "visual-numbered-")); const manifest = validManifest(); manifest.coverage_audit.regions[0].confirmation = { mode: "USER_DECISION", reasons: ["ambiguous-boundary"], numbered_image_file: "evidence/coverage/numbered.png", numbered_image_version: "1", numbered_image_sha256: EMPTY_DOCUMENT_FINGERPRINT, decision_id: "decision-1" }; await createFixtureFiles(root); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("numbered_image_file 文件不存在"))); const path = join(root, "evidence/coverage/numbered.png"); await mkdir(dirname(path), { recursive: true }); await writeFile(path, "changed"); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("numbered_image_sha256 与文件"))); });
-test("拆解提案、决定记录和生成器标注 PNG 必须真实存在且逐项绑定", async () => { const root = await mkdtemp(join(tmpdir(), "visual-decomposition-")); const manifest = bitmapManifest(); await createFixtureFiles(root, true); const region = manifest.coverage_audit.regions[1]; const pairRegions = manifest.coverage_audit.regions.filter((item) => item.scene_id === region.scene_id && item.state_id === region.state_id); const numberedBytes = renderEffectImageAnnotation(minimalPng(390, 844), manifest.reference_target.original_file, manifest.coverage_audit.canvases[0], pairRegions); await writeConfirmationFixtureFiles(root, manifest, numberedBytes); const numberedPath = join(root, region.confirmation.annotation_file); assert.deepEqual(await checkManifestFiles(manifest, root), []); const hidden = Buffer.from(numberedBytes); hidden[hidden.length - 1] ^= 1; await writeFile(numberedPath, hidden); region.confirmation.annotation_sha256 = sha256Bytes(hidden); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("标准 PNG 不一致"))); await writeConfirmationFixtureFiles(root, manifest, numberedBytes); await writeFile(join(root, region.confirmation.proposal_file), ""); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("proposal_file 必须是可解析 JSON"))); const invalid = bitmapManifest(); await createFixtureFiles(root, true); await writeConfirmationFixtureFiles(root, invalid, minimalPng()); assert((await checkManifestFiles(invalid, root)).some((item) => item.includes("尺寸") || item.includes("标准 PNG") || item.includes("区域标注"))); });
+test("拆解提案、决定记录和生成器标注 PNG 必须真实存在且逐项绑定", async () => { const root = await mkdtemp(join(tmpdir(), "visual-decomposition-")); const manifest = bitmapManifest(); await createFixtureFiles(root, true, manifest); const region = manifest.coverage_audit.regions[1]; const pairRegions = manifest.coverage_audit.regions.filter((item) => item.scene_id === region.scene_id && item.state_id === region.state_id); const numberedBytes = renderEffectImageAnnotation(minimalPng(390, 844), manifest.reference_target.original_file, manifest.coverage_audit.canvases[0], pairRegions); await writeConfirmationFixtureFiles(root, manifest, numberedBytes); const numberedPath = join(root, region.confirmation.annotation_file); assert.deepEqual(await checkManifestFiles(manifest, root), []); const hidden = Buffer.from(numberedBytes); hidden[hidden.length - 1] ^= 1; await writeFile(numberedPath, hidden); region.confirmation.annotation_sha256 = sha256Bytes(hidden); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("标准 PNG 不一致"))); await writeConfirmationFixtureFiles(root, manifest, numberedBytes); await writeFile(join(root, region.confirmation.proposal_file), ""); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("proposal_file 必须是可解析 JSON"))); const invalid = bitmapManifest(); await createFixtureFiles(root, true); await writeConfirmationFixtureFiles(root, invalid, minimalPng()); assert((await checkManifestFiles(invalid, root)).some((item) => item.includes("尺寸") || item.includes("标准 PNG") || item.includes("区域标注"))); });
 test("文件检查拒绝路径逃逸", async () => { const root = await mkdtemp(join(tmpdir(), "visual-manifest-")); const manifest = validManifest(); manifest.visual_baseline.document = "../outside.md"; assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("路径逃逸"))); });
 test("文件检查拒绝 symlink 真实位置逃逸", async (t) => { const root = await mkdtemp(join(tmpdir(), "visual-symlink-")); const outsideRoot = await mkdtemp(join(tmpdir(), "visual-symlink-outside-")); const outside = join(outsideRoot, "outside.png"); await writeFile(outside, "outside"); const link = join(root, "evidence/visual/escaped.png"); await mkdir(dirname(link), { recursive: true }); try { await symlink(outside, link, "file"); } catch { t.skip("当前 Windows 环境不允许创建 symlink"); return; } const manifest = validManifest(); manifest.visual_baseline.anchor_evidence.push("evidence/visual/escaped.png"); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("真实位置逃逸"))); });
 test("错误 assets 容器不得绕过 V3/V5 文件检查", async () => { const root = await mkdtemp(join(tmpdir(), "visual-manifest-")); const manifest = validManifest(); manifest.assets = 42; await createFixtureFiles(root); assert(validateManifest(manifest).includes("assets 必须是数组")); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("V5") || item.includes("V5"))); });
@@ -859,7 +860,7 @@ test("reuse-existing 文件身份必须绑定 accepted 源快照、源文件和�
 test("拆解人工确认必须绑定用户原文、时间和 manual accepted 身份", () => { const missing = bitmapManifest(); delete missing.coverage_audit.regions[1].confirmation.user_message_sha256; assert(validateManifest(missing).some((item) => item.includes("user_message_sha256"))); const forged = bitmapManifest(); forged.coverage_audit.regions[1].confirmation.confirmation_mode = "auto"; assert(validateManifest(forged).some((item) => item.includes("confirmation_mode 必须为 manual"))); });
 
 test("每个 scene/state 组拥有独立 PNG、提案和决定文件并完整覆盖组内编号", async () => {
-  const root = await mkdtemp(join(tmpdir(), "visual-confirmation-groups-")); const manifest = multiConfirmationGroupManifest(); await createFixtureFiles(root, true);
+  const root = await mkdtemp(join(tmpdir(), "visual-confirmation-groups-")); const manifest = multiConfirmationGroupManifest(); await createFixtureFiles(root, true, manifest);
   const original = minimalPng(390, 844); const groups = new Map();
   for (const region of manifest.coverage_audit.regions) { const key = `${region.scene_id}\0${region.state_id}`; const list = groups.get(key) ?? []; list.push(region); groups.set(key, list); }
   const bytesByGroup = Object.fromEntries([...groups].map(([key, regions]) => [key, renderEffectImageAnnotation(original, manifest.reference_target.original_file, manifest.coverage_audit.canvases.find((canvas) => `${canvas.scene_id}\0${canvas.state_id}` === key), regions)]));
@@ -869,7 +870,7 @@ test("每个 scene/state 组拥有独立 PNG、提案和决定文件并完整覆
 });
 
 test("多 scene/state 确认拒绝串组文件和漏组文件", async () => {
-  const root = await mkdtemp(join(tmpdir(), "visual-confirmation-group-errors-")); const manifest = multiConfirmationGroupManifest(); await createFixtureFiles(root, true);
+  const root = await mkdtemp(join(tmpdir(), "visual-confirmation-group-errors-")); const manifest = multiConfirmationGroupManifest(); await createFixtureFiles(root, true, manifest);
   const original = minimalPng(390, 844); const groups = new Map();
   for (const region of manifest.coverage_audit.regions) { const key = `${region.scene_id}\0${region.state_id}`; const list = groups.get(key) ?? []; list.push(region); groups.set(key, list); }
   const bytesByGroup = Object.fromEntries([...groups].map(([key, regions]) => [key, renderEffectImageAnnotation(original, manifest.reference_target.original_file, manifest.coverage_audit.canvases.find((canvas) => `${canvas.scene_id}\0${canvas.state_id}` === key), regions)]));

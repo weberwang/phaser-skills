@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+import assert from "node:assert/strict"; import { fixtureAlphaCapability, prepareTransparencyFixture } from "./transparent-route-test-fixtures.mjs";
 import test from "node:test";
 import {
   EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX,
@@ -53,8 +53,8 @@ function validEffectRecord(overrides = {}) {
   const region = effectRegion();
   const { prompt: assetPrompt } = buildEffectImageAssetPrompt({ region, state: "idle" });
   const statePrompt = "状态：idle；保持冻结 region 中的默认待机姿态，不添加状态专属结构。";
-  const fullPrompt = buildEffectImageFullPrompt({ assetPrompt, statePrompt, expectedAlpha: true });
-  return {
+  const fullPrompt = buildEffectImageFullPrompt({ assetPrompt, statePrompt, expectedAlpha: true, transparencyStrategy: "direct-alpha", edgeProfile: "glow", capability: fixtureAlphaCapability() });
+  const record = {
     record_id: "GEN-SC-MAIN-HERO-IDLE",
     generator: "fixture-render-tool",
     generator_version: "4",
@@ -107,6 +107,7 @@ function validEffectRecord(overrides = {}) {
     background_removal_attempts: [{ operation: "background-removal", status: "completed", source_file: "art/generated/sc-main-hero-idle-raw.png", output_file: "art/generated/sc-main-hero-idle-cutout.png", source_has_alpha: false, output_has_alpha: true, completed_at: "2026-08-22T00:00:00Z", evidence: { record_id: "BR-SC-MAIN-HERO-IDLE", report: "evidence/visual/sc-main-hero-background-removal.json", solid_background_check: { status: "passed", background_color: "#00FF00", opaque: true, boundary_pixels: 4, matched_boundary_pixels: 4 } } }],
     ...overrides,
   };
+  const asset = validEffectAsset(); record.normalization_record = asset.normalization_record; record.postprocess = []; prepareTransparencyFixture(record, { alpha: true, runtime_file: asset.runtime_file }, { strategy: "direct-alpha", edgeProfile: "glow" }); return Object.assign(record, overrides);
 }
 
 /** 构造与冻结原图身份分离的独立输出资产。 */
@@ -172,7 +173,7 @@ function effectImageAssetContract() {
       mime_type: "image/png",
       width: 128,
       height: 192,
-      alpha: true,
+      alpha: true, transparency_requirements: { strategy: "direct-alpha", edge_profile: "glow" },
     }],
   };
 }
@@ -229,24 +230,26 @@ test("合法 effect-image 忠实还原记录通过", () => {
   assert.deepEqual(validateImageGenerationContract(asset, effectImageAssetContract(), effectImageValidationContext(), effectImageValidationOptions()), []);
 });
 
-test("alpha=true 单图必须声明背景模式并使用不透明纯色生图提示", () => {
+test("alpha=true 直接透明单图必须声明真实源图模式", () => {
   const record = validEffectRecord({ source_background_mode: undefined, full_prompt: buildEffectImageFullPrompt({ assetPrompt: validEffectRecord().asset_prompt, statePrompt: validEffectRecord().state_prompt, expectedAlpha: false }) });
   const errors = validateImageGenerationContract(validEffectAsset({ generation_record: record }), effectImageAssetContract(), effectImageValidationContext(), effectImageValidationOptions());
   assert(errors.some((item) => item.includes("source_background_mode")), errors.join("\n"));
-  assert(errors.some((item) => item.includes("纯色")), errors.join("\n"));
+
 });
 
-test("alpha=true 单图允许失败历史后由最终成功背景移除收尾", () => {
-  const record = validEffectRecord({ background_removal_attempts: [{ ...validEffectRecord().background_removal_attempts[0], operation: "remove-background" }] });
+test("辉光单图不能通过声明背景移除切换已冻结路线", () => {
+  const record = validEffectRecord({ transparency_strategy: "background-removal", edge_profile: "glow" });
   const errors = validateImageGenerationContract(validEffectAsset({ generation_record: record }), effectImageAssetContract(), effectImageValidationContext(), effectImageValidationOptions());
-  assert(errors.some((item) => item.includes("background_removal_attempts")), errors.join("\n"));
-  const baseAttempt = validEffectRecord().background_removal_attempts[0];
-  const history = [
-    { ...baseAttempt, status: "failed", output_file: "art/generated/sc-main-hero-idle-failed.png", output_has_alpha: false, evidence: { record_id: "BR-SC-MAIN-HERO-IDLE-FAILED", report: "evidence/visual/sc-main-hero-background-removal-failed.json" } },
-    baseAttempt,
-  ];
-  assert.deepEqual(validateImageGenerationContract(validEffectAsset({ generation_record: validEffectRecord({ background_removal_attempts: history }) }), effectImageAssetContract(), effectImageValidationContext(), effectImageValidationOptions()), []);
-  assert.deepEqual(validateImageGenerationContract(validEffectAsset({ generation_record: validEffectRecord({ postprocess: [] }) }), effectImageAssetContract(), effectImageValidationContext(), effectImageValidationOptions()), []);
+  assert(errors.some((item) => item.includes("hard-edge") || item.includes("冻结")), errors.join("\n"));
+});
+
+test("透明提示词按能力与边缘路由，不能默认去背或放行未知边缘", () => {
+  assert.throws(() => buildEffectImageFullPrompt({ expectedAlpha: true }));
+  assert.throws(() => buildEffectImageFullPrompt({ expectedAlpha: true, transparencyStrategy: "background-removal", edgeProfile: "glow", colorSeparationVerified: true }));
+  assert.throws(() => buildEffectImageFullPrompt({ expectedAlpha: true, transparencyStrategy: "mask-composition", edgeProfile: "unknown" }));
+  assert.throws(() => buildEffectImageFullPrompt({ expectedAlpha: true, transparencyStrategy: "direct-alpha", edgeProfile: "glow", capability: fixtureAlphaCapability("hard-edge") }));
+  const mask = buildEffectImageFullPrompt({ expectedAlpha: true, transparencyStrategy: "mask-composition", edgeProfile: "glass" });
+  assert(mask.includes("独立遮罩") && !mask.includes("#00FF00"));
 });
 
 test("alpha=true 单图拒绝 JPEG 透明交付", () => {
@@ -286,7 +289,7 @@ test("正向提示‘不得重新设计’通过", () => {
   const base = validEffectRecord();
   const assetPrompt = `${base.asset_prompt}\n不得重新设计`;
   const statePrompt = base.state_prompt;
-  assert.deepEqual(validate({ ...base, asset_prompt: assetPrompt, full_prompt: buildEffectImageFullPrompt({ assetPrompt, statePrompt, expectedAlpha: true }) }), []);
+  assert.deepEqual(validate({ ...base, asset_prompt: assetPrompt, full_prompt: buildEffectImageFullPrompt({ assetPrompt, statePrompt, expectedAlpha: true, transparencyStrategy: "direct-alpha", edgeProfile: "glow", capability: fixtureAlphaCapability() }) }), []);
 });
 
 test("negative_prompt 包含‘重新设计’不触发正向指令误报", () => {

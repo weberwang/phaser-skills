@@ -2,6 +2,8 @@
 
 本文件是 `effect-image` 模式的唯一提示词模板与机器合同来源。它定义“非像素复制的高保真忠实重建”，即允许重新绘制全部像素，但不得重新设计任何可观察视觉事实。工作流路由见 [`visual-reconstruction.md`](visual-reconstruction.md)、[`asset-production-routes.md`](asset-production-routes.md) 和 [`visual-production-pipeline.md`](visual-production-pipeline.md)；代码门禁由 [`effect-image-prompt-contract.mjs`](../../phaser4-game-workflow-control/scripts/effect-image-prompt-contract.mjs) 执行。
 
+本提示词只适用于 V2 已冻结为 `selected_route=image-asset` 且 `image_generation_required=true` 的区域；它负责生成合同，不负责选择生产路线。文本、纯色框体和基础几何等区域不能因为静态或“像 UI 资产”而自动进入图片提示词。已冻结 `image_generation_required=true` 的合同也不能被提示词生成器改成 Phaser 原生实现；生产方式变化须有明确接受的 Change Request。
+
 ## 全局提示词
 
 `global_prompt_prefix` 必须逐字使用下面的 canonical 内容：
@@ -18,7 +20,7 @@
 输出单个独立位图资产。背景按本次实际请求中的源图背景要求绘制；主体必须完整落入指定画布。不得生成组合图、atlas、sprite sheet、展示板、说明文字、无关 UI、数字、标签、水印或其他组件。
 ```
 
-当当前 `expected_assets` 的 `alpha=true` 且 `origin=generated` 时，实际发送的完整提示词必须追加以下默认纯色背景生产段；若绿色与主体冲突，调用前选择其他 HEX 颜色并通过 `buildSolidBackgroundPrompt(color)` 生成对应段落，提示词、`source_background_color` 和脚本参数必须一致：
+当生成资产的 `expected_assets.alpha=true` 时，提示词按已冻结的 `transparency_requirements.strategy` 和 `edge_profile` 选择透明生产要求。只有 `strategy=background-removal` 且 `edge_profile=hard-edge` 时才追加下面的纯色背景段；调用前选择与主体明显区分的 HEX，并使提示词、记录颜色和脚本参数一致：
 
 ```text
 背景要求：将参考图或 asset_prompt 中用于描述最终透明边界的区域，在本次原图中统一填充为不透明、无纹理的纯色平涂背景；指定颜色为 #00FF00（RGB 0, 255, 0）。
@@ -26,9 +28,11 @@
 背景必须整片均匀不透明；禁止棋盘格、网格、渐变、纹理、背景阴影、环境景物、边框、说明文字或色值文字。
 ```
 
-生成记录必须记录系统实际选择的 `generator` 与 `generator_version`；`generator` 必须记录实际调用的工具，未暴露的版本、模型参数或种子记录 `not-provided`，不得编造。生成式透明路线固定声明 `transparency_strategy=background-removal`、`source_background_mode=opaque` 和显式 `source_background_color`，并提供 `raw_source_file`、背景处理后的 `source_file` 和两侧 Alpha；源图必须先通过 `--require-solid-background` 校验，失败时重新生成或修正输入。背景处理使用公共 `remove-background-local.mjs`；`background_removal_attempts` 只追加返回报告中的 `report.background_removal_attempt`，不嵌入完整报告；每个 attempt 记录 `operation`、`status`、源/输出路径、完成时间、源/输出 Alpha、背景颜色、失败原因和可审计 evidence。每条成功记录的 `evidence.solid_background_check` 必须证明不透明、边缘全数匹配且检查通过；最终记录还必须与当前源图背景色一致。失败历史必须保留，重试由任务配置设定上限，不能无限重试或自动新增外部调用授权；`normalization_record.source_file` 必须绑定当前透明输入。最终 PNG 由 V5 文件解码复核真实 Alpha。已有真实透明图按资源复用合同接入，不伪造生成去背记录。
+生成记录按实际路线记录 `generator`/`generator_version`、工具参数、输入/输出路径及 SHA、`edge_profile`、`edge_evidence` 和后处理；未暴露的版本、参数或种子记录 `not-provided`，不得编造。背景去除路线必须限定 `hard-edge`，显式记录 `source_background_mode=opaque`、`source_background_color`、`color_separation_verified=true` 及真实 `background_removal_attempts`，并复用 `remove-background-local.mjs`；每次尝试按实际情况记录状态、源/输出路径、Alpha、背景颜色、时间、失败原因和证据。不得为半透明、辉光、柔和阴影、毛发、玻璃或混合边缘使用颜色阈值去背。
 
-`background_mode`、`direct_generation_attempt` 和旧的策略值均不属于本合同；`postprocess` 必须是字符串数组，背景移除操作以结构化 `background_removal_attempts` 为权威记录。
+直接 Alpha 路线只有在当前工具对声明的 `edge_profile` 有可核对能力证据时才可使用。generation record 顶层记录 `generator/generator_version`，嵌套 `capability.tool/tool_version` 必须与其一致；同时记录真实透明输出格式、能力证据和原始输出 SHA。V3/V5 必须解码 PNG 的像素证明存在真实透明值，不能只依据扩展名、提示词或工具参数声明。遮罩合成路线记录原始输入、独立 mask、合成输出各自路径和 SHA、mask 处理工具/版本、参数与证据。工具无法可靠保留所需的半透明、辉光、柔和阴影、毛发、玻璃或混合边缘时，报告能力缺口，改用已验证的直接 Alpha、独立遮罩/人工创作、重新生成或有明确合同的 Phaser 特效；不得提高容差、硬抠轮廓、删除光效或伪造透明结果。已有真实透明图按资源复用合同接入，不伪造生成或去背记录。
+
+`transparency_strategy` 只允许 `background-removal`、`direct-alpha`、`mask-composition`。只有背景移除路线允许记录背景颜色和 `background_removal_attempts`；直接 Alpha 与遮罩路线不得伪造去背记录。`postprocess` 必须是字符串数组。
 
 `negative_prompt` 必须逐字使用下面的 canonical 内容：
 
@@ -77,11 +81,15 @@
 
 每个原子部件的 `asset_prompt` 还应明确“完整原图用于全局关系、局部细节图用于当前部件形态”，并把 region bounds、部件在整屏中的相对尺度、相邻对象的排除边界写进实际提示词。禁止把局部裁图单独作为唯一参考；禁止把局部裁图、抠图或原图像素直接交付为生成结果。
 
-记录必须保存实际发送的完整提示词（`full_prompt` 或 `actual_prompt`）和真实 `reference_inputs`，不能在生成后拼一份未实际使用的文本。完整提示词至少可复核地包含 canonical 全局段、当前 region 事实资产段、状态段和 canonical 负向段；生成式透明 `alpha=true` 资产还必须包含纯色背景生产段，并绑定当前 `target_sha256`、`region_id`、候选 `candidate_sha256`/`diff_fingerprint`、候选版本与实际 `record_id`。`generator`/`generator_version` 必须记录系统按提示词、参考输入、材质、透明需求和可用能力实际选择的工具身份；未暴露时写 `not-provided`。
+记录必须保存实际发送的完整提示词（`full_prompt` 或 `actual_prompt`）和真实 `reference_inputs`，不能在生成后拼一份未实际使用的文本。完整提示词至少可复核地包含 canonical 全局段、当前 region 事实资产段、状态段和 canonical 负向段；透明资产的提示词段按冻结策略生成：纯色背景段只用于符合条件的 `background-removal + hard-edge`，直接 Alpha 需表达透明输出与边缘保留，遮罩合成需分别说明主体和 mask 输入。记录绑定当前 `target_sha256`、`region_id`、候选 `candidate_sha256`/`diff_fingerprint`、候选版本与实际 `record_id`。`generator`/`generator_version` 必须记录系统按提示词、参考输入、材质、透明需求和已验证能力实际选择的工具身份；未暴露时写 `not-provided`。
 
 普通非 `effect-image` 生成式位图不要求以上三个重建字段，也不要求冻结效果图作为参考输入；仍须记录实际生成器、版本、提示词、输入、输出和后处理。
 
-透明单图必须按“生成不透明纯色原图 → 校验纯色背景 → 公共脚本去背景 → 尺寸归一化 → V5/final/runtime”执行；生成式透明路线只能以背景处理输出作为透明输入。归一化使用 Sharp，写入 `normalization_record`，并把 `normalization_record.source_file` 绑定当前透明输入，最终 `actual_output` 绑定归一化后的 PNG。生成失败、纯色校验失败或背景处理失败时保留历史尝试和失败原因，按任务配置的有限上限重试；不因重试自动新增外部调用授权。所有生成式位图首次输出比例不符时最多重生一次；第二次仍不符时，若冻结裁切焦点和安全事实允许，使用 `crop-and-resize-to-contract`，记录 `aspect_ratio_correction` 中两次真实原始生成 attempt、SHA、尺寸、focus 和最大目标比例 `crop_rect`；若裁切会损伤主体、文字、透明轮廓或关键构图，则先由生产流程对原图生成式延展到目标比例，再重新校验纯色背景并执行背景处理和普通归一化。`padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘或裁切冻结 `reference_target`；透明目标归一化前后都必须保留 Alpha。
+透明单图按冻结的 `transparency_strategy` 生成或合成，再执行 Sharp 尺寸归一化、V3/final/runtime。归一化记录绑定处理输入；`source_file` 与 `source_sha256` 绑定最终归一化 PNG，实际输出、`runtime_file` 与 `normalization_record.output_file` 身份一致。归一化须保持 Alpha、比例和主体边界，不得把棋盘格烘焙背景当作透明。生成失败或路线处理失败时保留实际失败记录；能力不足就报告缺口，不以更高容差、硬抠边缘或删除光效重试。
+
+每条透明路线为同一候选制作浅底（`#F2E9DF`）和深底（`#16202E`）预览，记录候选构建 SHA、归一化 PNG 路径及 SHA、两张预览各自 SHA。V3 可记录 `inspection.status=pending`；V5 必须人工检查主体缺损、残留背景、色边和半透明区域，状态改为 `passed` 并附证据。机器格式或 Alpha 检查不能替代视觉检查。
+
+所有生成式位图首次输出比例不符时最多重生一次；第二次仍不符时，若冻结裁切焦点和安全事实允许，使用 `crop-and-resize-to-contract`，记录 `aspect_ratio_correction` 中两次真实原始生成 attempt、SHA、尺寸、focus 和最大目标比例 `crop_rect`；若裁切会损伤主体、文字、透明轮廓或关键构图，则报告能力缺口或重新制定路线，不得把棋盘格烘焙背景当作真实透明。`padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘或裁切冻结 `reference_target`；透明目标归一化前后都必须保留真实 Alpha。
 
 ## 全局视觉基线绑定
 

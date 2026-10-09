@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+import assert from "node:assert/strict"; import { prepareTransparencyFixture } from "./transparent-route-test-fixtures.mjs";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
@@ -141,7 +141,7 @@ function imageGenAsset(overrides = {}) {
     mime_type: "image/png",
     width: 64,
     height: 96,
-    alpha: true,
+    alpha: true, transparency_requirements: { strategy: "background-removal", edge_profile: "hard-edge" },
     sha256: HASH,
     runtime_outputs: ["public/assets/hero.png"],
     runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", evidence_sha256: HASH, candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1" },
@@ -172,6 +172,7 @@ function imageGenAsset(overrides = {}) {
     : (inheritedMatchesAsset ? inheritedNormalization : normalizationRecordForAsset({ sourceFile, outputFile, width, height, alpha: asset.alpha, sha256: identitySha }));
   asset.normalization_record = normalization;
   if (asset.generation_record && typeof asset.generation_record === "object") asset.generation_record = { ...asset.generation_record, normalization_record: normalization };
+  if (asset.generation_record) { asset.generation_record.candidate_sha256 ??= HASH; prepareTransparencyFixture(asset.generation_record, asset); }
   return asset;
 }
 
@@ -193,7 +194,7 @@ function v5FixtureManifest(fixture) {
   const region = refreshAtomicRequirements({ ...component, id: fixture.number, annotation_number: fixture.annotation_number, owner_type: "fixed-production-visual", production_origin: "independent-production", production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", expected_assets: [{ ...component.expected_assets[0], mime_type: fixture.mime_type }], asset_id: fixture.number });
   const asset = { ...imageGenAsset({ mime_type: fixture.mime_type, source_file: `art/${fixture.number}.png`, runtime_outputs: [`public/${fixture.number}.png`], generation_record: { ...imageGenAsset().generation_record, annotation_number: fixture.annotation_number, region_id: fixture.number, component_id: componentId, state_id: "default", asset_id: fixture.number, source_file: `art/${fixture.number}.png`, runtime_file: `public/${fixture.number}.png` } }), ...component, id: fixture.number, production_origin: "independent-production", production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only", expected_assets: [{ ...component.expected_assets[0], mime_type: fixture.mime_type }] };
   const identity = { evidence_sha256: HASH, candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1" };
-  const actualAsset = { asset_id: fixture.number, asset_scope: "atomic-component", atomic_visual_key: `${componentId}-visual`, file: `public/${fixture.number}.png`, component_id: componentId, state_id: "default", mime_type: fixture.mime_type, width: 64, height: 96, alpha: true, sha256: HASH };
+  const actualAsset = { asset_id: fixture.number, asset_scope: "atomic-component", atomic_visual_key: `${componentId}-visual`, file: `public/${fixture.number}.png`, component_id: componentId, state_id: "default", mime_type: fixture.mime_type, width: 64, height: 96, alpha: true, transparency_requirements: { strategy: "background-removal", edge_profile: "hard-edge" }, sha256: HASH };
   const placementIds = component.component_inventory.components[0].placements.map((placement) => placement.placement_id);
   const runtimeConsumption = { status: "passed", evidence: "runtime.json", ...identity, component_usages: [{ component_id: componentId, state_id: "default", asset_id: fixture.number, placement_ids: placementIds, runtime_file: `public/${fixture.number}.png`, runtime_sha256: HASH, status: "passed" }] };
   const audit = { status: "passed", candidate_version: "candidate-1", target_sha256: HASH, audited_at: "2026-08-15T00:00:00Z", units: [{ annotation_number: fixture.annotation_number, region_id: fixture.number, observed_method: "image-generation", observed_delivery_kind: fixture.delivery_kind, status: "passed", expected_assets: region.expected_assets, atomic_image_requirements: region.atomic_image_requirements, interaction_hotspots: [], actual_assets: [actualAsset], runtime_consumption: runtimeConsumption }] };
@@ -251,7 +252,7 @@ test("生图分类允许不同实际生成器，但仍要求工具身份和版�
 test("V3 资源门不要求正式运行消费，V5 才要求逐部件 runtime_consumption", () => {
   const region = componentContract("component-v3", "asset-v3");
   const expected = region.expected_assets[0];
-  const auditUnit = { actual_assets: [{ ...expected, file: expected.runtime_file, mime_type: "image/png", sha256: HASH, width: 64, height: 64, alpha: true }] };
+  const auditUnit = { actual_assets: [{ ...expected, file: expected.runtime_file, mime_type: "image/png", sha256: HASH, width: 64, height: 64, alpha: true, transparency_requirements: { strategy: "background-removal", edge_profile: "hard-edge" } }] };
   assert.deepEqual(validateComponentAuditEvidence(region, auditUnit, { stage: "V3", annotation_number: 1, region_id: region.id }), []);
   assert(validateComponentAuditEvidence(region, auditUnit, { stage: "V5", annotation_number: 1, region_id: region.id }).some((item) => item.includes("runtime_consumption.component_usages")));
 });
@@ -264,9 +265,9 @@ test("文件门只对 V3 资源和 V5 正式验收开启，V4 草图不伪装为
   assert.equal(productionFileGateError(manifest, {}, "V5").startsWith("[V5]"), true);
 });
 
-test("透明图像生成必须使用不透明纯色原图并执行去背", () => {
+test("透明硬边去背必须保持已冻结背景与处理记录", () => {
   const asset = imageGenAsset();
-  const expectedAsset = { asset_id: "hero", source_file: asset.source_file, runtime_file: asset.runtime_outputs[0], width: 64, height: 96, mime_type: "image/png", alpha: true };
+  const expectedAsset = { asset_id: "hero", source_file: asset.source_file, runtime_file: asset.runtime_outputs[0], width: 64, height: 96, mime_type: "image/png", alpha: true, transparency_requirements: { strategy: "background-removal", edge_profile: "hard-edge" } };
   const contract = independentContract({ production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, expected_assets: [expectedAsset] });
   assert.deepEqual(validateImageGenerationContract(asset, contract), []);
 
@@ -400,7 +401,7 @@ test("图像生成 不得被 output/output_metadata 的合法顶层 MIME 掩盖"
 
 test("V5 actual、runtime usage 和 runtime_outputs 的 snake/camel 别名冲突必须失败", () => {
   const region = refreshAtomicRequirements({ ...multiComponentRegion(1), id: "v5-alias-region", annotation_number: 17, production_origin: "independent-production", production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
-  region.expected_assets[0] = { ...region.expected_assets[0], mime_type: "image/png", width: 1, height: 1, alpha: true, sha256: HASH };
+  region.expected_assets[0] = { ...region.expected_assets[0], mime_type: "image/png", width: 1, height: 1, alpha: true, transparency_requirements: { strategy: "background-removal", edge_profile: "hard-edge" }, sha256: HASH };
   refreshAtomicRequirements(region);
   const expected = region.expected_assets[0];
   const placementIds = region.component_inventory.components[0].placements.map((placement) => placement.placement_id);
@@ -763,7 +764,7 @@ function multiImageGenerationManifest(count = 6) {
   const region = refreshAtomicRequirements({ ...multiComponentRegion(count), id: "multi-image-region", annotation_number: 2, production_origin: "independent-production", production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
   const identity = { evidence_sha256: HASH, candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1" };
   const assets = region.expected_assets.map((expected, index) => {
-    const asset = { id: expected.asset_id, source_file: expected.source_file, mime_type: "image/png", width: 32, height: 32, alpha: true, sha256: HASH, runtime_outputs: [expected.runtime_file], runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", ...identity }, generation_record: { ...imageGenAsset().generation_record, record_id: `GEN-${index + 1}`, annotation_number: region.annotation_number, region_id: region.id, component_id: expected.component_id, state_id: expected.state_id, asset_id: expected.asset_id, source_file: expected.source_file, runtime_file: expected.runtime_file } };
+    const asset = { id: expected.asset_id, source_file: expected.source_file, mime_type: "image/png", width: 32, height: 32, alpha: true, transparency_requirements: { strategy: "background-removal", edge_profile: "hard-edge" }, sha256: HASH, runtime_outputs: [expected.runtime_file], runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", ...identity }, generation_record: { ...imageGenAsset().generation_record, record_id: `GEN-${index + 1}`, annotation_number: region.annotation_number, region_id: region.id, component_id: expected.component_id, state_id: expected.state_id, asset_id: expected.asset_id, source_file: expected.source_file, runtime_file: expected.runtime_file } };
     if (index > 0) delete asset.generation_record;
     return asset;
   });
@@ -787,10 +788,10 @@ test("V5 文件门按 RGBA 像素指纹拒绝不同 ID/路径的重复 PNG", asy
   const root = await mkdtemp(join(tmpdir(), "visual-raster-dedupe-")); await mkdir(join(root, "evidence"), { recursive: true }); await writeFile(join(root, "evidence/runtime.json"), "runtime");
   const png = encodePngRgba(2, 2, Buffer.alloc(16, 128)); const pngSha = `sha256:${createHash("sha256").update(png).digest("hex")}`; const identity = { evidence_sha256: HASH, candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1" };
   const region = refreshAtomicRequirements({ ...multiComponentRegion(2), id: "duplicate-pixels", annotation_number: 5, production_origin: "independent-production", production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
-  region.expected_assets = region.expected_assets.map((asset, index) => ({ ...asset, mime_type: "image/png", width: 2, height: 2, alpha: true, sha256: pngSha, source_file: `art/unique-${index + 1}.png`, runtime_file: `public/unique-${index + 1}.png` })); region.asset_ids = region.expected_assets.map((asset) => asset.asset_id); refreshAtomicRequirements(region);
+  region.expected_assets = region.expected_assets.map((asset, index) => ({ ...asset, mime_type: "image/png", width: 2, height: 2, alpha: true, transparency_requirements: { strategy: "background-removal", edge_profile: "hard-edge" }, sha256: pngSha, source_file: `art/unique-${index + 1}.png`, runtime_file: `public/unique-${index + 1}.png` })); region.asset_ids = region.expected_assets.map((asset) => asset.asset_id); refreshAtomicRequirements(region);
   const assets = region.expected_assets.map((expected, index) => {
-    const normalization = normalizationRecordForAsset({ sourceFile: expected.source_file, outputFile: expected.runtime_file, width: 2, height: 2, alpha: true, sha256: pngSha });
-    return { id: expected.asset_id, texture_key: expected.asset_id, source_file: expected.source_file, production_origin: region.production_origin, production_method: region.production_method, delivery_kind: region.delivery_kind, image_generation_required: true, generation_record_required: true, substitution_policy: region.substitution_policy, expected_assets: [expected], mime_type: "image/png", width: 2, height: 2, alpha: true, sha256: pngSha, normalization_record: normalization, runtime_outputs: [expected.runtime_file], runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", ...identity }, generation_record: { ...imageGenAsset().generation_record, record_id: `DEDUP-GEN-${index + 1}`, annotation_number: 5, region_id: region.id, component_id: expected.component_id, state_id: expected.state_id, asset_id: expected.asset_id, source_file: expected.source_file, runtime_file: expected.runtime_file, output_file: expected.runtime_file, normalization_record: normalization } };
+    const normalization = normalizationRecordForAsset({ sourceFile: expected.source_file, outputFile: expected.runtime_file, width: 2, height: 2, alpha: true, transparency_requirements: { strategy: "background-removal", edge_profile: "hard-edge" }, sha256: pngSha });
+    return { id: expected.asset_id, texture_key: expected.asset_id, source_file: expected.source_file, production_origin: region.production_origin, production_method: region.production_method, delivery_kind: region.delivery_kind, image_generation_required: true, generation_record_required: true, substitution_policy: region.substitution_policy, expected_assets: [expected], mime_type: "image/png", width: 2, height: 2, alpha: true, transparency_requirements: { strategy: "background-removal", edge_profile: "hard-edge" }, sha256: pngSha, normalization_record: normalization, runtime_outputs: [expected.runtime_file], runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", ...identity }, generation_record: { ...imageGenAsset().generation_record, record_id: `DEDUP-GEN-${index + 1}`, annotation_number: 5, region_id: region.id, component_id: expected.component_id, state_id: expected.state_id, asset_id: expected.asset_id, source_file: expected.source_file, runtime_file: expected.runtime_file, output_file: expected.runtime_file, normalization_record: normalization } };
   });
   await mkdir(join(root, "public"), { recursive: true }); for (const expected of region.expected_assets) await writeFile(join(root, expected.runtime_file), png);
   const actualAssets = region.expected_assets.map((expected) => ({ ...expected, file: expected.runtime_file })); const usages = region.expected_assets.map((expected) => ({ component_id: expected.component_id, state_id: expected.state_id, asset_id: expected.asset_id, placement_ids: [expected.component_id === "component-1" ? "placement-1" : "placement-2"], runtime_file: expected.runtime_file, runtime_sha256: pngSha, status: "passed" }));
@@ -899,6 +900,18 @@ test("Implementation Package 的状态、部件、资产和热区顺序不影响
   drift.visualProductionUnits[0].state_analysis.analysis_id = "analysis-drift";
   const driftErrors = validateVisualProductionUnits(drift, base.manifest);
   assert(driftErrors.some((item) => item.includes("state_analysis 必须与 coverage 区域语义一致")), driftErrors.join("\n"));
+});
+
+test("Implementation Package 不能过滤或偷换冻结透明路线", () => {
+  const base = implementationPackageFixture();
+  const frozen = { strategy: "direct-alpha", edge_profile: "glow" };
+  base.region.expected_assets[0].alpha = true;
+  base.region.expected_assets[0].transparency_requirements = frozen;
+  base.pkg.visualProductionUnits[0].expected_assets[0].alpha = true;
+  base.pkg.visualProductionUnits[0].expected_assets[0].transparency_requirements = { ...frozen };
+  assert.deepEqual(validateVisualProductionUnits(base.pkg, base.manifest), []);
+  base.pkg.visualProductionUnits[0].expected_assets[0].transparency_requirements = { strategy: "background-removal", edge_profile: "hard-edge" };
+  assert(validateVisualProductionUnits(base.pkg, base.manifest).some((error) => error.includes("expected_assets")));
 });
 
 test("状态分析完成时间必须严格早于部件清单创建时间", () => {

@@ -137,7 +137,7 @@ export function validateImageGenerationSizeContract(asset, contract, context = {
   if (singleComponent && isObject(displaySizeValue) && (displaySizeValue.width !== display.displaySize.width || displaySizeValue.height !== display.displaySize.height)) {
     errors.push(sizeError(local, "单组件场景 target_display_size 必须与 placement 最大逻辑尺寸一致", { expected: display.displaySize, actual: displaySizeValue }));
   }
-  // 生产位图固定按图片生产基线计算，避免运行时设备值改变已冻结的资产尺寸。
+  // 生产位图以 1:1 覆盖最大约定显示尺寸，只计业务缩放，不再叠加设备 DPR 的倍率。
   const minimum = { width: Math.ceil(display.displaySize.width * scale.max * IMAGE_PRODUCTION_DPR), height: Math.ceil(display.displaySize.height * scale.max * IMAGE_PRODUCTION_DPR) };
   const expectedSize = { width: expectedAsset.width, height: expectedAsset.height };
   if (expectedAsset.width !== minimum.width || expectedAsset.height !== minimum.height) {

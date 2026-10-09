@@ -4,8 +4,9 @@
  * 该模块集中保存唯一的提示词常量、资产提示词构建器和生成记录门禁，
  * 避免 SKILL、清单校验器与实际发送给生成器的文本各自漂移。
  */
-import { buildSolidBackgroundPrompt, DEFAULT_SOURCE_BACKGROUND_COLOR, expressesSolidBackgroundProduction, TRANSPARENT_BACKGROUND_REMOVAL_PROMPT, normalizeSourceBackgroundColor } from "./visual-transparent-background-contract.mjs";
+import { buildSolidBackgroundPrompt, DEFAULT_SOURCE_BACKGROUND_COLOR, expressesDirectAlphaProduction, expressesSolidBackgroundProduction, TRANSPARENT_BACKGROUND_REMOVAL_PROMPT, normalizeSourceBackgroundColor } from "./visual-transparent-background-contract.mjs";
 import { CANONICAL_GLOBAL_VISUAL_CONSISTENCY_PROMPT, GLOBAL_VISUAL_CONSISTENCY_PROMPT, validateGlobalVisualGenerationRecord } from "./global-visual-consistency-contract.mjs";
+import { TRANSPARENT_EDGE_PROFILES } from "./transparent-route-contract.mjs";
 
 /** effect-image 生成记录必须声明的重建模式。 */
 export const EFFECT_IMAGE_RECONSTRUCTION_MODE = "reference-faithful";
@@ -13,7 +14,7 @@ export const EFFECT_IMAGE_RECONSTRUCTION_MODE = "reference-faithful";
 export const EFFECT_IMAGE_REFERENCE_INPUT_MODE = "full-reference-guidance";
 /** 允许重绘像素，但禁止复用参考图像素作为输出。 */
 export const EFFECT_IMAGE_PIXEL_REUSE_POLICY = "forbid-output-reuse";
-/** expected_assets.alpha=true 时必须追加到实际请求中的透明 PNG 交付要求。 */
+/** 仅硬边去背路线追加的纯色源图要求，不能代替其它透明路线。 */
 export const EFFECT_IMAGE_BACKGROUND_REMOVAL_PROMPT = TRANSPARENT_BACKGROUND_REMOVAL_PROMPT;
 /** effect-image 必须与全局视觉基线共同发送的 canonical 一致性段。 */
 export const EFFECT_IMAGE_GLOBAL_VISUAL_CONSISTENCY_PROMPT = GLOBAL_VISUAL_CONSISTENCY_PROMPT;
@@ -185,11 +186,24 @@ export function buildEffectImageAssetPrompt({ region, sceneReconstructionContrac
 }
 
 /** 组合实际发送给图像生成器的完整正向/负向提示词，供生成器与记录共用。 */
-export function buildEffectImageFullPrompt({ assetPrompt, statePrompt = "", globalPromptPrefix = EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, globalConsistencyPrompt = GLOBAL_VISUAL_CONSISTENCY_PROMPT, negativePrompt = EFFECT_IMAGE_NEGATIVE_PROMPT, transparentBackground = false, expectedAlpha = false, expectedAsset = null, backgroundColor } = {}) {
-  const needsSolidBackground = transparentBackground === true || expectedAlpha === true || expectedAsset?.alpha === true;
-  // 生图前先确定实际纯色；记录层应复用同一个值，避免模型生成后才发现去背颜色不一致。
-  const resolvedBackgroundColor = backgroundColor ?? expectedAsset?.source_background_color ?? DEFAULT_SOURCE_BACKGROUND_COLOR;
-  const sourceBackgroundPrompt = needsSolidBackground ? buildSolidBackgroundPrompt(resolvedBackgroundColor) : "";
+export function buildEffectImageFullPrompt({ assetPrompt, statePrompt = "", globalPromptPrefix = EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, globalConsistencyPrompt = GLOBAL_VISUAL_CONSISTENCY_PROMPT, negativePrompt = EFFECT_IMAGE_NEGATIVE_PROMPT, transparentBackground = false, expectedAlpha = false, expectedAsset = null, backgroundColor, transparencyStrategy, edgeProfile, colorSeparationVerified = false, capability } = {}) {
+  const needsTransparency = transparentBackground === true || expectedAlpha === true || expectedAsset?.alpha === true;
+  const strategy = transparencyStrategy ?? expectedAsset?.transparency_requirements?.strategy;
+  const edge = edgeProfile ?? expectedAsset?.transparency_requirements?.edge_profile;
+  let sourceBackgroundPrompt = "";
+  if (needsTransparency) {
+    // 透明需求不能推导生成能力，也不能自动选择会损伤复杂边缘的颜色去背。
+    if (!TRANSPARENT_EDGE_PROFILES.includes(edge)) throw new TypeError("透明提示词必须使用已冻结的合法 edgeProfile");
+    if (strategy === "background-removal") {
+      if (edge !== "hard-edge" || colorSeparationVerified !== true) throw new TypeError("颜色去背提示词只允许已验证颜色区分的 hard-edge");
+      sourceBackgroundPrompt = buildSolidBackgroundPrompt(backgroundColor ?? expectedAsset?.source_background_color ?? DEFAULT_SOURCE_BACKGROUND_COLOR);
+    } else if (strategy === "direct-alpha") {
+      if (capability?.supports_true_alpha !== true || !Array.isArray(capability.verified_edge_profiles) || !capability.verified_edge_profiles.includes(edge)) throw new TypeError("真实透明生成缺少当前边缘能力证明，应报告能力缺口");
+      sourceBackgroundPrompt = "输出要求：使用工具真实透明输出能力保留原始 Alpha，包括半透明、辉光、柔和阴影和其他冻结边缘；禁止棋盘格、网格或烘焙底色。输出必须解码验证，提示词不能证明透明。";
+    } else if (strategy === "mask-composition") {
+      sourceBackgroundPrompt = "为已冻结的独立遮罩/人工 Alpha 创作路线生产原始主体，保留半透明、辉光、阴影、毛发或玻璃边缘；禁止颜色阈值硬抠、删除光效和烘焙棋盘格。独立遮罩与合成过程另行记录并验证。";
+    } else throw new TypeError("透明资产必须显式选择已冻结的 transparencyStrategy 和 edgeProfile");
+  }
   return [globalPromptPrefix, globalConsistencyPrompt, assetPrompt, statePrompt, sourceBackgroundPrompt, negativePrompt].filter(nonEmptyString).join("\n\n");
 }
 
@@ -334,6 +348,7 @@ export function validateEffectImagePromptContract(asset, contract, generation, c
       for (const [field, prompt] of promptEntries) if (!expressesSolidBackgroundProduction(prompt, backgroundColor)) add(`effect-image generation_record.${field} 必须包含 ${backgroundColor}、不透明纯色背景和棋盘格禁用要求`);
     }
   }
+  if (generation.transparency_strategy === "direct-alpha" && !expressesDirectAlphaProduction(generation.full_prompt)) add("direct-alpha 实际提示词必须请求真实 Alpha 并禁止烘焙棋盘格");
   errors.push(...validateEffectImageAssetPrompt(generation.asset_prompt, region, { sceneReconstructionContract: options.sceneReconstructionContract }));
   const paths = [...collectOutputPaths(asset), ...collectOutputPaths(generation)];
   if (targetFile && paths.some((path) => samePath(path, targetFile))) add("effect-image source_file/runtime_file/output 不得等于冻结效果图");

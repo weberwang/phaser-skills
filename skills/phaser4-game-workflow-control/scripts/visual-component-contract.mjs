@@ -166,7 +166,7 @@ export function normalizeComponentExpectedAsset(value) {
     mime_type: value.mime_type ?? value.mimeType,
     width: value.width,
     height: value.height,
-    alpha: value.alpha,
+    alpha: value.alpha, transparency_requirements: value.transparency_requirements,
     sha256: value.sha256 ?? value.file_sha256,
     share_id: value.share_id ?? value.shareId,
     // 比较合同身份时按项目物理路径归一化；非法路径仍保留原值，交由校验器输出具体错误。

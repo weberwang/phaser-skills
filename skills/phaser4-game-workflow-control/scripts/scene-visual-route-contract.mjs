@@ -11,8 +11,10 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { validateReuseProductionGate } from "./visual-confirmation-reuse-gates.mjs";
 import { validateFixedVisualProductionMethod } from "./visual-decomposition-confirmation.mjs";
+import { validateNativeRenderContract, validateNativeRuntimeEvidence } from "./native-render-contract.mjs";
 
 /** 图片资产与 Phaser 原生是唯一可交付的场景来源分类。 */
 export const SCENE_VISUAL_ROUTES = Object.freeze({
@@ -55,7 +57,7 @@ const NATIVE_PRIMITIVES = new Set([
   "text",
   "not-applicable",
 ]);
-/** 默认先考虑图片资产的视觉元素类别；静态非文本元素不得直接降级为原生绘制。 */
+/** 元素语义只用于分类；原生资格由视觉事实和实际渲染能力决定。 */
 const ASSET_CANDIDATE_ELEMENT_TYPES = new Set([
   "button",
   "button-skin",
@@ -110,7 +112,7 @@ const NATIVE_ELEMENT_TYPES = new Set([
   "particle",
   "shader",
 ]);
-const DISTINCTIVE_FEATURE_PATTERN = /材质|纹理|texture|material|非规则|irregular|定制描边|custom\s*(?:outline|stroke)|描边|阴影|shadow|高光|highlight|装饰纹样|装饰|品牌|brand|像素美术|pixel\s*(?:art)?|绘制细节|paint(?:ed)?\s*detail|插画|illustration/i;
+const DISTINCTIVE_FEATURE_PATTERN = /特色|复杂|distinctive|complex|材质|纹理|texture|material|不规则|非规则|irregular|定制描边|custom\s*(?:outline|stroke)|阴影|shadow|高光|highlight|装饰纹样|品牌|brand|像素美术|pixel\s*(?:art)?|绘制细节|paint(?:ed)?\s*detail|插画|illustration/i;
 const SEMANTIC_REUSE_PATTERN = /semantic|语义|相似|similar|same[-_ ]?kind|looks[-_ ]?similar|看起来一样|同类|同义/i;
 const SHA_PATTERN = /^sha256:[a-f0-9]{64}$/;
 
@@ -223,6 +225,10 @@ function validateNativeSuitability(analysis, region, contract, stage, errors, co
   else if (suitability.primitive_basis.some((item) => !NATIVE_PRIMITIVES.has(item))) errors.push(routeError(stage, contract, region, "native_suitability.primitive_basis 含不允许的原生原语", { expected: [...NATIVE_PRIMITIVES].join(","), actual: JSON.stringify(suitability.primitive_basis) }));
   if (!hasEvidence(suitability.evidence)) errors.push(routeError(stage, contract, region, "native_suitability 缺少可审计资格证据", { missing: "native_suitability.evidence" }));
   if (analysis.selected_route === SCENE_VISUAL_ROUTES.PHASER_NATIVE && suitability.eligible !== true) errors.push(routeError(stage, contract, region, "Phaser 原生路线必须显式声明 eligible=true", { expected: "native_suitability.eligible=true", actual: String(suitability.eligible ?? "missing") }));
+  if (analysis.selected_route === SCENE_VISUAL_ROUTES.PHASER_NATIVE) {
+    if (Array.isArray(suitability.primitive_basis) && suitability.primitive_basis.includes("not-applicable")) errors.push(routeError(stage, contract, region, "原生路线不能使用 not-applicable 原语"));
+    for (const message of validateNativeRenderContract(suitability.render_contract, region)) errors.push(routeError(stage, contract, region, message));
+  }
 
   if (context.distinctive && analysis.selected_route === SCENE_VISUAL_ROUTES.PHASER_NATIVE) {
     // 特色视觉只有在证明原语等价且绑定容差/精确例外时，才能使用原生路线。
@@ -412,13 +418,8 @@ export function validateSceneVisualRouteAnalysis(region, contract = {}, options 
     // 无论 selected_route 是否仍写成 composite，遗留 composite_parts 都不能被合法路线忽略。
     errors.push(compositeRouteError(stage, contract, region, route === COMPOSITE_ROUTE ? COMPOSITE_ROUTE : "composite_parts"));
   }
-  if (!isTextElement && route === SCENE_VISUAL_ROUTES.PHASER_NATIVE && analysis.dynamic_requirements?.is_dynamic !== true) {
-    // 拆解默认把静态非文本外观交给图片资产；原生路线只保留给文本或确有运行时变化的逻辑。
-    errors.push(routeError(stage, contract, region, "除文本外的静态视觉元素必须优先使用图片资产；只有确有运行时变化的非文本逻辑才能选择 Phaser 原生路线", {
-      expected: "selected_route=image-asset，或 dynamic_requirements.is_dynamic=true",
-      actual: JSON.stringify({ element_type: analysis.element_type, selected_route: route, is_dynamic: analysis.dynamic_requirements?.is_dynamic }),
-    }));
-  }
+  // 静态与动态只描述行为，不能覆盖被冻结的图片生产来源。
+  if (route === SCENE_VISUAL_ROUTES.PHASER_NATIVE && (region.image_generation_required === true || region.production_contract?.image_generation_required === true)) errors.push(routeError(stage, contract, region, "image_generation_required=true 的冻结合同禁止自动替换为原生绘制；必须完成明确变更流程"));
   if (route === SCENE_VISUAL_ROUTES.IMAGE_ASSET) {
     // 复用现有 fixed-production-visual 门，保证路线分析不会另造一套图片方法语义。
     errors.push(...validateFixedVisualProductionMethod({
@@ -467,6 +468,12 @@ function validateBoundProductionFields(region, analysis, bound, sourceLabel, con
   if (!isObject(bound)) return;
   const returnStage = sourceLabel.includes("visualProductionUnit") ? "V3/V5" : "V1/PROPOSAL";
   const rootCause = sourceLabel.includes("visualProductionUnit") ? "执行问题" : "方案缺失";
+  if (analysis.selected_route === SCENE_VISUAL_ROUTES.PHASER_NATIVE && (bound.production_method ?? bound.production_contract?.production_method) !== undefined) {
+    // 参数进入既有 runtime_implementation 确认哈希，不能在行为装配阶段悄悄改变外观。
+    const implementation = bound.runtime_implementation ?? bound.production_contract?.runtime_implementation;
+    if (!isDeepStrictEqual(implementation?.render_contract, analysis.native_suitability?.render_contract)) errors.push(routeError(stage, contract, region, `${sourceLabel} runtime_implementation.render_contract 必须精确镜像冻结原生参数`, { returnStage, rootCause }));
+  }
+  if (analysis.selected_route === SCENE_VISUAL_ROUTES.PHASER_NATIVE && (bound.image_generation_required === true || bound.production_contract?.image_generation_required === true)) errors.push(routeError(stage, contract, region, `${sourceLabel} image_generation_required=true 的冻结合同禁止自动替换为原生绘制；必须完成明确变更流程`, { returnStage, rootCause }));
   const owner = bound.owner_type ?? bound.implementation_owner;
   if (owner !== undefined && owner !== analysis.final_owner) errors.push(routeError(stage, contract, region, `${sourceLabel} owner 与 visual_route_analysis 不一致`, { expected: analysis.final_owner, actual: owner, returnStage, rootCause }));
   if (bound.production_method !== undefined && bound.production_method !== analysis.production_method) errors.push(routeError(stage, contract, region, `${sourceLabel} production_method 与 visual_route_analysis 不一致`, { expected: analysis.production_method, actual: bound.production_method, returnStage, rootCause }));
@@ -488,6 +495,9 @@ export function validateSceneVisualRouteContract(contract, manifest = null, opti
     errors.push(...validateSceneVisualRouteAnalysis(region, contract, { ...options, stage }));
     const analysis = region?.visual_route_analysis;
     if (!isObject(analysis)) continue;
+    if (analysis.selected_route === SCENE_VISUAL_ROUTES.PHASER_NATIVE) {
+      for (const message of validateNativeRuntimeEvidence(region, contract, manifest, { ...options, stage })) errors.push(routeError(stage, contract, region, message, { returnStage: "V3/V5", rootCause: "执行问题" }));
+    }
     const regionId = region.region_id;
     validateBoundProductionFields(region, analysis, manifestRegions.get(regionId), "coverage_audit region", contract, stage, errors);
     for (const unit of units.filter((item) => item?.region_id === regionId)) validateBoundProductionFields(region, analysis, unit, "visualProductionUnit", contract, stage, errors);

@@ -110,7 +110,7 @@ export function normalizeAtomicExpectedAssets(region = {}) {
   });
 }
 
-/** 规范化生产审计的 expected_assets，统一字符串资产和原子部件元数据。 */
+/** 规范化生产审计的 expected_assets，保留透明路线与边缘冻结事实，防止审计时过滤合同漂移。 */
 export function normalizeProductionExpectedAssets(value) {
   if (!Array.isArray(value)) return [];
   return value.map((item) => {
@@ -123,7 +123,7 @@ export function normalizeProductionExpectedAssets(value) {
       mime_type: item.mime_type ?? item.mimeType ?? "",
       width: item.width,
       height: item.height,
-      alpha: item.alpha,
+      alpha: item.alpha, transparency_requirements: item.transparency_requirements,
       sha256: item.sha256 ?? item.file_sha256 ?? "",
       asset_scope: item.asset_scope ?? item.assetScope ?? "",
       atomic_visual_key: item.atomic_visual_key ?? item.atomicVisualKey ?? "",

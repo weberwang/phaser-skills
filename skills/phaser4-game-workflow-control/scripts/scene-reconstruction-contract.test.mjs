@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { nativeRenderContract, nativeRuntimeEvidence } from "./native-render-test-fixtures.mjs";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
@@ -60,7 +61,7 @@ function contract() {
         selected_route: "phaser-native",
         route_reason: "动态数据显示由运行时对象负责，不含独特位图外观",
         dynamic_requirements: { is_dynamic: true, description: "运行时数值可变化" },
-        native_suitability: { eligible: true, primitive_basis: ["dynamic-data"], evidence: ["evidence/route/native-hud.json"] },
+        native_suitability: { render_contract: nativeRenderContract(), eligible: true, primitive_basis: ["dynamic-data"], evidence: ["evidence/route/native-hud.json"] },
         reuse_suitability: { eligible: false, exact_asset_identity: "not-applicable", evidence: ["evidence/route/reuse-not-applicable.json"] },
         final_owner: owner,
         implementation_plan_mode: "runtime-program",
@@ -90,7 +91,7 @@ function contract() {
     implementation_owner: owner,
     implementation_plan: { mode: owner.startsWith("runtime") ? "runtime-program" : "generate-now" },
     assembly_analysis: { strategy: "atomic-scene-composition", uses_full_screen_capture: false, allows_atomic_image_assets: true, evidence: [`evidence/scene/${id}-assembly.json`] },
-    visual_route_analysis: visualRouteAnalysis,
+    visual_route_analysis: visualRouteAnalysis, ...(owner.startsWith("runtime") ? { native_runtime_evidence: nativeRuntimeEvidence(visualRouteAnalysis, { candidate: SHA, target: SHA }) } : {}),
     applicable_states: ["default"],
     evidence: ["evidence/scene/" + id + ".json"],
     tolerance_reference: "layout-tolerance",
@@ -935,7 +936,7 @@ test("全程序视觉路线必须提供绑定冻结目标且可复核的独立�
       implementation_plan_mode: "runtime-program",
       production_method: "phaser-graphics",
       delivery_kind: "runtime-drawing",
-      native_suitability: { eligible: true, primitive_basis: ["pure-color", "basic-geometry"], evidence: [`evidence/route/${region.region_id}-native.json`] },
+      native_suitability: { render_contract: nativeRenderContract(), eligible: true, primitive_basis: ["pure-color", "basic-geometry"], evidence: [`evidence/route/${region.region_id}-native.json`] },
     };
   }
   const missing = validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V3" });
@@ -980,7 +981,7 @@ test("特色按钮皮肤或背景框错误选择 Phaser 原生路线时阻断", 
     production_method: "phaser-graphics",
     delivery_kind: "runtime-drawing",
     distinctive_visual: true,
-    native_suitability: { eligible: true, primitive_basis: ["basic-geometry"], evidence: ["evidence/route/button-native.json"] },
+    native_suitability: { render_contract: nativeRenderContract(), eligible: true, primitive_basis: ["basic-geometry"], evidence: ["evidence/route/button-native.json"] },
   };
   buttonRegion.implementation_owner = "runtime-program";
   buttonRegion.fidelity_obligations = { geometry: "target-bound" };
@@ -999,7 +1000,7 @@ test("特色按钮皮肤或背景框错误选择 Phaser 原生路线时阻断", 
     production_method: "phaser-graphics",
     delivery_kind: "runtime-drawing",
     distinctive_visual: true,
-    native_suitability: { eligible: true, primitive_basis: ["basic-geometry"], evidence: ["evidence/route/frame-native.json"] },
+    native_suitability: { render_contract: nativeRenderContract(), eligible: true, primitive_basis: ["basic-geometry"], evidence: ["evidence/route/frame-native.json"] },
   };
   frameRegion.implementation_owner = "runtime-program";
   frameRegion.fidelity_obligations = { geometry: "target-bound" };
@@ -1024,7 +1025,7 @@ test("特色视觉提供精确等价性例外时可以通过原生路线", () =>
     delivery_kind: "runtime-drawing",
     distinctive_visual: true,
     native_suitability: {
-      eligible: true,
+      eligible: true, render_contract: nativeRenderContract(),
       primitive_basis: ["pure-color", "basic-geometry"],
       evidence: ["evidence/route/button-native.json"],
       equivalence_evidence: ["evidence/route/button-equivalence.json"],
@@ -1034,7 +1035,7 @@ test("特色视觉提供精确等价性例外时可以通过原生路线", () =>
   assert.deepEqual(validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V3" }), []);
 });
 
-test("静态非文本优先图片，动态进度与纹理 Sprite/NineSlice 分别走正确路线", () => {
+test("静态基础几何、动态进度与纹理 Sprite/NineSlice 分别走正确路线", () => {
   const geometry = effectImageContract();
   const geometryRegion = geometry.coverage_regions[1];
   geometryRegion.implementation_owner = "runtime-program";
@@ -1042,9 +1043,7 @@ test("静态非文本优先图片，动态进度与纹理 Sprite/NineSlice 分�
   geometryRegion.fidelity_obligations = { geometry: "target-bound" };
   geometryRegion.visual_route_analysis = {
     ...geometryRegion.visual_route_analysis,
-    element_type: "simple-geometry",
-    visual_complexity: "simple",
-    distinctive_visual: false,
+    element_type: "simple-geometry", visual_complexity: "simple", distinctive_visual: false,
     observed_features: ["纯色基础几何"],
     asset_first_decision: "native-allowed",
     selected_route: "phaser-native",
@@ -1052,10 +1051,10 @@ test("静态非文本优先图片，动态进度与纹理 Sprite/NineSlice 分�
     implementation_plan_mode: "runtime-program",
     production_method: "phaser-graphics",
     delivery_kind: "runtime-drawing",
-    native_suitability: { eligible: true, primitive_basis: ["pure-color", "basic-geometry"], evidence: ["evidence/route/geometry-native.json"] },
+    native_suitability: { render_contract: nativeRenderContract(), eligible: true, primitive_basis: ["pure-color", "basic-geometry"], evidence: ["evidence/route/geometry-native.json"] },
   };
   geometry.all_native_justification = allNativeJustification();
-  const geometryErrors = validateSceneReconstructionContract(geometry, effectImageManifest(geometry), { stage: "V3" }); assert(geometryErrors.some((item) => item.includes("除文本外的静态视觉元素必须优先使用图片资产")), geometryErrors.join("\n"));
+  assert.deepEqual(validateSceneReconstructionContract(geometry, effectImageManifest(geometry), { stage: "V3" }), []);
 
   const progress = structuredClone(geometry);
   progress.coverage_regions[1].visual_route_analysis = {
@@ -1063,7 +1062,7 @@ test("静态非文本优先图片，动态进度与纹理 Sprite/NineSlice 分�
     element_type: "progress-fill",
     observed_features: ["动态进度填充"],
     dynamic_requirements: { is_dynamic: true, description: "进度值随运行时数据变化" },
-    native_suitability: { eligible: true, primitive_basis: ["progress-fill"], evidence: ["evidence/route/progress-native.json"] },
+    native_suitability: { render_contract: nativeRenderContract(), eligible: true, primitive_basis: ["progress-fill"], evidence: ["evidence/route/progress-native.json"] },
   };
   assert.deepEqual(validateSceneReconstructionContract(progress, effectImageManifest(progress), { stage: "V3" }), []);
 

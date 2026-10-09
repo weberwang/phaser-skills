@@ -28,6 +28,14 @@ V2 布局标注在拆解确认之后串行产出：阶段 A 先生成按人工�
 
 确认只冻结还原方案与生产边界，不改变玩法、布局或视觉事实的责任归属。提案、目标、区域定义、用户原文、候选身份或布局字段漂移时，确认失效并回到当前 Work Item 的 V2 重做拆解确认；普通运行候选演进只重验受影响证据。
 
+### 来源路线、渲染合同与行为装配
+
+`visual_route_analysis` 必须依据冻结图中可观察的外观事实，以及当前 Phaser 原生能力能否精确表达这些事实。按钮、面板等语义名称不能决定图片或原生路线；静态/动态属性也不能单独作为原生资格。文本、纯色矩形、基础几何、规则边框、简单规则渐变、遮罩和进度填充，在 Phaser 可确定性表达时可以走原生路线。特色插画、复杂纹饰、不规则轮廓、复杂材质和明显具有美术特征的装饰继续使用独立图片路线。特色视觉拟走原生路线时，必须另有等价性证据并绑定预先声明的容差或精确例外。
+
+每个 `phaser-native` 区域必须冻结 `native_suitability.render_contract`：`renderer`、逻辑像素 `dimensions.width/height`、`colors`、`line_width`、`corner_radius`、`gradient`、`opacity`、`applicable_states` 和 `unsupported_features`。颜色和渐变 stop 的 `color` 均为 `#RRGGBB`；无渐变写 `gradient.type=none` 且 `stops=[]`；线性渐变须冻结 0–360 的 `angle` 及按绘制顺序排列的 stops。参数按冻结参考精确登记。`runtime_implementation.render_contract` 必须镜像原生资格合同并纳入区域定义身份哈希；修改参数会使已有拆解确认失效，不得在行为装配时悄悄更改。Phaser 原生能力不能确定性表达的视觉特征列入 `unsupported_features` 并阻断该路线，禁止以近似绘制代替。
+
+视觉外观来源与行为装配分别记录。一个按钮可由原生框体、独立图标 image-asset 和 Phaser.Text 文字组成；每部分单独记录 owner、状态、生产合同和布局/资源绑定，交互行为再使用显式组件/节点引用接线。不能把不同来源或职责合并成 `composite` region / `composite_parts`，也不能用覆盖整按钮的大区域模糊归属。已冻结 `image_generation_required=true` 的区域必须继续执行图片合同，不得自动换成原生路线；路线变化遵循明确接受的 Change Request。
+
 ## 布局与文本拆解
 
 效果图拆解必须先看整屏构图，再冻结 `decomposition_elements`、视觉元素/组件、状态事实和 `display_layer_planning`；不能先拆资产、最后凭感觉补坐标。`target_bounds` 是参考图测量事实，不是运行时硬编码；布局节点在拆解确认后由元素 bounds/role 自动推导，布局合同负责运行时计算和响应式变换；runtime measurement 只是候选证据，不能回写或替代参考事实。
@@ -40,11 +48,11 @@ V2 布局标注在拆解确认之后串行产出：阶段 A 先生成按人工�
 
 ## V3 正式资源验收
 
-V3 消费 V2 已确认的拆解图、技术 JSON、coverage、布局合同和生产计划，生产并验收正式视觉资源。正式资源保留来源、许可信息、机器清单、生成记录、输出文件、组件状态和冻结目标绑定。此阶段不依赖正式 Scene 功能运行。
+V3 消费 V2 已确认的拆解图、技术 JSON、coverage、布局合同和生产计划，生产并验收图片资源或原生实现单元。图片资源保留真实来源、许可信息、生成记录、独立输出文件、组件状态和冻结目标绑定；原生实现保留与冻结合同一致的运行实现来源，不能伪造图片输出。此阶段不依赖正式 Scene 功能运行，但后续 V5 必须验证实际原生渲染和运行消费。
 
 V3 验收后进入独立 V4 草图阶段。按[页面还原草图作业](visual-alignment-authoring.md)生成草图数据，读取正式资源与冻结底图进行预览；选择、移动父节点带动子孙，保存与确认分别执行。V2 的目标节点和离线审阅页仍只读。
 
-生成式位图区域按 V2 `component_inventory` 收齐全部待生成 component × required state，作为[一个批量生成任务](visual-production-pipeline.md#图片批量生成)一次提交；每项交付 individual 位图，`atlas_allowed=false`，不能将独立文件要求解释为逐张调度。宽高由逻辑像素 `ceil(max placement width/height × intended_scale_range.max × 2)` 决定，`max_dpr=2`，`padding_policy=none`。这里的 2 是图片生产基线；运行时实际 DPR 由设备动态读取并封顶为 2，不改变已冻结的资产尺寸；历史 1.5 生产证据须重生成或标记 `stale`。系统根据提示词、参考输入、主体材质、透明需求和可用能力选择实际生成工具，并在记录中写入工具/版本；生成式透明资产先生成不透明指定 HEX 纯色背景，再由公共脚本去背景并记录 `source_background_mode=opaque`、`source_background_color`、完整透明处理与归一化证据；不得请求透明 PNG/Alpha 或接受棋盘格预览。已有真实透明图按资源复用合同接入，完整场景 `alpha=false` 背景不受纯色要求约束。
+生成式位图区域按 V2 `component_inventory` 收齐全部待生成 component × required state，作为[一个批量生成任务](visual-production-pipeline.md#图片批量生成)一次提交；每项交付 individual 位图，`atlas_allowed=false`，不能将独立文件要求解释为逐张调度。宽高由逻辑像素 `ceil(max placement width/height × intended_scale_range.max)` 决定，`max_dpr=1`，`padding_policy=none`。这里的 1 表示图片按最大约定逻辑显示尺寸 1:1 生产；运行时实际 DPR 由设备动态读取并封顶为 2，不改变已冻结的资产尺寸；历史 1.5/2 倍生产证据须重生成或标记 `stale`。系统根据提示词、参考输入、主体材质、透明需求和已验证能力选择实际生成工具，并在记录中写入实际工具、版本、输入/输出 SHA、参数和后处理。生成资产的 `expected_assets.alpha=true` 必须冻结透明策略与边缘类型：只对明确硬边且颜色分离通过的素材使用公共纯色去背；直接 Alpha 必须对工具和对应边缘类型完成能力验证，并解码 PNG 证明真实 Alpha；复杂边缘可用独立遮罩/人工创作、重新生成，或按明确变更合同转为 Phaser 特效。半透明、辉光、柔和阴影、毛发、玻璃和混合边缘禁止阈值去背；工具无法可靠交付时报告能力缺口，不提高容差、硬抠轮廓、删除光效或伪造透明。归一化保持 Alpha、比例和主体边界，不能把棋盘格烘焙背景。每条透明路线生成浅底与深底预览，V5 记录主体完整、背景残留、色边和半透明区域的视觉检查。已有真实透明图按资源复用合同接入，不伪造生成或去背记录；`image_generation_required=true` 的冻结合同不能由路线判断或提示词生成器自动替换。
 
 ## V4 草图组合与确认
 
@@ -58,6 +66,8 @@ V5 按 `visual_validation.mode` 运行证据验证视觉与功能联合结果。
 
 每个 fidelity/parity case 不可变绑定冻结目标 SHA、当前代码或构建 SHA、scene/state、viewport、实际有效 DPR、语言、随机种子、输入轨迹、动画采样/稳定帧、布局合同版本、视觉基线版本、双方证据、预定义容差、例外 ID 和结论。上游事实或当前受影响候选身份变化才令对应旧案例失效并重新采集；其他单元路径级结果继续有效。默认 `usability` 保留代表性案例，`exact` 或明确全覆盖需求才要求全部视口/状态组合。
 
+每个原生区域还须提交 `native_runtime_evidence`，其 `observed_method`、`observed_delivery_kind`、`render_contract`、`status=passed`、指向消费报告 JSON 的 `evidence` 与 `evidence_sha256`、`candidate_sha256`、`target_sha256`、`baseline_sha256`、`diff_fingerprint` 必须绑定本次真实运行候选。`projectRoot` 可用时必须读取 JSON 工件，校验 `report_schema='native-render-consumption/1.0'`、`consumed=true`，以及与当前区域一致的 `region_id`、`scene_id`、`state_id`；实际 method、delivery kind、render contract 和 candidate/target/baseline/diff 身份必须与 `native_runtime_evidence` 逐值一致。还须复核文件 SHA；不能用仅有匹配 SHA 的无关 JSON 代替实际消费报告。规划参数本身不足以证明运行输出和消费一致。
+
 机器清单生命周期固定为：非效果图 `not-applicable`；效果图完成 V2 拆解确认后为 `v2-ready`，此时允许 fidelity case 为空；只有 V5 已验证才为 `v5-complete`，此时当前验证模式要求的关键 case 必须通过。默认 `usability` 保留代表性场景/状态案例；`exact` 或明确全覆盖需求才要求冻结目标的每个 scene/state 组合至少有一个 passed case。
 
 ## 失败条件
@@ -68,6 +78,7 @@ V5 按 `visual_validation.mode` 运行证据验证视觉与功能联合结果。
 - 缺少当前验证模式所需的同条件参考证据、候选证据或适用的响应式证据；完整 viewport 只在 `exact` 或明确要求时必需。
 - 缺少 V2 拆解图确认、技术 JSON、coverage、生产计划或任一编号绑定。
 - 改变产品方向、玩法语义或上游结构却没有对应的 `USER_DECISION` 记录。
+- 原生路线缺少可观察资格事实、冻结参数或真实运行证据；不支持的视觉特征被近似绘制后放行；冻结 `image_generation_required=true` 被未经批准改成原生实现。
 - 只有“很像”“更美观”“已专业修复”等主观结论。
 - 使用整屏截图、隐藏覆盖层或绝对叠层冒充还原结果。
 

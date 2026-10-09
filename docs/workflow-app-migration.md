@@ -181,11 +181,11 @@
 ### N14 V2 原子拆解与生产事实
 
 - 输入：N13 状态分析和冻结原图。
-- 执行：拆出唯一可复用 component、required state、重复 placements、交互热区；区分 generate-now / reuse-existing / runtime-program，并声明 bitmap-decomposition 或 independent-production 等路线。
+- 执行：拆出唯一可复用 component、required state、重复 placements、交互热区；路线根据冻结图的可观察外观与 Phaser 实际渲染能力确定，不由按钮/面板等语义或静态/动态标记单独决定。能精确表达的静态纯色矩形、基础几何、规则边框、简单规则渐变、遮罩和进度填充可走原生路线；特色插画、复杂纹饰、不规则轮廓、复杂材质与明显美术装饰走独立图片路线。分别冻结外观来源和行为装配，并声明 bitmap-decomposition 或 independent-production 等生产路线。
 - 产物：按序 decomposition_elements、component_inventory、component×state 清单、区域生产合同和资源预期。
 - 分组：每个元素登记显式 `parent_element_id` 和 `semantic_grouping.kind/rationale`，区分区域、功能组件、组件部件和独立元素。元素的位置、偏移或响应式移动依赖另一个元素时，依赖方划为被依赖元素所对应布局容器的子元素；多个元素共同表达同一个信息但彼此无位置依赖时，列入同一功能组件并保持同级。图标、底板和对应文字按实际依赖与共同信息归属组合；侧栏等区域先组织各入口组件，禁止按“全部文字”或最小包含矩形归组。独立标题、装饰和整体品牌美术不强制套容器。字段及边界见[功能语义分组约束](../skills/phaser4-game-ui-layout/references/functional-semantic-grouping.md)。
 - 人工点：这里先提出拆解事实，等待 N16 确认；不预先冻结后置 layout_nodes。
-- 放行：component_count 是唯一部件数，不是可见实例数；重复实例用 placements；热区不计视觉资产。每区域显式声明 production_origin、production_method、delivery_kind、image_generation_required、generation_record_required、substitution_policy、expected_assets。
+- 放行：component_count 是唯一部件数，不是可见实例数；重复实例用 placements；热区不计视觉资产。每区域显式声明 production_origin、production_method、delivery_kind、image_generation_required、generation_record_required、substitution_policy、expected_assets。原生区域另冻结 `native_suitability.render_contract` 的 renderer、逻辑尺寸、#RRGGBB 颜色、线宽、圆角、渐变、透明度、适用状态与不支持特征；参数改变会使区域确认失效。
 - 失败：数量/编号/格式/路径冲突原地修复；不能把一个编号当一张资产，或把“独立生产”自动等同具体生成器。
 
 ### N15 生成拆解图与技术 JSON
@@ -233,7 +233,7 @@
 ### N20 V2 合同回对、覆盖与生产计划冻结
 
 - 输入：两个有效确认、V1 合同、状态/组件/资源/布局事实。
-- 执行：逐 scene/state 回对完整画布与 region，核对 coverage、生产路线、所有权、输出路径、资源尺寸和复用身份；形成统一 scene V2 plan 与实施包生产单元。
+- 执行：逐 scene/state 回对完整画布与 region，核对 coverage、生产路线、所有权、输出路径、资源尺寸和复用身份；原生实现单元中的 `runtime_implementation.render_contract` 必须逐值镜像 `native_suitability.render_contract`。形成统一 scene V2 plan 与实施包生产单元。
 - 产物：phaser4-scene-v2-reconstruction-plan/1.0、visual-assets.json（当前 schema 1.5）、visualProductionUnits、布局合同、同批布局五份产物及其 SHA、v2-production-planning-complete。
 - 人工点：生产规格/预算实质变化才需对应新决策；字段修复不滥用新审批。
 - 放行：覆盖率 1、无未覆盖区域、全画布摘要和证据有效；不能用小区域伪装全覆盖，也不能延期主参考中已有的可见内容。effect-image 使用 effect-image/v2-ready；普通资产 not-applicable。SCENE 与已就绪 DISPLAY_LAYER 引用同一场景计划并绑定准确 scene/host/layer；待办留在其引用的场景合同，不塞入缺图的 displayLayerContexts 或可执行单元。
@@ -254,17 +254,17 @@
 - 执行：资源责任方按场景顺序，将当前已确认 V3 范围内全部待生成 component×required state 去重汇总为一个批量任务，一次编排提交，不逐张创建或串行等待生成任务；复用项单独按冻结合同接入。批内交付及失败项修复遵守[图片批量生成](../skills/phaser4-game-asset-integration/references/visual-production-pipeline.md#图片批量生成)。保持来源和运行时输出分离，不静默覆盖 accepted 版本；同步登记权属和生成记录。
 - 产物：源文件/生成记录、正式运行时文件、每资源状态、MIME/尺寸/alpha/SHA、来源与版权许可信息。
 - 人工点：外部付费/权利/预算等未授权行为先请求；正常生产沿用已确认的 V2 方案。
-- 放行：逐资源实际方法和交付形式满足冻结合同；复用必须绑定不可变 asset-reuse-snapshot/1.0 及源/兼容证据身份。
+- 放行：逐资源实际方法和交付形式满足冻结合同；复用必须绑定不可变 asset-reuse-snapshot/1.0 及源/兼容证据身份。`image_generation_required=true` 必须继续履行生成式图片合同，不能自动切换为原生路线；变更只能通过明确接受的 Change Request。
 - 失败：资源问题留 V3 修复；不得用 SVG、Graphics、程序绘图或参考图裁切替代合同要求的独立生成式位图资源。
 
 ### N23 生成式位图与尺寸/透明度处理分支
 
 - 输入：N22 中明确 image_generation_required=true 的 expected_assets。
-- 执行：全部图片在 N22 的同一批任务内生成，每个唯一 component×required state 交付独立位图，individual、atlas_allowed=false；批量提交不得变成组合图或图集。系统根据提示词、参考输入、主体材质、透明需求和可用能力选择实际生成方案，不绑定供应商；每项记录完整提示词、全局一致性段、主参考、额外锚点、实际生成器/版本（未暴露时记录 `not-provided`）、种子、参数与真实输出。选择生成能力不自动新增外部调用授权。`alpha=true` 的生成式素材必须在提示词中要求指定 HEX 的不透明纯色背景；不请求透明 PNG/Alpha，不接受棋盘格或网格预览。`alpha=false` 的完整场景背景按场景合同处理。
+- 执行：全部图片在 N22 的同一批任务内生成，每个唯一 component×required state 交付独立位图，individual、atlas_allowed=false；批量提交不得变成组合图或图集。系统根据提示词、参考输入、主体材质、透明需求和已验证能力选择实际生成方案，不绑定供应商；每项记录完整提示词、全局一致性段、主参考、额外锚点、实际生成器/版本（未暴露时记录 `not-provided`）、种子、参数与真实输出。选择生成能力不自动新增外部调用授权。`alpha=true` 的生成式素材须按冻结的策略和边缘类型选择路线；只有硬边且颜色明显分离时可要求指定 HEX 纯色背景并走去背，已验证的直接 Alpha 与独立遮罩/人工创作按各自路线记录。不得默认要求透明图片生成，不能把棋盘格或网格预览作为透明结果。`alpha=false` 的完整场景背景按场景合同处理。
 - 产物：原始生成图、处理记录、normalization_record、最终 PNG/JPEG；透明资源只允许 PNG。
 - 人工点：禁止无限重试或暗改规格；无法按已冻条件处理时报告所需决策。
-- 放行：宽高分别为 ceil(最大 placement 对应尺寸 × intended_scale_range.max × 2) 的精确最小值，图片生产基线 `max_dpr=2`、`padding_policy=none`；运行时实际 DPR 仍由设备动态读取并封顶为 2，二者属于独立合同。历史 `1.5` 尺寸合同或证据必须重新生成/重验，未重验者标记 `stale`，不得作为当前放行依据。生成式位图使用 `production_method=image-generation`、`delivery_kind=raster-image`、独立位图及完整生成记录；其他方法的图集必须显式允许且逐部件状态有切片合同。
-- 失败/处理：`alpha=true` 的生成式素材必须先验证原图为整张不透明的指定 HEX 纯色背景，记录 `transparency_strategy=background-removal`、`source_background_mode=opaque` 和 `source_background_color`，并使用公共 `remove-background-local.mjs --require-solid-background`；棋盘格、网格或复杂背景校验失败时重新生成或修正输入，不提高容差吞掉问题。处理尝试按实际追加，失败记录原因并保留历史，重试次数由任务配置设定上限；不因重试自动新增外部调用授权。已有真实透明图按资源复用合同接入，不伪造生成去背记录。随后统一使用 Sharp 归一化；不得拉伸、补边或裁冻结参考图。比例不符最多重生一次；仍不符时按已冻结裁切焦点安全条件受控裁切，否则先对原图生成式延展，再重新校验纯色背景、去背景并归一化；尺寸已满足也记录 not-required。
+- 放行：宽高分别为 ceil(最大 placement 对应尺寸 × intended_scale_range.max) 的精确最小值，图片生产基线 `max_dpr=1`、`padding_policy=none`；运行时实际 DPR 仍由设备动态读取并封顶为 2，二者属于独立合同。历史 `1.5`/`2` 倍尺寸合同或证据必须重新生成/重验，未重验者标记 `stale`，不得作为当前放行依据。生成式位图使用 `production_method=image-generation`、`delivery_kind=raster-image`、独立位图及完整生成记录；其他方法的图集必须显式允许且逐部件状态有切片合同。
+- 失败/处理：`background-removal` 仅用于 hard-edge 且主体与纯色背景明显分离的输入，须记录颜色分离确认和实际尝试；半透明、辉光、柔和阴影、毛发、玻璃或混合边缘不得阈值去背。直接 Alpha 须按工具和边缘类型提供能力证据，并解码 PNG 验证实际透明像素；遮罩合成须绑定原图、mask、输出路径和 SHA。能力不足时报告缺口，不提高容差、硬抠轮廓、删除光效或伪造透明。已有透明图按资源复用合同接入，不伪造生成或去背记录。随后使用 Sharp 归一化并保持 Alpha、比例和主体边界，不得把棋盘格烘焙、拉伸、补边或裁冻结参考图。比例不符最多重生一次；仍不符时按已冻结焦点和安全事实受控裁切，或重新制定输入/路线；尺寸已满足也记录 not-required。V5 对所有路线生成的深浅底预览执行视觉检查。
 
 ### N24 V3 资源级验收与生产合同审计
 
@@ -308,7 +308,7 @@
 - 执行：在宿主场景组合实际运行；对瞬态显示层记录 open→interact→close→restore 四步，检查输入阻断、焦点/状态恢复、互斥共存与响应式；常驻层验收自身交互、状态与生命周期，不虚构弹窗关闭行为；验证真实资源消费。
 - 产物：fresh runtime replay、同屏截图/交互轨迹、功能与视觉事实。
 - 人工点：启动验证服务前先检查可复用实例；不杀未知进程，不自动真机。
-- 放行：每层可独立收集证据，但宿主联合验收仍必须完成；瞬态层 same_screen_combination=true，四步证据齐全且绑定当前宿主。
+- 放行：每层可独立收集证据，但宿主联合验收仍必须完成；瞬态层 same_screen_combination=true，四步证据齐全且绑定当前宿主。原生 region 还须提交 `native_runtime_evidence`。`projectRoot` 可用时必须读取 `evidence` 指向的 JSON、校验 `evidence_sha256`，并要求 `report_schema='native-render-consumption/1.0'`、`consumed=true`；报告中的 `region_id`/`scene_id`/`state_id` 须匹配当前区域，`observed_method`、`observed_delivery_kind`、`render_contract` 和 candidate/target/baseline/diff 身份须与 `native_runtime_evidence` 逐值一致。无关 JSON 不能仅凭 SHA 充当实际渲染与消费证明；缺少或不匹配的报告不得只凭计划参数通过。
 - 失败：运行行为或资源消费偏差修复当前候选；缺重放、旧重放、只看资源 loaded 均不得通过。
 
 ### N29 V4 忠实度、响应式与联合验收
@@ -571,7 +571,7 @@
 - [ ] 布局候选目录同步有 `layout-nodes.json`、`layout-decision.json`、`review.html`、`generation-result.json`；审阅页离线两栏、同坐标映射、中文名称和候选状态完整。
 - [ ] 布局有独立修改/确认；确认、decision、receipt 绑定审阅页/节点/PNG/决策及上游真实 SHA，不产生新参考或多方案选择。
 - [ ] 全画布 coverage 完整，production units 与区域/部件/状态一一对应。
-- [ ] 生成式位图独立位图、尺寸、实际生成器/版本、纯色背景源图（`source_background_mode=opaque`、`source_background_color`）、`transparency_strategy=background-removal`、去背景历史、Sharp 归一化、记录和 SHA 可验证；已有透明图按资源复用合同登记。
+- [ ] 生成式位图独立文件、尺寸、实际生成器/版本、按边缘类型冻结的透明策略、输入/输出 SHA 和 Sharp 归一化可验证；去背路线另有颜色分离确认和尝试历史，直接 Alpha 有工具/边缘能力证据并解码验证像素，遮罩路线有独立 mask 记录；各路线含深浅底预览和 V5 视觉检查；已有透明图按资源复用合同登记。
 - [ ] 复用资源绑定不可变来源；accepted 文件不静默覆盖。
 - [ ] V3 有资源级合同审计和宿主同屏预验收。
 - [ ] 正式 SCENE/DISPLAY_LAYER 实施受当前 V2/V3 前置约束。

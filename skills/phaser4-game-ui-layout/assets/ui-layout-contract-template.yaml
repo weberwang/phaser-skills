@@ -119,7 +119,7 @@
     "clarityDegradation": "forbid-silent"
   },
   "assetResolutionPolicy": {
-    "productionDpr": 2,
+    "productionDpr": 1,
     "runtimeDprSource": "runtimeDprPolicy",
     "runtimeProductionSeparated": true,
     "sourceResolution": "cover-intended-display-scale",
@@ -146,7 +146,7 @@
   "requiredRuntimeEvidence": {
     "mode": "usability",
     "requiredFields": ["viewportRect", "canvasRect", "designTransform", "logicalSize", "backingSize", "cssDisplaySize", "rawDevicePixelRatio", "effectiveDevicePixelRatio", "logicalToCssScale", "cssToPhysicalScale", "cameraViewport", "cameraZoom", "cameraOrigin", "safeArea", "edgeGaps", "backgroundCoverage", "keyUiRects", "inputHitResults", "resizeTrajectory", "pageReloaded", "screenshot", "sceneId", "stateId", "candidateSha256", "layoutContractVersion", "visualBaselineVersion"],
-    "dprAssertions": {"runtimeMeasured": true, "invalidFallback": 1, "maxRuntimeDpr": 2, "rawAboveTwoEffectiveTwo": true, "productionDpr": 2, "productionDprSeparate": true},
+    "dprAssertions": {"runtimeMeasured": true, "invalidFallback": 1, "maxRuntimeDpr": 2, "rawAboveTwoEffectiveTwo": true, "productionDpr": 1, "productionDprSeparate": true},
     "resizeAssertions": {"samePage": true, "cssAndBackingUpdateOnDprChange": true, "dprDecreaseToOne": true, "sameDprResize": true},
     "displayLayerTrajectory": {"required": true, "steps": ["open", "interact", "resize", "close", "host-restore"], "hostSceneState": true, "independentEvidence": true, "inheritCssLogicalViewport": true, "sameEffectiveDpr": true, "hostPassDoesNotImplyPass": true},
     "evidenceBinding": {"candidate": "scope.bindings.code_candidate", "layoutContractVersion": "contract_version", "scene": "scope.scenes", "state": "scope.states"},

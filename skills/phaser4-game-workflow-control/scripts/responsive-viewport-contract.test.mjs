@@ -174,7 +174,7 @@ test('双方向声明继续要求另一方向和同页方向切换，非法方�
   }
 });
 
-test('响应式合同覆盖 18 个字段、运行时 DPR 和生产 2 DPR 分离', () => {
+test('响应式合同覆盖 18 个字段、运行时 DPR 和 1:1 图片生产分离', () => {
   const contract = makeContract();
   assert.equal(RESPONSIVE_CONTRACT_FIELDS.length, 18);
   assert.deepEqual(validateResponsiveContract(contract, { stage: 'V1' }), []);
@@ -247,9 +247,11 @@ test('合同拒绝缺失矩阵、DPR 上限和生产 DPR 混写', () => {
   badCap.maxRuntimeDpr = 3;
   assert.match(validateResponsiveContract(badCap).join('\n'), /maxRuntimeDpr/);
 
-  const mixed = makeContract();
-  mixed.assetResolutionPolicy.productionDpr = 1.5;
-  assert.match(validateResponsiveContract(mixed).join('\n'), /生产 DPR/);
+  for (const productionDpr of [1.5, 2]) {
+    const mixed = makeContract();
+    mixed.assetResolutionPolicy.productionDpr = productionDpr;
+    assert.match(validateResponsiveContract(mixed).join('\n'), /生产 DPR/, `旧或非整数图片生产倍率不得放行：${productionDpr}`);
+  }
 
   for (const shorthand of ['12', '1.25', '2.5', 'productionDpr=3']) {
     const unstructured = makeContract();

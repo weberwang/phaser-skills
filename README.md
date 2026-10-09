@@ -86,15 +86,15 @@ UI 响应式验证按合同的 `orientationPolicy.allowed` 选择视口方向：
 
 ## 生图与去背景
 
-系统根据提示词、参考图、素材类型和可用能力选择生图方案，不绑定供应商；以 `image-generation` 记录生产分类并保存实际生成器身份。对 `alpha=true` 的生成式素材，生成器只接收不透明、单一指定 HEX 纯色背景要求，不请求透明 PNG/Alpha，也不接受棋盘格或网格预览作为背景；原图通过公共脚本校验后去背景，再进入尺寸归一化。已有真实透明图按既有资源复用，不伪造生成去背记录。`alpha=false` 的完整场景背景按场景合同生成，不受纯色背景要求约束。详见[资产生产路线](skills/phaser4-game-asset-integration/references/asset-production-routes.md)。
+系统根据提示词、参考图、边缘特征和已验证能力选择透明路线。硬边且主体与背景明显分离时可用纯色去背；直接 Alpha 必须经过工具与边缘类型能力验证，并解码 PNG 证明真实透明像素；复杂边缘使用独立遮罩/人工创作、重新生成或经明确合同批准的 Phaser 特效。半透明、辉光、柔和阴影、毛发、玻璃和混合边缘不得默认阈值去背。所有透明路线都绑定实际来源、生产记录、归一化输出 SHA 与深浅底预览；已有透明图按 provided/reuse 接入，不伪造生成或去背记录。详见[资产生产路线](skills/phaser4-game-asset-integration/references/asset-production-routes.md)。
 
 在本仓库中处理简单纯色背景 PNG：
 
 ```powershell
-npm run remove:background -- --source art/raw.png --output art/transparent.png --background-color '#00FF00' --tolerance 24 --require-solid-background --record art/removal.json --preview-dir art/previews
+npm run remove:background -- --source art/raw.png --output art/transparent.png --background-color '#00FF00' --tolerance 24 --require-solid-background --edge-profile hard-edge --color-separation-verified --record art/removal.json --preview-dir art/previews
 ```
 
-生成式透明素材的源图必须整张不透明且边缘匹配指定纯色；`--require-solid-background` 校验失败时重新生成或修正输入，不通过提高容差吞掉棋盘格。默认背景色为 `#00FF00`，若主体含相近颜色可改用单一 `#FF00FF` 等颜色，并在生成记录与脚本参数中保持一致。脚本只做原尺寸去背景，生成处理记录与深浅底预览，不替代视觉质量检查。
+该脚本只适用于 hard-edge 且颜色分离已确认的输入。背景与主体应有明显颜色差异；校验失败时修正输入或换路线，不提高容差吞掉棋盘格、硬抠复杂轮廓或删除光效。脚本输出处理记录与深浅底预览，不能替代 V5 对主体缺损、背景残留、色边和半透明区域的视觉检查。
 
 ## 高级诊断
 

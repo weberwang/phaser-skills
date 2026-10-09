@@ -7,8 +7,9 @@ import sharp from "sharp";
 import test from "node:test";
 import { buildSolidBackgroundPrompt, DEFAULT_SOURCE_BACKGROUND_COLOR, validateTransparentBackgroundContract } from "./visual-transparent-background-contract.mjs";
 import { validateImageGenerationContract } from "./visual-production-contract.mjs";
-import { normalizeImageToContract } from "./visual-image-normalization.mjs";
+import { normalizeImageToContract, runImageNormalizationCli } from "./visual-image-normalization.mjs";
 import { validateImageNormalizationContract } from "./visual-image-normalization-contract.mjs";
+import { prepareTransparencyFixture } from "./transparent-route-test-fixtures.mjs";
 
 const OUTPUT_SHA = `sha256:${"a".repeat(64)}`;
 const SOURCE_SHA = `sha256:${"b".repeat(64)}`;
@@ -19,6 +20,21 @@ async function createPng(file, width, height, alpha = true, color = { r: 20, g: 
   const channels = alpha ? 4 : 3;
   const background = alpha ? { ...color, alpha: 0.5 } : color;
   await sharp({ create: { width, height, channels, background } }).png().toFile(file);
+}
+
+/** 建立带透明留白和半透明主体的固定 PNG，供裁切完整性测试复用。 */
+async function createPaddedAlphaPng(file, width, height, margin = 12) {
+  const pixels = Buffer.alloc(width * height * 4);
+  for (let y = margin; y < height - margin; y += 1) {
+    for (let x = margin; x < width - margin; x += 1) {
+      const offset = (y * width + x) * 4;
+      pixels[offset] = 20;
+      pixels[offset + 1] = 80;
+      pixels[offset + 2] = 180;
+      pixels[offset + 3] = 160;
+    }
+  }
+  await sharp(pixels, { raw: { width, height, channels: 4 } }).png().toFile(file);
 }
 
 /** 构造与生产门一致的归一化记录。 */
@@ -153,6 +169,11 @@ test("同宽高比缩放到精确尺寸并保留 Alpha", async () => {
     assert.equal(metadata.height, 100);
     assert.equal(metadata.hasAlpha, true);
     assert.equal(record.preserve_alpha, true);
+    assert(record.source_alpha_stats.partial_alpha_pixels > 0);
+    assert(record.alpha_stats.partial_alpha_pixels > 0);
+    assert.equal(record.transparency_preview.inspection.status, "pending");
+    assert.equal(record.transparency_preview.light.background_color, "#F2E9DF");
+    assert.equal(record.transparency_preview.dark.background_color, "#16202E");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -210,13 +231,14 @@ test("1672×941 两次比例失败可按中心焦点裁成 1664×936 并归一�
     const output = join(directory, "normalized.png");
     // 第一次生成允许使用不同输出尺寸；只要两次都未命中目标比例即可进入受控裁切。
     await createPng(firstAttempt, 100, 60, true);
-    await createPng(source, 1672, 941, true, { r: 21, g: 80, b: 180 });
+    await createPaddedAlphaPng(source, 1672, 941);
     const record = await normalizeImageToContract({
       sourceFile: source,
       outputFile: output,
       targetWidth: 1920,
       targetHeight: 1080,
       requireAlpha: true,
+      candidateSha256: SOURCE_SHA,
       aspect_ratio_correction: { attempts: [await attemptDescriptor(firstAttempt, "ATTEMPT-ONE", "GEN-ONE", "2026-08-25T00:00:00.000Z"), await attemptDescriptor(source, "ATTEMPT-TWO", "GEN-TWO", "2026-08-25T00:01:00.000Z")], focus: { x: 0.5, y: 0.5 } },
     });
     const metadata = await sharp(output).metadata();
@@ -227,6 +249,8 @@ test("1672×941 两次比例失败可按中心焦点裁成 1664×936 并归一�
     assert.equal(metadata.width, 1920);
     assert.equal(metadata.height, 1080);
     assert.equal(metadata.hasAlpha, true);
+    assert.equal(record.transparency_preview.candidate_sha256, SOURCE_SHA);
+    assert.equal(record.alpha_stats.partial_alpha_pixels > 0, true);
     assert.deepEqual(validateImageNormalizationContract({
       expectedAsset: { asset_id: "hero", source_file: source, runtime_file: output, mime_type: "image/png", width: 1920, height: 1080, alpha: true },
       asset: { source_file: source, output_file: output, runtime_outputs: [output], sha256: record.output_sha256, normalization_record: record },
@@ -248,7 +272,7 @@ test("透明路线以两次原始输出作证据、去背输出作源图并在�
     const output = join(directory, "normalized.png");
     await createPng(rawAttemptOne, 1672, 941, false);
     await createPng(rawAttemptTwo, 1672, 941, false, { r: 21, g: 80, b: 180 });
-    await createPng(source, 1672, 941, true);
+    await createPaddedAlphaPng(source, 1672, 941);
 
     const record = await normalizeImageToContract({
       sourceFile: source,
@@ -256,6 +280,7 @@ test("透明路线以两次原始输出作证据、去背输出作源图并在�
       targetWidth: 1920,
       targetHeight: 1080,
       requireAlpha: true,
+      candidateSha256: SOURCE_SHA,
       // attempts 始终记录两次不透明原始 图像生成 输出；去背后的 source 才是归一化输入。
       aspect_ratio_correction: { attempts: [await attemptDescriptor(rawAttemptOne, "RAW-ATTEMPT-ONE", "RAW-GEN-ONE", "2026-08-25T00:00:00.000Z"), await attemptDescriptor(rawAttemptTwo, "RAW-ATTEMPT-TWO", "RAW-GEN-TWO", "2026-08-25T00:01:00.000Z")], focus: { x: 0.5, y: 0.5 } },
     });
@@ -276,6 +301,7 @@ test("透明路线以两次原始输出作证据、去背输出作源图并在�
     const expectedAsset = { asset_id: "hero", source_file: source, runtime_file: output, mime_type: "image/png", width: 1920, height: 1080, alpha: true };
     const asset = { source_file: source, output_file: output, runtime_outputs: [output], mime_type: "image/png", width: 1920, height: 1080, alpha: true, sha256: record.output_sha256, normalization_record: record };
     const metadata = { mime_type: "image/png", file: output, width: 1920, height: 1080, alpha: true, sha256: record.output_sha256 };
+    prepareTransparencyFixture(generation, expectedAsset);
     assert.notEqual(record.aspect_ratio_correction.attempts[1].file, record.source_file);
     assert.equal(record.aspect_ratio_correction.attempts[1].width, record.source_width);
     assert.equal(record.aspect_ratio_correction.attempts[1].height, record.source_height);
@@ -316,7 +342,75 @@ test("透明目标拒绝没有 Alpha 的原图", async () => {
   try {
     const source = join(directory, "source.png");
     await createPng(source, 100, 50, false);
-    await assert.rejects(() => normalizeImageToContract({ sourceFile: source, outputFile: join(directory, "normalized.png"), targetWidth: 200, targetHeight: 100, requireAlpha: true }), /Alpha/);
+    await assert.rejects(() => normalizeImageToContract({ sourceFile: source, outputFile: join(directory, "normalized.png"), targetWidth: 200, targetHeight: 100, requireAlpha: true }), /alpha<255|Alpha/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("PNG 声明 Alpha 通道但像素全不透明时拒绝透明目标", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "phaser-image-normalization-opaque-alpha-"));
+  try {
+    const source = join(directory, "opaque-alpha-channel.png");
+    await sharp({ create: { width: 100, height: 50, channels: 4, background: { r: 20, g: 80, b: 180, alpha: 1 } } }).png().toFile(source);
+    assert.equal((await sharp(source).metadata()).hasAlpha, true);
+    await assert.rejects(
+      () => normalizeImageToContract({ sourceFile: source, outputFile: join(directory, "normalized.png"), targetWidth: 200, targetHeight: 100, requireAlpha: true }),
+      /没有 alpha<255 的像素/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("透明归一化 CLI 生成预览并提示候选绑定缺口", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "phaser-image-normalization-cli-"));
+  try {
+    const source = join(directory, "source.png");
+    const output = join(directory, "normalized.png");
+    await createPng(source, 2, 1, true);
+    const logs = [];
+    const warnings = [];
+    const errors = [];
+    const exitCode = await runImageNormalizationCli([
+      "--source", source, "--output", output, "--width", "2", "--height", "1", "--require-alpha",
+    ], { log: (value) => logs.push(value), warn: (value) => warnings.push(value), error: (value) => errors.push(value) });
+    assert.equal(exitCode, 0);
+    assert.equal(errors.length, 0);
+    assert.match(warnings[0], /未绑定 workflow candidate_sha256/);
+    const record = JSON.parse(logs[0]);
+    assert.equal(Object.hasOwn(record.transparency_preview, "candidate_sha256"), false);
+    assert.equal(record.transparency_preview.inspection.status, "pending");
+    assert.match(record.transparency_preview.source_sha256, /^sha256:[a-f0-9]{64}$/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("透明图裁切会切掉任何 alpha>0 主体像素时拒绝写入", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "phaser-image-normalization-crop-alpha-"));
+  try {
+    const firstAttempt = join(directory, "attempt-one.png");
+    const source = join(directory, "attempt-two.png");
+    const output = join(directory, "normalized.png");
+    await createPng(firstAttempt, 100, 60, false);
+    await createPng(source, 1672, 941, true);
+    const attempts = [
+      await attemptDescriptor(firstAttempt, "CROP-ONE", "CROP-GEN-ONE", "2026-08-25T00:00:00.000Z"),
+      await attemptDescriptor(source, "CROP-TWO", "CROP-GEN-TWO", "2026-08-25T00:01:00.000Z"),
+    ];
+    await assert.rejects(() => normalizeImageToContract({
+      sourceFile: source,
+      outputFile: output,
+      targetWidth: 1920,
+      targetHeight: 1080,
+      requireAlpha: true,
+      aspect_ratio_correction: {
+        attempts,
+        focus: { x: 0.5, y: 0.5 },
+      },
+    }), /会切除 alpha>0 的主体像素/);
+    await assert.rejects(() => readFile(output));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -350,6 +444,7 @@ test("背景移除路线在有效归一化后通过", () => {
   fixture.expectedAsset = { ...fixture.expectedAsset, source_file: "art/hero-cutout.png" };
   fixture.asset = { ...fixture.asset, source_file: "art/hero-cutout.png", normalization_record: normalizationRecord({ source_file: "art/hero-cutout.png" }) };
   fixture.generation = { ...fixture.generation, ...transparentGeneration(), normalization_record: normalizationRecord({ source_file: "art/hero-cutout.png" }) };
+  prepareTransparencyFixture(fixture.generation, fixture.expectedAsset);
   assert.deepEqual(validateImageNormalizationContract(fixture), []);
   assert.deepEqual(validateTransparentBackgroundContract({ asset: fixture.asset, contract: fixture.contract, generation: fixture.generation, expectedAsset: fixture.expectedAsset, metadata: fixture.metadata }), []);
 });
