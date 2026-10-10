@@ -21,7 +21,7 @@
 
 场景 V1 同时冻结[显示对象锚点与显示层分层](../../phaser4-game-ui-layout/references/display-object-layering.md)方案：可设置原点的显示对象默认中心 `(0.5, 0.5)`，例外逐对象说明；背景、世界、特效、HUD 和瞬态层按实际职责划分有名根层并明确前后、输入与生命周期。V2 将对象原点和层序映射到布局/显示层合同，V4 检查正式资源草图组合，V5 验证遮挡、最上层命中及关闭/resize 后恢复。这里的渲染分层不把世界对象或特效变成独立 `DISPLAY_LAYER` Work Item。
 
-帧动画是上述场景路线中的动态资源子路线。全局 V2 根据动作、构图、镜头和背景要求写视频提示词并等待视频文件；全局 V3 接收实际视频，按可调 FPS、目标尺寸和是否去背景抽帧，生成 spritesheet、报告和浏览器预览，并检查动作节奏与循环衔接。全局 V5 才把报告中的 Phaser preload/anims/setOrigin 接入正式 Scene，并采样事件时序、播放态和性能。完整字段见[帧动画工作流接入合同](../../phaser4-frame-animation/references/workflow-integration.md)。
+帧动画是上述场景路线中的动态资源子路线。全局 V2 先生成可播放的动画灰盒预览并等待用户确认，再根据确认的动作、构图、镜头和背景要求写视频提示词并等待视频文件；全局 V3 接收实际视频，按可调 FPS、目标尺寸和是否去背景抽帧，生成 spritesheet、报告和浏览器预览，并检查动作节奏与循环衔接。全局 V5 才把报告中的 Phaser preload/anims/setOrigin 接入正式 Scene，并采样事件时序、播放态和性能。完整字段见[帧动画工作流接入合同](../../phaser4-frame-animation/references/workflow-integration.md)。
 
 ## 基础显示约束
 

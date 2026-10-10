@@ -1,4 +1,4 @@
 interface:
   display_name: "Phaser 4 通用帧动画"
-  short_description: "编写视频提示词并将视频抽帧为 Phaser 图集"
-  default_prompt: "使用 $phaser4-frame-animation 根据动作要求编写视频生成提示词，等待视频文件，再抽帧生成图集和网页预览。"
+  short_description: "先交付动画灰盒并等待确认，再编写视频提示词与抽帧制作图集"
+  default_prompt: "使用 $phaser4-frame-animation 先生成可播放的动画灰盒预览，等待我确认后再编写视频生成提示词、接收视频并抽帧生成图集和网页预览。"
