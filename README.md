@@ -32,7 +32,7 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 
 单场景视觉任务在“逐场景生产”内按“场景定义 → 拆解确认 → 正式资源验收 → 页面还原草图 → 正式还原与运行验收”推进。该视图只简化展示；全局状态、G0-G3、V0-V5、A0-A6、F0-F4 和证据硬门继续由控制面维护，详见[控制模型](skills/phaser4-game-workflow-control/references/control-model.md)与[状态、阶段与停止门](skills/phaser4-game-workflow-control/references/state-gates.md)。
 
-帧动画先生成可播放的动画灰盒预览，等待用户确认动作方案后再采用视频抽帧：结合游戏项目的视觉基线、已确认的玩法事件、视角与运行尺寸生成视频提示词，交付后等待真实视频文件；收到视频后按指定 FPS、输出尺寸和是否移除背景生成 PNG 图集、JSON 报告与浏览器预览。预览用于检查动作节奏、透明边缘及循环衔接，Phaser 接入仍回到全局资源和运行时证据门。详见[帧动画工作流接入合同](skills/phaser4-frame-animation/references/workflow-integration.md)。
+帧动画先按触发条件与生命周期划分完整行为单元，不按阶段或事件数量拆视频；确定统一游戏时间轴、阶段连接、关键事件、运动/保持意图及播放方式后生成整组灰盒，检查阶段连接、循环接缝或单次终态，等待用户确认动作与节奏方案后再采用视频抽帧：结合游戏项目的视觉基线、已确认的玩法事件、视角与运行尺寸生成视频提示词，交付后等待真实视频文件；收到视频后先将有效动作区间整理到已确认的游戏时间轴，去除未计划停顿，再按指定 FPS、输出尺寸和是否移除背景生成 PNG 图集、JSON 报告与浏览器预览。预览用于检查动作节奏、透明边缘及循环衔接，Phaser 接入仍回到全局资源和运行时证据门。详见[帧动画工作流接入合同](skills/phaser4-frame-animation/references/workflow-integration.md)。
 
 先在目标 Phaser 项目根目录初始化一个 Work Item。下面的 PowerShell 示例会以当前 Git HEAD 作为不可变基线，可直接复制执行：
 
@@ -75,7 +75,7 @@ UI 响应式验证按合同的 `orientationPolicy.allowed` 选择视口方向：
 - `$phaser4-game-architecture`：工程架构与公开契约。
 - `$phaser4-gameplay-development`：玩法规则、状态和交互实现。
 - `$phaser4-game-asset-integration`、`$phaser4-game-ui-layout`：资源、效果图还原和 UI 布局。
-- [`$phaser4-frame-animation`](skills/phaser4-frame-animation/SKILL.md)：先生成动画灰盒预览并等待用户确认，再生成视频提示词、等待视频文件，按可调 FPS、尺寸与背景处理抽帧输出 Phaser 图集和网页预览。
+- [`$phaser4-frame-animation`](skills/phaser4-frame-animation/SKILL.md)：按完整动作组规划游戏时间轴，先交付灰盒并确认节奏，再编写视频提示词、接收并整理视频，抽帧输出 Phaser 图集和网页预览。
 - `$phaser4-spine-generative-reskin`、`$phaser4-game-image-optimization`：Spine 与图片处理。
 - `$phaser4-game-audio`、`$phaser4-game-balance`：音频和数值平衡。
 - [`$phaser4-game-ad-integration`](skills/phaser4-game-ad-integration/SKILL.md)：通过 AppLovin 官方 MAX Cordova 原生插件接入移动端 Banner、插页与激励视频，管理全屏广告位静默预加载与持续重试、Banner 按需创建与布局刷新、视频不可用提示和隐私验收。

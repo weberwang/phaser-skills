@@ -1,4 +1,4 @@
 interface:
   display_name: "Phaser 4 通用帧动画"
-  short_description: "先交付动画灰盒并等待确认，再编写视频提示词与抽帧制作图集"
-  default_prompt: "使用 $phaser4-frame-animation 先生成可播放的动画灰盒预览，等待我确认后再编写视频生成提示词、接收视频并抽帧生成图集和网页预览。"
+  short_description: "先确认完整动作分组与灰盒节奏，再编写视频提示词并整理抽帧时序"
+  default_prompt: "使用 $phaser4-frame-animation，将帧动画任务委派给 gpt-6.1-sol、max 推理强度的子代理：按完整行为规划时间轴与灰盒，等待我确认后再编写视频提示词、整理视频节奏并抽帧制作，按计划验收阶段连接与播放边界。"
