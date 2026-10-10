@@ -258,12 +258,12 @@ Phaser 场景只提供 `slotId` 与自然中断点上下文并消费结构化结
 ## 初始化与隐私时序
 
 1. 启动时读取受控平台配置，检查平台、当前 Activity/ViewController、环境开关与插件配置；Web/小游戏直接 no-op。支持的原生平台服务启用且具备有效配置时，必须调用 MAX initialize，不以同意隐私、CMP 完成或 ATT 授权作为前置条件；不得把拒绝同意转换为禁用 MAX 初始化。
-2. 初始化前配置所锁定插件支持的隐私流程设置，并传递已经确定的真实 consent、do-not-sell、年龄/限制状态；未知状态不得伪造为同意。项目不在 initialize 调用前等待隐私弹窗结果。使用 MAX 集成的 CMP 流程时，由 SDK 初始化流程呈现并处理，初始化完成以 SDK 实际回调为准，不为了“无条件初始化”提前伪造成功；参考[官方隐私流程](https://support.applovin.com/en/max/android/overview/terms-and-privacy-policy-flow)。使用独立 CMP 时，结果通过所锁定插件支持的接口同步给 MAX，具体可用接口与更新语义在实施阶段核对，不自行初始化第三方网络 SDK。
-3. iOS 在产品允许的时机处理 ATT，并按实际授权状态配置 MAX；ATT 未决或拒绝不阻断 MAX initialize 调用或初始化重试。广告请求是否允许、是否可个性化由广告请求隐私门依据实际结果单独判定，不由初始化成功推断用户已授权；不阻塞游戏。
+2. 隐私弹窗固定使用 MAX 自带的 Terms and Privacy Policy Flow，由该流程集成 Google UMP 收集适用的同意状态。初始化前启用流程、配置有效的隐私政策 URL，可按产品配置服务条款 URL；随后直接调用 MAX initialize，不在项目代码中先等待同意。SDK 根据地区、已有状态及平台配置决定是否呈现弹窗，完成回调以 SDK 实际结果为准；拒绝同意不阻止初始化调用，也不得伪造初始化完成或同意结果。项目不新增 Phaser/Web 隐私弹窗、不独立调用 UMP 弹窗、不接入其他 CMP 流程。
+3. 配置通过官方 Cordova 插件及其所锁定原生 SDK 支持的入口落地。核对插件是否暴露对应 JavaScript API，不能套用 React Native/Flutter 的同名方法；当前官方 Cordova JavaScript 接口未提供该流程设置方法时，使用官方 SDK 支持的原生资源配置：Android 的 `res/raw/applovin_settings.json` 中配置 `consent_flow_settings`（`consent_flow_enabled=true`、`consent_flow_privacy_policy` 及可选条款 URL），iOS 的 `AppLovin-Settings.plist` 中配置 `ConsentFlowInfo`（`ConsentFlowEnabled=YES`、`ConsentFlowPrivacyPolicy` 及可选条款 URL）。通过受控 Capacitor 原生资源同步确保文件进入对应目标，不创建新的原生广告桥；Google UMP 依赖、地区弹窗选项及 iOS ATT/NSUserTrackingUsageDescription 按锁定 SDK 与[Android 官方流程](https://support.applovin.com/en/max/android/overview/terms-and-privacy-policy-flow)、[iOS 官方流程](https://support.applovin.com/en/max/ios/overview/terms-and-privacy-policy-flow)核实。若插件/SDK 不支持该方案，报告依赖阻断，不换成自建弹窗。iOS ATT 由 MAX 集成流程按官方配置统一处理，不再重复发起单独 ATT 请求；ATT 未决或拒绝不阻断 initialize 调用及其重试，实际广告请求依然使用真实隐私结果判断。
 4. iOS `Info.plist` 按当前 AppLovin SKAdNetwork 页面和已实际启用的每个 mediated network 生成/维护 `SKAdNetworkItems`，不能复制过期的固定清单。Android/iOS 的隐私 manifest、数据安全声明、商店隐私资料和目标地区限制同样由发布责任人核对。
 5. 初始化成功后立即通过每个启用的插页与激励视频广告位自己的服务入口投递静默预加载意图；实际 load 仍检查广告请求隐私门，未满足时保留意图，恢复后各广告位去重执行一次。初始化失败立即返回结构化错误；瞬时故障由独立任务自动退避，宿主/前台/网络条件未满足时暂停，隐私状态不阻断初始化重试，配置错误修正后显式重试，不在初始化回调里递归重试或阻塞 Phaser。
 
-Google AdMob 通过 MAX 提供需求时，EEA/英国等适用区域需使用 Google 认可且支持 IAB TCF 的 CMP，并确认 CMP 覆盖本合同中的实际网络集合。隐私状态按所锁定插件支持的接口如实传递；MAX 初始化调用不以同意结果作为前置，实际广告请求仍检查隐私门。儿童数据、年龄限制和地区义务不能由广告模块自行假设或绕过。
+Google AdMob 的同意收集统一使用 MAX 流程集成的 Google UMP，核实相应消息配置、IAB TCF 与实际聚合网络覆盖；外部控制台配置仍由责任人在授权范围内完成。隐私状态按所锁定插件支持的接口如实传递；MAX 初始化调用不以同意结果作为前置，实际广告请求仍检查隐私门。儿童数据、年龄限制和地区义务不能由广告模块自行假设或绕过。
 
 ## 全屏广告静默预加载与独立持续重试
 
@@ -402,6 +402,7 @@ n = consecutiveLoadFailures（本次失败递增后的值，n >= 1）
 - Web/小游戏所有入口均为 no-op，`isReady=false`，且不导入或触发原生 API。
 - 重复 `initialize`、同广告位重复 `preload`、重复 `tryShow` 和重复 listener 回调保持幂等；每广告位最多一个 in-flight load 和一个待执行加载重试 timer，服务不存在共享加载重试 timer。
 - 全屏 loaded 到达但实例就绪属性为 false 时不确认成功、不清零失败计数且继续退避；旧 phase 为 ready 但属性为 false 时禁止 show；phase 尚未同步但属性为 true 时按当前属性判断。重试执行前属性已为 true 时取消重试且不重复 load，成功只清理自身任务；实例缺失/销毁/旧代次/读取异常均不判成功，同广告位 showing 不被就绪查询覆盖。
+- 核验 MAX 自带隐私流程在初始化前启用且资源进入 Android/iOS 构建；按 SDK 流程回调同步真实隐私结果，已有状态时不由项目重复弹窗。初始化重试不重复注册流程监听，不新增独立 CMP/UMP 或 ATT 弹窗；流程未完成时不伪造成功或同意。
 - 隐私 pending、blocked、拒绝同意及 ATT 未决/拒绝时均调用 MAX initialize，临时初始化失败仍自动重试；SDK 的初始化完成回调到达前不得假装成功。初始化成功时隐私门阻断仅保留广告位预加载意图，不发起 load，隐私恢复只恢复广告请求、不重新初始化。
 - 初始化瞬时失败按 2/4/8/16/32/64 秒持续重试，配置/依赖错误修正前不自动请求，未知错误确认前不自动退避，运行门恢复不能绕过这些阻断；初始化与广告位任务、计数和 deadline 独立。
 - 初始化退避中重复 initialize/retryInitialize、重复生命周期或网络恢复事件最多复用一次请求；后台、离线、宿主门关闭暂停且保留 deadline，隐私未决或拒绝不暂停初始化重试，恢复不抢跑、不重置计数。成功取消 timer 并只投递一次全屏预加载意图，实际 load 继续检查广告请求隐私门，Banner 不创建；禁用、销毁、配置替换和旧/重复尝试回调不能重新启动旧任务。
