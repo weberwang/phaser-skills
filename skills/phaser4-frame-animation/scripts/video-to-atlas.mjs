@@ -70,6 +70,44 @@ function positiveInteger(value, field) {
   return number;
 }
 
+/** 校验区域坐标与尺寸为安全像素整数，避免浮点及超大数导致裁剪定位失真。 */
+function regionInteger(value, field, minimum) {
+  if ((typeof value !== "number" && typeof value !== "string") || (typeof value === "string" && value.trim() === "")) {
+    throw new VideoAtlasError(`${field} 必须是安全整数`);
+  }
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < minimum) {
+    throw new VideoAtlasError(`${field} 必须是大于等于 ${minimum} 的安全整数`);
+  }
+  return number;
+}
+
+/** 规范可选区域；仅校验整数与符号，画布边界留到首张真实解码帧后判断。 */
+function normalizeRegion(value) {
+  if (value === undefined) return null;
+  if (!isObject(value)) throw new VideoAtlasError("region 必须是包含 x、y、width、height 的对象");
+  const region = {};
+  for (const [field, minimum] of [["x", 0], ["y", 0], ["width", 1], ["height", 1]]) {
+    if (!Object.hasOwn(value, field)) throw new VideoAtlasError(`region.${field} 必须是安全整数`);
+    region[field] = regionInteger(value[field], `region.${field}`, minimum);
+  }
+  return Object.freeze(region);
+}
+
+/** 校验可选局部锚点为有限非负像素坐标，尺寸边界需等到真实解码后确认。 */
+function normalizeAnchor(value) {
+  if (value === undefined) return null;
+  if (!isObject(value)) throw new VideoAtlasError("anchor 必须是包含 x、y 的对象");
+  const anchor = {};
+  for (const field of ["x", "y"]) {
+    if (!Object.hasOwn(value, field) || typeof value[field] !== "number" || !Number.isFinite(value[field]) || value[field] < 0) {
+      throw new VideoAtlasError(`anchor.${field} 必须是非负有限数字`);
+    }
+    anchor[field] = value[field];
+  }
+  return Object.freeze(anchor);
+}
+
 /** 保证关键字可安全放入 JSON 与 Phaser 示例代码。 */
 function normalizeKey(value, field) {
   if (!nonEmptyString(value) || /[\r\n\u0000]/u.test(value)) throw new VideoAtlasError(`${field} 必须是非空单行字符串`);
@@ -156,11 +194,19 @@ export function normalizeVideoAtlasOptions(input = {}) {
   const heightValue = input.height ?? input["height"];
   const width = widthValue === undefined ? null : positiveInteger(widthValue, "width");
   const height = heightValue === undefined ? null : positiveInteger(heightValue, "height");
+  const region = normalizeRegion(input.region);
+  const anchor = normalizeAnchor(input.anchor);
   const fps = positiveNumber(input.fps ?? 12, "fps");
   const maxAtlasWidth = positiveInteger(input.maxAtlasWidth ?? input["max-width"] ?? 16384, "max-width");
   const maxAtlasHeight = positiveInteger(input.maxAtlasHeight ?? input["max-height"] ?? 16384, "max-height");
   const removeBackground = input.removeBackground ?? input.remove_background ?? input["remove-background"] ?? false;
   if (typeof removeBackground !== "boolean") throw new VideoAtlasError("remove-background 必须是布尔值");
+  const edgeProfile = input.edgeProfile ?? input.edge_profile ?? input["edge-profile"];
+  if (edgeProfile !== undefined && edgeProfile !== "hard-edge") throw new VideoAtlasError("edge-profile 目前仅支持 hard-edge");
+  const colorSeparationVerified = input.colorSeparationVerified ?? input.color_separation_verified ?? input["color-separation-verified"];
+  if (colorSeparationVerified !== undefined && typeof colorSeparationVerified !== "boolean") throw new VideoAtlasError("color-separation-verified 必须是布尔值");
+  if (removeBackground && edgeProfile !== "hard-edge") throw new VideoAtlasError("启用 remove-background 时必须显式指定 edge-profile=hard-edge");
+  if (removeBackground && colorSeparationVerified !== true) throw new VideoAtlasError("启用 remove-background 时必须显式确认 color-separation-verified=true");
   const loop = input.loop ?? true;
   if (typeof loop !== "boolean") throw new VideoAtlasError("loop 必须是布尔值");
 
@@ -180,6 +226,10 @@ export function normalizeVideoAtlasOptions(input = {}) {
     fps,
     width,
     height,
+    region,
+    anchor,
+    edgeProfile,
+    colorSeparationVerified: colorSeparationVerified ?? false,
     maxAtlasWidth,
     maxAtlasHeight,
     removeBackground,
@@ -241,7 +291,7 @@ async function invokeCommand(options, command, args, label) {
   return Buffer.isBuffer(stdout) ? stdout.toString("utf8") : String(stdout);
 }
 
-/** 解析 ffprobe 输出，并校验视频流尺寸、帧率和时长元数据。 */
+/** 解析 ffprobe 输出，按 codec_type 选择视频流并准确统计音轨是否存在。 */
 function parseVideoMetadata(rawText) {
   let parsed;
   try {
@@ -249,7 +299,9 @@ function parseVideoMetadata(rawText) {
   } catch (error) {
     throw new VideoAtlasError(`ffprobe 返回无效 JSON：${error.message}`);
   }
-  const stream = Array.isArray(parsed?.streams) ? parsed.streams[0] : null;
+  const streams = Array.isArray(parsed?.streams) ? parsed.streams : [];
+  const stream = streams.find((candidate) => candidate?.codec_type === "video") ?? null;
+  const hasAudio = streams.some((candidate) => candidate?.codec_type === "audio");
   if (!isObject(stream) || !Number.isInteger(stream.width) || !Number.isInteger(stream.height) || stream.width <= 0 || stream.height <= 0) {
     throw new VideoAtlasError("ffprobe 未返回有效视频流尺寸");
   }
@@ -259,7 +311,7 @@ function parseVideoMetadata(rawText) {
   const rotationValue = stream.side_data_list?.find((entry) => entry?.rotation !== undefined)?.rotation ?? stream.tags?.rotate;
   const rotation = rotationValue === undefined ? 0 : Number(rotationValue);
   const dimensions = Number.isFinite(rotation) ? rotatedDimensions(stream.width, stream.height, rotation) : { width: stream.width, height: stream.height };
-  return { width: stream.width, height: stream.height, displayWidth: dimensions.width, displayHeight: dimensions.height, duration, sourceFps, rotation: Number.isFinite(rotation) ? rotation : null };
+  return { width: stream.width, height: stream.height, displayWidth: dimensions.width, displayHeight: dimensions.height, duration, sourceFps, rotation: Number.isFinite(rotation) ? rotation : null, hasAudio };
 }
 
 /** 根据 ffprobe 旋转元数据预测 ffmpeg 自动旋转后的显示画布尺寸。 */
@@ -495,24 +547,48 @@ export function renderVideoAtlasPreview({ sheetUrl, sheetSha256, videoUrl, frame
 `;
 }
 
-/** 将图像帧安全写到本轮临时目录，复用本地纯色背景移除算法。 */
+/** 先按固定画布区域裁剪，再去背景与归一化，避免主体变化导致帧锚点漂移。 */
 async function processFrame(frameFile, index, temporaryDirectory, options, targetWidth, targetHeight) {
   const sourceBytes = await readFile(frameFile);
   let processPath = frameFile;
+  if (options.region) {
+    processPath = join(temporaryDirectory, `region-${String(index).padStart(8, "0")}.png`);
+    await sharp(frameFile).extract({
+      left: options.region.x,
+      top: options.region.y,
+      width: options.region.width,
+      height: options.region.height,
+    }).png().toFile(processPath);
+  }
   if (options.removeBackground) {
-    processPath = join(temporaryDirectory, `transparent-${String(index).padStart(8, "0")}.png`);
+    const transparentPath = join(temporaryDirectory, `transparent-${String(index).padStart(8, "0")}.png`);
     await removeBackgroundLocal({
-      sourceFile: frameFile,
-      outputFile: processPath,
+      sourceFile: processPath,
+      outputFile: transparentPath,
       backgroundColor: options.backgroundColor,
       tolerance: options.backgroundTolerance,
+      edgeProfile: options.edgeProfile,
+      colorSeparationVerified: options.colorSeparationVerified,
+      requireSolidBackground: true,
+      allowEmptyForeground: true,
     });
+    processPath = transparentPath;
   }
-  const outputBytes = await sharp(processPath)
-    .resize(targetWidth, targetHeight, { fit: "fill", kernel: "lanczos3" })
+  // 先读取 Sharp 实际缩放尺寸，再居中合成透明 cell，确保锚点变换使用的舍入与图像一致。
+  const resized = await sharp(processPath)
+    .resize(targetWidth, targetHeight, { fit: "inside", kernel: "lanczos3" })
     .png()
-    .toBuffer();
-  return { index, sourceTimestamp: Number((index / options.fps).toFixed(6)), sourceSha256: sha256Bytes(sourceBytes), image: outputBytes };
+    .toBuffer({ resolveWithObject: true });
+  const contentRect = {
+    x: Math.floor((targetWidth - resized.info.width) / 2),
+    y: Math.floor((targetHeight - resized.info.height) / 2),
+    width: resized.info.width,
+    height: resized.info.height,
+  };
+  const outputBytes = await sharp({
+    create: { width: targetWidth, height: targetHeight, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+  }).composite([{ input: resized.data, left: contentRect.x, top: contentRect.y }]).png().toBuffer();
+  return { index, sourceTimestamp: Number((index / options.fps).toFixed(6)), sourceSha256: sha256Bytes(sourceBytes), image: outputBytes, contentRect };
 }
 
 /** 将视频抽帧、可选去背景与尺寸处理后输出水平图集、JSON 报告和 HTML 预览。 */
@@ -522,13 +598,15 @@ export async function videoToAtlas(input = {}) {
 
   const videoSha256 = await sha256File(options.inputVideo);
   const probeArgs = [
-    "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,avg_frame_rate,r_frame_rate,duration:stream_tags=rotate:stream_side_data=rotation:format=duration",
+    "-v", "error", "-show_entries", "stream=codec_type,width,height,avg_frame_rate,r_frame_rate,duration:stream_tags=rotate:stream_side_data=rotation:format=duration",
     "-of", "json", options.inputVideo,
   ];
   const probeText = await invokeCommand(options, options.ffprobePath, probeArgs, "ffprobe 媒体探测");
   const metadata = parseVideoMetadata(probeText);
-  const estimatedCellWidth = options.width ?? (options.height === null ? metadata.displayWidth : Math.max(1, Math.round(metadata.displayWidth * options.height / metadata.displayHeight)));
-  const estimatedCellHeight = options.height ?? (options.width === null ? metadata.displayHeight : Math.max(1, Math.round(metadata.displayHeight * options.width / metadata.displayWidth)));
+  const estimatedSourceWidth = options.region?.width ?? metadata.displayWidth;
+  const estimatedSourceHeight = options.region?.height ?? metadata.displayHeight;
+  const estimatedCellWidth = options.width ?? (options.height === null ? estimatedSourceWidth : Math.max(1, Math.round(estimatedSourceWidth * options.height / estimatedSourceHeight)));
+  const estimatedCellHeight = options.height ?? (options.width === null ? estimatedSourceHeight : Math.max(1, Math.round(estimatedSourceHeight * options.width / estimatedSourceWidth)));
   if (estimatedCellWidth > options.maxAtlasWidth || estimatedCellHeight > options.maxAtlasHeight) throw new VideoAtlasError(`单帧尺寸 ${estimatedCellWidth}x${estimatedCellHeight} 超过最大图集尺寸 ${options.maxAtlasWidth}x${options.maxAtlasHeight}`);
   const estimatedFrameCount = Math.max(1, Math.ceil(metadata.duration * options.fps));
   if (estimatedFrameCount * estimatedCellWidth > options.maxAtlasWidth) {
@@ -539,7 +617,7 @@ export async function videoToAtlas(input = {}) {
   try {
     const framePattern = join(temporaryDirectory, "frame-%08d.png");
     const extractionArgs = [
-      "-v", "error", "-nostdin", "-i", options.inputVideo,
+      "-v", "error", "-nostdin", "-i", options.inputVideo, "-map", "0:v:0",
       "-vf", `fps=${formatDecimal(options.fps)}`,
       "-vsync", "0", "-start_number", "0", framePattern,
     ];
@@ -553,8 +631,17 @@ export async function videoToAtlas(input = {}) {
     }
     const sourceWidth = firstFrameMetadata.width;
     const sourceHeight = firstFrameMetadata.height;
-    const cellWidth = options.width ?? (options.height === null ? sourceWidth : Math.max(1, Math.round(sourceWidth * options.height / sourceHeight)));
-    const cellHeight = options.height ?? (options.width === null ? sourceHeight : Math.max(1, Math.round(sourceHeight * options.width / sourceWidth)));
+    if (options.region && (options.region.x + options.region.width > sourceWidth || options.region.y + options.region.height > sourceHeight)) {
+      throw new VideoAtlasError(`region (${options.region.x},${options.region.y},${options.region.width},${options.region.height}) 超出首张解码画布 ${sourceWidth}x${sourceHeight}`);
+    }
+    const regionWidth = options.region?.width ?? sourceWidth;
+    const regionHeight = options.region?.height ?? sourceHeight;
+    const sourceAnchor = options.anchor ?? { x: regionWidth / 2, y: regionHeight - 1 };
+    if (sourceAnchor.x > regionWidth || sourceAnchor.y > regionHeight) {
+      throw new VideoAtlasError(`anchor (${sourceAnchor.x},${sourceAnchor.y}) 超出区域 ${regionWidth}x${regionHeight}`);
+    }
+    const cellWidth = options.width ?? (options.height === null ? regionWidth : Math.max(1, Math.round(regionWidth * options.height / regionHeight)));
+    const cellHeight = options.height ?? (options.width === null ? regionHeight : Math.max(1, Math.round(regionHeight * options.width / regionWidth)));
     const sheetWidth = cellWidth * frameFiles.length;
     if (sheetWidth > options.maxAtlasWidth || cellHeight > options.maxAtlasHeight) {
       throw new VideoAtlasError(`水平图集尺寸 ${sheetWidth}x${cellHeight} 超过最大尺寸 ${options.maxAtlasWidth}x${options.maxAtlasHeight}`);
@@ -562,17 +649,37 @@ export async function videoToAtlas(input = {}) {
 
     const frames = [];
     const layers = [];
+    let contentRect = null;
+    let frameHasForeground = false;
     for (let index = 0; index < frameFiles.length; index += 1) {
       const frame = await processFrame(frameFiles[index], index, temporaryDirectory, options, cellWidth, cellHeight);
+      if (contentRect === null) contentRect = frame.contentRect;
+      else if (Object.keys(contentRect).some((key) => contentRect[key] !== frame.contentRect[key])) {
+        throw new VideoAtlasError("抽取帧的缩放内容矩形不一致，无法保持固定动画锚点");
+      }
+      const alpha = await sharp(frame.image).ensureAlpha().extractChannel(3).raw().toBuffer();
+      if (alpha.some((value) => value > 0)) frameHasForeground = true;
       frames.push({ index, source_timestamp: frame.sourceTimestamp, source_sha256: frame.sourceSha256, width: cellWidth, height: cellHeight });
       layers.push({ input: frame.image, left: index * cellWidth, top: 0 });
     }
+    if (!frameHasForeground) throw new VideoAtlasError("抽帧结果全部透明，拒绝生成空动画图集");
     const sheetBytes = await sharp({
       create: { width: sheetWidth, height: cellHeight, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
     }).composite(layers).png().toBuffer();
     const sheetHash = sha256Bytes(sheetBytes);
-    const targetAnchor = { x: Math.floor(cellWidth / 2), y: cellHeight - 1 };
-    const cell = { width: cellWidth, height: cellHeight, target_anchor: targetAnchor, layout: "horizontal", frame_count: frames.length };
+    const targetAnchor = {
+      x: contentRect.x + sourceAnchor.x * contentRect.width / regionWidth,
+      y: contentRect.y + sourceAnchor.y * contentRect.height / regionHeight,
+    };
+    const cell = {
+      width: cellWidth,
+      height: cellHeight,
+      source_anchor: sourceAnchor,
+      content_rect: contentRect,
+      target_anchor: targetAnchor,
+      layout: "horizontal",
+      frame_count: frames.length,
+    };
     const animation = { key: options.animationKey, texture_key: options.textureKey, frame_rate: options.fps, loop: options.loop };
     const phaser = createPhaserVideoAtlasContract(options, cell, frames.length);
     const previewHtml = renderVideoAtlasPreview({
@@ -596,13 +703,23 @@ export async function videoToAtlas(input = {}) {
         remove_background: options.removeBackground,
         width: metadata.width,
         height: metadata.height,
-        display_width: metadata.displayWidth,
-        display_height: metadata.displayHeight,
+        display_width: sourceWidth,
+        display_height: sourceHeight,
         rotation_degrees: metadata.rotation,
         source_fps: metadata.sourceFps,
         duration_seconds: metadata.duration,
+        has_audio: metadata.hasAudio,
+        ...(options.region ? { region: { ...options.region } } : {}),
+        ...(options.anchor ? { anchor: { ...options.anchor } } : {}),
       },
-      settings: { fps: options.fps, width: cellWidth, height: cellHeight, remove_background: options.removeBackground },
+      settings: {
+        fps: options.fps,
+        width: cellWidth,
+        height: cellHeight,
+        remove_background: options.removeBackground,
+        ...(options.region ? { region: { ...options.region } } : {}),
+        ...(options.anchor ? { anchor: { ...options.anchor } } : {}),
+      },
       cell,
       frames,
       animation,
@@ -656,7 +773,11 @@ export function videoAtlasHelp() {
   --fps <number>                抽帧与动画播放帧率，默认 12
   --width <pixels>              输出帧宽；单独指定时等比缩放
   --height <pixels>             输出帧高；单独指定时等比缩放
+  --region <x,y,width,height>   按解码画布左上角坐标裁剪区域
+  --anchor <x,y>                动画区域内的局部像素锚点，默认水平居中、底边向上 1 像素
   --remove-background           移除背景，默认色为 #00ff00
+  --edge-profile <hard-edge>    去背景前显式声明硬边纯色背景
+  --color-separation-verified  确认主体颜色与去背色已分离
   --background-color <#RRGGBB>  去背景纯色
   --background-tolerance <n>    RGB 容差，默认 24
   --max-width <pixels>          图集最大宽度，默认 16384
@@ -677,14 +798,15 @@ export function parseVideoAtlasArgs(argv = process.argv.slice(2)) {
   const options = {};
   const valueOptions = new Map([
     ["--input-video", "inputVideo"], ["--output-sheet", "outputSheet"], ["--output-report", "outputReport"], ["--output-preview", "outputPreview"],
-    ["--fps", "fps"], ["--width", "width"], ["--height", "height"], ["--background-color", "backgroundColor"], ["--background-tolerance", "backgroundTolerance"],
+    ["--fps", "fps"], ["--width", "width"], ["--height", "height"], ["--region", "region"], ["--anchor", "anchor"], ["--background-color", "backgroundColor"], ["--background-tolerance", "backgroundTolerance"],
     ["--max-width", "maxAtlasWidth"], ["--max-height", "maxAtlasHeight"], ["--animation-key", "animationKey"], ["--texture-key", "textureKey"], ["--runtime-url", "runtimeUrl"],
-    ["--ffmpeg", "ffmpegPath"], ["--ffprobe", "ffprobePath"],
+    ["--edge-profile", "edgeProfile"], ["--ffmpeg", "ffmpegPath"], ["--ffprobe", "ffprobePath"],
   ]);
   for (let index = 0; index < argv.length; index += 1) {
     const argument = String(argv[index]);
     if (argument === "--help" || argument === "-h") return { help: true };
     if (argument === "--remove-background") { options.removeBackground = true; continue; }
+    if (argument === "--color-separation-verified") { options.colorSeparationVerified = true; continue; }
     if (argument === "--no-loop") { options.loop = false; continue; }
     const separator = argument.indexOf("=");
     const name = separator >= 0 ? argument.slice(0, separator) : argument;
@@ -692,6 +814,27 @@ export function parseVideoAtlasArgs(argv = process.argv.slice(2)) {
     const value = separator >= 0 ? argument.slice(separator + 1) : argv[++index];
     if (value === undefined || String(value).startsWith("--")) throw new VideoAtlasError(`${name} 缺少值`);
     const key = valueOptions.get(name);
+    if (key === "region") {
+      // CLI 先拆成四个原始坐标字段，再由 API 共用的规范器统一检查整数与边界。
+      const coordinates = String(value).split(",");
+      if (coordinates.length !== 4 || coordinates.some((coordinate) => coordinate.trim() === "")) {
+        throw new VideoAtlasError("--region 必须按 x,y,width,height 提供四个像素整数");
+      }
+      options.region = { x: coordinates[0].trim(), y: coordinates[1].trim(), width: coordinates[2].trim(), height: coordinates[3].trim() };
+      continue;
+    }
+    if (key === "anchor") {
+      const coordinates = String(value).split(",");
+      if (coordinates.length !== 2 || coordinates.some((coordinate) => coordinate.trim() === "")) {
+        throw new VideoAtlasError("--anchor 必须按 x,y 提供两个像素坐标");
+      }
+      const anchor = { x: Number(coordinates[0]), y: Number(coordinates[1]) };
+      if (!Number.isFinite(anchor.x) || !Number.isFinite(anchor.y) || anchor.x < 0 || anchor.y < 0) {
+        throw new VideoAtlasError("--anchor 坐标必须是非负有限数字");
+      }
+      options.anchor = anchor;
+      continue;
+    }
     options[key] = ["fps", "width", "height", "backgroundTolerance", "maxAtlasWidth", "maxAtlasHeight"].includes(key) ? Number(value) : String(value);
   }
   return options;

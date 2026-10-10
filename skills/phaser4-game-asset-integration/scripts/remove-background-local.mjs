@@ -264,9 +264,9 @@ function hasTransparentPixels(pixels) {
 }
 
 /** 生成失败原因，供调用方在不抛出像素门禁失败时自动修复。 */
-function validationFailures({ reuseAlpha, removedPixels, foregroundPixels }) {
+function validationFailures({ reuseAlpha, removedPixels, foregroundPixels, allowEmptyForeground }) {
   const failures = [];
-  if (foregroundPixels === 0) failures.push("empty-foreground");
+  if (foregroundPixels === 0 && !allowEmptyForeground) failures.push("empty-foreground");
   if (!reuseAlpha && removedPixels === 0) failures.push("zero-deletion");
   return failures;
 }
@@ -276,9 +276,12 @@ function validationFailures({ reuseAlpha, removedPixels, foregroundPixels }) {
  *
  * 本函数只输出原始像素尺寸的 PNG；比例、裁切和 DPR 归一化交给现有的
  * visual-image-normalization 模块，避免去背景阶段偷偷改变主体边缘或构图。
+ * 帧动画调用方可显式允许单帧为空，但须另行验证整段至少包含一帧前景。
  */
 export async function removeBackgroundLocal(options = {}) {
   const paths = resolvePaths(options);
+  const allowEmptyForeground = options.allowEmptyForeground ?? false;
+  if (typeof allowEmptyForeground !== "boolean") throw new BackgroundRemovalError("allowEmptyForeground 必须是布尔值");
   const reuseAlpha = options.reuseExistingAlpha ?? options.reuse_existing_alpha ?? options.reuseAlpha ?? options.reuse_alpha ?? false;
   if (typeof reuseAlpha !== "boolean") throw new BackgroundRemovalError("reuse_existing_alpha 必须是布尔值");
   const requireSolidBackground = options.requireSolidBackground ?? options.require_solid_background ?? !reuseAlpha;
@@ -335,8 +338,9 @@ export async function removeBackgroundLocal(options = {}) {
   }
 
   const outputAlpha = countAlphaPixels(processed.pixels);
-  if (outputAlpha.foreground === 0) throw new BackgroundRemovalError("去背会清除全部主体；拒绝生成空透明图，请重新确认硬边背景色与容差");
-  const failures = validationFailures({ reuseAlpha, removedPixels: processed.removedPixels, foregroundPixels: outputAlpha.foreground });
+  // 空白终态属于动画时间轴，只有显式的逐帧调用才允许保留；普通资产仍拒绝误删主体。
+  if (outputAlpha.foreground === 0 && !allowEmptyForeground) throw new BackgroundRemovalError("去背会清除全部主体；拒绝生成空透明图，请重新确认硬边背景色与容差");
+  const failures = validationFailures({ reuseAlpha, removedPixels: processed.removedPixels, foregroundPixels: outputAlpha.foreground, allowEmptyForeground });
   const status = failures.length === 0 ? "PASS" : "FAIL";
   const outputBytes = encodePngRgba(source.width, source.height, processed.pixels);
   const previewDirectory = options.previewDirectory ?? options.preview_directory ?? `${paths.outputFile}.previews`;
@@ -345,7 +349,10 @@ export async function removeBackgroundLocal(options = {}) {
   await mkdir(dirname(paths.outputFile), { recursive: true });
   await writeFile(paths.outputFile, outputBytes);
 
-  const transparencyPreview = await writeTransparencyPreviews({ sourceFile: paths.outputFile, previewDirectory, candidateSha256, reservedPaths: [paths.sourceFile, paths.recordFile].filter(Boolean) });
+  // 合法空帧由整段动画预览呈现，单张主体检查页要求可见前景，不能拿空帧冒充普通资产。
+  const transparencyPreview = outputAlpha.foreground > 0
+    ? await writeTransparencyPreviews({ sourceFile: paths.outputFile, previewDirectory, candidateSha256, reservedPaths: [paths.sourceFile, paths.recordFile].filter(Boolean) })
+    : null;
   const completedAt = new Date().toISOString();
   const backgroundRemovalAttempt = reuseAlpha ? null : {
     operation: LOCAL_BACKGROUND_REMOVAL_OPERATION,
@@ -363,7 +370,10 @@ export async function removeBackgroundLocal(options = {}) {
       output_sha256: sha256Bytes(outputBytes),
       removed_pixels: processed.removedPixels,
       failures,
-      parameters: { tolerance, edge_profile: edgeProfile, color_separation_verified: colorSeparationVerified },
+      parameters: {
+        tolerance, edge_profile: edgeProfile, color_separation_verified: colorSeparationVerified,
+        ...(allowEmptyForeground ? { allow_empty_foreground: true } : {}),
+      },
       background_color: formatBackgroundColor(backgroundColor),
       tolerance,
       validation_status: status,
@@ -392,6 +402,7 @@ export async function removeBackgroundLocal(options = {}) {
     output_has_alpha: true,
     transparent_pixels: outputAlpha.transparent,
     foreground_pixels: outputAlpha.foreground,
+    allow_empty_foreground: allowEmptyForeground,
     removed_pixels: processed.removedPixels,
     ...(!reuseAlpha ? {
       background_color: formatBackgroundColor(backgroundColor),

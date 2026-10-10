@@ -285,6 +285,39 @@ test("全图清除会被拒绝，且不匹配纯色边界时不会生成失败�
   }
 });
 
+/** 帧动画可有合法空终态，但显式允许空帧也不能绕过纯色边界与硬边检查。 */
+test("调用方可显式允许空透明单帧且保留去背景边界约束", async () => {
+  const root = await mkdtemp(join(tmpdir(), "background-removal-empty-frame-"));
+  try {
+    const source = await writeImage(root, "empty-frame.png", solidImage(4, 4, [10, 20, 30, 255]));
+    const output = join(root, "empty-frame-alpha.png");
+    const record = await hardEdgeRemoval({
+      sourceFile: source, outputFile: output, backgroundColor: "#0a141e", tolerance: 0,
+      allowEmptyForeground: true,
+    });
+    assert.equal(record.status, "PASS");
+    assert.equal(record.foreground_pixels, 0);
+    assert.equal(record.transparent_pixels, 16);
+    assert.equal(record.allow_empty_foreground, true);
+    assert.equal(record.background_removal_attempt.evidence.parameters.allow_empty_foreground, true);
+    const image = decodePngRgba(await readFile(output));
+    assert(image.pixels.every((value) => value === 0));
+
+    await assert.rejects(hardEdgeRemoval({
+      sourceFile: source, outputFile: join(root, "bad-option.png"), backgroundColor: "#0a141e", tolerance: 0,
+      allowEmptyForeground: "true",
+    }), /allowEmptyForeground/u);
+    const mismatch = await writeImage(root, "mismatch.png", solidImage(4, 4, [200, 20, 30, 255]));
+    await assert.rejects(hardEdgeRemoval({
+      sourceFile: mismatch, outputFile: join(root, "mismatch-alpha.png"), backgroundColor: "#0a141e", tolerance: 0,
+      allowEmptyForeground: true,
+    }), /require_solid_background/u);
+    await assert.rejects(access(join(root, "mismatch-alpha.png")));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("已有透明像素可显式复用且不要求重新指定背景颜色", async () => {
   const root = await mkdtemp(join(tmpdir(), "background-removal-alpha-"));
   try {

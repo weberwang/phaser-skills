@@ -86,6 +86,25 @@ function validateArtifactBinding(artifact, label, errors) {
   if (!isSha256(artifact.sha256)) errors.push(label + ".sha256 必须是 sha256: 后接 64 位小写十六进制");
 }
 
+/** 裁剪区域使用显示画布上的整数像素，禁止缺项或静默修正边界。 */
+function validateRegion(region, label, errors) {
+  if (!isObject(region)) {
+    errors.push(label + " 必须是包含 x、y、width、height 的区域对象");
+    return false;
+  }
+  const valid = ["x", "y", "width", "height"].every((field) =>
+    Number.isSafeInteger(region[field]) && region[field] >= (field === "x" || field === "y" ? 0 : 1));
+  if (!valid) errors.push(label + " 的 x/y 必须是非负安全整数，width/height 必须是正安全整数");
+  return valid;
+}
+
+/** 局部锚点允许半像素，但不允许隐式字符串转换或无效坐标。 */
+function validateAnchor(anchor, label, errors) {
+  const valid = isObject(anchor) && ["x", "y"].every((field) => Number.isFinite(anchor[field]) && anchor[field] >= 0);
+  if (!valid) errors.push(label + " 必须包含非负有限数值 x/y");
+  return valid;
+}
+
 /** 校验报告参数的静态配置，确保抽帧设置在 manifest 中有唯一的期望值。 */
 function validateSettings(settings, label, errors) {
   if (!isObject(settings)) {
@@ -96,6 +115,91 @@ function validateSettings(settings, label, errors) {
   if (!Number.isInteger(settings.width) || settings.width <= 0) errors.push(label + ".settings.width 必须是正整数");
   if (!Number.isInteger(settings.height) || settings.height <= 0) errors.push(label + ".settings.height 必须是正整数");
   if (typeof settings.remove_background !== "boolean") errors.push(label + ".settings.remove_background 必须是布尔值");
+  if (settings.region !== undefined) validateRegion(settings.region, label + ".settings.region", errors);
+  if (settings.anchor !== undefined) {
+    const valid = validateAnchor(settings.anchor, label + ".settings.anchor", errors);
+    if (valid && isObject(settings.region) && (settings.anchor.x > settings.region.width || settings.anchor.y > settings.region.height)) {
+      errors.push(label + ".settings.anchor 必须位于源区域内");
+    }
+  }
+}
+
+/** 同源视频可产出多个动画，区域身份必须和清单及报告两处声明同时对应。 */
+function validateReportedRegion(report, settings, label, errors) {
+  const regions = [settings?.region, report.input?.region, report.settings?.region];
+  if (regions.every((region) => region === undefined)) return;
+  const [expected, inputRegion, reportedRegion] = regions;
+  const expectedValid = validateRegion(expected, label + " 对应的 frame_animation.settings.region", errors);
+  const inputValid = validateRegion(inputRegion, label + ".input.region", errors);
+  const reportedValid = validateRegion(reportedRegion, label + ".settings.region", errors);
+  const fields = ["x", "y", "width", "height"];
+  if (expectedValid && inputValid && fields.some((field) => expected[field] !== inputRegion[field])) {
+    errors.push(label + ".input.region 必须等于 frame_animation.settings.region");
+  }
+  if (expectedValid && reportedValid && fields.some((field) => expected[field] !== reportedRegion[field])) {
+    errors.push(label + ".settings.region 必须等于 frame_animation.settings.region");
+  }
+  const displayWidth = report.input?.display_width;
+  const displayHeight = report.input?.display_height;
+  if (!Number.isSafeInteger(displayWidth) || displayWidth <= 0 || !Number.isSafeInteger(displayHeight) || displayHeight <= 0) {
+    errors.push(label + ".input.display_width/display_height 必须是区域所属显示画布的正安全整数尺寸");
+  } else if (inputValid && (inputRegion.width > displayWidth - inputRegion.x || inputRegion.height > displayHeight - inputRegion.y)) {
+    // 用减法比较避免坐标与宽高相加溢出，也防止编码前尺寸掩盖旋转后的越界。
+    errors.push(label + ".input.region 必须完整位于实际显示画布内");
+  }
+}
+
+/** 校验局部锚点绑定及真实缩放、留白变换，防止 origin 落到无关空白边缘。 */
+function validateReportedAnchor(report, settings, label, errors) {
+  const anchors = [settings?.anchor, report.input?.anchor, report.settings?.anchor];
+  const explicit = anchors.some((anchor) => anchor !== undefined);
+  let expectedAnchorValid = false;
+  if (explicit) {
+    const labels = [" 对应的 frame_animation.settings.anchor", ".input.anchor", ".settings.anchor"];
+    const valid = anchors.map((anchor, index) => validateAnchor(anchor, label + labels[index], errors));
+    expectedAnchorValid = valid[0];
+    for (let index = 1; index < anchors.length; index += 1) {
+      if (valid[0] && valid[index] && (anchors[index].x !== anchors[0].x || anchors[index].y !== anchors[0].y)) {
+        errors.push(label + labels[index] + " 必须等于 frame_animation.settings.anchor");
+      }
+    }
+  }
+
+  const cell = report.cell;
+  // 整画布和分区都必须提供真实布局，缺少字段不能绕过缩放留白校验。
+  const sourceAnchor = cell?.source_anchor;
+  const contentRect = cell?.content_rect;
+  const sourceValid = validateAnchor(sourceAnchor, label + ".cell.source_anchor", errors);
+  const rectValid = validateRegion(contentRect, label + ".cell.content_rect", errors);
+  const sourceWidth = report.input?.region?.width ?? report.input?.display_width;
+  const sourceHeight = report.input?.region?.height ?? report.input?.display_height;
+  if (!Number.isSafeInteger(sourceWidth) || sourceWidth <= 0 || !Number.isSafeInteger(sourceHeight) || sourceHeight <= 0) {
+    errors.push(label + ".cell.source_anchor 缺少有效源区域或显示画布尺寸");
+    return;
+  }
+  if (sourceValid && (sourceAnchor.x > sourceWidth || sourceAnchor.y > sourceHeight)) {
+    errors.push(label + ".cell.source_anchor 必须位于源区域内");
+  }
+  if (sourceValid && expectedAnchorValid
+      && (sourceAnchor.x !== anchors[0].x || sourceAnchor.y !== anchors[0].y)) {
+    errors.push(label + ".cell.source_anchor 必须等于 frame_animation.settings.anchor");
+  }
+  if (!explicit && sourceValid && (sourceAnchor.x !== sourceWidth / 2 || sourceAnchor.y !== sourceHeight - 1)) {
+    errors.push(label + ".cell.source_anchor 必须等于默认底部中心锚点：源宽/2、源高-1");
+  }
+  if (!Number.isSafeInteger(cell?.width) || !Number.isSafeInteger(cell?.height) || cell.width <= 0 || cell.height <= 0) return;
+  if (rectValid && (contentRect.width > cell.width - contentRect.x || contentRect.height > cell.height - contentRect.y)) {
+    errors.push(label + ".cell.content_rect 必须完整位于输出 cell 内");
+  }
+  const target = cell.target_anchor;
+  if (sourceValid && rectValid && isObject(target) && Number.isFinite(target.x) && Number.isFinite(target.y)) {
+    // 使用报告记录的实际栅格尺寸，避免另行猜测缩放器的像素取整与留白量。
+    const expectedX = contentRect.x + sourceAnchor.x * contentRect.width / sourceWidth;
+    const expectedY = contentRect.y + sourceAnchor.y * contentRect.height / sourceHeight;
+    if (Math.abs(target.x - expectedX) > 1e-6 || Math.abs(target.y - expectedY) > 1e-6) {
+      errors.push(label + ".cell.target_anchor 必须等于局部锚点经缩放与留白后的变换结果");
+    }
+  }
 }
 
 /** 校验 accepted 资源的视频抽帧合同；不访问文件系统。 */
@@ -264,6 +368,7 @@ function validateQualityReport(report, sheetArtifact, sourceVideoArtifact, contr
   else if (typeof settings?.remove_background === "boolean" && input.remove_background !== settings.remove_background) {
     errors.push(label + ".input.remove_background 必须等于 settings.remove_background");
   }
+  validateReportedRegion(report, settings, label, errors);
 
   const frames = report.frames;
   if (!Array.isArray(frames) || frames.length === 0) {
@@ -299,6 +404,7 @@ function validateQualityReport(report, sheetArtifact, sourceVideoArtifact, contr
     }
   }
   if (cell?.layout !== "horizontal") errors.push(label + ".cell.layout 必须为 horizontal");
+  validateReportedAnchor(report, settings, label, errors);
 
   const reportedSheet = report.artifacts?.sheet;
   if (!isObject(reportedSheet) || !isSha256(reportedSheet.sha256)) errors.push(label + ".artifacts.sheet.sha256 缺失或格式无效");
