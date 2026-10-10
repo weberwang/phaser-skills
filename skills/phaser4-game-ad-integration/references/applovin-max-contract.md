@@ -250,6 +250,7 @@ Phaser 场景只提供 `slotId` 与自然中断点上下文并消费结构化结
 - 网络超时、网络服务暂不可用和明确的原生服务瞬时错误，由服务唯一的初始化恢复任务自动重试。独立保存初始化连续失败计数、单调时钟 deadline、timer 引用和 in-flight 标记；沿用加载重试的 2/4/8/16/32/64 秒公式及抖动规则，最高 64 秒、无次数上限，直到成功、服务禁用或销毁。失败回调只登记任务，不同步递归初始化。
 - `host`、`foreground` 或 `connectivity` 条件未满足时，不发起初始化请求；服务保留初始化意图并监听条件恢复。已存在退避时取消 timer 但保留失败计数与 deadline；条件变化本身不增加失败计数。全部条件满足且不存在配置/策略阻断或待诊断未知错误时，尚无失败 deadline 的待初始化请求执行一次；已有 deadline 的请求到期后执行一次，未到期则按剩余时间恢复 timer。重复恢复事件不得重复请求。
 - 缺失 SDK/adapter、无效配置、平台不支持或明确策略阻断不自动重试：取消初始化恢复任务并报告原因。修正受控配置或依赖、解除策略阻断后由调用方显式 `retryInitialize()`；未修正时返回原阻断；前台、网络、宿主或隐私恢复事件不能解除该阻断或自动发起初始化。初始化及其重试不受 privacy gate 约束：隐私未决、拒绝同意或 ATT 未授权都不暂停、不取消初始化任务；隐私结果只用于配置真实隐私标志与广告请求/展示策略。无法归类的错误先诊断，不凭自由文本默认无限重试，只有确认瞬时故障后才纳入自动退避。
+- MAX 隐私弹窗尚未结束时保持 `initializing` 和同一个 in-flight 请求；等待用户选择不是初始化失败，不增加失败计数、不创建重试 timer，也不因等待时长或重复点击再次 initialize。只有当前请求明确返回初始化错误时才按失败分类恢复；流程结束时记录真实同意或拒绝结果，二者都允许 SDK 继续完成初始化。
 - `retryInitialize()` 是同一恢复任务的手动入口：初始化进行中复用请求；已有自动退避时复用原 deadline，不取消退避抢跑、不重置计数；宿主/前台/网络门关闭时立即返回原因并保留待恢复意图；确定性问题修正后清除对应配置阻断及旧失败计数，受理一次新初始化。已成功时返回成功快照，不再次初始化。
 - timer 执行前先清空自身引用，校验服务仍启用、实例代次、当前初始化请求有效性、宿主/前台/网络门及非 in-flight 状态（不检查 privacy gate），最多投递一次请求。每次尝试在适配器内部关联唯一操作标识；重复、迟到或旧尝试回调不得覆盖当前状态、增加计数或重复启动预加载。重试复用 `instanceGeneration`，实例重建时先递增 generation 并失效旧请求和 timer。
 - 初始化成功立即清零初始化失败计数，取消 timer、清空 deadline 和恢复意图，再通过各广告位入口去重投递全部启用的插页/激励预加载意图；实际广告请求隐私门未满足时保留待加载意图，条件恢复后去重执行，不重新初始化 SDK；Banner 仍不创建、不预加载。服务禁用、销毁或配置替换时取消旧初始化恢复任务并失效旧操作；配置替换后的初始化由新配置入口重新登记。
@@ -258,7 +259,7 @@ Phaser 场景只提供 `slotId` 与自然中断点上下文并消费结构化结
 ## 初始化与隐私时序
 
 1. 启动时读取受控平台配置，检查平台、当前 Activity/ViewController、环境开关与插件配置；Web/小游戏直接 no-op。支持的原生平台服务启用且具备有效配置时，必须调用 MAX initialize，不以同意隐私、CMP 完成或 ATT 授权作为前置条件；不得把拒绝同意转换为禁用 MAX 初始化。
-2. 隐私弹窗固定使用 MAX 自带的 Terms and Privacy Policy Flow，由该流程集成 Google UMP 收集适用的同意状态。初始化前启用流程、配置有效的隐私政策 URL，可按产品配置服务条款 URL；随后直接调用 MAX initialize，不在项目代码中先等待同意。SDK 根据地区、已有状态及平台配置决定是否呈现弹窗，完成回调以 SDK 实际结果为准；拒绝同意不阻止初始化调用，也不得伪造初始化完成或同意结果。项目不新增 Phaser/Web 隐私弹窗、不独立调用 UMP 弹窗、不接入其他 CMP 流程。
+2. 隐私弹窗固定使用 MAX 自带的 Terms and Privacy Policy Flow，由该流程集成 Google UMP 收集适用的同意状态。初始化前启用流程、配置有效的隐私政策 URL，可按产品配置服务条款 URL；随后直接调用 MAX initialize，不在项目代码中先等待同意。用户侧时序固定为“MAX 内置隐私流程 → 流程结束（同意或拒绝）→ 继续完成初始化 → SDK 初始化完成回调”。技术上由 MAX initialize 调用启动内置弹窗，不是先调用一个独立弹窗 API 再二次 initialize；SDK 根据地区、已有状态及平台配置决定是否需要弹窗，无需弹窗时直接继续。流程结束后不以 consent=true 为继续初始化条件，拒绝也继续，以 SDK 实际完成回调确认成功，不得伪造初始化完成或同意结果。项目不新增 Phaser/Web 隐私弹窗、不独立调用 UMP 弹窗、不接入其他 CMP 流程。
 3. 配置通过官方 Cordova 插件及其所锁定原生 SDK 支持的入口落地。核对插件是否暴露对应 JavaScript API，不能套用 React Native/Flutter 的同名方法；当前官方 Cordova JavaScript 接口未提供该流程设置方法时，使用官方 SDK 支持的原生资源配置：Android 的 `res/raw/applovin_settings.json` 中配置 `consent_flow_settings`（`consent_flow_enabled=true`、`consent_flow_privacy_policy` 及可选条款 URL），iOS 的 `AppLovin-Settings.plist` 中配置 `ConsentFlowInfo`（`ConsentFlowEnabled=YES`、`ConsentFlowPrivacyPolicy` 及可选条款 URL）。通过受控 Capacitor 原生资源同步确保文件进入对应目标，不创建新的原生广告桥；Google UMP 依赖、地区弹窗选项及 iOS ATT/NSUserTrackingUsageDescription 按锁定 SDK 与[Android 官方流程](https://support.applovin.com/en/max/android/overview/terms-and-privacy-policy-flow)、[iOS 官方流程](https://support.applovin.com/en/max/ios/overview/terms-and-privacy-policy-flow)核实。若插件/SDK 不支持该方案，报告依赖阻断，不换成自建弹窗。iOS ATT 由 MAX 集成流程按官方配置统一处理，不再重复发起单独 ATT 请求；ATT 未决或拒绝不阻断 initialize 调用及其重试，实际广告请求依然使用真实隐私结果判断。
 4. iOS `Info.plist` 按当前 AppLovin SKAdNetwork 页面和已实际启用的每个 mediated network 生成/维护 `SKAdNetworkItems`，不能复制过期的固定清单。Android/iOS 的隐私 manifest、数据安全声明、商店隐私资料和目标地区限制同样由发布责任人核对。
 5. 初始化成功后立即通过每个启用的插页与激励视频广告位自己的服务入口投递静默预加载意图；实际 load 仍检查广告请求隐私门，未满足时保留意图，恢复后各广告位去重执行一次。初始化失败立即返回结构化错误；瞬时故障由独立任务自动退避，宿主/前台/网络条件未满足时暂停，隐私状态不阻断初始化重试，配置错误修正后显式重试，不在初始化回调里递归重试或阻塞 Phaser。
@@ -402,6 +403,7 @@ n = consecutiveLoadFailures（本次失败递增后的值，n >= 1）
 - Web/小游戏所有入口均为 no-op，`isReady=false`，且不导入或触发原生 API。
 - 重复 `initialize`、同广告位重复 `preload`、重复 `tryShow` 和重复 listener 回调保持幂等；每广告位最多一个 in-flight load 和一个待执行加载重试 timer，服务不存在共享加载重试 timer。
 - 全屏 loaded 到达但实例就绪属性为 false 时不确认成功、不清零失败计数且继续退避；旧 phase 为 ready 但属性为 false 时禁止 show；phase 尚未同步但属性为 true 时按当前属性判断。重试执行前属性已为 true 时取消重试且不重复 load，成功只清理自身任务；实例缺失/销毁/旧代次/读取异常均不判成功，同广告位 showing 不被就绪查询覆盖。
+- 分别覆盖 MAX 弹窗同意与拒绝：两者均继续初始化并由 SDK 回调确认；弹窗未结束时保持 initializing，重复 initialize/retryInitialize 或广告点击不重复弹窗、不计为失败、不启动重试。无需弹窗时直接继续，完成回调仍是唯一成功确认。
 - 核验 MAX 自带隐私流程在初始化前启用且资源进入 Android/iOS 构建；按 SDK 流程回调同步真实隐私结果，已有状态时不由项目重复弹窗。初始化重试不重复注册流程监听，不新增独立 CMP/UMP 或 ATT 弹窗；流程未完成时不伪造成功或同意。
 - 隐私 pending、blocked、拒绝同意及 ATT 未决/拒绝时均调用 MAX initialize，临时初始化失败仍自动重试；SDK 的初始化完成回调到达前不得假装成功。初始化成功时隐私门阻断仅保留广告位预加载意图，不发起 load，隐私恢复只恢复广告请求、不重新初始化。
 - 初始化瞬时失败按 2/4/8/16/32/64 秒持续重试，配置/依赖错误修正前不自动请求，未知错误确认前不自动退避，运行门恢复不能绕过这些阻断；初始化与广告位任务、计数和 deadline 独立。
