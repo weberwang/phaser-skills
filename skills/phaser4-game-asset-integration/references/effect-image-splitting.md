@@ -16,6 +16,8 @@
 
 默认 `component_inventory.delivery_mode=individual`，共享一张横向组图会被拒绝。生成式位图统一要求 `delivery_mode=individual` 且 `atlas_allowed=false`，不能使用图集。只有其他生产方法，才可在显式声明 `delivery_mode=atlas`、`atlas_allowed=true` 后使用图集，并为每个部件×状态填写唯一 `atlas_slice`（图集资产 ID、切片 ID、`atlas_size.width/height`、x/y/width/height）；x/y 必须不小于 0，切片右/下边界不得越过 `atlas_size`，V5 还要与正式 atlas 资产真实尺寸一致。没有切片元数据的组图不具备合同效力。
 
+图片及其局部与文字使用相同的[程序还原资格与位图回退](asset-production-routes.md#程序还原资格与位图回退)：按功能语义、独立状态与可观察视觉边界拆分，程序标签须证明当前 renderer 能完整实现要求保留的视觉事实。无法还原的图形、渐变、纹理、光影或其它效果拆为独立位图区域，不以程序标签省略；不能可靠分离的主体与效果保留为完整原子部件。交互或动态数据仍归程序区域。文字的固定/动态分流按[文字路线判定](../../phaser4-game-ui-layout/references/layout-contract.md#文字路线判定)处理。标注图中的“程序绘制或动态逻辑”只说明执行分类，不证明视觉来源已具备程序还原资格。
+
 ## 生产
 
 1. 用内容哈希、来源版本和框选编号形成稳定拆分 ID；先查询机器清单避免重复生产。

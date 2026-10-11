@@ -60,6 +60,8 @@ V2 布局必须后置于拆解确认：阶段 A 先由冻结原图、区域和�
 
 拆解提案固定按“冻结视觉事实 → 选择视觉来源路线 → 独立验证场景装配”执行。`visual_route_analysis` 只决定图片资产或 Phaser 原生路线；`assembly_analysis` 只声明原子 Scene 装配、禁止整屏捕获并明确允许独立图片资产。路线判定先把文本委托给 `text_decomposition`，其余区域依据冻结图中的可观察外观事实和 Phaser 实际渲染能力决定。静态纯色矩形、基础几何、规则边框、简单规则渐变、遮罩和进度填充，在 Phaser 能确定性表达冻结外观时可选择 `phaser-native`；特色插画、复杂纹饰、不规则轮廓、复杂材质及明显具有美术特征的装饰继续选择独立图片路线。元素语义名称及 `dynamic_requirements.is_dynamic` 单独都不能决定路线；非文本原生资格须有可审计事实和完整 `render_contract`。任何生成步骤都不得从“不能整屏贴图”推导“所有视觉必须程序绘制”。若同一按钮等组件含多种视觉来源，分别建立区域：例如原生框体、独立图标图片和 Phaser.Text 文字各自登记 owner、生产合同及布局/资源节点绑定；交互行为用明确组件/节点引用装配，不以 `composite` 汇总。禁止单一 `composite` region 或 `composite_parts` 闭环生产/验收；检测到职责或来源混合时必须回 V1/PROPOSAL 按可观察边界重拆。如果全部 coverage 都选择 `phaser-native`，必须附带绑定当前 target SHA、完整 region 集合和独立 JSON 工件 SHA 的 `all_native_justification`；文件门会复算 SHA 并逐区核对资格事实，否则停在 V1/PROPOSAL。
 
+拆解中的程序标签先满足[程序还原资格与位图回退](asset-production-routes.md#程序还原资格与位图回退)，只有当前 renderer 能完整实现要求保留的外观与状态时才成立；文字渐变等效果不能完整还原时，按[文字路线判定](../../phaser4-game-ui-layout/references/layout-contract.md#文字路线判定)将固定外观拆为位图，不能用普通文本近似通过。
+
 原生路线在 `native_suitability.render_contract` 冻结 `renderer`、`dimensions.width/height`、`colors`、`line_width`、`corner_radius`、`gradient`、`opacity`、`applicable_states` 和 `unsupported_features`。颜色以及渐变 stop 颜色使用 `#RRGGBB`；`gradient.type=none` 的 `stops` 是空数组，线性渐变必须冻结 0–360 的 `angle` 和有序 `stops`。合同按参考测量记录精确参数。`runtime_implementation.render_contract` 必须逐值镜像原生资格合同，并进入已确认区域定义的身份哈希；参数变更会使拆解确认失效，不能在行为装配时静默修改。`unsupported_features` 中任何尚需保真的特征都会阻断原生路线，不得以近似替代后放行。特色美术选择原生路线还必须提供等价性证据，并绑定预先声明的容差或精确例外。冻结的 `image_generation_required=true` 不得自动替换为原生路线；方法变更只能走明确接受的 Change Request。
 
 固定视觉区域区分 `bitmap-decomposition` 与 `independent-production`；实施顺序是 ownership/实现分类 → 状态分析 → 唯一原子 component/placements 拆解 → 生成左原图+右用户说明 PNG 与 proposal 技术 JSON → 展示用户 → 等待拆解图确认 → 运行完整文件校验 → 生产。拆位图必须先用 `node scripts/generate_effect_image_annotation.mjs ... --output ...png --proposal ...json` 提交绑定目标 SHA/region ID/区域定义 SHA 的提案，并在 confirmation 记录 proposal/decision 文件及 SHA、PNG MIME/版本/SHA、决定 ID、实际消息身份字段后等待用户确认。PNG 用户图示只保留稳定编号、视觉框、中文摘要和“新建图片资产 / 复用现有图片 / 程序绘制或动态逻辑”标签；坐标尺寸、状态、组件/placement、生产合同、atomic requirements 和资源映射完整保存于 proposal 技术 JSON。开始裁切、抠图、分层、AI 分割/补全或派生位图前，必须运行 `node scripts/validate_visual_manifest.mjs docs/visual-assets.json --stage V2 --check-files --project-root .`，结构和文件证据均通过才可执行；PNG 必须由共享无依赖确定性栅格渲染器产出，文件检查会校验 PNG 魔数/MIME/尺寸/用户说明元数据并逐字节重建比较，同时用 proposal 与区域定义 SHA 复核隐藏技术合同；正式流程不生成或接受 SVG 标注。`reuse-existing` 的 `source_manifest` 必须是不可变 `asset-reuse-snapshot/1.0`，并用 `source_file`、`source_manifest_sha256`、`source_sha256`、`compatibility_evidence_sha256` 完成精确身份复核；bitmap 路线资产使用 `ai-composite-raster`。只有 V5 完成后声明 `v5-complete`，case 必须全部满足当前验证模式，并在 `exact` 或明确全覆盖需求时逐一覆盖冻结目标的每个 scene/state 组合。其余条件确认按既有规则触发，`AUTO` 绑定判定证据；owner_type 属于合同/F2 专业事实，不能由验证器从像素推断。
@@ -88,7 +90,7 @@ V2 阶段 B 的唯一生成入口还必须在 PNG 输出目录同步写入 `layo
 
 V3 只完成正式资源生产和资源级验收，尚不要求正式 Scene 功能代码或组合运行轨迹。验收通过后进入独立的 V4 草图阶段，由[页面还原草图作业](visual-alignment-authoring.md)读取正式资源和 V2 节点初排、调整并确认布局。离线 `review.html` 与 V2 目标节点保持只读。
 
-1. 按冻结场景顺序和 V2 清单生产运行时文件；当前 V3 范围内全部待生成图片统一按下述批量规则提交，不逐张创建或串行等待生成任务。不静默覆盖已验收版本；同步登记来源、生成记录和适用的版权/许可信息。
+1. 按冻结场景顺序和 V2 清单生产运行时文件；当前 V3 范围内相互独立的静态 component × required state 待生成图片统一按下述批量规则提交，不逐张创建或串行等待生成任务。有父图依赖的图片帧动画遵守自身制作与逐张确认合同。不静默覆盖已验收版本；同步登记来源、生成记录和适用的版权/许可信息。
 2. 每项图片必须记录 CSS 逻辑显示范围、最大 intended scale、生产分辨率、source/runtime 文件尺寸，以及在代表性视口中是否会被放大；分辨率不足时阻断 V3，简单插值放大不得作为清晰度修复。生成式图片仍使用固定 1:1 生产基线，不能用运行时动态 DPR 或其上限 2 替代；历史 1.5/2 倍生产证据须重生成或标记 `stale`。
 3. 逐资源验证透明边缘、尺寸、采样、锚点、九宫格、帧序、缩放、压缩、Phaser 加载、目标视口和预算；F2 还要分别验证满幅背景资源能力与响应式绑定。
 4. `accepted` 资源必须有可编辑来源或生成记录、正式输出文件和资源级加载/视觉证据；涉及外部素材时保留版权/许可记录。无 `source_file/source_files` 时，生成记录必须带公共 record ID、生成器/版本、时间、可执行命令或配方、输入来源和参数；AI 路线在此基础上保留专用提示词、模型、种子、参考输入和后处理字段。正式 Scene 消费与玩法运行轨迹在 V5 验证。启用 `--check-files` 时所有声明文件必须存在。
@@ -102,7 +104,9 @@ V3 以文件、性能、加载、响应式、`production_contract_audit` 和一�
 
 ### 图片批量生成
 
-开始生成前，从当前已完成 V2 确认的生产范围收齐全部待生成图片，按唯一 component × required state 去重，形成一个批量生成任务。每项携带资源身份、完整提示词、实际参考输入、尺寸/背景合同和独立输出路径；共享 placements 复用同一项。复用资源、程序实现和尚未满足 V2 前置的显示层待办不计入本批。
+本节适用于相互独立的静态 component × required state 图片。存在父图依赖的图片帧动画按[帧动画合同](../../phaser4-frame-animation/SKILL.md)及[图片递归补帧规则](../../phaser4-frame-animation/references/image-inbetween.md)逐张确认后推进；只有已满足父图与确认前置且相互独立的区间可按动画合同并行，不能套用本节跳过确认。
+
+开始生成前，从当前已完成 V2 确认的生产范围收齐上述静态待生成图片，按唯一 component × required state 去重，形成一个批量生成任务。每项携带资源身份、完整提示词、实际参考输入、尺寸/背景合同和独立输出路径；共享 placements 复用同一项。复用资源、程序实现和尚未满足 V2 前置的显示层待办不计入本批。
 
 一次提交整批任务，不采用“生成一张 → 等待完成或验收 → 再提交下一张”的调度。工具支持批量请求时一次传入全部条目；只支持单图调用时，在同一批任务内一次编排所有条目并按工具允许的并发执行，不能退回逐图工作项。工具的容量限制只影响批内执行，不改变完整批次范围。
 

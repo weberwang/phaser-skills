@@ -100,6 +100,14 @@ Camera 合同必须说明逻辑 viewport 如何映射到物理 backing，zoom �
 
 效果图还原的可见文字由场景合同中的 `text_decomposition` 独立管理：有文本时使用 `applicability=has-text` 并逐项登记稳定 `text_node_id`、`region_id`、`layout_node_id`、文案来源、语义角色、动态/本地化标记、目标 bounds 和完整 typography facts；确实没有文本时使用 `not-applicable` 并填写 reason。V3 必须为每个文本节点选择 `phaser-text`、`bitmap-text`、`image-text` 或 `hybrid`，说明路线理由、所有权和带资源 SHA-256 的依赖。动态或本地化文字不能烘焙为 `image-text`；图片字标仍要保留可访问语义。原字体未知时保留 `observable_facts`，不能猜填 family，并明确替代字体或位图方案。V5 逐节点记录实际 renderer、字体加载与 fallback、actual/glyph bounds、baseline、测试 ID 和证据，并把 target/candidate 差异绑定预声明 tolerance 或精确例外。
 
+### 文字路线判定
+
+选择 `phaser-text` 的前提是当前字体和文字 renderer 能完整实现冻结的字形、排版、填色/渐变、描边、阴影、发光及其它要求保留的效果，并说明可核验实现依据；能够显示相同文案不足以成立。不能把非文本区域的“简单规则渐变可实现”直接套到文字，也不能删去效果、猜用默认字体或提高容差使该路线通过。视觉来源与拆解标签遵循[程序还原资格与位图回退](../../phaser4-game-asset-integration/references/asset-production-routes.md#程序还原资格与位图回退)。
+
+- 固定文字的字形与效果能整体保留时，无法用程序完整还原的部分选择 `image-text` 或独立位图资源；效果可可靠分离时，可用 `hybrid`，分别登记可完整实现的程序文字与位图效果。无法分离时保留整段固定字图，并保留可访问语义。
+- 动态数值或本地化文字禁止烘焙为固定 `image-text`。可使用满足字形覆盖、字距、换行及效果要求的 `bitmap-text`，或确实能完整还原的混合方案；位图字形/效果依赖按图片合同登记，程序负责更新与排版，不把图片外观声明为纯程序绘制。
+- 位图字体或混合方案也不能完整表达要求时，报告当前能力缺口并修订方案；不能仅因文案需要动态变化就改用缺少渐变或其它效果的普通文本。
+
 文本字号必须区分参考图物理像素与 Phaser 逻辑坐标：同时冻结 `reference_pixel_bounds`、逻辑 `target_bounds`、`font_size_unit=logical-px`、参考 DPR、glyph bounds 和 baseline。参考图中量到的 48px 不是可以直接写入 Phaser 的 `fontSize: 48px`；最终字号需结合逻辑 viewport、DPR、字体 ascent/descent、字距和实际 glyph bounds 验证。文字框尺寸通过布局节点统一计算，字形测量只作为运行时证据，不能用整体区域 bounds 掩盖字体 fallback、基线或断行偏差。
 
 ## 不变量与证据

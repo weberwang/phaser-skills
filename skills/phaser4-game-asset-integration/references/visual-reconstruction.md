@@ -30,6 +30,8 @@ V2 布局标注在拆解确认之后串行产出：阶段 A 先生成按人工�
 
 ### 来源路线、渲染合同与行为装配
 
+拆解中的程序元素须满足[程序还原资格与位图回退](asset-production-routes.md#程序还原资格与位图回退)，不能仅凭元素名称、可交互或能显示相同文案就选择程序路线。文字的渐变及其它效果无法完整复现时，按[文字路线判定](../../phaser4-game-ui-layout/references/layout-contract.md#文字路线判定)拆为位图或合规混合方案，不删减冻结视觉事实。
+
 `visual_route_analysis` 必须依据冻结图中可观察的外观事实，以及当前 Phaser 原生能力能否精确表达这些事实。按钮、面板等语义名称不能决定图片或原生路线；静态/动态属性也不能单独作为原生资格。文本、纯色矩形、基础几何、规则边框、简单规则渐变、遮罩和进度填充，在 Phaser 可确定性表达时可以走原生路线。特色插画、复杂纹饰、不规则轮廓、复杂材质和明显具有美术特征的装饰继续使用独立图片路线。特色视觉拟走原生路线时，必须另有等价性证据并绑定预先声明的容差或精确例外。
 
 每个 `phaser-native` 区域必须冻结 `native_suitability.render_contract`：`renderer`、逻辑像素 `dimensions.width/height`、`colors`、`line_width`、`corner_radius`、`gradient`、`opacity`、`applicable_states` 和 `unsupported_features`。颜色和渐变 stop 的 `color` 均为 `#RRGGBB`；无渐变写 `gradient.type=none` 且 `stops=[]`；线性渐变须冻结 0–360 的 `angle` 及按绘制顺序排列的 stops。参数按冻结参考精确登记。`runtime_implementation.render_contract` 必须镜像原生资格合同并纳入区域定义身份哈希；修改参数会使已有拆解确认失效，不得在行为装配时悄悄更改。Phaser 原生能力不能确定性表达的视觉特征列入 `unsupported_features` 并阻断该路线，禁止以近似绘制代替。
