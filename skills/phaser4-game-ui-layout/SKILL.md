@@ -40,7 +40,9 @@ UI 设计与实现优先用符合全局视觉基线且含义清晰、熟悉的�
 5. 按 [证据矩阵](references/evidence-matrix.md) 生成 `orientationPolicy.allowed` 对应的代表性视口、关键状态和窄/宽尺寸证据；只支持单一方向时不验证另一方向，但仍覆盖同方向尺寸、DPR 和同页连续 resize。关键 UI/HUD 记录稳定 element/reference ID、双轴关系、目标/运行测量、实际测试 ID/状态、视觉证据和项目定义容差。V5 还必须记录 CSS/backing 尺寸、raw/effective DPR、Camera、输入命中、同页 resize 和独立 DISPLAY_LAYER 轨迹。`exact` 或明确的全覆盖需求才扩展到完整矩阵和严格 delta，方向轴仅覆盖项目支持方向。
 6. 按 [工作流门禁](references/workflow-gates.md) 接入 V0–V5、F0–F4 和 G0–G3；只有布局结构、父子归属或参照关系真实变化才退回 V1，普通位置/尺寸调整更新计划并重验受影响区域，F3 只接受绑定当前候选的工程证据。
 
-V4 与 V5 必须共用 `scripts/page-sketch-layout.mjs` 的纯布局结果和 `scripts/page-sketch-phaser.mjs` 的 Phaser 渲染适配器；删除 DOM/CSS 正式组合渲染路径。V2 锚点先由布局函数解析，资源 origin 独立作用于 Phaser 对象；全局目标 bounds 先计入祖先偏移，再换算父级局部坐标，父偏移只传递一次。V5 模板消费同一次 `loadPageSketchSources` 返回的资源集合，并透传其中从 V3 manifest 解析的 `lockedNodeIds`，确保未声明自身 background 字段的背景节点也保持锁定。图片 fit 和真实 Phaser 文字字段按适配器参考执行；不支持的呈现属性、资源/字体未就绪、异步 runtime-program 或渲染异常必须令健康检查失败并阻断确认。Scene 创建、唤醒和 resize 调用同一幂等入口；发布画面不含参考底图、编辑框或编辑输入。草图 SHA 绑定身份，V5 仍需实际运行就绪及画面对照证据。
+V4 与 V5 必须共用 `scripts/page-sketch-layout.mjs` 的纯布局结果和 `scripts/page-sketch-phaser.mjs` 的 Phaser 渲染适配器；删除 DOM/CSS 正式组合渲染路径。V2 锚点先由布局函数解析，资源 origin 独立作用于 Phaser 对象；全局目标 bounds 先计入祖先偏移，再换算父级局部坐标，父偏移只传递一次。V5 模板消费同一次 `loadPageSketchSources` 返回的资源集合，并透传其中从 V3 manifest 解析的 `backgroundNodeIds`，确保未声明自身 background 字段的背景节点也保持一致的 cover 几何并应用草图偏移。图片 fit 和真实 Phaser 文字字段按适配器参考执行；不支持的呈现属性、资源/字体未就绪、异步 runtime-program 或渲染异常必须令健康检查失败并阻断确认。Scene 创建、唤醒和 resize 调用同一幂等入口；发布画面不含参考底图、编辑框或编辑输入。草图 SHA 绑定身份，V5 仍需实际运行就绪及画面对照证据。
+
+页面还原还必须共用 `scripts/page-sketch-game-config.mjs` 的设计画布配置与尺寸入口，V5 宿主使用 `createFormalPageSketchGameConfig`。竖屏以 1080×1920、横屏以 1920×1080 为基准，设计主轴保持固定，另一轴根据设备比例展开或裁切；设备 CSS 像素只决定显示尺寸。全部节点含背景和透明容器可选择与拖动，右栏展示选中节点实时属性；保存确认期间继续冻结编辑。
 
 ## effect-image 场景绑定
 

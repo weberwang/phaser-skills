@@ -1,10 +1,24 @@
 import { createPageSketchRenderer } from "../scripts/page-sketch-phaser.mjs";
 import { hashPageSketchContent, validatePageSketchDocument } from "../scripts/page-sketch-contract.mjs";
+import { createPageSketchGameConfig, setPageSketchGameViewport } from "../scripts/page-sketch-game-config.mjs";
+
+export { setPageSketchGameViewport } from "../scripts/page-sketch-game-config.mjs";
+
+/** 正式游戏使用与 V4 同一画布配置；viewport 是宿主 CSS 尺寸，渲染尺寸由设计空间统一计算。 */
+export function createFormalPageSketchGameConfig(Phaser, { parent, viewport, ...input }) {
+  const scene = createFormalPageSketchScene(Phaser, input);
+  return createPageSketchGameConfig(Phaser, { parent, viewport, scene,
+    callbacks: {
+      /** 引擎启动后应用相同 CSS/设计映射；后续宿主 resize 继续调用共享尺寸入口。 */
+      postBoot(game) { setPageSketchGameViewport(game, viewport); },
+    },
+  });
+}
 
 /**
  * 为 V5 生成正式 Scene 类：资源 URL 必须来自已校验草图身份的 Blob，布局与显示对象统一交给共享渲染适配器。
  * @param {object} Phaser Phaser 命名空间。
- * @param {{sketch: object, sources: {assets: Map<string, string>, runtimePrograms?: Map<string, Function>, lockedNodeIds?: string[], errors?: string[], confirmationError?: string|null}, fonts?: object, sceneKey?: string}} input 草图与 loadPageSketchSources 返回的同一身份资源集合。
+ * @param {{sketch: object, sources: {assets: Map<string, string>, runtimePrograms?: Map<string, Function>, backgroundNodeIds?: string[], errors?: string[], confirmationError?: string|null}, fonts?: object, sceneKey?: string}} input 草图与 loadPageSketchSources 返回的同一身份资源集合。
  * @returns {typeof Phaser.Scene} 可直接交给 Phaser.GameConfig.scene 的 Scene 子类。
  */
 export function createFormalPageSketchScene(Phaser, input) {
@@ -12,10 +26,10 @@ export function createFormalPageSketchScene(Phaser, input) {
   if (typeof Phaser?.Scene !== "function") throw new TypeError("缺少 Phaser.Scene 构造器");
   if (!sourceSketch || typeof sourceSketch !== "object") throw new TypeError("缺少已确认的 page-sketch 数据");
   if (!sources || typeof sources !== "object") throw new TypeError("必须传入 loadPageSketchSources 返回的身份资源集合");
-  const { assets, runtimePrograms = new Map(), lockedNodeIds = [] } = sources;
+  const { assets, runtimePrograms = new Map(), backgroundNodeIds = [] } = sources;
   if (!(assets instanceof Map)) throw new TypeError("assets 必须是 asset_id 到 SHA 校验 Blob URL 的 Map");
   if (!(runtimePrograms instanceof Map)) throw new TypeError("runtimePrograms 必须是节点 ID 到 Phaser 挂载函数的 Map");
-  if (!Array.isArray(lockedNodeIds)) throw new TypeError("lockedNodeIds 必须来自 loadPageSketchSources 的节点数组");
+  if (!Array.isArray(backgroundNodeIds)) throw new TypeError("backgroundNodeIds 必须来自 loadPageSketchSources 的节点数组");
   if (Array.isArray(sources.errors) && sources.errors.length > 0) throw new Error(sources.errors.join("；"));
   if (sources.confirmationError) throw new Error(sources.confirmationError);
 
@@ -126,7 +140,7 @@ export function createFormalPageSketchScene(Phaser, input) {
           sketch: validatedSketch,
           assets: textureAssets,
           runtimePrograms,
-          lockedNodeIds,
+          backgroundNodeIds,
           fonts,
         });
         if (runToken !== this.pageSketchRunToken) {

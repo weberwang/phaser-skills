@@ -144,6 +144,8 @@ class FakeText extends FakeDisplayObject {
 
   /** 应用固定宽高语义并刷新文字实际尺寸。 */
   setFixedSize(width, height) { this.fixedWidth = width; this.fixedHeight = height; this.measure(); return this; }
+  /** 记录纹理采样精度，不改变文字逻辑测量与布局大小。 */
+  setResolution(value) { this.resolution = value; return this; }
   /** 应用换行宽度和高级换行标记。 */
   setWordWrapWidth(width, advanced) { this.wrapWidth = width; this.wordWrapAdvanced = advanced; this.measure(); return this; }
   /** 保存真实 Text 对齐调用。 */
@@ -338,6 +340,17 @@ test("纯布局只累加祖先偏移一次，并以父局部坐标映射嵌套�
   assert.deepEqual(result.nodes.get("label").localBounds, { x: 92, y: 77, width: 60, height: 30 });
 });
 
+/** 用例：背景 cover 保持视口可见范围，同时把背景自身布局偏移加回几何。 */
+test("纯布局应用背景自身偏移而且不缩放背景 viewport cover bounds", () => {
+  const sketch = createSketch();
+  sketch.nodes.push({ layout_node_id: "backdrop", parent_layout_node_id: "viewport", target_bounds: { x: 0, y: 0, width: 400, height: 300 } });
+  const baseline = calculatePageSketchLayout(sketch, sketch.layout, { width: 600, height: 400 }, ["backdrop"]).nodes.get("backdrop").bounds;
+  const movedLayout = structuredClone(sketch.layout);
+  movedLayout.offsets.backdrop = { x: 13, y: -7 };
+  const moved = calculatePageSketchLayout(sketch, movedLayout, { width: 600, height: 400 }, ["backdrop"]).nodes.get("backdrop").bounds;
+  assert.deepEqual(moved, { ...baseline, x: baseline.x + 13, y: baseline.y - 7 });
+});
+
 /** 用例：验证稳定节点 ID 不会命中对象原型上的同名方法。 */
 test("纯布局对带对象原型同名的节点 ID 使用安全零偏移默认值", () => {
   const node = { layout_node_id: "toString", parent_layout_node_id: "viewport", target_bounds: { x: 7, y: 9, width: 10, height: 12 } };
@@ -401,9 +414,11 @@ test("共享 Phaser renderer 处理裁切原点、换行、resize、wake、首�
   const root = scene.objects[0];
   const group = scene.objects[2];
   const initialScale = root.scaleX;
+  assert.equal(text.resolution, Math.max(1, initialScale));
   scene.scale.gameSize = { width: 1000, height: 800 };
   scene.scale.emit("resize", scene.scale.gameSize);
   assert.notEqual(root.scaleX, initialScale);
+  assert.equal(text.resolution, Math.max(1, root.scaleX));
   scene.events.emit("wake");
   assert.deepEqual(renderer.getBounds("label"), initialWorld, "重排始终从冻结合同重算，不累积父级偏移");
   assert.deepEqual([group.x, group.y], [44, 46]);
@@ -421,6 +436,45 @@ test("共享 Phaser renderer 处理裁切原点、换行、resize、wake、首�
   assert.equal(scene.game.events.listenerCountFor("postrender"), 0);
   assert.ok(scene.objects.every((object) => object.destroyed), "适配器创建的 GameObject/Container 均应释放");
   assert.equal(scene.textures.exists("texture-main"), true, "renderer 不销毁外部资源管理的共享纹理");
+});
+
+/** 用例：透明容器也能选择，背景偏移在 resize/wake 后依旧从冻结布局重算。 */
+test("Phaser renderer 为透明容器启用节点选择并保持背景偏移幂等", async () => {
+  const sketch = createSketch();
+  sketch.nodes.push({ layout_node_id: "backdrop", parent_layout_node_id: "viewport", target_bounds: { x: 0, y: 0, width: 400, height: 300 } });
+  sketch.node_presentations.backdrop = { kind: "image", asset_ids: ["asset-main"], object_fit: "contain" };
+  const scene = createFakeScene();
+  scene.textures.add("texture-main");
+  const selections = [];
+  const renderer = await createPageSketchRenderer({
+    scene, sketch, assets: new Map([["asset-main", "texture-main"]]), fonts: createFonts(),
+    backgroundNodeIds: ["backdrop"], onNodeSelect: (...args) => selections.push(args),
+  });
+  const nodeContainers = scene.objects.filter((object) => object.kind === "container").slice(1);
+  assert.equal(nodeContainers.length, sketch.nodes.length);
+  assert.ok(nodeContainers.every((container) => container.input?.hitArea), "透明与非透明节点都应有矩形命中区");
+  const pointer = { id: 3 };
+  for (const [index, container] of nodeContainers.entries()) {
+    const event = { index };
+    container.events.emit("pointerdown", pointer, 2, 4, event);
+  }
+  assert.equal(selections.length, sketch.nodes.length);
+  assert.equal(selections[0][1], pointer, "选择回调应收到 Phaser 提供的真实 pointer 对象");
+  assert.equal(selections[0][4].index, 0, "选择回调应收到原始 Phaser 输入事件");
+
+  const movedLayout = structuredClone(sketch.layout);
+  movedLayout.offsets.backdrop = { x: 17, y: -9 };
+  renderer.reflow(movedLayout);
+  const expected = calculatePageSketchLayout(sketch, movedLayout, scene.scale.gameSize, ["backdrop"]).nodes.get("backdrop").bounds;
+  assert.deepEqual(renderer.getBounds("backdrop"), expected);
+  scene.scale.gameSize = { width: 900, height: 600 };
+  scene.scale.emit("resize", scene.scale.gameSize);
+  const resized = calculatePageSketchLayout(sketch, movedLayout, scene.scale.gameSize, ["backdrop"]).nodes.get("backdrop").bounds;
+  assert.deepEqual(renderer.getBounds("backdrop"), resized);
+  scene.events.emit("wake");
+  assert.deepEqual(renderer.getBounds("backdrop"), resized, "resize/wake 重算不得把背景 offset 累加到上次结果");
+  renderer.destroy();
+  assert.ok(nodeContainers.every((container) => container.events.listenerCount("pointerdown") === 0), "销毁 renderer 后节点选择监听必须移除");
 });
 
 /** 用例：验证未换行短文字的 center/right 对齐和非中心 Text origin。 */
@@ -543,13 +597,14 @@ test("V4 renderer 与 V5 Formal Scene 模板对同一 accepted 输入生成一�
   };
   const v4Scene = createFakeScene();
   v4Scene.textures.add("texture-main");
-  const v4 = await createPageSketchRenderer({ scene: v4Scene, sketch, assets: new Map([["asset-main", "texture-main"]]), fonts: createFonts() });
+  const backgroundNodeIds = ["image"];
+  const v4 = await createPageSketchRenderer({ scene: v4Scene, sketch, assets: new Map([["asset-main", "texture-main"]]), fonts: createFonts(), backgroundNodeIds });
   v4Scene.game.events.emit("postrender");
   await v4.ready;
 
   const FormalScene = createFormalPageSketchScene(createFakePhaser(), {
     sketch,
-    sources: { assets: new Map([["asset-main", "blob:verified-asset"]]), runtimePrograms: new Map(), lockedNodeIds: [], errors: [], confirmationError: null },
+    sources: { assets: new Map([["asset-main", "blob:verified-asset"]]), runtimePrograms: new Map(), backgroundNodeIds, errors: [], confirmationError: null },
     fonts: createFonts(),
   });
   const v5Scene = new FormalScene();

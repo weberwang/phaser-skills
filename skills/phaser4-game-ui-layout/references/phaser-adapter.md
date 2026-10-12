@@ -14,6 +14,12 @@ V4 设备预览使用 `calculateFixedDesignPreview`，将冻结草图坐标映�
 
 V4 和 V5 共用 `scripts/page-sketch-layout.mjs` 的纯布局计算及 `scripts/page-sketch-phaser.mjs` 的 `createPageSketchRenderer`。V4 使用 Phaser 预览 Scene；正式 Scene 使用 [`visual-layout-game-adapter.mjs`](../assets/visual-layout-game-adapter.mjs) 工厂模板。两端把相同的已确认草图、资源身份、字体和 runtime-program 映射交给适配器，禁止在 DOM 与 Phaser 各写一套尺寸、裁切或坐标公式。响应式证据校验复用 `calculateFixedDesignViewport`，但校验通过不代表运行时消费或画面已验证。
 
+页面草图还原使用共享 `page-sketch-game-config.mjs` 的设计画布策略：竖屏 Phaser gameSize 的宽度固定 1080，横屏高度固定 1080，另一轴使用 `visibleWidth/visibleHeight`。CSS 设备尺寸仅决定可见区域和显示缩放，不能将 360×640 等设备尺寸直接作为渲染分辨率。这是草图还原的显式设计空间策略，覆盖上文通用 gameSize=CSS 像素的默认约定；Canvas 按设计空间渲染，不能再用物理 Canvas 尺寸作为 CSS 视口证据。参考图、SVG 与布局偏移保留冻结草图源坐标，渲染器统一映射到设计画布。改变工作台缩放后通过 `syncPageSketchGameInput` 更新真实 Canvas client rect 和 Phaser `displayScale`。
+
+文字纹理的 resolution 取共享根容器实际缩放与 1 的较大值，V4/V5 及 resize 同步应用；不会改动草图字号、换行宽度和逻辑 bounds。该采样精度用于从较小冻结源坐标还原到设计画布，不能用工作台 CSS 缩放降低纹理精度。
+
+V5 宿主通过 `createFormalPageSketchGameConfig(Phaser, {parent, viewport, sketch, sources, fonts})` 创建游戏配置；`viewport` 是宿主 CSS 尺寸，`parent` 应为定位容器。后续宿主 resize 调用同一导出的 `setPageSketchGameViewport(game, viewport)`，由共享渲染器响应设计 gameSize 的变化。V4 使用相同配置工厂与尺寸入口；若仅消费 Scene 工厂，宿主也必须使用共享 GameConfig，不能另写渲染尺寸和缩放策略。
+
 共享布局先把 V2 基准与每个节点自身的 V4 增量解析成目标 `bounds`；bounds 使用草图世界坐标，并已包含自身及祖先布局偏移。子节点 Phaser Container 中的 `local` 坐标只减去父节点的世界位置，因此父偏移只传递一次。V2 已解析的 `anchor` 是布局关系，不能在渲染时再次应用；资源 `origin` 只决定纹理如何围绕对象定位，也不改变目标 bounds。不得把目标 bounds、资源 origin、布局 anchor 或父级局部坐标互相替代。
 
 图片 `object_fit` 支持 `fill`、`contain`、`cover`、`none` 和 `scale-down`，并用 `alignment: {x, y}` 指定水平与垂直对齐（0、0.5、1 分别表示起始、中间、结束）。`fill` 双轴拉伸到目标 bounds；`contain` 等比适配至完整落入 bounds，可按目标需要放大或缩小；`cover` 等比放大并裁切超出 bounds 的部分；`none` 使用纹理原始逻辑尺寸且不缩放，超出目标 bounds 的部分由同一目标边界裁切；`scale-down` 取原始尺寸与 contain 结果中较小者。需要对齐时都使用同一 bounds 和 alignment，不能用 Phaser 默认中心位置猜测。裁切不得改变布局 bounds 或节点命中区域。
@@ -22,7 +28,7 @@ V4 和 V5 共用 `scripts/page-sketch-layout.mjs` 的纯布局计算及 `scripts
 
 `createPageSketchRenderer` 暴露 `ready`、`reflow`、`setViewport`、`getBounds`、`isHealthy`、`errors` 和 `destroy`。布局纯函数不依赖 Scene；渲染器将结果映射到 Phaser Container/GameObject，并在 Scene 创建、唤醒和 resize 时走同一个幂等入口。重复输入必须得到相同位置；不得修改已有对象坐标后再叠加偏移。`ready` 等待资源、字体、对象初始化及首次 Game `postrender`；它只表示渲染周期已运行，实际视觉验收仍需独立证据。Scene 在 `ready` 成功前不能进入可确认状态；资源加载、字体等待、异步 runtime-program 或渲染异常都阻断就绪。渲染器负责渲染重排、对象清理及 wake/resize/shutdown/destroy 订阅；Scene 模板只可在 Phaser 注入 Scene Systems 事件后，为异步 create 绑定一次 shutdown/destroy 取消令牌，不重复订阅 wake/resize 或渲染事件。
 
-正式 Scene 必须把同一次 `loadPageSketchSources` 的结果作为 `sources` 传入工厂模板。`sources.lockedNodeIds` 来自 V3 manifest 的背景 region 与草图节点关系，可能节点本身没有 `layer`/`role=background` 字段；模板须将它原样传给 renderer，不能从 V2 节点再次推断或省略，否则 V4/V5 背景布局会不同。
+正式 Scene 必须把同一次 `loadPageSketchSources` 的结果作为 `sources` 传入工厂模板。`sources.backgroundNodeIds` 来自 V3 manifest 的背景 region 与草图节点关系，可能节点本身没有 `layer`/`role=background` 字段；模板须将它原样传给 renderer，不能从 V2 节点再次推断或省略，否则 V4/V5 背景布局会不同。
 
 草图 SHA 只绑定当前 V4 身份。V5 还要确认实际 Scene 已加载同一资源/字体并且共享渲染器健康，再采集运行画面与几何参数；身份一致不等于 V4/V5 画面一致。
 

@@ -1,3 +1,5 @@
+import { createVisualLayoutProperties } from "./visual-layout-properties.mjs";
+
 const LAYOUT_SCHEMA = "phaser-visual-layout/1.0";
 const ROOT_PARENTS = new Set(["viewport", "safe-area"]);
 const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/;
@@ -188,20 +190,10 @@ function errorMessage(error) {
 }
 
 /** 以隔离的开发期 DOM 层挂载 Phaser 逻辑坐标布局编辑器；reflow 必须同步返回。 */
-export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, viewport, nodes: inputNodes, layout, lockedNodeIds = [], getBounds, getViewportRect, getClipRect, reflow, save, saveOnChange = true, showSaveButton = true, saveButtonLabel = "保存布局", onLayoutChange, onPreviewHealthChange }) {
+export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, viewport, nodes: inputNodes, presentations = {}, backgroundNodeIds = [], layout, getBounds, getViewportRect, getClipRect, reflow, save, saveOnChange = true, showSaveButton = true, saveButtonLabel = "保存布局", onLayoutChange, onPreviewHealthChange }) {
   const logicalViewport = validateViewport(viewport);
   const nodes = snapshotLayoutNodes(inputNodes);
   const nodeMap = validateLayoutNodes(nodes);
-  if (!Array.isArray(lockedNodeIds) || lockedNodeIds.some((id) => !nodeMap.has(id))) throw new TypeError("lockedNodeIds 必须只包含当前节点 ID");
-  const movementLocks = new Set(lockedNodeIds);
-  // 移动祖先也会带动背景，因此包含固定背景的祖先同样锁定位置。
-  for (const id of lockedNodeIds) {
-    let parentId = nodeMap.get(id).parent_layout_node_id;
-    while (nodeMap.has(parentId)) {
-      movementLocks.add(parentId);
-      parentId = nodeMap.get(parentId).parent_layout_node_id;
-    }
-  }
   const currentLayout = { value: validateVisualLayoutDocument(layout, nodes) };
   if (!host || typeof host.getBoundingClientRect !== "function" || !host.ownerDocument) throw new TypeError("host 必须是带 ownerDocument 的游戏画布容器");
   if (!controlsHost || controlsHost.ownerDocument !== host.ownerDocument || typeof controlsHost.append !== "function") {
@@ -243,8 +235,9 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     .vle-frame-parent{fill:rgba(186,129,255,.04);stroke:#c39aff;stroke-width:2;stroke-dasharray:7 5;vector-effect:non-scaling-stroke;pointer-events:none}
     .vle-frame-target{fill:rgba(255,198,69,.04);stroke:#ffd166;stroke-width:2;stroke-dasharray:3 5;vector-effect:non-scaling-stroke;pointer-events:none}
     .vle-label{font:12px system-ui,sans-serif;fill:#fff;stroke:#142133;stroke-width:3;paint-order:stroke;pointer-events:none}
-    .vle-panel{position:static;width:100%;max-height:calc(100vh - 24px);display:flex;flex-direction:column;gap:9px;box-sizing:border-box;padding:12px;background:rgba(12,20,34,.94);border:1px solid #506783;border-radius:8px;box-shadow:0 6px 28px #0008;pointer-events:auto;overflow:hidden}
+    .vle-panel{position:static;width:100%;display:flex;flex-direction:column;gap:9px;box-sizing:border-box;padding:12px;background:rgba(12,20,34,.94);border:1px solid #506783;border-radius:8px;box-shadow:0 6px 28px #0008;pointer-events:auto}
     .vle-title{margin:0;font-size:14px;font-weight:700}.vle-current{color:#aac4dc;overflow-wrap:anywhere}
+    .vle-properties h3{margin:0 0 6px;font-size:13px}.vle-properties dl{display:grid;grid-template-columns:80px minmax(0,1fr);gap:4px 8px;margin:0;font-size:12px}.vle-properties dt{color:#aac4dc}.vle-properties dd{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}
     .vle-row{display:flex;align-items:center;gap:8px}.vle-row label{flex:1}.vle-row input[type=range]{width:104px}
     .vle-coordinates{display:grid;grid-template-columns:1fr 1fr;gap:8px}.vle-coordinate{display:flex;align-items:center;gap:5px;color:#aac4dc}.vle-coordinate input{width:72px;min-width:0;padding:4px;color:#fff;background:#101827;border:1px solid #58728e;border-radius:4px}
     .vle-button{padding:5px 9px;color:inherit;background:#21354d;border:1px solid #58728e;border-radius:5px;cursor:pointer}.vle-button[aria-pressed=true]{background:#245465;border-color:#53cee7}
@@ -262,6 +255,7 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
   const heading = makeElement(document, "h2", "vle-title", "布局对齐编辑");
   heading.style.margin = "0";
   const selectedLabel = makeElement(document, "div", "vle-current", "选择一个布局节点");
+  const properties = createVisualLayoutProperties({ document, nodes: inputNodes, presentations, backgroundNodeIds });
   const snapButton = makeElement(document, "button", "vle-button", "吸附：开（8px）");
   snapButton.type = "button";
   snapButton.setAttribute("aria-pressed", "true");
@@ -331,7 +325,7 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
   else saveRow.append(status);
   const tree = makeElement(document, "ul", "vle-tree");
   tree.setAttribute("aria-label", "布局节点树");
-  panel.append(heading, selectedLabel, snapButton, opacityRow, coordinateModeRow, relativePointRow, coordinateOriginLabel, coordinateRow, saveRow, tree);
+  panel.append(heading, selectedLabel, snapButton, opacityRow, coordinateModeRow, relativePointRow, coordinateOriginLabel, coordinateRow, properties.element, saveRow, tree);
   // 覆盖层只负责参考图和 SVG；控件进入宿主提供的独立栏，避免遮挡游戏预览。
   root.append(styles, image, svg);
   document.body.append(root);
@@ -436,7 +430,8 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
       ? "原点：视口左上角（逻辑像素）"
       : `原点：父容器 ${nodeMap.get(selectedId).parent_layout_node_id} ${relativePoints[relativePointInput.value].label}；测量节点左上角（逻辑像素）`;
     relativePointInput.disabled = !interactionEnabled || previewMode || coordinateModeInput.value !== "relative";
-    xCoordinateInput.disabled = yCoordinateInput.disabled = !interactionEnabled || previewMode || movementLocks.has(selectedId);
+    xCoordinateInput.disabled = yCoordinateInput.disabled = !interactionEnabled || previewMode;
+    properties.update(selectedId, bounds, currentLayout.value);
   }
 
   /** 返回节点在 Scene 中的即时 bounds；回调异常会被调用点明确呈现。 */
@@ -494,12 +489,11 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
         frame.setAttribute("role", "button");
         if (isSelected && outsideViewport) frame.setAttribute("data-offscreen-handle", "true");
         frame.setAttribute("aria-label", `拖动布局节点 ${node.layout_node_id}`);
-        const canEdit = interactionEnabled && !previewMode && !movementLocks.has(node.layout_node_id);
+        const canEdit = interactionEnabled && !previewMode;
         frame.setAttribute("tabindex", canEdit ? "0" : "-1");
         frame.setAttribute("aria-disabled", String(!canEdit));
-        // 容器只命中边框，避免整块父框挡住越界子节点或位于其内部的叶节点。
-        const isContainer = nodes.some((child) => child.parent_layout_node_id === node.layout_node_id);
-        frame.style.pointerEvents = canEdit ? (isContainer && !outsideViewport ? "stroke" : "all") : "none";
+        // 框内部交给 Phaser 按真实显示层命中，避免选中背景或低层节点遮住上层对象。
+        frame.style.pointerEvents = canEdit ? (outsideViewport ? "all" : "stroke") : "none";
         frame.addEventListener("pointerdown", onFramePointerDown);
         frame.addEventListener("keydown", onFrameKeyDown);
         if (focusedNodeId === node.layout_node_id) frame.dataset.restoreFocus = "true";
@@ -508,7 +502,7 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
         svg.append(label);
       }
       syncCoordinateInputs();
-      selectedLabel.textContent = `当前节点：${selectedId}${movementLocks.has(selectedId) ? "（位置锁定）" : ""}`;
+      selectedLabel.textContent = `当前节点：${selectedId}`;
       if (focusedNodeId) {
         for (const frame of svg.children) {
           if (frame.dataset.restoreFocus === "true") {
@@ -536,7 +530,7 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
         parentId = nodeMap.get(parentId).parent_layout_node_id;
       }
       const item = makeElement(document, "li");
-      const button = makeElement(document, "button", "", `${node.layout_node_id}${movementLocks.has(node.layout_node_id) ? "（位置锁定）" : ""}`);
+      const button = makeElement(document, "button", "", node.layout_node_id);
       button.type = "button";
       button.style.paddingLeft = `${6 + depth * 14}px`;
       button.dataset.layoutNodeId = node.layout_node_id;
@@ -607,12 +601,16 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
 
   /** 开始拖动被按中的节点框，并保存本手势的布局基线。 */
   function onFramePointerDown(event) {
+    beginNodeDrag(event.currentTarget.getAttribute("data-layout-node-id"), event);
+  }
+
+  /** Phaser 内容点击与编辑框拖动共用手势基线，客户端坐标只逆映射一次。 */
+  function beginNodeDrag(id, event) {
     if (!interactionEnabled || previewMode) return;
+    if (!event) return selectNode(id);
     if (event.button !== undefined && event.button !== 0) return;
-    const id = event.currentTarget.getAttribute("data-layout-node-id");
     if (!nodeMap.has(id)) return;
     selectNode(id);
-    if (movementLocks.has(id)) return;
     const rect = getViewportClientRect();
     syncGeometry(rect);
     drag = { id, pointerId: event.pointerId, start: pointerPosition(event, rect), base: validateVisualLayoutDocument(currentLayout.value, nodes), changed: false, reflowFailed: false };
@@ -678,7 +676,6 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     if (!interactionEnabled || previewMode) return;
     const focusedId = event.currentTarget.getAttribute("data-layout-node-id");
     if (nodeMap.has(focusedId) && focusedId !== selectedId) selectNode(focusedId);
-    if (movementLocks.has(selectedId)) return;
     const deltas = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     const pair = deltas[event.key];
     if (!pair) return;
@@ -710,7 +707,7 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
 
   /** 将绝对或父级相对的最终坐标换算为当前节点偏移，祖先及子节点的独立偏移不变。 */
   function onCoordinateChange() {
-    if (!interactionEnabled || previewMode || movementLocks.has(selectedId)) return;
+    if (!interactionEnabled || previewMode) return;
     const x = Number(xCoordinateInput.value);
     const y = Number(yCoordinateInput.value);
     try {
@@ -806,8 +803,8 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     snapButton.disabled = !canEdit;
     coordinateModeInput.disabled = !canEdit;
     relativePointInput.disabled = !canEdit || coordinateModeInput.value !== "relative";
-    xCoordinateInput.disabled = !canEdit || movementLocks.has(selectedId);
-    yCoordinateInput.disabled = !canEdit || movementLocks.has(selectedId);
+    xCoordinateInput.disabled = !canEdit;
+    yCoordinateInput.disabled = !canEdit;
     // 浏览器 tree.children 是 HTMLCollection，先显式转数组再遍历其子按钮。
     for (const item of Array.from(tree.children)) {
       for (const button of Array.from(item.children)) button.disabled = !interactionEnabled || previewMode;
@@ -920,6 +917,7 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     reload,
     resetToInitial,
     selectNode,
+    beginNodeDrag,
     // 对外暴露同一个选择状态，供预览显示节点与右侧树联动核验。
     getSelectedNodeId: () => selectedId,
     // CSS transform 不一定触发 ResizeObserver，设备模拟与全屏切换后由宿主显式刷新覆盖层。

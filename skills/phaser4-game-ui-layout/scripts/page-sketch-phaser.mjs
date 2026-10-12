@@ -4,6 +4,7 @@ import {
   validatePageSketchPresentation,
 } from "./page-sketch-layout.mjs";
 import { validateVisualLayoutDocument } from "./visual-layout-editor.mjs";
+import { calculateFixedDesignPreview } from "./fixed-design-viewport.mjs";
 
 /** 校验正有限视口尺寸，避免 resize 将无效几何传播到整个渲染树。 */
 function validateViewport(size) {
@@ -115,7 +116,7 @@ export async function createPageSketchRenderer(input = {}) {
     sketch: sketchInput,
     assets: assetInput,
     runtimePrograms: runtimeProgramInput = new Map(),
-    lockedNodeIds: lockedNodeInput = [],
+    backgroundNodeIds: backgroundNodeInput = [],
     fonts = globalThis.document?.fonts,
     onNodeSelect,
   } = input;
@@ -125,14 +126,14 @@ export async function createPageSketchRenderer(input = {}) {
   if (!sketchInput || !Array.isArray(sketchInput.nodes) || !sketchInput.node_presentations || !sketchInput.viewport) throw new TypeError("sketch 必须包含 viewport、nodes 与 node_presentations");
   if (!(assetInput instanceof Map)) throw new TypeError("assets 必须是 asset_id 到已加载 Phaser texture key 的 Map");
   if (!(runtimeProgramInput instanceof Map)) throw new TypeError("runtimePrograms 必须按 layout_node_id 提供已验证模块 Map");
-  if (!(lockedNodeInput instanceof Set) && !Array.isArray(lockedNodeInput)) throw new TypeError("lockedNodeIds 必须是数组或 Set");
+  if (!(backgroundNodeInput instanceof Set) && !Array.isArray(backgroundNodeInput)) throw new TypeError("backgroundNodeIds 必须是数组或 Set");
   if (onNodeSelect !== undefined && typeof onNodeSelect !== "function") throw new TypeError("onNodeSelect 必须是函数");
 
   // 渲染入口冻结调用方输入和资源 key，后续外部改写不会改变已经确认的布局身份。
   const sketch = structuredClone(sketchInput);
   const assets = new Map(assetInput);
   const runtimePrograms = new Map(runtimeProgramInput);
-  const lockedNodeIds = new Set(lockedNodeInput);
+  const backgroundNodeIds = new Set(backgroundNodeInput);
 
   const normalizedPresentations = new Map();
   for (const node of sketch.nodes) {
@@ -144,8 +145,8 @@ export async function createPageSketchRenderer(input = {}) {
   let currentViewport = validateViewport(sceneViewport && Number.isFinite(sceneViewport.width) && Number.isFinite(sceneViewport.height)
     ? sceneViewport
     : sketch.viewport);
-  const resolvedLockedNodeIds = new Set(lockedNodeIds);
-  for (const node of sketch.nodes) if (node.layout_role === "background" || node.layer === "background") resolvedLockedNodeIds.add(node.layout_node_id);
+  const resolvedBackgroundNodeIds = new Set(backgroundNodeIds);
+  for (const node of sketch.nodes) if (node.layout_role === "background" || node.layer === "background") resolvedBackgroundNodeIds.add(node.layout_node_id);
   const textureInfoByAssetId = new Map();
   for (const presentation of normalizedPresentations.values()) {
     if (presentation.kind !== "image") continue;
@@ -257,9 +258,9 @@ export async function createPageSketchRenderer(input = {}) {
   }
 
   /** 在节点容器内重设一张图片的位置、显示尺寸与明确纹理裁切。 */
-  function updateImage(image, presentation, assetId, bounds, isLockedBackground) {
+  function updateImage(image, presentation, assetId, bounds, isBackground) {
     const naturalSize = textureInfoByAssetId.get(assetId);
-    const objectFit = isLockedBackground ? "cover" : presentation.object_fit;
+    const objectFit = isBackground ? "cover" : presentation.object_fit;
     const fit = calculatePageSketchImageFit({
       sourceWidth: naturalSize.width,
       sourceHeight: naturalSize.height,
@@ -329,6 +330,8 @@ export async function createPageSketchRenderer(input = {}) {
       strokeThickness: style.stroke_thickness,
       wordWrapWidth: style.word_wrap === false ? null : bounds.width,
       wordWrapUseAdvanced: true,
+      // 草图源尺寸可能小于设计画布；按真实祖先缩放提升文字纹理精度，避免放大小纹理造成模糊。
+      resolution: Math.max(1, calculateFixedDesignPreview(sketch.viewport, currentViewport).scale),
     });
     renderObjects.add(text);
     if (typeof text.setFixedSize !== "function") throw new TypeError("Phaser Text 缺少 setFixedSize，无法将文字绑定到目标 bounds");
@@ -400,7 +403,7 @@ export async function createPageSketchRenderer(input = {}) {
     if (destroyed) throw new Error("Page Sketch Phaser renderer 已销毁");
     const nextViewport = validateViewport(viewportInput);
     const normalizedLayout = validateVisualLayoutDocument(layoutInput, sketch.nodes);
-    const nextLayout = calculatePageSketchLayout(sketch, normalizedLayout, nextViewport, resolvedLockedNodeIds);
+    const nextLayout = calculatePageSketchLayout(sketch, normalizedLayout, nextViewport, resolvedBackgroundNodeIds);
     currentLayout = normalizedLayout;
     currentViewport = nextViewport;
     computedLayout = nextLayout;
@@ -462,7 +465,7 @@ export async function createPageSketchRenderer(input = {}) {
     const gameEvents = scene.game?.events ?? scene.sys?.game?.events;
     postRenderEvents = gameEvents;
     subscribe(gameEvents, "postrender", onFirstPostRender, subscriptions);
-    const initialLayout = calculatePageSketchLayout(sketch, currentLayout, currentViewport, lockedNodeIds);
+    const initialLayout = calculatePageSketchLayout(sketch, currentLayout, currentViewport, resolvedBackgroundNodeIds);
     rootContainer = scene.add.container(0, 0);
     for (const node of sketch.nodes) nodeContainers.set(node.layout_node_id, scene.add.container(0, 0));
 
@@ -477,13 +480,14 @@ export async function createPageSketchRenderer(input = {}) {
           const image = scene.add.image(0, 0, assets.get(assetId));
           renderObjects.add(image);
           nodeContainer.add(image);
-          renderers.push((bounds) => updateImage(image, presentation, assetId, bounds, resolvedLockedNodeIds.has(nodeId)));
+          renderers.push((bounds) => updateImage(image, presentation, assetId, bounds, resolvedBackgroundNodeIds.has(nodeId)));
         }
       } else if (presentation.kind === "text") {
         const text = createText(nodeContainer, presentation, nodeLayout.bounds);
         renderObjects.add(text);
         nodeContainer.add(text);
         renderers.push((bounds) => {
+          text.setResolution(Math.max(1, computedLayout.viewTransform.scale));
           const wraps = presentation.style.word_wrap !== false;
           text.setFixedSize(wraps ? bounds.width : 0, 0);
           text.setWordWrapWidth(wraps ? bounds.width : null, true);
@@ -518,7 +522,7 @@ export async function createPageSketchRenderer(input = {}) {
         for (const render of renderers) render(bounds, computedNode);
       });
 
-      if (onNodeSelect && (presentation.kind !== "container" || Boolean(presentation.style?.fill || presentation.style?.stroke))) {
+      if (onNodeSelect) {
         const listener = (pointer, localX, localY, event) => onNodeSelect(nodeId, pointer, localX, localY, event);
         if (typeof nodeContainer.setInteractive !== "function" || typeof nodeContainer.on !== "function") {
           throw new TypeError(`节点 ${nodeId} 的 Phaser Container 不支持交互选择`);

@@ -194,7 +194,7 @@ export function calculatePageSketchNodeBounds(layout, nodes, layoutNodeId) {
   return calculateBoundsFromIndex(normalizedLayout, indexNodes(nodes), layoutNodeId);
 }
 
-/** 将设备可见像素区域逆映射回冻结草图坐标供锁定背景覆盖使用。 */
+/** 将设备可见像素区域逆映射回冻结草图坐标供背景覆盖使用。 */
 function calculateVisibleSourceBounds(viewport, viewTransform) {
   return {
     x: -viewTransform.x / viewTransform.scale,
@@ -205,24 +205,27 @@ function calculateVisibleSourceBounds(viewport, viewTransform) {
 }
 
 /** 计算每个节点的全局 bounds 和仅减一次父级位置的局部 bounds。 */
-export function calculatePageSketchLayout(sketch, layout, viewport = sketch?.viewport, lockedNodeIds = []) {
+export function calculatePageSketchLayout(sketch, layout, viewport = sketch?.viewport, backgroundNodeIds = []) {
   if (!isRecord(sketch) || !Array.isArray(sketch.nodes)) throw new TypeError("sketch.nodes 必须是布局节点数组");
   const sourceViewport = validateBounds({ x: 0, y: 0, ...sketch.viewport }, "sketch.viewport");
   const targetViewport = validateBounds({ x: 0, y: 0, ...viewport }, "viewport");
   const normalizedLayout = validateVisualLayoutDocument(layout, sketch.nodes);
   const nodeById = indexNodes(sketch.nodes);
-  if (!(lockedNodeIds instanceof Set) && !Array.isArray(lockedNodeIds)) throw new TypeError("lockedNodeIds 必须是数组或 Set");
-  const locked = new Set(lockedNodeIds);
-  // 背景身份来自冻结节点自身，V5 即使未传入 V4 manifest 的锁定列表也保持同一 cover 几何。
-  for (const node of sketch.nodes) if (node.layout_role === "background" || node.layer === "background") locked.add(node.layout_node_id);
-  for (const id of locked) if (!nodeById.has(id)) throw new TypeError(`lockedNodeIds 引用了未知 layout_node_id：${id}`);
+  if (!(backgroundNodeIds instanceof Set) && !Array.isArray(backgroundNodeIds)) throw new TypeError("backgroundNodeIds 必须是数组或 Set");
+  const backgrounds = new Set(backgroundNodeIds);
+  // 背景身份仅决定 cover 几何；节点自身和祖先 offset 仍可移动背景。
+  for (const node of sketch.nodes) if (node.layout_role === "background" || node.layer === "background") backgrounds.add(node.layout_node_id);
+  for (const id of backgrounds) if (!nodeById.has(id)) throw new TypeError(`backgroundNodeIds 引用了未知 layout_node_id：${id}`);
   const transform = calculateFixedDesignPreview(sketch.viewport, targetViewport);
   const designViewport = calculateFixedDesignViewport(targetViewport);
   const visibleSourceBounds = calculateVisibleSourceBounds(targetViewport, transform);
   const boundsById = new Map();
 
   for (const node of sketch.nodes) {
-    const bounds = locked.has(node.layout_node_id) ? { ...visibleSourceBounds } : calculateBoundsFromIndex(normalizedLayout, nodeById, node.layout_node_id);
+    const computedBounds = calculateBoundsFromIndex(normalizedLayout, nodeById, node.layout_node_id);
+    const bounds = backgrounds.has(node.layout_node_id)
+      ? { ...visibleSourceBounds, x: visibleSourceBounds.x + computedBounds.x - node.target_bounds.x, y: visibleSourceBounds.y + computedBounds.y - node.target_bounds.y }
+      : computedBounds;
     boundsById.set(node.layout_node_id, bounds);
   }
 

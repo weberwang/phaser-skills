@@ -10,11 +10,13 @@ const SKILL_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const FILES = [
   ["assets/visual-layout-editor-template.html", "index.html"],
   ["scripts/visual-layout-editor.mjs", "visual-layout-editor.mjs"],
+  ["scripts/visual-layout-properties.mjs", "visual-layout-properties.mjs"],
   ["scripts/page-sketch-contract.mjs", "page-sketch-contract.mjs"],
   ["scripts/page-sketch-file-store.mjs", "page-sketch-file-store.mjs"],
   ["scripts/page-sketch-preview.mjs", "page-sketch-preview.mjs"],
   ["scripts/page-sketch-layout.mjs", "page-sketch-layout.mjs"],
   ["scripts/page-sketch-phaser.mjs", "page-sketch-phaser.mjs"],
+  ["scripts/page-sketch-game-config.mjs", "page-sketch-game-config.mjs"],
   ["assets/visual-layout-game-adapter.mjs", "visual-layout-game-adapter.mjs"],
   ["scripts/page-sketch-editor.mjs", "page-sketch-editor.mjs"],
   ["scripts/fixed-design-viewport.mjs", "fixed-design-viewport.mjs"],

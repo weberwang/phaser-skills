@@ -5,8 +5,8 @@ V3 完成正式资源生产与资源级验收后，进入 V4 页面还原草图�
 ## 草图操作
 
 1. 从当前已确认的 V2 `layout-nodes.json` 和 V3 已验收清单生成草图数据，绑定 Work Item、scene/state、目标 SHA、源节点文件与正式资源文件的 SHA。图片、文本和容器按实际显示节点映射，不把整屏效果图当作正式资源。
-2. 草图页面在 DOM 工作台中保留设备、显示树、保存确认和坐标操作；正式组合画面必须由 Phaser Canvas 呈现。冻结效果图和编辑框属于独立编辑辅助层，可调底图透明度并查看叠合关系；切换“预览正式效果”时隐藏底图与编辑框，右侧显示树和操作区继续保留。辅助层不参与 Phaser 资源组合，不得进入 V5 发布 Scene。Canvas 与辅助层使用同一逻辑 viewport；设备缩放和方向变化时同步更新。
-3. 页面展示显示树、父框、目标框和当前节点框。可点击左侧显示内容或编辑框选择，也可点击右侧节点树选择，两种入口同步树高亮、选中框与坐标面板；单纯选择不修改或保存布局。背景可选中查看但位置仍锁定；空容器只通过树或边框选择，透明内部不遮挡实际显示节点。选择节点后可拖拽、用方向键微调或输入坐标。移动父节点时子孙一起移动；只修改父节点自身增量，子节点保持父相对位置。逐元素操作不需要反复截图。点击右侧“重置初始布局”可清除全部节点偏移，重新按 V2 冻结节点的初始坐标和父子关系排列；初始布局不是打开文件时已经保存的微调结果。重置先产生未保存草稿，保存后清除旧确认，须重新确认。父子关系以只读 V2 节点快照为基准，不从当前 DOM 推断；保存、确认期间和正式效果预览模式禁用重置。
+2. 草图页面在 DOM 工作台中保留设备、显示树、保存确认和坐标操作；正式组合画面必须由 Phaser Canvas 呈现。冻结效果图和编辑框属于独立编辑辅助层，可调底图透明度并查看叠合关系；切换“预览正式效果”时隐藏底图与编辑框，右侧显示树和操作区继续保留。辅助层不参与 Phaser 资源组合，不得进入 V5 发布 Scene。Canvas 使用正式设计空间，辅助层保留冻结草图坐标，两者通过同一布局变换对齐；设备缩放和方向变化时同步更新显示与输入。
+3. 页面展示显示树、父框、目标框和当前节点框。可点击左侧显示内容或编辑框选择，也可点击右侧节点树选择，两种入口同步树高亮、选中框与坐标面板；单纯选择不修改或保存布局。背景、空容器及全部显示节点均可点击选择和拖动。SVG 框只命中边框，内部交给 Phaser 按实际显示层命中；右栏同步展示节点身份、父级、实时坐标、尺寸、偏移、资源和展示配方。选择节点后可拖拽、用方向键微调或输入坐标。移动父节点时子孙一起移动；只修改父节点自身增量，子节点保持父相对位置。逐元素操作不需要反复截图。点击右侧“重置初始布局”可清除全部节点偏移，重新按 V2 冻结节点的初始坐标和父子关系排列；初始布局不是打开文件时已经保存的微调结果。重置先产生未保存草稿，保存后清除旧确认，须重新确认。父子关系以只读 V2 节点快照为基准，不从当前 DOM 推断；保存、确认期间和正式效果预览模式禁用重置。
 4. 点击保存将当前草图数据写回实际 JSON 文件，并重新读取核验。保存不表示确认；文件被外部修改、资源/字体未就绪、runtime-program 异步或渲染失败、健康检查失败或身份漂移时阻断保存或确认，不能用内存状态、下载副本或截图冒充已落盘。
 5. 用户检查组合效果并执行确认，写入确认时间和草图内容 SHA，不需要填写确认人。任何坐标、节点展示、资源或来源身份修改都使确认失效；重新保存后必须重新确认。
 6. 将确认文件的路径和字节 SHA 登记为当前 Work Item 的 `visualStageEvidenceRefs.V4`，提交 `visualStageState=v4-page-sketch-confirmed`。控制面复算内容摘要、V2 来源和 V3 资源身份；通过后才允许 V5 正式实施。
@@ -17,9 +17,11 @@ V3 完成正式资源生产与资源级验收后，进入 V4 页面还原草图�
 
 设备尺寸使用 CSS 像素。设备屏幕适配左侧可用空间，草图经共享设计空间映射到设备屏幕；宽高比变化时另一轴从中心展开或裁切，背景 cover 铺满可见区域。工作台对编辑坐标的 CSS 变换由 Canvas 外框抵消，正式内容只由共享 Phaser 根容器应用一次变换。选择设备和全屏不修改草图 viewport、布局坐标或确认摘要，也不代替 V5 的响应式运行验收。
 
+V4/V5 的 GameConfig 和 resize 必须共用 `page-sketch-game-config.mjs`：竖屏固定设计宽 1080，横屏固定设计高 1080，另一轴按设备比例展开或裁切。Phaser 从设计分辨率渲染后再经 CSS 缩放展示，不能先用手机 CSS 尺寸降低画布分辨率。V5 宿主使用 `createFormalPageSketchGameConfig(Phaser, {parent, viewport, sketch, sources, fonts})`，后续 resize 调用 `setPageSketchGameViewport(game, viewport)`；Scene 单独集成时也必须采用相同配置。工作台缩放和全屏后同步 Phaser 的实际输入边界，避免节点命中偏移。
+
 节点拖出父容器后仍可拖动，父容器编辑框只在边框上命中，避免遮挡子节点。节点完全出预览时，从右侧显示树选中，在预览边缘出现代理拖动框；拖动它可把节点移回，正式坐标不被钳制。覆盖层仍裁剪在左侧预览内，不覆盖右栏。
 
-V3 清单 `regions[].layer=background` 对应的显示节点固定位置，不接受拖拽、方向键或坐标输入。背景必须是独立显示节点，禁止声明 container、is_container 或 empty_container，也禁止使用 container 展示配方（空容器同样拒绝）。背景独立归属 viewport，不放在可移动功能容器中，也不作为其他元素的父级或相对布局参照；前景使用 viewport、safe-area 或真正的功能容器布局。错误的背景父子绑定须回到 V2 修正并重新确认，草图生成与预览会明确阻断。冻结效果图只调整透明度，不参与节点移动。
+V3 清单 `regions[].layer=background` 仅用于识别背景 cover 规则；背景同样接受拖拽、方向键和坐标输入，偏移由 V4/V5 共享布局消费。背景必须是独立显示节点，禁止声明 container、is_container 或 empty_container，也禁止使用 container 展示配方（空容器同样拒绝）。背景独立归属 viewport，不放在可移动功能容器中，也不作为其他元素的父级或相对布局参照；前景使用 viewport、safe-area 或真正的功能容器布局。错误的背景父子绑定须回到 V2 修正并重新确认，草图生成与预览会明确阻断。冻结效果图只调整透明度，不参与节点移动。
 
 ## 数据与正式还原
 
@@ -29,7 +31,7 @@ V3 清单 `regions[].layer=background` 对应的显示节点固定位置，不�
 
 V4 预览和 V5 正式 Scene 必须读取同一确认草图，并复用 `scripts/page-sketch-layout.mjs` 的纯布局结果与 `scripts/page-sketch-phaser.mjs` 的 Phaser 渲染适配器；禁止另写 DOM 正式组合画面或 V5 坐标换算。布局先按 V2 基准与节点自身 V4 增量解析全局 target bounds，再映射为 Phaser Container/GameObject；子节点局部位置等于自身世界位置减父世界位置，祖先偏移只传递一次。V2 `anchor` 已参与布局解析，纹理 `origin` 独立表达资源定位，不修改 bounds。图片 fit、文字字段、对齐与裁切规则以[Phaser 适配器](../../phaser4-game-ui-layout/references/phaser-adapter.md)为准；未支持的呈现字段明确报错并阻断 ready。
 
-V5 正式 Scene 使用 [`visual-layout-game-adapter.mjs`](../../phaser4-game-ui-layout/assets/visual-layout-game-adapter.mjs) 的 `createFormalPageSketchScene(Phaser, {sketch, sources, fonts})` 工厂；`sources` 必须是同一次 `loadPageSketchSources` 返回的身份资源集合，其中 `assets` 是 asset_id 到已校验资源 Blob URL 的 Map、`runtimePrograms` 是已校验程序、`lockedNodeIds` 是从同一 V3 manifest 区域解析的背景锁定节点。Scene preload 将图片加载为 Phaser 纹理，并把 asset_id→纹理 key 与 `lockedNodeIds` 一起传给共享渲染器。渲染器负责 wake/resize/shutdown/destroy 的渲染生命周期订阅；Scene 模板只在 Phaser 注入事件后绑定一次 shutdown/destroy 取消令牌，阻止已停止 Scene 的异步 create 发出 ready，不重复订阅 wake/resize。创建、唤醒和 resize 走相同幂等布局入口。Scene 只有在 `renderer.ready` 完成且 `isHealthy()` 为真后才能标记运行画面就绪；加载错误、字体未就绪、异步 runtime-program、呈现失败和清理错误都不能确认。开发底图、编辑框与编辑输入不进入发布画面。
+V5 正式 Scene 使用 [`visual-layout-game-adapter.mjs`](../../phaser4-game-ui-layout/assets/visual-layout-game-adapter.mjs) 的 `createFormalPageSketchScene(Phaser, {sketch, sources, fonts})` 工厂；`sources` 必须是同一次 `loadPageSketchSources` 返回的身份资源集合，其中 `assets` 是 asset_id 到已校验资源 Blob URL 的 Map、`runtimePrograms` 是已校验程序、`backgroundNodeIds` 是从同一 V3 manifest 区域解析的背景节点身份。Scene preload 将图片加载为 Phaser 纹理，并把 asset_id→纹理 key 与 `backgroundNodeIds` 一起传给共享渲染器。渲染器负责 wake/resize/shutdown/destroy 的渲染生命周期订阅；Scene 模板只在 Phaser 注入事件后绑定一次 shutdown/destroy 取消令牌，阻止已停止 Scene 的异步 create 发出 ready，不重复订阅 wake/resize。创建、唤醒和 resize 走相同幂等布局入口。Scene 只有在 `renderer.ready` 完成且 `isHealthy()` 为真后才能标记运行画面就绪；加载错误、字体未就绪、异步 runtime-program、呈现失败和清理错误都不能确认。开发底图、编辑框与编辑输入不进入发布画面。
 
 运行证据继续记录 `pageSketchSha256=visualStageEvidenceRefs.V4.sha256`，并额外保存 V5 实际运行截图和几何/呈现参数。草图 SHA 证明身份，不能代替实际画面对照或运行健康证据。
 

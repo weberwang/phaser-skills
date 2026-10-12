@@ -132,6 +132,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
     deviceSummary.textContent = `设备 ${device.width} × ${device.height} · 草图 ${viewport.width} × ${viewport.height} · 显示 ${Math.round(geometry.deviceScale * 100)}%`;
     // CSS transform 不触发 ResizeObserver，主动同步叠图以保持拖拽与显示位置一致。
     editor?.refreshViewport?.();
+    preview?.refreshInputBounds?.();
   }
 
   /** 切换设备时采用其默认方向，后续横竖屏调整由用户单独控制。 */
@@ -212,7 +213,8 @@ export async function initializePageSketchApplication({ document, projectRootUrl
 
       const mountedPreview = await mountPreview({ host: surface, sketch, sources, Phaser: adapters.Phaser,
         // 显示内容与节点树共用编辑器的选择状态；操作锁和预览模式由同一入口约束。
-        onNodeSelect: (layoutNodeId) => editor?.selectNode(layoutNodeId),
+        onNodeSelect: (layoutNodeId, pointer, nativeEvent) => nativeEvent
+          ? editor?.beginNodeDrag(layoutNodeId, nativeEvent) : editor?.selectNode(layoutNodeId),
       });
       if (generation !== previewGeneration) { mountedPreview.destroy(); return; }
       preview = mountedPreview;
@@ -231,7 +233,8 @@ export async function initializePageSketchApplication({ document, projectRootUrl
       editor = mountEditor({
         host: surface,
         controlsHost,
-        lockedNodeIds: sources.lockedNodeIds ?? [],
+        presentations: sketch.node_presentations,
+        backgroundNodeIds: sources.backgroundNodeIds ?? [],
         referenceUrl: sources.referenceUrl,
         viewport: sketch.viewport,
         nodes: sketch.nodes,

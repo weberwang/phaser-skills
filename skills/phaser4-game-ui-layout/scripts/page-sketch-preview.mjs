@@ -1,6 +1,7 @@
 import { assertPageSketchBackgroundLayout, hashPageSketchContent, validatePageSketchDocument, validateProjectRelativePath } from "./page-sketch-contract.mjs";
 import { createPageSketchRenderer } from "./page-sketch-phaser.mjs";
 import { calculateFixedDesignPreview } from "./fixed-design-viewport.mjs";
+import { createPageSketchGameConfig, setPageSketchGameViewport, syncPageSketchGameInput } from "./page-sketch-game-config.mjs";
 
 /** 以 WebCrypto 校验已下载源文件的真实内容身份。 */
 async function hashBytes(bytes) {
@@ -70,12 +71,12 @@ export async function loadPageSketchSources(sketchInput, { projectRootUrl, fetch
     [sketch.v3_evidence_file, sketch.v3_evidence_sha256, "V3 验收证据"],
   ];
   const sourceFiles = await Promise.all(sources.map(([file, sha, label]) => loadFile(file, sha, label)));
-  let lockedNodeIds = [];
+  let backgroundNodeIds = [];
   let backgroundLayoutError = null;
   try {
     const manifest = sourceFiles[1] ? JSON.parse(new TextDecoder().decode(sourceFiles[1].bytes)) : {};
     // 共用生成与正式阶段的布局门，不允许开发预览偷偷改写已冻结的父子关系。
-    lockedNodeIds = assertPageSketchBackgroundLayout({ nodes: sketch.nodes, regions: manifest.regions ?? [], sceneId: sketch.scene_id, stateId: sketch.state_id, nodePresentations: sketch.node_presentations });
+    backgroundNodeIds = assertPageSketchBackgroundLayout({ nodes: sketch.nodes, regions: manifest.regions ?? [], sceneId: sketch.scene_id, stateId: sketch.state_id, nodePresentations: sketch.node_presentations });
   } catch (error) {
     backgroundLayoutError = error.message;
     errors.push(`背景布局关系无效：${error.message}`);
@@ -138,7 +139,7 @@ export async function loadPageSketchSources(sketchInput, { projectRootUrl, fetch
   }
 
   return {
-    lockedNodeIds,
+    backgroundNodeIds,
     backgroundLayoutError,
     assets,
     confirmationError,
@@ -181,6 +182,9 @@ export async function mountPageSketchPreview({ host, sketch: sketchInput, source
   let renderer;
   let game;
   let destroyed = false;
+  let nativePointerDown = null;
+  let nativeTouchIdentifier = null;
+  const window = host.ownerDocument.defaultView;
   let transform = calculateFixedDesignPreview(sketch.viewport, sketch.viewport);
   let settle;
   let rejectReady;
@@ -188,6 +192,29 @@ export async function mountPageSketchPreview({ host, sketch: sketchInput, source
   // 引擎启动中断时不能无限等待并保留资源；超时始终关闭确认入口。
   const readyTimer = setTimeout(() => rejectReady(new Error("Phaser 预览启动或字体就绪超时")), readyTimeoutMs);
   const keys = new Map([...sources.assets.keys()].map((id, index) => [id, 'page-sketch-' + index]));
+  /** 原生 PointerEvent 提供稳定 pointerId；Phaser 的 MouseEvent/TouchEvent 仅用于确定命中目标。 */
+  function onCanvasPointerDown(event) {
+    if (event.isPrimary === false || event.button !== 0) return;
+    nativePointerDown = event;
+    nativeTouchIdentifier = null;
+  }
+  /** 手势结束后清除缓存，避免后续程序选择误用旧指针位置。 */
+  function onNativePointerEnd(event) {
+    if (nativePointerDown?.pointerId === event.pointerId) { nativePointerDown = null; nativeTouchIdentifier = null; }
+  }
+  /** 显示对象按 Phaser 层序命中，只有对应的原生主指针才能启动布局拖动。 */
+  function selectCanvasNode(id, pointer) {
+    const source = pointer?.event;
+    const isTouch = Boolean(source?.changedTouches);
+    const point = isTouch ? Array.from(source.changedTouches).find((touch) => touch.identifier === pointer.identifier) : source;
+    // 兼容鼠标事件可能丢失 PointerEvent 的小数部分；仅允许不足 1 CSS 像素的舍入差。
+    const matches = nativePointerDown && point && (isTouch === (nativePointerDown.pointerType === "touch"))
+      && Math.abs(point.clientX - nativePointerDown.clientX) < 1 && Math.abs(point.clientY - nativePointerDown.clientY) < 1
+      && (!isTouch || nativeTouchIdentifier === null || nativeTouchIdentifier === pointer.identifier);
+    if (source && nativePointerDown && !matches) return;
+    if (matches && isTouch) nativeTouchIdentifier = pointer.identifier;
+    return onNodeSelect?.(id, pointer, matches ? nativePointerDown : null);
+  }
   /** 隔离预览启动流程；正式对象始终交由共享渲染器创建。 */
   class PreviewScene extends Phaser.Scene {
     /** 为预览使用独立 Scene 身份，避免复用正式业务 Scene 的副作用。 */
@@ -202,7 +229,7 @@ export async function mountPageSketchPreview({ host, sketch: sketchInput, source
       Promise.resolve().then(async () => {
         if (errors.length) throw new Error(errors.join('；'));
         renderer = await createRenderer({ scene: this, sketch, assets: keys, runtimePrograms: sources.runtimePrograms,
-          lockedNodeIds: sources.lockedNodeIds, fonts: host.ownerDocument.fonts, onNodeSelect });
+          backgroundNodeIds: sources.backgroundNodeIds, fonts: host.ownerDocument.fonts, onNodeSelect: onNodeSelect ? selectCanvasNode : undefined });
         await renderer.ready;
         if (!renderer.isHealthy()) throw new Error(renderer.errors?.join("；") || "Phaser 画面未就绪");
         if (destroyed) { renderer.destroy(); throw new Error('预览已清理'); }
@@ -215,9 +242,8 @@ export async function mountPageSketchPreview({ host, sketch: sketchInput, source
   host.style.width = sketch.viewport.width + 'px';
   host.style.height = sketch.viewport.height + 'px';
   try {
-    game = new Phaser.Game({ type: Phaser.AUTO, parent: host, width: sketch.viewport.width, height: sketch.viewport.height,
-      transparent: true, scene: PreviewScene, scale: { mode: Phaser.Scale.NONE },
-      callbacks: { postBoot(booted) { booted.events.once('destroy', () => rejectReady(new Error('Phaser 预览提前终止'))); } } });
+    game = new Phaser.Game(createPageSketchGameConfig(Phaser, { parent: host, viewport: sketch.viewport, scene: PreviewScene,
+      callbacks: { postBoot(booted) { booted.events.once('destroy', () => rejectReady(new Error('Phaser 预览提前终止'))); } } }));
     await ready;
   } catch (error) {
     destroyed = true; renderer?.destroy(); game?.destroy(true); sources.revoke?.(); host.replaceChildren(); throw error;
@@ -226,14 +252,18 @@ export async function mountPageSketchPreview({ host, sketch: sketchInput, source
   function setViewport(size) {
     if (destroyed) throw new Error('预览已清理');
     transform = calculateFixedDesignPreview(sketch.viewport, size);
-    game.scale.resize(size.width, size.height);
-    const result = renderer.setViewport(size);
-    Object.assign(game.canvas.style, { position: 'absolute', left: -transform.x / transform.scale + 'px',
-      top: -transform.y / transform.scale + 'px', width: size.width / transform.scale + 'px', height: size.height / transform.scale + 'px' });
+    const gameViewport = setPageSketchGameViewport(game, size, {
+      left: -transform.x / transform.scale, top: -transform.y / transform.scale,
+      width: size.width / transform.scale, height: size.height / transform.scale,
+    });
+    const result = renderer.setViewport(gameViewport);
     return result;
   }
   try { setViewport(sketch.viewport); }
   catch (error) { destroyed = true; try { renderer.destroy(); } finally { game.destroy(true); sources.revoke?.(); host.replaceChildren(); } throw error; }
+  game.canvas.addEventListener('pointerdown', onCanvasPointerDown, true);
+  window.addEventListener('pointerup', onNativePointerEnd);
+  window.addEventListener('pointercancel', onNativePointerEnd);
   return {
     get errors() { return [...errors, ...(renderer.errors ?? [])]; },
     reflow: (layout) => renderer.reflow(layout),
@@ -241,10 +271,16 @@ export async function mountPageSketchPreview({ host, sketch: sketchInput, source
     getViewportRect: () => host.getBoundingClientRect(),
     isHealthy: () => !destroyed && errors.length === 0 && renderer.isHealthy(),
     setViewport,
+    refreshInputBounds: () => syncPageSketchGameInput(game),
     /** 先停止 Phaser 和监听器，再撤销仍被纹理使用的 Blob。 */
     destroy() {
       if (destroyed) return;
       destroyed = true;
+      nativePointerDown = null;
+      nativeTouchIdentifier = null;
+      game.canvas.removeEventListener('pointerdown', onCanvasPointerDown, true);
+      window.removeEventListener('pointerup', onNativePointerEnd);
+      window.removeEventListener('pointercancel', onNativePointerEnd);
       try { renderer.destroy(); } finally { game.destroy(true); sources.revoke?.(); host.replaceChildren(); }
     },
   };

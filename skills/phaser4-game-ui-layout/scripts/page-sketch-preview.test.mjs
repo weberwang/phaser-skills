@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mountPageSketchPreview, loadPageSketchSources, verifyPageSketchSources } from "./page-sketch-preview.mjs";
+import { calculatePageSketchGameViewport } from "./page-sketch-game-config.mjs";
+import { FakeElement } from "./visual-layout-editor-test-helpers.mjs";
+import { createFormalPageSketchGameConfig } from "../assets/visual-layout-game-adapter.mjs";
 
 const SHA = `sha256:${"d".repeat(64)}`;
 
@@ -37,7 +40,9 @@ function createSketch({ rootPresentation, imageAssets = ["hero", "badge"] } = {}
 
 /** 模拟 Phaser 启动边界，不创建浏览器、Canvas 或真实游戏。 */
 function createHarness({ failLoad = false, neverCreate = false } = {}) {
-  const host = { ownerDocument: { fonts: {} }, style: {}, children: [], replaceChildren() { this.children = []; },
+  const document = { fonts: {} };
+  document.defaultView = new FakeElement("window", document);
+  const host = { ownerDocument: document, style: {}, children: [], replaceChildren() { this.children = []; },
     getBoundingClientRect() { return { left: 0, top: 0, width: 200, height: 100 }; } };
   let game;
   /** 只保留预览 Scene 所需的构造接口。 */
@@ -47,8 +52,14 @@ function createHarness({ failLoad = false, neverCreate = false } = {}) {
     /** 使用微任务模拟 Phaser 在构造之后完成 preload/create。 */
     constructor(config) {
       game = this;
-      this.canvas = { style: {} };
-      this.scale = { resize(width, height) { game.size = { width, height }; } };
+      this.config = config;
+      this.canvas = new FakeElement("canvas", document);
+      this.scale = {
+        gameSize: { width: config.width, height: config.height }, canvasBounds: {},
+        displayScale: { set(x, y) { this.x = x; this.y = y; } },
+        resize(width, height) { game.size = { width, height }; this.gameSize = game.size; },
+        updateBounds() { this.canvasBounds = host.getBoundingClientRect(); },
+      };
       this.loaded = [];
       const scene = new config.scene();
       scene.load = { on(type, callback) { game.loadError = callback; }, image(key, url) { game.loaded.push({ key, url }); } };
@@ -77,6 +88,11 @@ test('V4 使用共享渲染器且 Loader 不包含编辑底图，重排参数直
   const sources = createSources();
   const sketch = createSketch();
   const preview = await mountPageSketchPreview({ ...harness, sketch, sources });
+  const formal = createFormalPageSketchGameConfig(harness.Phaser, { parent: harness.host, viewport: sketch.viewport, sketch, sources });
+  assert.deepEqual(
+    { width: harness.game.config.width, height: harness.game.config.height, type: harness.game.config.type, scale: harness.game.config.scale },
+    { width: formal.width, height: formal.height, type: formal.type, scale: formal.scale },
+  );
   assert.deepEqual(harness.game.loaded.map((item) => item.url), ['blob:hero', 'blob:badge']);
   assert.equal(harness.context.sketch.reference_file, sketch.reference_file);
   assert.equal(harness.context.assets.get('hero'), 'page-sketch-0');
@@ -87,13 +103,50 @@ test('V4 使用共享渲染器且 Loader 不包含编辑底图，重排参数直
   const geometry = { ...harness.game.canvas.style };
   preview.setViewport({ width: 2560, height: 1080 });
   assert.deepEqual(harness.game.canvas.style, geometry);
-  assert.deepEqual(harness.renderer.viewport, { width: 2560, height: 1080 });
+  assert.deepEqual(harness.renderer.viewport, calculatePageSketchGameViewport({ width: 2560, height: 1080 }));
+  assert.equal(harness.game.config.height, 1080);
+  preview.setViewport({ width: 360, height: 640 });
+  assert.deepEqual(harness.game.size, { width: 1080, height: 1920 });
+  assert.deepEqual(harness.renderer.viewport, { width: 1080, height: 1920 });
   assert.equal(preview.isHealthy(), true);
   preview.destroy(); preview.destroy();
   assert.equal(harness.renderer.destroyed, true);
   assert.equal(harness.game.destroyed, true);
   assert.equal(sources.revoked, true);
   assert.equal(preview.isHealthy(), false);
+});
+
+/** 用例：预览把节点选择回调桥接给共享 renderer，并在关闭时回收 renderer。 */
+test('V4 预览桥接节点选择回调并对称清理共享 renderer', async () => {
+  const harness = createHarness();
+  const sources = createSources();
+  const selected = [];
+  const onNodeSelect = (...args) => selected.push(args);
+  const preview = await mountPageSketchPreview({ ...harness, sketch: createSketch(), sources, onNodeSelect });
+  const pointer = { id: 7 };
+  harness.context.onNodeSelect('hud.root', pointer, 4, 5, { stopPropagation() {} });
+  assert.equal(selected[0][0], 'hud.root');
+  assert.equal(selected[0][1], pointer);
+  // Phaser TouchEvent 不提供 clientX；拖动必须拿到之前捕获的原生 PointerEvent。
+  const nativeTouch = harness.game.canvas.dispatch("pointerdown", { pointerId: 12, pointerType: "touch", button: 0, isPrimary: true, clientX: 80, clientY: 50 });
+  harness.context.onNodeSelect("hud.hero", { identifier: 2, event: { changedTouches: [{ identifier: 2, clientX: 80, clientY: 50 }] } });
+  assert.equal(selected.at(-1)[2], nativeTouch);
+  const count = selected.length;
+  harness.game.canvas.dispatch("pointerdown", { pointerId: 13, button: 0, isPrimary: false, clientX: 90, clientY: 60 });
+  harness.context.onNodeSelect("hud.root", { identifier: 3, event: { changedTouches: [{ identifier: 2, clientX: 80, clientY: 50 }, { identifier: 3, clientX: 90, clientY: 60 }] } });
+  assert.equal(selected.length, count);
+  harness.context.onNodeSelect("hud.root", { identifier: 3, event: { changedTouches: [{ identifier: 2, clientX: 80, clientY: 50 }, { identifier: 3, clientX: 80, clientY: 50 }] } });
+  assert.equal(selected.length, count);
+  harness.host.ownerDocument.defaultView.dispatch("pointercancel", { pointerId: 12 });
+  harness.context.onNodeSelect("hud.root", pointer);
+  assert.equal(selected.at(-1)[2], null);
+  const nativeMouse = harness.game.canvas.dispatch("pointerdown", { pointerId: 14, pointerType: "mouse", button: 0, isPrimary: true, clientX: 80.5, clientY: 50.5 });
+  harness.context.onNodeSelect("hud.hero", { event: { type: "mousedown", clientX: 80, clientY: 50 } });
+  assert.equal(selected.at(-1)[2], nativeMouse);
+  preview.destroy();
+  assert.equal(harness.renderer.destroyed, true);
+  assert.equal(harness.game.canvas.listeners.get("pointerdown").length, 0);
+  assert.equal(harness.host.ownerDocument.defaultView.listeners.get("pointercancel").length, 0);
 });
 
 test('Phaser 加载失败和共享渲染失败均清理并禁止返回可确认预览', async () => {
@@ -161,7 +214,7 @@ test("项目子路径与百分号文件名保持在配置资源根下，控制�
     imageDecoder: async () => {},
   });
   assert.deepEqual(sources.errors, []);
-  assert.deepEqual(sources.lockedNodeIds, ["hud.hero"]);
+  assert.deepEqual(sources.backgroundNodeIds, ["hud.hero"]);
   assert.equal(requested.some((url) => url.pathname === "/game/refs/%252e%252e/reference.png"), true);
   assert.equal(requested.every((url) => url.pathname.startsWith("/game/") && url.origin === "https://game.test"), true);
   hashes.set("/game/public/hero.png", new TextEncoder().encode("externally changed asset bytes"));
