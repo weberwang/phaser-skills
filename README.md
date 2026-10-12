@@ -32,7 +32,7 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 
 单场景视觉任务在“逐场景生产”内按“场景定义 → 拆解确认 → 正式资源验收 → 页面还原草图 → 正式还原与运行验收”推进。该视图只简化展示；全局状态、G0-G3、V0-V5、A0-A6、F0-F4 和证据硬门继续由控制面维护，详见[控制模型](skills/phaser4-game-workflow-control/references/control-model.md)与[状态、阶段与停止门](skills/phaser4-game-workflow-control/references/state-gates.md)。
 
-通用帧动画先按普通、角色动作、特效或 UI 用途选择制作与人工验收规则，默认采用视频抽帧；固定画布图片递归补帧仅在用户明确选择或确认切换时启用。V2 先确认动作时间轴设计：行为边界、阶段与事件、播放方式、入场/退场与循环衔接、区域尺寸推理和 FPS；帧动画不制作灰盒或可播放几何示意，这份参数设计也不代替真实动作的视觉验收。默认 **768p**，需要 **2K** 时说明依据并询问用户。视频路线先按有效区间与阶段重定时准备最终抽帧输入（原视频已适配时直接使用原视频），再由人工验收该视频；通过且 SHA 未变化后才抽帧。验收失败或视频 SHA 变化时须先修正并重新验收，确认修正方案不代替视频验收。整理后的真实帧序列再次人工检查。图片路线逐张确认首尾和必要关键帧，确认后才制作后继并递归补帧，最终真实序列经人工验收。各区域的类型、时间映射、尺寸和播放合同独立，输出 PNG 图集、JSON 报告与人工预览，保留来源 SHA 和修图成果。图片来源单独记录父图与生成证据，声音按游戏事件另行交付；分类不决定来源、行为单元或 key 数量。详见[分类入口](skills/phaser4-frame-animation/SKILL.md#分类入口)、[图片递归补帧](skills/phaser4-frame-animation/references/image-inbetween.md)与[通用帧动画工作流](skills/phaser4-frame-animation/references/workflow-integration.md)。
+通用帧动画先按普通、角色动作、特效或 UI 用途选择制作与人工验收规则，默认采用视频抽帧；固定画布图片递归补帧仅在用户明确选择或确认切换时启用。V2 先确认动作时间轴设计：行为边界、阶段与事件、播放方式、入场/退场与循环衔接、区域尺寸推理和 FPS；帧动画不制作灰盒或可播放几何示意，这份参数设计也不代替真实动作的视觉验收。先满足完整动作运动包络全部入框、目标画质及视频工具约束，再比较 768p、2K 与混合分辨率批次：先选视频条数最少的合格方案，再在这些方案中选预计总消耗最低者；预计消耗同等时优先 768p。没有可核验费用时不虚构最低成本，按同条数且质量合格的候选优先推荐 768p。即使单条 2K 比多条 768p 预计更贵，也按条数优先推荐单条方案，如实列明可核验消耗并遵守预算上限，不得超预算；若最少条数方案超预算，则不得采用，只能选择预算内合格方案，无可行方案时如实报告。该比较随原动作时间轴设计一并确认，不增设分辨率确认门。视频路线先按有效区间与阶段重定时准备最终抽帧输入（原视频已适配时直接使用原视频），再由人工验收该视频；通过且 SHA 未变化后才抽帧。验收失败或视频 SHA 变化时须先修正并重新验收，确认修正方案不代替视频验收。整理后的真实帧序列再次人工检查。图片路线沿用固定画布尺寸约定，默认 768p，需 2K 时按既有规则询问；逐张确认首尾和必要关键帧，确认后才制作后继并递归补帧，最终真实序列经人工验收。各区域的类型、时间映射、尺寸和播放合同独立，输出 PNG 图集、JSON 报告与人工预览，保留来源 SHA 和修图成果。图片来源单独记录父图与生成证据，声音按游戏事件另行交付；分类不决定来源、行为单元或 key 数量。详见[分类入口](skills/phaser4-frame-animation/SKILL.md#分类入口)、[视频参数与空间依据](skills/phaser4-frame-animation/references/region-planning.md#视频参数与空间依据)、[视频条数与消耗比较](skills/phaser4-frame-animation/references/region-planning.md#视频条数与消耗比较)、[图片递归补帧](skills/phaser4-frame-animation/references/image-inbetween.md)与[通用帧动画工作流](skills/phaser4-frame-animation/references/workflow-integration.md)。
 
 先在目标 Phaser 项目根目录初始化一个 Work Item。下面的 PowerShell 示例会以当前 Git HEAD 作为不可变基线，可直接复制执行：
 
@@ -75,7 +75,7 @@ UI 响应式验证按合同的 `orientationPolicy.allowed` 选择视口方向：
 - `$phaser4-game-architecture`：工程架构与公开契约。
 - `$phaser4-gameplay-development`：玩法规则、状态和交互实现。
 - `$phaser4-game-asset-integration`、`$phaser4-game-ui-layout`：资源、效果图还原和 UI 布局。
-- [`$phaser4-frame-animation`](skills/phaser4-frame-animation/SKILL.md)：普通、角色、特效、UI 分类规则，默认视频抽帧，可明确选用图片递归补帧；先确认动作时间轴设计，再验收真实视频或关键帧，默认 768p，需 2K 时询问，输出独立图集与预览。
+- [`$phaser4-frame-animation`](skills/phaser4-frame-animation/SKILL.md)：普通、角色、特效、UI 分类规则，默认视频抽帧，可明确选用图片递归补帧；先确认动作时间轴设计，再验收真实视频或关键帧。视频分辨率和条数依据见帧动画路线；先满足完整动作运动包络全部入框、目标画质及视频工具约束，再比较 768p、2K 与混合分辨率批次：先选视频条数最少的合格方案，再在这些方案中选预计总消耗最低者；预计消耗同等时优先 768p。没有可核验费用时不虚构最低成本，按同条数且质量合格的候选优先推荐 768p。即使单条 2K 比多条 768p 预计更贵，也按条数优先推荐单条方案，如实列明可核验消耗并遵守预算上限，不得超预算；若最少条数方案超预算，则不得采用，只能选择预算内合格方案，无可行方案时如实报告。该比较随原动作时间轴设计一并确认，不增设分辨率确认门。 细则见[视频参数与空间依据](skills/phaser4-frame-animation/references/region-planning.md#视频参数与空间依据)和[视频条数与消耗比较](skills/phaser4-frame-animation/references/region-planning.md#视频条数与消耗比较)。图片固定画布默认 768p，需 2K 时沿用既有询问规则。输出独立图集与预览。
 - `$phaser4-spine-generative-reskin`、`$phaser4-game-image-optimization`：Spine 与图片处理。
 - `$phaser4-game-audio`、`$phaser4-game-balance`：音频和数值平衡。
 - [`$phaser4-game-ad-integration`](skills/phaser4-game-ad-integration/SKILL.md)：通过 AppLovin 官方 MAX Cordova 原生插件接入移动端 Banner、插页与激励视频，管理全屏广告位静默预加载与持续重试、Banner 按需创建与布局刷新、视频不可用提示和隐私验收。
