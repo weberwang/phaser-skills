@@ -75,8 +75,8 @@ export async function loadPageSketchSources(sketchInput, { projectRootUrl, fetch
   let backgroundLayoutError = null;
   try {
     const manifest = sourceFiles[1] ? JSON.parse(new TextDecoder().decode(sourceFiles[1].bytes)) : {};
-    // 共用生成与正式阶段的布局门，不允许开发预览偷偷改写已冻结的父子关系。
-    backgroundNodeIds = assertPageSketchBackgroundLayout({ nodes: sketch.nodes, regions: manifest.regions ?? [], sceneId: sketch.scene_id, stateId: sketch.state_id, nodePresentations: sketch.node_presentations });
+    // 正式区域在 coverage_audit 中；读错路径会漏掉背景身份，使 V4/V5 按普通图片 fit 还原。
+    backgroundNodeIds = assertPageSketchBackgroundLayout({ nodes: sketch.nodes, regions: manifest.coverage_audit?.regions ?? [], sceneId: sketch.scene_id, stateId: sketch.state_id, nodePresentations: sketch.node_presentations });
   } catch (error) {
     backgroundLayoutError = error.message;
     errors.push(`背景布局关系无效：${error.message}`);

@@ -73,6 +73,8 @@ Camera 合同必须说明逻辑 viewport 如何映射到物理 backing，zoom �
 
 ## 目标与尺寸
 
+全屏 UI、带底板弹窗和无底板弹窗分别使用场景、底板功能容器和宿主场景的逻辑尺寸作为布局参照，详见[场景与弹窗尺寸参照](layout-hierarchy.md#场景与弹窗尺寸参照)。场景参照对应 `viewport` 或与其同尺寸的职责根；底板参照对应显式功能容器，其 `target_bounds` 与底板布局矩形一致，底板位图与内容共用该父级。子节点的 `parent_target_bounds`、双轴锚点、偏移与比例/拉伸尺寸均来自已确认直接父级；不能让有底板弹窗的内容使用全屏尺寸，也不能让无底板弹窗使用内容包围盒尺寸。安全区作为可见性约束保留，独立全屏背景仍不参与前景布局参照。
+
 `targets` 只定义代表性设备视口的最小、首选和最大逻辑宽高、方向和宽高比，不能覆盖固定设计基准；`targets.orientations` 必须与 `orientationPolicy.allowed` 一致，三个示例目标也只能使用支持方向。`scale` 旧嵌套字段不再承担 DPR 或 backing 合同，相关事实统一写在根级响应式字段。`aspect_ratio.min/max` 必须是正数且顺序合理。`content` 定义 `max_width`、`columns`、`gaps` 和 `margins`；断点和布局关系仍必须使用逻辑像素，不能使用参考截图的物理像素直接硬编码。
 
 尺寸策略可以是 `fixed`、`content`、`proportional`、`stretch`、`contain`、`cover` 或 `nine_slice`，但必须同时给出最小、首选和最大值；三档宽高须为正数或非空表达式，数值最小值不能大于最大值。固定尺寸、绝对定位和悬浮元素是可审查模式，不是格式错误；缺少参照、策略或证据才退回。

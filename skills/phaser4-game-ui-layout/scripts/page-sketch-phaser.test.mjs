@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import test from "node:test";
 import { createFormalPageSketchScene } from "../assets/visual-layout-game-adapter.mjs";
@@ -10,9 +11,57 @@ import {
 } from "./page-sketch-layout.mjs";
 import { createPageSketchRenderer } from "./page-sketch-phaser.mjs";
 import { hashPageSketchContent } from "./page-sketch-contract.mjs";
+import { loadPageSketchSources } from "./page-sketch-preview.mjs";
 
 const HASH_A = `sha256:${"a".repeat(64)}`;
 const HASH_B = `sha256:${"b".repeat(64)}`;
+
+/** 从真实 SHA 绑定的 V3 coverage 清单加载背景，节点自身不携带背景标记。 */
+async function loadBackgroundSources(sketch) {
+  const files = new Map([
+    [sketch.v2_nodes_file, new TextEncoder().encode(JSON.stringify({ nodes: sketch.nodes }))],
+    [sketch.v3_manifest_file, new TextEncoder().encode(JSON.stringify({ coverage_audit: { regions: [
+      { id: "background-region", layer: "background", scene_id: sketch.scene_id, state_id: sketch.state_id, layout_node_ids: ["image"] },
+      { id: "other-state-background", layer: "background", scene_id: sketch.scene_id, state_id: "other-state", layout_node_ids: ["label"] },
+    ] } }))],
+    [sketch.v3_evidence_file, new TextEncoder().encode("evidence")],
+    [sketch.reference_file, new TextEncoder().encode("reference")],
+    [sketch.v3_assets[0].file, new TextEncoder().encode("background image")],
+  ]);
+  // 文件身份必须与本次字节一致，避免绕过加载门后直接手填 backgroundNodeIds。
+  for (const [fileField, shaField] of [["v2_nodes_file", "v2_nodes_sha256"], ["v3_manifest_file", "v3_manifest_sha256"], ["v3_evidence_file", "v3_evidence_sha256"], ["reference_file", "target_sha256"]]) {
+    sketch[shaField] = `sha256:${createHash("sha256").update(files.get(sketch[fileField])).digest("hex")}`;
+  }
+  sketch.layout.target_sha256 = sketch.target_sha256;
+  sketch.v3_assets[0].sha256 = `sha256:${createHash("sha256").update(files.get(sketch.v3_assets[0].file)).digest("hex")}`;
+  sketch.confirmation = { status: "accepted", confirmed_at: "2026-10-12T00:00:00.000Z", content_sha256: await hashPageSketchContent(sketch) };
+  return loadPageSketchSources(sketch, {
+    projectRootUrl: "https://game.test/", pageOrigin: "https://game.test",
+    /** 模拟同源文件读取，仍由加载器复算每份来源与资源的 SHA。 */
+    fetcher: async (url) => {
+      const bytes = files.get(decodeURIComponent(url.pathname.slice(1)));
+      return { ok: Boolean(bytes), status: bytes ? 200 : 404, headers: { get: () => "application/octet-stream" }, async arrayBuffer() { return bytes; } };
+    },
+    urlApi: { createObjectURL: () => "blob:verified-background", revokeObjectURL() {} },
+    BlobCtor: Blob, imageDecoder: async () => {},
+  });
+}
+
+/** 从显示树还原图片实际渲染矩形，独立检查等比缩放、裁切和四边覆盖。 */
+function assertBackgroundCover(scene, viewport) {
+  const image = scene.objects.find((object) => object.kind === "image");
+  let x = image.x; let y = image.y; let scaleX = image.scaleX; let scaleY = image.scaleY;
+  for (let parent = image.parentContainer; parent; parent = parent.parentContainer) {
+    x = parent.x + x * parent.scaleX; y = parent.y + y * parent.scaleY;
+    scaleX *= parent.scaleX; scaleY *= parent.scaleY;
+  }
+  const crop = image.crop;
+  const scale = Math.max(viewport.width / image.width, viewport.height / image.height);
+  const actual = [scaleX, scaleY, x - image.width * image.originX * scaleX + crop.x * scaleX,
+    y - image.height * image.originY * scaleY + crop.y * scaleY, crop.width * scaleX, crop.height * scaleY];
+  const expected = [scale, scale, 0, 0, viewport.width, viewport.height];
+  actual.forEach((value, index) => assert.ok(Math.abs(value - expected[index]) < 1e-8, `背景渲染参数 ${index}：${value} != ${expected[index]}`));
+}
 
 /** 模拟可计数监听器，供 Scene、Scale 与 Game 生命周期测试共用。 */
 class FakeEmitter extends EventEmitter {
@@ -587,6 +636,47 @@ test("运行时 mountPhaser 异步实现会失败并清理已创建对象", asyn
     runtimePrograms: new Map([["runtime", async () => ({})]]),
   }), /mountPhaser 必须同步完成/);
   assert.ok(scene.objects.every((object) => object.destroyed));
+});
+
+/** 用例：正式清单的背景身份贯通加载、V4/V5 及连续尺寸变化，不能只验证两端同样出错。 */
+test("V3 coverage 背景在 V4/V5 按实际视口等比 cover，resize 不退回普通图片 fit", async () => {
+  const sketch = createSketch();
+  const background = sketch.nodes.find((node) => node.layout_node_id === "image");
+  background.parent_layout_node_id = "viewport";
+  background.target_bounds = { x: 0, y: 0, width: 400, height: 300 };
+  sketch.node_presentations.image = { kind: "image", asset_ids: ["asset-main"], object_fit: "contain" };
+  sketch.layout.offsets = {};
+  const sources = await loadBackgroundSources(sketch);
+  assert.deepEqual(sources.errors, []);
+  assert.deepEqual(sources.backgroundNodeIds, ["image"], "只识别当前 scene/state 的 coverage 背景");
+  const v4Scene = createFakeScene();
+  v4Scene.textures.add("texture-main");
+  const v4 = await createPageSketchRenderer({ scene: v4Scene, sketch, assets: new Map([["asset-main", "texture-main"]]), fonts: createFonts(), backgroundNodeIds: sources.backgroundNodeIds });
+  const FormalScene = createFormalPageSketchScene(createFakePhaser(), { sketch, sources, fonts: createFonts() });
+  const v5Scene = new FormalScene();
+  Object.assign(v5Scene, createFakeScene());
+  try {
+    v4Scene.game.events.emit("postrender");
+    await v4.ready;
+    v5Scene.preload();
+    const createPromise = v5Scene.create();
+    await waitForRenderer(v5Scene);
+    v5Scene.game.events.emit("postrender");
+    await createPromise;
+    for (const viewport of [{ width: 600, height: 400 }, { width: 400, height: 800 }, { width: 1000, height: 400 }, { width: 600, height: 400 }]) {
+      for (const scene of [v4Scene, v5Scene]) {
+        scene.scale.gameSize = viewport;
+        scene.scale.emit("resize", viewport);
+        assertBackgroundCover(scene, viewport);
+      }
+      assert.equal(v4.isHealthy(), true);
+      assert.equal(v5Scene.isPageSketchHealthy(), true);
+    }
+  } finally {
+    v4.destroy();
+    v5Scene.pageSketchRenderer?.destroy();
+    sources.revoke();
+  }
 });
 
 /** 用例：经真实 accepted 草图模板比较 V4 renderer 和 V5 Scene 的对象状态。 */

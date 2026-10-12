@@ -179,7 +179,8 @@ test("项目子路径与百分号文件名保持在配置资源根下，控制�
   const referenceBytes = new TextEncoder().encode("reference bytes");
   const hashes = new Map([
     ["/game/evidence/nodes.json", new TextEncoder().encode("nodes")],
-    ["/game/evidence/manifest.json", new TextEncoder().encode(JSON.stringify({ regions: [{ id: "backdrop", layer: "background", scene_id: "HudScene", state_id: "default", layout_node_ids: ["hud.hero"] }] }))],
+    // 使用正式 V3 清单的 coverage_audit 路径，避免错误的顶层 regions 掩盖背景漏识别。
+    ["/game/evidence/manifest.json", new TextEncoder().encode(JSON.stringify({ coverage_audit: { regions: [{ id: "backdrop", layer: "background", scene_id: "HudScene", state_id: "default", layout_node_ids: ["hud.hero"] }] } }))],
     ["/game/evidence/v3-pass.json", new TextEncoder().encode("evidence")],
     ["/game/refs/%252e%252e/reference.png", referenceBytes],
     ["/game/public/hero.png", new TextEncoder().encode("hero")],

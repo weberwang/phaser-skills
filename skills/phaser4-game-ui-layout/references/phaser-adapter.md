@@ -46,6 +46,8 @@ V5 宿主通过 `createFormalPageSketchGameConfig(Phaser, {parent, viewport, ske
 
 ## 唯一入口与幂等重排
 
+重排入口按[场景与弹窗尺寸参照](layout-hierarchy.md#场景与弹窗尺寸参照)读取直接父级逻辑边界：全屏 UI 使用场景尺寸；有底板弹窗先相对场景定位底板功能 Container，再按该 Container 的底板宽高布局内容；无底板弹窗使用宿主场景尺寸。Phaser Container 不自带可用的布局宽高，须消费合同中的逻辑 bounds，不从子对象包围盒或底板纹理尺寸推断。底板位图与内容共用功能 Container，不能把底板登记为全屏背景并套用 cover；底板尺寸变化后重算其内容布局，场景尺寸变化后重算页面和弹窗根布局。
+
 建立一个可识别的布局入口，例如 `reflowUi(input)`；初始创建、Scene 唤醒/恢复、resize、方向切换、安全区变化、键盘变化、文本/成员变化、DPR 变化和状态切换都调用同一入口。入口输入至少包含 CSS 逻辑视口、安全区、方向、内容尺寸、raw/effective DPR、Camera 合同和 UI 状态；DPR 通过统一设备解析器动态封顶为 2。弹窗或 `DISPLAY_LAYER` 必须继承宿主视口、有效 DPR 和输入合同，独立 Camera 必须单独声明并采集证据。
 
 纯布局计算尽量先返回几何结果，再由 Phaser GameObject 写入，以便确定性测试。每次计算从合同值重新推导，不能在上一次坐标上累加偏移或缩放；相同输入重复调用必须产生相同结果。
