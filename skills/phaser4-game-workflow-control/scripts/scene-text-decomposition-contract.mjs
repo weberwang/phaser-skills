@@ -207,20 +207,19 @@ function nonNumericFactsDiffer(target, candidate) {
   return JSON.stringify(target) !== JSON.stringify(candidate);
 }
 
-/** 读取资源对象中统一的 kind/path/SHA 视图。 */
+/** 读取资源对象中统一的 kind/path 视图；内容摘要只作可选追踪信息。 */
 function resourceFact(resource) {
-  if (!isObject(resource)) return { kind: "", path: undefined, sha256: undefined };
+  if (!isObject(resource)) return { kind: "", path: undefined };
   return {
     kind: String(field(resource, "kind", "resource_type", "resourceType", "role", "purpose", "type", "asset_type", "assetType") ?? "").toLowerCase(),
     path: field(resource, "path", "file", "asset", "asset_path", "assetPath", "source_file", "sourceFile"),
-    sha256: field(resource, "sha256", "asset_sha256", "assetSha256", "resource_sha256", "resourceSha256"),
   };
 }
 
-/** 判断资源是否绑定了合法 sha256；路径缺失也不能称为资源消费。 */
+/** 判断资源是否绑定了实际路径；摘要存在与否不改变资源映射结论。 */
 function validResource(resource) {
-  const { path, sha256 } = resourceFact(resource);
-  return nonEmptyString(path) && typeof sha256 === "string" && /^sha256:[a-f0-9]{64}$/.test(sha256);
+  const { path } = resourceFact(resource);
+  return nonEmptyString(path);
 }
 
 /** 将直接资产字段纳入路线检查，canonical 路径仍建议使用 required_resources。 */
@@ -369,7 +368,7 @@ function validateImplementationRoute(node, contract, stage, errors, { typography
   const rawResources = field(node, "required_resources", "requiredResources", "resources");
   const resources = Array.isArray(rawResources) ? rawResources : [];
   if (!Array.isArray(rawResources) || resources.length === 0) pushPlanError(errors, stage, contract, node, "text_node 缺少非空 required_resources", { missing: "required_resources" });
-  for (const [index, resource] of resources.entries()) if (!validResource(resource)) pushPlanError(errors, stage, contract, node, `required_resources[${index}] 必须包含路径和合法 SHA-256`, { missing: `required_resources[${index}].path/sha256`, actual: JSON.stringify(resource) });
+  for (const [index, resource] of resources.entries()) if (!validResource(resource)) pushPlanError(errors, stage, contract, node, `required_resources[${index}] 必须包含资源路径`, { missing: `required_resources[${index}].path`, actual: JSON.stringify(resource) });
 
   const directFont = directResource(node, ["font_asset", "fontAsset", "font_resource", "fontResource"]);
   const directDescriptor = directResource(node, ["bitmap_font_descriptor", "bitmapFontDescriptor", "descriptor_resource", "descriptorResource"]);
@@ -380,10 +379,10 @@ function validateImplementationRoute(node, contract, stage, errors, { typography
   const hasTexture = Boolean(directTexture && validResource(directTexture)) || resources.some(isBitmapTexture);
   const hasImage = Boolean(directImage && validResource(directImage)) || resources.some(isImageResource);
 
-  if (route === "phaser-text" && !hasFont) pushPlanError(errors, stage, contract, node, "phaser-text 必须绑定字体资产及 SHA-256", { missing: "required_resources[kind=font].sha256" });
-  if (route === "bitmap-text" && (!hasDescriptor || !hasTexture)) pushPlanError(errors, stage, contract, node, "bitmap-text 必须同时绑定描述文件和字体纹理及 SHA-256", { missing: "bitmap-font-descriptor/bitmap-font-texture resources" });
+  if (route === "phaser-text" && !hasFont) pushPlanError(errors, stage, contract, node, "phaser-text 必须绑定字体资产路径", { missing: "required_resources[kind=font].path" });
+  if (route === "bitmap-text" && (!hasDescriptor || !hasTexture)) pushPlanError(errors, stage, contract, node, "bitmap-text 必须同时绑定描述文件和字体纹理路径", { missing: "bitmap-font-descriptor/bitmap-font-texture resources" });
   if (route === "image-text") {
-    if (!hasImage) pushPlanError(errors, stage, contract, node, "image-text 必须绑定图片资产及 SHA-256", { missing: "required_resources[kind=image].sha256" });
+    if (!hasImage) pushPlanError(errors, stage, contract, node, "image-text 必须绑定图片资产路径", { missing: "required_resources[kind=image].path" });
     const accessible = field(node, "accessible_semantic", "accessibleSemantic", "accessibility", "semantic_text", "semanticText");
     if (!hasStructuredValue(accessible)) pushPlanError(errors, stage, contract, node, "image-text 必须保留可访问语义", { missing: "accessible_semantic" });
   }

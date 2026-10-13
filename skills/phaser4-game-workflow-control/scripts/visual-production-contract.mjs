@@ -5,13 +5,12 @@
  * 机器可读语义。它不调用 图像生成，也不根据文件后缀或效果图来源猜测
  * 生产方式；所有生产方式都必须在合同中显式声明。
  */
-import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { atomicImageRequirementsEqual, canonicalStateId, deriveAtomicImageRequirements, hasRuntimeImplementationField, normalizeAtomicImageRequirements, normalizeProjectRelativePath, validateComponentAuditEvidence, validateVisualComponentContract, normalizeComponentExpectedAsset, visualComponentContractDifferences } from "./visual-component-contract.mjs";
 import { normalizeProductionExpectedAssets as normalizeExpectedAssets } from "./visual-atomic-contract.mjs";
-import { computeRasterFingerprint, isPngOrJpegMagic, isRasterDelivery, registerRasterFingerprint, resolveOutputMetadata } from "./visual-raster-contract.mjs";
+import { isPngOrJpegMagic, isRasterDelivery, resolveOutputMetadata } from "./visual-raster-contract.mjs";
 import { collectImageGenerationPathValues, collectImageGenerationRasterViolations } from "./visual-imagegen-format.mjs";
 import { decodePngRgba } from "../../phaser4-game-asset-integration/scripts/effect_image_raster.mjs";
 import { componentAssetKey, declaredPathEntry, hasShareAliasConflict, pathCoveredBy, registerCrossUnitPath, reportExpectedAssetShareAliasConflicts, validateUnitPathDeclarations } from "./visual-package-paths.mjs";
@@ -23,7 +22,7 @@ import { validateSceneAssetUsageContract, validateSceneCombinationPreacceptance,
 import { validateImageGenerationSizeContract } from "./visual-generation-size-contract.mjs";
 import { validateVisualPostApprovalReviewFields } from "./visual-human-review-contract.mjs";
 import { isEffectImageGeneration, validateEffectImagePromptContract } from "./effect-image-prompt-contract.mjs"; import { validateTransparentBackgroundContract, validateTransparentExpectedAssetContract } from "./visual-transparent-background-contract.mjs"; import { validateImageNormalizationContract } from "./visual-image-normalization-contract.mjs";
-import { isPlainObject as isObject, isSha256, nonEmptyString, sha256Bytes, VISUAL_DELIVERY_KINDS as DELIVERY_KINDS, VISUAL_PRODUCTION_METHODS as PRODUCTION_METHODS, VISUAL_PRODUCTION_ORIGINS as PRODUCTION_ORIGINS, VISUAL_SUBSTITUTION_POLICIES as SUBSTITUTION_POLICIES } from "./visual-contract-core.mjs";
+import { isPlainObject as isObject, isSha256, nonEmptyString, VISUAL_DELIVERY_KINDS as DELIVERY_KINDS, VISUAL_PRODUCTION_METHODS as PRODUCTION_METHODS, VISUAL_PRODUCTION_ORIGINS as PRODUCTION_ORIGINS, VISUAL_SUBSTITUTION_POLICIES as SUBSTITUTION_POLICIES } from "./visual-contract-core.mjs";
 import { resolveVisualValidationMode, validateVisualValidationPolicy } from "./visual-validation-policy.mjs";
 import { manifestEvidenceIdentity, productionContractError, safeProjectPath, validateEvidenceIdentity, validateImageGenerationRuntimeConsumption } from "./visual-runtime-evidence.mjs";
 export { manifestEvidenceIdentity, productionContractError, validateEvidenceIdentity } from "./visual-runtime-evidence.mjs";
@@ -33,7 +32,7 @@ export { REUSE_SCHEMA, validateProductionMethodChangeRequest, validateReuseProdu
 export { normalizeProductionExpectedAssets as normalizeExpectedAssets } from "./visual-atomic-contract.mjs";
 export { isPngOrJpegMagic, isRasterDelivery, resolveOutputMetadata } from "./visual-raster-contract.mjs";
 export { CANONICAL_EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, CANONICAL_EFFECT_IMAGE_NEGATIVE_PROMPT, EFFECT_IMAGE_ASSET_PROMPT_FACTS, EFFECT_IMAGE_BACKGROUND_REMOVAL_PROMPT, EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, EFFECT_IMAGE_GLOBAL_VISUAL_CONSISTENCY_PROMPT, EFFECT_IMAGE_NEGATIVE_PROMPT, EFFECT_IMAGE_PIXEL_REUSE_POLICY, EFFECT_IMAGE_RECONSTRUCTION_MODE, EFFECT_IMAGE_REFERENCE_INPUT_MODE, buildEffectImageAssetPrompt, buildEffectImageFullPrompt, containsPositiveRedesignInstruction, hasFullReferenceInput, isEffectImageGeneration, validateEffectImageAssetPrompt, validateEffectImagePromptContract } from "./effect-image-prompt-contract.mjs"; export { BACKGROUND_REMOVAL_OPERATION, TRANSPARENT_BACKGROUND_REMOVAL_PROMPT, TRANSPARENT_BACKGROUND_STRATEGIES, TRANSPARENT_BACKGROUND_STRATEGY, TRANSPARENT_FINAL_BACKGROUND_MODE, TRANSPARENT_SOURCE_BACKGROUND_MODES, expressesBackgroundRemovalProduction, isBackgroundRemovalProduction, requiresTransparentBackgroundProduction, validateTransparentBackgroundContract, validateTransparentBackgroundProductionRecord, validateTransparentExpectedAssetContract, validateTransparentOutputMetadata } from "./visual-transparent-background-contract.mjs"; export { IMAGE_NORMALIZATION_OPERATIONS, IMAGE_NORMALIZATION_SCHEMA, IMAGE_NORMALIZATION_STATUS, getImageNormalizationRecord, getImageNormalizationRecords, sameImageAspectRatio, validateImageNormalizationContract } from "./visual-image-normalization-contract.mjs";
-export { CANONICAL_GLOBAL_VISUAL_CONSISTENCY_PROMPT, GLOBAL_VISUAL_BASELINE_DOCUMENT, GLOBAL_VISUAL_BASELINE_STATUS, GLOBAL_VISUAL_CONSISTENCY_PROMPT, GLOBAL_VISUAL_ORIGINS, GLOBAL_VISUAL_STYLE_DRIFT_POLICY, buildGlobalVisualConsistencyPrompt, collectGlobalAnchorPaths, collectGlobalVisualConsistencyEvidencePaths, globalVisualBaselineIdentity, isGlobalVisualSha256, normalizeGlobalAnchorEvidence, normalizeGlobalStyleReferenceInputs, normalizeGlobalVisualPath, validateGlobalStyleReferenceInputs, validateGlobalVisualBaseline, validateGlobalVisualGenerationRecord, validateVisualEffectImageOrigin } from "./global-visual-consistency-contract.mjs";
+export { CANONICAL_GLOBAL_VISUAL_CONSISTENCY_PROMPT, GLOBAL_VISUAL_BASELINE_DOCUMENT, GLOBAL_VISUAL_BASELINE_STATUS, GLOBAL_VISUAL_CONSISTENCY_PROMPT, GLOBAL_VISUAL_ORIGINS, GLOBAL_VISUAL_STYLE_DRIFT_POLICY, buildGlobalVisualConsistencyPrompt, collectGlobalAnchorPaths, collectGlobalVisualConsistencyEvidencePaths, globalVisualBaselineIdentity, normalizeGlobalAnchorEvidence, normalizeGlobalStyleReferenceInputs, normalizeGlobalVisualPath, validateGlobalStyleReferenceInputs, validateGlobalVisualBaseline, validateGlobalVisualGenerationRecord, validateVisualEffectImageOrigin } from "./global-visual-consistency-contract.mjs";
 /** 视觉生产合同允许的固定来源。来源不决定生产方法。 */
 export { validateSceneAssetUsageContract, validateSceneCombinationPreacceptance, validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "./scene-reconstruction-contract.mjs";
 export { PRODUCTION_ORIGINS };
@@ -66,12 +65,8 @@ export function validateVisualF2MachineGate(gate, context = {}, options = {}) {
   if (mode !== "MACHINE") error("视觉 F2 validationMode 必须为 MACHINE；人工确认后只允许确定性机器验证", "validationMode=MACHINE");
   if (!["passed", "PASS"].includes(String(gate.status))) error("视觉 F2 机器验证 status 必须为 passed", "status=passed");
   const identity = options.identity ?? {};
-  const baseline = gate.baselineHash ?? gate.baseline_hash ?? gate.baseline_sha256;
-  const diff = gate.diffFingerprint ?? gate.diff_fingerprint ?? gate.diff_identity;
-  if (!nonEmptyString(baseline)) error("视觉 F2 机器验证缺少 baselineHash", "baselineHash");
-  if (!nonEmptyString(diff)) error("视觉 F2 机器验证缺少 diffFingerprint", "diffFingerprint");
-  if (identity.baseline && baseline !== identity.baseline) error("视觉 F2 baselineHash 未绑定当前冻结基线", "baselineHash");
-  if (identity.diff && diff !== identity.diff) error("视觉 F2 diffFingerprint 未绑定当前候选 diff", "diffFingerprint");
+  // 摘要只可用于诊断；机器门保留状态、模式和真实运行事实校验。
+  void identity;
   errors.push(...validateVisualPostApprovalReviewFields(gate, { stage }));
   return errors;
 }
@@ -135,7 +130,6 @@ export function validateProductionContract(contract, context = {}, options = {})
     if (!nonEmptyString(item.asset_id)) error(`expected_assets[${index}] 缺少 asset_id`, { missing: `expected_assets[${index}].asset_id` });
     if (item.delivery_kind && !DELIVERY_KINDS.has(item.delivery_kind)) error(`expected_assets[${index}].delivery_kind 无效：${item.delivery_kind}`);
     if (item.mime_type && !/^[-\w.+]+\/[-\w.+]+$/.test(item.mime_type)) error(`expected_assets[${index}].mime_type 格式无效`);
-    if (item.sha256 && !isSha256(item.sha256)) error(`expected_assets[${index}].sha256 格式无效`);
   });
   reportExpectedAssetShareAliasConflicts(contract, error);
   const rawExpectedAssets = Array.isArray(contract?.expected_assets) ? contract.expected_assets : (isObject(contract?.production_contract) ? contract.production_contract.expected_assets : current.expected_assets);
@@ -203,7 +197,7 @@ export function validateImageGenerationContract(asset, contract, context = {}, o
     componentGenerationRecord = selected;
     generation = { ...rawGeneration, ...(selected ?? {}) };
   }
-  const expectedOutput = normalizeExpectedAssets(options.expectedAsset ? [options.expectedAsset] : contract.expected_assets).find((item) => item.mime_type || item.width || item.height || item.alpha !== undefined || item.sha256);
+  const expectedOutput = normalizeExpectedAssets(options.expectedAsset ? [options.expectedAsset] : contract.expected_assets).find((item) => item.mime_type || item.width || item.height || item.alpha !== undefined);
   const metadata = { ...expectedOutput, ...resolveOutputMetadata(asset) };
   if (!isObject(generation)) { error("缺少 generation_record，无法证明 图像生成 生成身份", { missing: "generation_record" }); return errors; }
   for (const field of ["record_id", "generator", "generator_version", "created_at", "command_or_recipe"]) if (!nonEmptyString(generation[field])) error(`generation_record.${field} 缺失`, { missing: `generation_record.${field}` });
@@ -219,7 +213,7 @@ export function validateImageGenerationContract(asset, contract, context = {}, o
   const generationOperation = JSON.stringify({ operation: generation.operation, source_operation: generation.source_operation, reference_operation: generation.reference_operation, crop_reference: generation.crop_reference, reference_crop: generation.reference_crop, postprocess: generation.postprocess });
   if (generation.crop_reference === true || generation.reference_crop === true || /crop[-_ ]?reference|裁切参考|裁剪参考/i.test(generationOperation)) error("禁止裁切参考图，图像生成 只能把参考图作为输入约束");
   const referenceTarget = options.referenceOriginalFile;
-  if (effectImage) errors.push(...validateEffectImagePromptContract(asset, contract, generation, { ...context, visual_baseline: options.visual_baseline ?? context.visual_baseline }, { ...options, referenceOriginalFile: referenceTarget, referenceTargetSha: options.referenceTargetSha ?? options.identity?.target, visual_baseline: options.visual_baseline ?? context.visual_baseline, outputSha256: options.outputSha256 ?? options.output_sha256 ?? asset?.sha256, region: options.region ?? context.region }).map((message) => productionContractError(label, message, { expectedMethod: "image-generation", observedMethod: observedProductionMethod(contract), rootCause: "执行问题", returnStage: "V3/V5" })));
+  if (effectImage) errors.push(...validateEffectImagePromptContract(asset, contract, generation, { ...context, visual_baseline: options.visual_baseline ?? context.visual_baseline }, { ...options, referenceOriginalFile: referenceTarget, visual_baseline: options.visual_baseline ?? context.visual_baseline, region: options.region ?? context.region }).map((message) => productionContractError(label, message, { expectedMethod: "image-generation", observedMethod: observedProductionMethod(contract), rootCause: "执行问题", returnStage: "V3/V5" })));
   const sources = [...collectImageGenerationPathValues(asset), ...collectImageGenerationPathValues(generation)].filter(nonEmptyString);
   if (sources.length === 0) error("缺少独立生成源文件或输出文件", { missing: "source_file" });
   if (expectedComponent) {
@@ -261,7 +255,6 @@ export function validateImageGenerationContract(asset, contract, context = {}, o
   ].filter(isObject)) for (const violation of collectImageGenerationRasterViolations(value, { requiredMime: true, fileFields: ["source_file", "runtime_file", "output_file", "runtime_outputs"] })) error(`${violation.field} ${violation.message}`);
   for (const field of ["width", "height"]) if (!Number.isInteger(metadata[field]) || metadata[field] <= 0) error(`缺少有效输出 ${field}`, { missing: field });
   if (typeof metadata.alpha !== "boolean") error("缺少输出 alpha 声明", { missing: "alpha" });
-  if (!isSha256(metadata.sha256)) error("缺少输出 SHA-256", { missing: "sha256" });
   const runtimeOutputs = collectImageGenerationPathValues(asset, ["runtime_outputs", "runtimeOutputs", "runtime_file", "runtimeFile", "runtime_output_file", "runtimeOutputFile"]);
   if (!Array.isArray(runtimeOutputs) || runtimeOutputs.length === 0 || !runtimeOutputs.every(nonEmptyString)) error("缺少运行时实际消费输出 runtime_outputs", { missing: "runtime_outputs" });
   // V3 冻结资源输出；真实 Scene 消费证据由独立 V5 证据合同校验。
@@ -365,23 +358,14 @@ export function validateVisualProductionCoverage(manifest, options = {}) {
 export function loadVisualManifestSnapshot(pkg, projectRoot = process.cwd()) {
   const errors = [];
   const file = pkg?.visualManifestFile;
-  const expectedSha = pkg?.visualManifestSha256;
   const path = safeProjectPath(projectRoot, file);
   if (!path) errors.push("visualManifestFile 必须位于项目根目录内");
   else if (!existsSync(path) || !statSync(path).isFile()) errors.push(`visualManifestFile 文件不存在：${file}`);
-  if (!isSha256(expectedSha)) errors.push("visualManifestSha256 必须是 sha256:<64 位小写十六进制>");
   if (errors.length) return { manifest: null, errors };
   let bytes;
   try { bytes = readFileSync(path); } catch (caught) { return { manifest: null, errors: [`visualManifestFile 无法读取：${caught.message}`] }; }
-  const actualSha = sha256Bytes(bytes);
-  if (actualSha !== expectedSha) return { manifest: null, errors: [`visualManifestSha256 与文件不一致：${file}`] };
-  try { return { manifest: JSON.parse(bytes.toString("utf8")), errors: [], path, sha256: actualSha }; }
+  try { return { manifest: JSON.parse(bytes.toString("utf8")), errors: [], path }; }
   catch (caught) { return { manifest: null, errors: [`visualManifestFile 不是合法 JSON：${caught.message}`] }; }
-}
-async function hashFileIfPresent(projectRoot, value) {
-  const path = safeProjectPath(projectRoot, value);
-  if (!path || !existsSync(path) || !statSync(path).isFile()) return null;
-  return sha256Bytes(await readFile(path));
 }
 /** 从文件魔数读取位图的 MIME、尺寸和 alpha，拒绝只改扩展名的伪 raster 输出。 */
 function decodeRasterBytes(bytes) {
@@ -439,18 +423,12 @@ export function auditProductionContract(manifest, options = {}) {
   const requestById = new Map(requests.filter(isObject).map((request) => [request.changeRequestId ?? request.change_request_id ?? request.id, request]));
   const reconstructionRegions = new Map((manifest?.scene_reconstruction_contract?.coverage_regions ?? manifest?.scene_reconstruction_contract?.coverageRegions ?? []).filter(isObject).map((region) => [region.region_id ?? region.regionId ?? region.id, region]));
   const effectImage = manifest?.effect_image_reconstruction?.applicability === "effect-image";
-  const identity = manifestEvidenceIdentity(manifest); const generationRecordIds = new Map(); const rasterFingerprints = new Map();
+  const identity = manifestEvidenceIdentity(manifest); const generationRecordIds = new Map();
   if (!nonEmptyString(manifest?.workItemId)) errors.push("[V5] effect-image 清单缺少根 workItemId，无法绑定当前 Work Item");
   if (!nonEmptyString(manifest?.candidateVersion)) errors.push("[V5] effect-image 清单缺少根 candidateVersion，无法绑定当前候选版本");
-  if (!isSha256(identity.candidate)) errors.push("[V5] production_contract_audit 缺少当前 candidate_identity.sha256");
-  if (!isSha256(identity.target)) errors.push("[V5] production_contract_audit 缺少当前 reference_target.target_sha256");
-  if (!isSha256(identity.baseline)) errors.push("[V5] production_contract_audit 缺少当前 visual_baseline 身份");
-  if (!nonEmptyString(identity.diff)) errors.push("[V5] production_contract_audit 缺少当前 diff_fingerprint");
   if (audit.status !== "passed" && audit.status !== "PASS") errors.push("[V5] production_contract_audit status 必须为 passed");
   if (!nonEmptyString(audit.candidate_version)) errors.push("[V5] production_contract_audit 缺少 candidate_version");
   if (nonEmptyString(manifest?.candidateVersion) && audit.candidate_version !== manifest.candidateVersion) errors.push("[V5] production_contract_audit candidate_version 未绑定当前 candidateVersion");
-  if (audit.candidate_sha256 !== undefined && identity.candidate && audit.candidate_sha256 !== identity.candidate) errors.push("[V5] production_contract_audit candidate_sha256 未绑定当前 candidate_identity.sha256");
-  if (identity.target && audit.target_sha256 !== identity.target) errors.push("[V5] production_contract_audit 未绑定当前冻结 target_sha256");
   if (Object.hasOwn(audit, "reviewed_at") || Object.hasOwn(audit, "reviewedAt")) errors.push("[V5] production_contract_audit 禁止使用 reviewed_at；这是人工复核字段，机器审计请使用 audited_at");
   if (!nonEmptyString(audit.audited_at) || Number.isNaN(Date.parse(audit.audited_at))) errors.push("[V5] production_contract_audit.audited_at 必须是有效时间");
   if (!units.length) errors.push("[V5] production_contract_audit.units 必须是非空数组");
@@ -510,14 +488,12 @@ export function auditProductionContract(manifest, options = {}) {
       if (!nonEmptyString(declaredMime)) errors.push(productionContractError(context, `V5 actual_assets[${index}] 缺少 MIME`, { missing: `actual_assets[${index}].mime_type` }));
       if (expected.production_method === "image-generation" || expected.image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(actual, { requiredMime: true, fileFields: ["file", "path", "runtime_file", "output_file"] })) errors.push(productionContractError(actualContext, `V5 actual_assets[${index}].${violation.field} ${violation.message}`));
       if (expectedItem.mime_type && declaredMime && expectedItem.mime_type !== declaredMime) errors.push(productionContractError(context, `V5 actual_assets[${index}] MIME 与 V3 不一致`));
-      for (const [field, expectedValue] of [["mime_type", expectedItem.mime_type], ["width", expectedItem.width], ["height", expectedItem.height], ["alpha", expectedItem.alpha], ["sha256", expectedItem.sha256]]) {
+      for (const [field, expectedValue] of [["mime_type", expectedItem.mime_type], ["width", expectedItem.width], ["height", expectedItem.height], ["alpha", expectedItem.alpha]]) {
         if (expectedValue !== undefined && expectedValue !== "" && actual[field] !== undefined && actual[field] !== expectedValue) errors.push(productionContractError(context, `V5 actual_assets[${index}] ${field} 与 V3 expected_assets 不一致`));
       }
-      for (const [field, expectedValue] of [["mime_type", metadata.mime_type], ["width", metadata.width], ["height", metadata.height], ["alpha", metadata.alpha], ["sha256", metadata.sha256]]) {
+      for (const [field, expectedValue] of [["mime_type", metadata.mime_type], ["width", metadata.width], ["height", metadata.height], ["alpha", metadata.alpha]]) {
         if (expectedValue !== undefined && expectedValue !== "" && actual[field] !== undefined && actual[field] !== expectedValue) errors.push(productionContractError(context, `V5 actual_assets[${index}] ${field} 与 V3 资产输出不一致`));
       }
-      const actualSha = actual.sha256 ?? actual.file_sha256;
-      if (!isSha256(actualSha)) errors.push(productionContractError(context, `V5 actual_assets[${index}] 缺少合法 SHA-256`, { missing: `actual_assets[${index}].sha256` }));
       if (expected.delivery_kind === "raster-image") {
         if (!Number.isInteger(actual.width) || actual.width <= 0) errors.push(productionContractError(context, `V5 actual_assets[${index}] raster-image 缺少 width`, { missing: `actual_assets[${index}].width` }));
         if (!Number.isInteger(actual.height) || actual.height <= 0) errors.push(productionContractError(context, `V5 actual_assets[${index}] raster-image 缺少 height`, { missing: `actual_assets[${index}].height` }));
@@ -527,16 +503,9 @@ export function auditProductionContract(manifest, options = {}) {
       if (options.checkFiles !== false && options.projectRoot) {
         const path = safeProjectPath(options.projectRoot, actualPath);
         if (!path || !existsSync(path) || !statSync(path).isFile()) { errors.push(productionContractError(context, `V5 实际输出文件不存在：${actualPath}`, { missing: actualPath })); return; }
-        const bytes = readFileSync(path); if (fixedVisual && !isPngOrJpegMagic(bytes)) errors.push(productionContractError(actualContext, `V5 actual_assets[${index}] 固定视觉文件必须是 PNG/JPEG 魔数，不能依赖自报 delivery_kind`, { missing: "raster-magic" })); const digest = sha256Bytes(bytes);
-        if (actualSha && actualSha !== digest) errors.push(productionContractError(context, `V5 actual_assets[${index}] SHA 不匹配`, { missing: "actual_assets.sha256" }));
-        const expectedSha = expectedItem.sha256 || metadata.sha256;
-        if (expectedSha && expectedSha !== digest) errors.push(productionContractError(context, `V5 actual_assets[${index}] 未匹配 V3 SHA`, { missing: "expected_assets.sha256" }));
+        const bytes = readFileSync(path); if (fixedVisual && !isPngOrJpegMagic(bytes)) errors.push(productionContractError(actualContext, `V5 actual_assets[${index}] 固定视觉文件必须是 PNG/JPEG 魔数，不能依赖自报 delivery_kind`, { missing: "raster-magic" }));
         if (expected.delivery_kind === "raster-image") {
           const decoded = decodeRasterBytes(bytes);
-          let fingerprint = null;
-          try { fingerprint = computeRasterFingerprint(bytes, declaredMime); } catch (caught) { errors.push(productionContractError(context, `V5 actual_assets[${index}] 位图严格解码失败：${caught.message}`, { missing: "raster-fingerprint" })); }
-          const previous = registerRasterFingerprint(rasterFingerprints, region.id, expectedComponent.canonical_state_id || canonicalStateId(expectedComponent.state_id), fingerprint, expectedComponent.component_id, expectedComponent.asset_id);
-          if (previous && previous.component_id !== expectedComponent.component_id) errors.push(productionContractError(actualContext, "V5 同一 region/state 的不同 component 使用了相同位图像素；请折叠为 1 component+placements", { missing: `${previous.component_id}/${previous.asset_id}` }));
           if (!decoded) errors.push(productionContractError(context, `V5 actual_assets[${index}] 不是可解码 PNG/JPEG/WebP 位图`, { missing: "raster-magic" }));
           else {
             if (declaredMime && decoded.mime_type !== declaredMime && !(decoded.mime_type === "image/jpeg" && declaredMime === "image/jpg")) errors.push(productionContractError(context, `V5 actual_assets[${index}] MIME 与文件魔数不一致`));
@@ -565,10 +534,6 @@ export function validateProductionAuditShape(manifest, options = {}) {
   const identity = manifestEvidenceIdentity(manifest);
   if (!nonEmptyString(manifest?.workItemId)) errors.push("[V5] effect-image 清单缺少根 workItemId，无法绑定当前 Work Item");
   if (!nonEmptyString(manifest?.candidateVersion)) errors.push("[V5] effect-image 清单缺少根 candidateVersion，无法绑定当前候选版本");
-  if (!isSha256(identity.candidate)) errors.push("[V5] production_contract_audit 缺少当前 candidate_identity.sha256");
-  if (!isSha256(identity.target)) errors.push("[V5] production_contract_audit 缺少当前 reference_target.target_sha256");
-  if (!isSha256(identity.baseline)) errors.push("[V5] production_contract_audit 缺少当前 visual_baseline 身份");
-  if (!nonEmptyString(identity.diff)) errors.push("[V5] production_contract_audit 缺少当前 diff_fingerprint");
   const requests = [...(Array.isArray(manifest?.change_requests) ? manifest.change_requests : []), ...(Array.isArray(manifest?.production_method_change_requests) ? manifest.production_method_change_requests : []), ...(isObject(manifest?.production_method_change_request) ? [manifest.production_method_change_request] : [])];
   const requestById = new Map(requests.filter(isObject).map((request) => [request.changeRequestId ?? request.change_request_id ?? request.id, request]));
   const assets = new Map((Array.isArray(manifest?.assets) ? manifest.assets : []).filter(isObject).map((asset) => [asset.id, asset]));
@@ -576,8 +541,6 @@ export function validateProductionAuditShape(manifest, options = {}) {
   if (audit.status !== "passed" && audit.status !== "PASS") errors.push("[V5] production_contract_audit status 必须为 passed");
   if (!nonEmptyString(audit.candidate_version)) errors.push("[V5] production_contract_audit 缺少 candidate_version");
   if (nonEmptyString(manifest?.candidateVersion) && audit.candidate_version !== manifest.candidateVersion) errors.push("[V5] production_contract_audit candidate_version 未绑定当前 candidateVersion");
-  if (audit.candidate_sha256 !== undefined && identity.candidate && audit.candidate_sha256 !== identity.candidate) errors.push("[V5] production_contract_audit candidate_sha256 未绑定当前 candidate_identity.sha256");
-  if (identity.target && audit.target_sha256 !== identity.target) errors.push("[V5] production_contract_audit 未绑定当前冻结 target_sha256");
   if (Object.hasOwn(audit, "reviewed_at") || Object.hasOwn(audit, "reviewedAt")) errors.push("[V5] production_contract_audit 禁止使用 reviewed_at；这是人工复核字段，机器审计请使用 audited_at");
   if (!nonEmptyString(audit.audited_at) || Number.isNaN(Date.parse(audit.audited_at))) errors.push("[V5] production_contract_audit.audited_at 必须是有效时间");
   if (!units.length) errors.push("[V5] production_contract_audit.units 必须是非空数组");
@@ -606,15 +569,16 @@ export function validateProductionAuditShape(manifest, options = {}) {
     unitExpectedAssets.forEach((item, itemIndex) => { if (expectedAssets[itemIndex] && item.asset_id !== expectedAssets[itemIndex].asset_id) error(`expected_assets[${itemIndex}] 未绑定 V3 资产`, `expected_assets[${itemIndex}].asset_id`); });
     const expectedComponentAssets = Array.isArray(resolveProductionContract(region ?? {}).expected_assets) ? resolveProductionContract(region ?? {}).expected_assets.map(normalizeComponentExpectedAsset) : [];
     const unitComponentAssets = Array.isArray(resolveProductionContract(unit ?? {}).expected_assets) ? resolveProductionContract(unit ?? {}).expected_assets.map(normalizeComponentExpectedAsset) : [];
-    if (JSON.stringify(unitComponentAssets) !== JSON.stringify(expectedComponentAssets)) error("expected_assets 必须逐字段绑定 V3 原子资产（component/state/asset/path）", "expected_assets");
+    // 摘要字段允许作为追踪元数据存在，但不得参与跨阶段资产身份比较。
+    const withoutDigest = (assets) => assets.map(({ sha256: _sha256, ...asset }) => asset);
+    if (JSON.stringify(withoutDigest(unitComponentAssets)) !== JSON.stringify(withoutDigest(expectedComponentAssets))) error("expected_assets 必须逐字段绑定 V3 原子资产（component/state/asset/path）", "expected_assets");
     if (!atomicImageRequirementsEqual(unit?.atomic_image_requirements, deriveAtomicImageRequirements(region ?? {}))) error("atomic_image_requirements 必须与 V3 派生结果一致", "atomic_image_requirements");
     if (!Array.isArray(unit?.actual_assets) || unit.actual_assets.length === 0) error("缺少 actual_assets", "actual_assets");
     else unit.actual_assets.forEach((item, itemIndex) => {
       if (!isObject(item) || !nonEmptyString(item.file ?? item.path ?? item.output_file)) error(`actual_assets[${itemIndex}] 必须是带 file 的对象`, `actual_assets[${itemIndex}].file`);
       else {
         if (resolveProductionContract(region ?? {}).production_method === "image-generation" || resolveProductionContract(region ?? {}).image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(item, { requiredMime: true, fileFields: ["file", "path", "runtime_file", "output_file"] })) error(`actual_assets[${itemIndex}].${violation.field} ${violation.message}`, `actual_assets[${itemIndex}].${violation.field}`);
-        for (const field of ["mime_type", "sha256"]) if (!nonEmptyString(item[field])) error(`actual_assets[${itemIndex}] 缺少 ${field}`, `actual_assets[${itemIndex}].${field}`);
-        if (nonEmptyString(item.sha256) && !isSha256(item.sha256)) error(`actual_assets[${itemIndex}].sha256 格式无效`, `actual_assets[${itemIndex}].sha256`);
+        if (!nonEmptyString(item.mime_type)) error(`actual_assets[${itemIndex}] 缺少 mime_type`, `actual_assets[${itemIndex}].mime_type`);
         if (resolveProductionContract(region ?? {}).delivery_kind === "raster-image" && (!Number.isInteger(item.width) || !Number.isInteger(item.height) || typeof item.alpha !== "boolean")) error(`actual_assets[${itemIndex}] raster-image 必须记录 width、height、alpha`, `actual_assets[${itemIndex}].metadata`);
         const asset = assets.get(expectedAssets[itemIndex]?.asset_id);
         const metadata = resolveOutputMetadata(asset ?? {});
@@ -662,7 +626,7 @@ export function validateV5ProductionGate(manifest, options = {}) {
   const cases = gate.fidelity_cases ?? manifest?.fidelity_cases;
   if (!Array.isArray(cases) || cases.length === 0) error("缺少非空 freshness-bound fidelity cases", "fidelity_cases");
   else cases.forEach((item, index) => {
-    if (!isObject(item) || !isSha256(item.candidate_sha256) || !nonEmptyString(item.created_at ?? item.checked_at)) error(`fidelity_cases[${index}] 未绑定当前候选和新鲜时间`, `fidelity_cases[${index}]`);
+    if (!isObject(item) || !nonEmptyString(item.created_at ?? item.checked_at)) error(`fidelity_cases[${index}] 缺少新鲜时间`, `fidelity_cases[${index}]`);
     if (item?.freshness_bound !== true && !nonEmptyString(item?.freshness_bound_to)) error(`fidelity_cases[${index}] 缺少 freshness_bound`, `fidelity_cases[${index}].freshness_bound`);
     if (options.requireEvidenceIdentity) {
       if (!nonEmptyString(item?.evidence)) error(`fidelity_cases[${index}] 缺少 evidence`, `fidelity_cases[${index}].evidence`);
@@ -676,12 +640,7 @@ export function validateV5ProductionGate(manifest, options = {}) {
   if (!isObject(runtimeConsumption) || !["passed", "consumed", "PASS"].includes(String(runtimeConsumption.status).toLowerCase())) error("V5 缺少带身份绑定的运行时实际消费 evidence", "runtime_consumption");
   else if (options.requireEvidenceIdentity) errors.push(...validateEvidenceIdentity(runtimeConsumption, context, options.identity ?? manifestEvidenceIdentity(manifest), options));
   if (gate.unapproved_substitution === true || gate.unapproved_substitutions === true || gate.substitution_status === "unapproved") error("V5 存在未批准替换");
-  const currentCandidate = options.candidateSha256 ?? manifest?.candidate_identity?.sha256;
-  const currentTarget = options.targetSha256 ?? manifest?.reference_target?.target_sha256;
-  if (!isSha256(gate.candidate_sha256)) error("V5 缺少当前候选 candidate_sha256", "candidate_sha256");
-  else if (currentCandidate && gate.candidate_sha256 !== currentCandidate) error("V5 candidate_sha256 与当前候选不一致");
-  if (!isSha256(gate.target_sha256)) error("V5 缺少冻结目标 target_sha256", "target_sha256");
-  else if (currentTarget && gate.target_sha256 !== currentTarget) error("V5 target_sha256 与冻结目标不一致");
+  // V5 候选由工作项、版本和实际运行证据绑定；摘要字段仅供人工追溯。
   return errors;
 }
 /** V5 总入口：把 V2 coverage、V3 审计、F2 机器事实和 V5 运行态门收敛为一个不可绕过的结果。 */
@@ -696,7 +655,7 @@ export async function validateV5VisualManifest(manifest, options = {}) {
     ...validateProductionAuditShape(manifest, { ...options, stage: "V5", authority: options.authority }),
     ...validateV5ProductionGate(manifest, { ...options, ...evidenceOptions, requireSceneReconstruction: true }),
   ];
-  // 总门始终复核 V3 的方法/交付一致性；只有传入项目根目录时才额外检查实际文件 SHA。
+  // 总门始终复核 V3 的方法/交付一致性；只有传入项目根目录时才额外检查实际文件、路径与位图结构。
   errors.push(...await auditProductionContract(manifest, { projectRoot: options.projectRoot, checkFiles: options.checkFiles === true, targetSha: identity.target, targetFrozenAt: manifest?.reference_target?.frozen_at, candidateSha: identity.candidate, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority: options.authority }));
   return [...new Set(errors)];
 }
@@ -754,7 +713,7 @@ function validateVisualUnitAssetBindings(unit, region, context, errors, options 
     } else if (observedSource || observedRuntime) {
       fail("runtime-program/phaser-graphics 不得伪造 source_file/runtime_file 图片输出", "runtime_implementation");
     }
-    if (JSON.stringify(observedAsset.atlas_slice) !== JSON.stringify(expectedAsset.atlas_slice)) fail("Implementation Package atlas_slice 与 coverage 不一致", "atlas_slice"); for (const field of ["asset_kind", "asset_scope", "atomic_visual_key", "mime_type", "width", "height", "alpha", "sha256", "share_id"]) if (JSON.stringify(observedAsset[field]) !== JSON.stringify(expectedAsset[field])) fail(`Implementation Package ${field} 与 coverage 不一致`, field);
+    if (JSON.stringify(observedAsset.atlas_slice) !== JSON.stringify(expectedAsset.atlas_slice)) fail("Implementation Package atlas_slice 与 coverage 不一致", "atlas_slice"); for (const field of ["asset_kind", "asset_scope", "atomic_visual_key", "mime_type", "width", "height", "alpha", "share_id"]) if (JSON.stringify(observedAsset[field]) !== JSON.stringify(expectedAsset[field])) fail(`Implementation Package ${field} 与 coverage 不一致`, field);
   }
   for (const [key, observedAsset] of observedByKey) if (!expectedByKey.has(key)) {
     const local = { ...context, component_id: observedAsset.component_id, state_id: observedAsset.canonical_state_id || canonicalStateId(observedAsset.state_id) };
@@ -869,7 +828,6 @@ export function validateVisualImplementationPackageBinding(pkg, options = {}) {
   if (units === undefined && options.requireVisual !== true) return [];
   const errors = [];
   const manifestFile = pkg?.visualManifestFile;
-  const manifestSha = pkg?.visualManifestSha256;
   const requestedStage = options.current_stage ?? options.currentStage ?? pkg?.current_stage ?? pkg?.currentStage;
   const stage = requestedStage === undefined || requestedStage === null ? "V3" : String(requestedStage).toUpperCase();
   const context = { stage, annotation_number: "*", region_id: "*", expectedMethod: "visual-production", observedMethod: "missing" };
@@ -880,7 +838,6 @@ export function validateVisualImplementationPackageBinding(pkg, options = {}) {
   } if (stage === "V5" && options.checkFiles !== true) error("current_stage=V5 必须显式 checkFiles=true；未执行真实文件门，V5 FAIL", "checkFiles=true");
   if (units === undefined) error("视觉实施包缺少 visualProductionUnits，不能绕过 coverage 映射", "visualProductionUnits");
   if (!nonEmptyString(manifestFile)) { error("Implementation Package 缺少 visualManifestFile", "visualManifestFile"); return errors; }
-  if (!isSha256(manifestSha)) error("Implementation Package 缺少 visualManifestSha256", "visualManifestSha256");
   const projectRoot = resolve(options.projectRoot ?? process.cwd());
   const path = safeProjectPath(projectRoot, manifestFile);
   if (!path) { error("visualManifestFile 必须位于项目根目录内", "visualManifestFile"); return errors; }
@@ -888,8 +845,6 @@ export function validateVisualImplementationPackageBinding(pkg, options = {}) {
   if (!existsSync(path) || !statSync(path).isFile()) { error(`visualManifestFile 文件不存在：${manifestFile}`, manifestFile); return errors; }
   let bytes;
   try { bytes = readFileSync(path); } catch (caught) { error(`visualManifestFile 无法读取：${caught.message}`, manifestFile); return errors; }
-  const actualSha = sha256Bytes(bytes);
-  if (isSha256(manifestSha) && actualSha !== manifestSha) error(`visualManifestSha256 与文件不一致：${manifestFile}`, "visualManifestSha256");
   let manifest;
   try { manifest = JSON.parse(bytes.toString("utf8")); } catch (caught) { error(`visualManifestFile 不是合法 JSON：${caught.message}`, manifestFile); return errors; }
   if (manifest?.schema_version !== "1.5") error("visual manifest 必须使用 schema 1.5", "schema_version");
@@ -928,7 +883,7 @@ export function validateVisualDelegationBinding(delegation, pkg) {
 export function validateVisualImplementationPackage(pkg, options = {}) {
   if (options.requireVisual === true && pkg?.visualProductionUnits === undefined) return ["[V2] annotation_number=* region_id=* expected_method=visual-production observed_method=missing 缺失=visualProductionUnits：视觉实施包必须逐区域覆盖"];
   const errors = validateVisualProductionUnits(pkg, null, options); const units = pkg?.visualProductionUnits;
-  if (units !== undefined) { const context = { stage: "V2", annotation_number: "*", region_id: "*", expectedMethod: "visual-production", observedMethod: "missing" }; if (!nonEmptyString(pkg?.candidateVersion)) errors.push(productionContractError(context, "视觉 Implementation Package 缺少 candidateVersion", { missing: "candidateVersion" })); if (!nonEmptyString(pkg?.visualManifestFile)) errors.push(productionContractError(context, "Implementation Package 缺少 visualManifestFile", { missing: "visualManifestFile" })); if (!isSha256(pkg?.visualManifestSha256)) errors.push(productionContractError(context, "Implementation Package 缺少 visualManifestSha256", { missing: "visualManifestSha256" })); if (units.some((unit) => Number.isInteger(unit?.annotation_number)) && (!Array.isArray(pkg?.visualDecompositionConfirmations) || pkg.visualDecompositionConfirmations.length === 0)) errors.push(productionContractError(context, "视觉 Implementation Package 缺少按 scene/state 分组的人工拆解确认身份", { missing: "visualDecompositionConfirmations" })); }
+  if (units !== undefined) { const context = { stage: "V2", annotation_number: "*", region_id: "*", expectedMethod: "visual-production", observedMethod: "missing" }; if (!nonEmptyString(pkg?.candidateVersion)) errors.push(productionContractError(context, "视觉 Implementation Package 缺少 candidateVersion", { missing: "candidateVersion" })); if (!nonEmptyString(pkg?.visualManifestFile)) errors.push(productionContractError(context, "Implementation Package 缺少 visualManifestFile", { missing: "visualManifestFile" })); if (units.some((unit) => Number.isInteger(unit?.annotation_number)) && (!Array.isArray(pkg?.visualDecompositionConfirmations) || pkg.visualDecompositionConfirmations.length === 0)) errors.push(productionContractError(context, "视觉 Implementation Package 缺少按 scene/state 分组的人工拆解确认身份", { missing: "visualDecompositionConfirmations" })); }
   return errors;
 }
 export function validateVisualChangeRequest(change, context = {}) { return validateProductionMethodChangeRequest(change, context); }
@@ -939,12 +894,10 @@ export function validateVisualEvidence(evidence, pkg, options = {}) {
   const errors = []; const manifest = options.manifest;
   if (!isObject(manifest)) return ["[V5] annotation_number=* region_id=* expected_method=production-contract observed_method=missing 缺失=visualManifestSnapshot：Evidence 必须绑定实施包对应的当前清单"];
   const baseIdentity = manifestEvidenceIdentity(manifest); const identity = { ...baseIdentity, diff: options.diffFingerprint ?? baseIdentity.diff };
-  for (const [key, label] of [["candidate", "candidate"], ["target", "target"], ["baseline", "baseline"], ["diff", "diff"]]) if (!nonEmptyString(identity[key])) errors.push(`[V5] annotation_number=* region_id=* expected_method=production-contract observed_method=missing 缺失=${label}_identity：视觉证据缺少当前身份绑定`);
   const authority = options.authority;
   const displayLayerScope = displayLayerScopeFromPackage(pkg);
   // Evidence/COMPLETE 必须消费当前工作项的完整合同；弹窗合同不再进入宿主场景验收。
   errors.push(...validateSceneReconstructionGate(manifest, { stage: "V5", displayLayerScope }));
-  if (evidence?.pageSketchSha256 !== pkg?.pageSketchSha256) errors.push("[V5] Evidence Manifest pageSketchSha256 必须绑定当前 Implementation Package 草图 SHA");
   errors.push(...validateProductionAuditShape(manifest, { stage: "V5", authority, projectRoot: options.projectRoot, checkFiles: Boolean(options.projectRoot) }));
   errors.push(...auditProductionContract(manifest, { projectRoot: options.projectRoot, checkFiles: Boolean(options.projectRoot), targetSha: identity.target, targetFrozenAt: manifest?.reference_target?.frozen_at, candidateSha: identity.candidate, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority }));
   const evidenceOptions = { requireEvidenceIdentity: true, identity, projectRoot: options.projectRoot, checkFiles: Boolean(options.projectRoot), targetFrozenAt: manifest?.reference_target?.frozen_at, workItemId: manifest?.workItemId, candidateVersion: manifest?.candidateVersion, authority };

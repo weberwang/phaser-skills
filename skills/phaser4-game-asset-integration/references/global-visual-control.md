@@ -4,30 +4,30 @@
 
 ## 生产者与消费者绑定
 
-选择根证据的顶层 `workItemId` 永久表示创建三候选和人工决定的生产者 Work Item。三张候选的 generation record、唯一人工决定文件和根证据必须继续绑定同一生产者，不能因为场景 Work Item 消费该基线而改写这些文件的所有者。消费者只保存 `globalVisualBaselineSelectionRef` 的不可变 `path` + `sha256`；引用中的可选 `workItemId` 也只能复述生产者身份，不能填写或要求等于当前消费者 Work Item。这样同一冻结根证据可以被多个场景、显示层或基础模块 Work Item 复用，同时仍由文件门完整校验生产者链和每个文件的 SHA-256。
+选择根证据的顶层 `workItemId` 永久表示创建三候选和人工决定的生产者 Work Item。三张候选的 generation record、唯一人工决定文件和根证据必须继续绑定同一生产者，不能因为场景 Work Item 消费该基线而改写这些文件的所有者。消费者只保存 `globalVisualBaselineSelectionRef` 的不可变 `path`；引用中的可选 `workItemId` 也只能复述生产者身份，不能填写或要求等于当前消费者 Work Item。这样同一冻结根证据可以被多个场景、显示层或基础模块 Work Item 复用，同时仍由文件门校验生产者链和每个实际文件。
 
 ## 基线身份与风格指纹
 
 冻结基线时同时记录：
 
 - 基线 ID、语义化版本、状态、冻结日期和负责人；
-- 风格指纹：固定使用 `sha256:<64 位小写十六进制>`，其摘要必须等于冻结基线文档完整文件字节的 SHA-256；
+- 风格指纹：可选追踪记录，不检查格式或与文件比对；实际基线 ID、版本和视觉内容仍需满足要求；
 - 主锚点：最能代表项目世界幻想、渲染方式、情绪和质量密度的同条件截图或动态片段；
 - 分系统锚点：角色、场景、UI、图标、动画、VFX、字体等系统各自的代表画面；
 - 基线文档、锚点证据、适用范围、允许变量和已知边界。
 
-基线 ID 表达视觉系统身份，版本表达已批准规则集合，风格指纹只计算 `docs/visual-baseline.md` 完整文件字节。不得把摘要或 V2/V3/V4/V5 留痕写回被哈希正文；阶段证据追加到 `visual-design.md`。规则变化生成新版本和新哈希，使全部受影响决定与证据失效并重验。`--check-files` 重新计算冻结正文 SHA-256。
+基线 ID 表达视觉系统身份，版本表达已批准规则集合，风格指纹只计算 `docs/visual-baseline.md` 完整文件字节。不得把摘要或 V2/V3/V4/V5 留痕写回被哈希正文；阶段证据追加到 `visual-design.md`。规则实际变化时更新版本并重验受影响部分；摘要变化不影响验收。`--check-files` 重新计算冻结正文 SHA-256。
 
 ## 三候选生成与人工冻结门
 
-全局视觉基线必须从一个明确的视觉 brief 开始。使用相同 brief、目标视口、参考输入和条件指纹生成恰好三张候选效果图，并将三张图同屏交给人工比较；候选必须分别绑定图片文件 SHA-256 和 generated generation record 文件 SHA-256。`global-visual-baseline-selection/1.0` 证据还必须绑定生产者 Work Item、brief、generation batch、唯一候选 ID、唯一 `SINGLE_HUMAN`/`CONFIRMED` 选择、selectedCandidateId、决定记录文件/SHA、确认时间和用户原文。
+全局视觉基线必须从一个明确的视觉 brief 开始。使用相同 brief、目标视口、参考输入和实际生成条件生成恰好三张候选效果图，并将三张图同屏交给人工比较；候选必须关联实际图片和 generated generation record 文件，不要求摘要。`global-visual-baseline-selection/1.0` 证据还必须绑定生产者 Work Item、brief、generation batch、唯一候选 ID、唯一 `SINGLE_HUMAN`/`CONFIRMED` 选择、selectedCandidateId、决定记录文件、确认时间和用户原文。
 
-人工确认完成前，`visual_baseline.status` 和 Work Item `globalStaticBaselineState` 只能保持 draft/pending，不能写入 `global-static-baseline-frozen`。确认后冻结身份必须同时绑定 baseline ID/version、`docs/visual-baseline.md`、正文真实 SHA（style fingerprint）、primary anchor 和 selected candidate；任一候选、决定、brief、正文或锚点文件 SHA 漂移均使引用失效并回到三候选流程。该全局人工选择是独立硬门，不能替代每个场景 V2 的拆解图确认。
+人工确认完成前，`visual_baseline.status` 和 Work Item `globalStaticBaselineState` 只能保持 draft/pending，不能写入 `global-static-baseline-frozen`。确认后冻结身份必须同时绑定 baseline ID/version、`docs/visual-baseline.md`、冻结正文实际文件、primary anchor 和 selected candidate；候选、决定、brief、正文或锚点实际内容变化时按影响验证，摘要变化不使引用失效或重开三候选流程。该全局人工选择是独立硬门，不能替代每个场景 V2 的拆解图确认。
 
 | 阶段 | 必须产物 | 允许状态 | 禁止旁路 |
 | --- | --- | --- | --- |
 | brief | brief 文件与 SHA、generation batch、conditions fingerprint | draft/in-progress | 直接冻结 |
-| 候选生成 | 恰好 3 张 `origin=generated` PNG/JPEG 效果图及各自 generation record、图片/记录 SHA（文件门检查真实魔数） | generated | 2/4 张、provided、重复 ID、扩展名伪装 |
+| 候选生成 | 恰好 3 张 `origin=generated` PNG/JPEG 效果图及各自 generation record、可选图片/记录 SHA（文件门检查真实魔数） | generated | 2/4 张、provided、重复 ID、扩展名伪装 |
 | 人工选择 | 同屏呈现三张、唯一 `SINGLE_HUMAN`/`CONFIRMED` 决定文件、selectedCandidateId、用户原文 | pending → confirmed | AUTO、pending、说明文字 |
 | 正式冻结 | `globalVisualBaselineSelectionRef`、冻结正文、真实风格指纹、primary anchor/selected candidate | global-static-baseline-frozen | 只写状态字段 |
 
@@ -87,7 +87,7 @@ V5 为每个生产包提交多资源联系表，并至少生成一张同屏组�
 出现下列任一情况即判定视觉漂移或未验证：
 
 - 资源未绑定当前基线 ID、版本、风格指纹或适用锚点；
-- 风格指纹格式错误，或与冻结基线文档实际 SHA-256 不一致；
+- 实际基线文档或锚点不可读取，或内容不满足明确要求；
 - 形状、角色比例、透视、材质、光源、描边、图标语法、字体、按钮、动画或 VFX 超出冻结规则和允许变量；
 - 同屏对象像来自不同项目，或场景差异退化为同模板；
 - 只有关键词、模型、调色板、单图或主观一致声明，没有联系表、同屏截图和区域事实；
@@ -128,13 +128,13 @@ V5 为每个生产包提交多资源联系表，并至少生成一张同屏组�
 
 ## 生成前全局基线硬门
 
-全局三候选人工选择并正式冻结后，所有场景主图、reference target、宿主场景 contextual effect image 和原子生成式位图资产都必须引用同一份 `visual_baseline`。冻结基线必须是 `global-static-baseline-frozen`，并固定 `id`、`version`、`style_fingerprint`、`document=docs/visual-baseline.md` 与完整 `anchor_evidence`。项目具体美术风格只写入该正文和锚点证据，通用提示词不硬编码项目风格；候选阶段的生成记录使用 `global-visual-baseline-candidate-generation/1.0`，不冒充已经冻结的全局基线。
+全局三候选人工选择并正式冻结后，所有场景主图、reference target、宿主场景 contextual effect image 和原子生成式位图资产都必须引用同一份 `visual_baseline`。冻结基线必须是 `global-static-baseline-frozen`，并固定 `id`、`version`、`document=docs/visual-baseline.md` 与完整 `anchor_evidence`。项目具体美术风格只写入该正文和锚点证据，通用提示词不硬编码项目风格；候选阶段的生成记录使用 `global-visual-baseline-candidate-generation/1.0`，不冒充已经冻结的全局基线。
 
 | 记录 | 必填生成身份 | 全局锚点 | 实际提示词 | 输出/证据 | 失效条件 |
 | --- | --- | --- | --- | --- | --- |
-| generated | baseline 四元组、`origin`、`style_drift_policy=forbid` | 全部 `style_reference_inputs`，路径与真实 SHA | `global_visual_consistency_prompt` + `full_prompt`，并证明实际发送 | `output_sha256`、`consistency_status=passed`、证据路径与 SHA | 基线/锚点/目标/提示词/证据身份变化 |
-| provided | 仅 `origin=provided` | 不伪造生成输入 | 不要求生成记录 | 外部文件按普通文件门核验 | 文件路径或 SHA 变化 |
+| generated | baseline 四元组、`origin`、`style_drift_policy=forbid` | 全部 `style_reference_inputs` 实际路径，SHA 可省略 | `global_visual_consistency_prompt` + `full_prompt`，并证明实际发送 | `consistency_status=passed`、证据路径，SHA 可省略 | 基线/锚点/目标/提示词/证据身份变化 |
+| provided | 仅 `origin=provided` | 不伪造生成输入 | 不要求生成记录 | 外部文件按普通文件门核验 | 实际文件内容或路径不再满足要求 |
 
-原子资产仍以完整冻结效果图作为主参考，全局锚点只作为额外强制 style references。文件门会复算基线正文、锚点、冻结目标、输出和一致性证据的真实 SHA，旧记录不能跨身份复用；记录或路径问题先原地修复，候选未变的证据更新只重验当前门，冻结身份真实漂移时才返回最早受影响阶段。
+原子资产仍以完整冻结效果图作为主参考，全局锚点只作为额外强制 style references。文件门会读取基线正文、锚点、实际目标、输出和一致性证据；不复算或比较验收摘要；记录或路径问题先原地修复，候选未变的证据更新只重验当前门，冻结身份真实漂移时才返回最早受影响阶段。
 
-生成式单图在绑定全局基线后按冻结路线交付：保留原始生成输入，执行透明处理，再由 Sharp 按合同归一化。比例不符时最多重生一次；第二次仍不符时，只有冻结焦点和安全事实允许才使用 `crop-and-resize-to-contract` 并绑定两次真实原始生成 attempt、SHA、尺寸、focus 和 `crop_rect`；若裁切会损伤主体、文字或透明轮廓，报告能力缺口并重新制定路线。适用于所有生成式位图的归一化规则仍为 `padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘及裁切冻结 `reference_target`。最终透明 PNG 的原始输入 SHA、归一化运行时文件 SHA、工具参数和后处理按实际路线登记；归一化保持比例、Alpha 和主体边界，不烘焙棋盘格。所有透明路线生成深浅底预览并绑定候选构建 SHA 与最终 PNG SHA；V5 必须记录主体完整性、背景残留、色边和半透明区域检查，不能用格式检查替代。
+生成式单图在绑定全局基线后按冻结路线交付：保留原始生成输入，执行透明处理，再由 Sharp 按合同归一化。比例不符时最多重生一次；第二次仍不符时，只有冻结焦点和安全事实允许才使用 `crop-and-resize-to-contract` 并绑定两次真实原始生成 attempt、尺寸、focus 和 `crop_rect`；若裁切会损伤主体、文字或透明轮廓，报告能力缺口并重新制定路线。适用于所有生成式位图的归一化规则仍为 `padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘及裁切冻结 `reference_target`。最终透明 PNG 的实际原始输入、归一化运行时文件、工具参数和后处理按实际路线登记，SHA 仅可选追踪；归一化保持比例、Alpha 和主体边界，不烘焙棋盘格。所有透明路线为同一实际候选生成深浅底预览，候选构建 SHA 与最终 PNG SHA 仅作可选追踪；V5 必须记录主体完整性、背景残留、色边和半透明区域检查，不能用格式检查替代。

@@ -24,7 +24,7 @@ V2 布局标注在拆解确认之后串行产出：阶段 A 先生成按人工�
 - `component_inventory` 与 `state_analysis`，先状态、后组件，每个 component × required state 都有生产要求。
 - `visual_route_analysis` 与 `visualProductionContract`，明确 runtime-data、runtime-rendered、fixed-production-visual、reuse-existing、runtime-program 或 generate-now 的边界。
 - `visualProductionUnits` 生产计划，逐 annotation number / region ID 绑定 owner、路径、格式、资源、组件状态、交互热区和输出。
-- `visual-decomposition-confirmation/1.0`，由用户确认拆解图和生产方案，绑定 annotation/proposal/decision SHA、target SHA、baseline SHA、candidate/diff identity、work item、scene/state、全部编号和用户原文；布局另以 `layout-annotation-confirmation/1.0` 绑定最终布局图、决策文件及上游身份。
+- `visual-decomposition-confirmation/1.0`，由用户确认拆解图和生产方案，关联实际 annotation/proposal/decision 文件、work item、scene/state、全部编号和用户原文；布局另以 `layout-annotation-confirmation/1.0` 绑定最终布局图、决策文件及上游身份。
 
 确认只冻结还原方案与生产边界，不改变玩法、布局或视觉事实的责任归属。提案、目标、区域定义、用户原文、候选身份或布局字段漂移时，确认失效并回到当前 Work Item 的 V2 重做拆解确认；普通运行候选演进只重验受影响证据。
 
@@ -34,7 +34,7 @@ V2 布局标注在拆解确认之后串行产出：阶段 A 先生成按人工�
 
 `visual_route_analysis` 必须依据冻结图中可观察的外观事实，以及当前 Phaser 原生能力能否精确表达这些事实。按钮、面板等语义名称不能决定图片或原生路线；静态/动态属性也不能单独作为原生资格。文本、纯色矩形、基础几何、规则边框、简单规则渐变、遮罩和进度填充，在 Phaser 可确定性表达时可以走原生路线。特色插画、复杂纹饰、不规则轮廓、复杂材质和明显具有美术特征的装饰继续使用独立图片路线。特色视觉拟走原生路线时，必须另有等价性证据并绑定预先声明的容差或精确例外。
 
-每个 `phaser-native` 区域必须冻结 `native_suitability.render_contract`：`renderer`、逻辑像素 `dimensions.width/height`、`colors`、`line_width`、`corner_radius`、`gradient`、`opacity`、`applicable_states` 和 `unsupported_features`。颜色和渐变 stop 的 `color` 均为 `#RRGGBB`；无渐变写 `gradient.type=none` 且 `stops=[]`；线性渐变须冻结 0–360 的 `angle` 及按绘制顺序排列的 stops。参数按冻结参考精确登记。`runtime_implementation.render_contract` 必须镜像原生资格合同并纳入区域定义身份哈希；修改参数会使已有拆解确认失效，不得在行为装配时悄悄更改。Phaser 原生能力不能确定性表达的视觉特征列入 `unsupported_features` 并阻断该路线，禁止以近似绘制代替。
+每个 `phaser-native` 区域必须冻结 `native_suitability.render_contract`：`renderer`、逻辑像素 `dimensions.width/height`、`colors`、`line_width`、`corner_radius`、`gradient`、`opacity`、`applicable_states` 和 `unsupported_features`。颜色和渐变 stop 的 `color` 均为 `#RRGGBB`；无渐变写 `gradient.type=none` 且 `stops=[]`；线性渐变须冻结 0–360 的 `angle` 及按绘制顺序排列的 stops。参数按冻结参考精确登记。`runtime_implementation.render_contract` 必须镜像原生资格合同并纳入区域定义记录；修改参数会使已有拆解确认失效，不得在行为装配时悄悄更改。Phaser 原生能力不能确定性表达的视觉特征列入 `unsupported_features` 并阻断该路线，禁止以近似绘制代替。
 
 视觉外观来源与行为装配分别记录。一个按钮可由原生框体、独立图标 image-asset 和 Phaser.Text 文字组成；每部分单独记录 owner、状态、生产合同和布局/资源绑定，交互行为再使用显式组件/节点引用接线。不能把不同来源或职责合并成 `composite` region / `composite_parts`，也不能用覆盖整按钮的大区域模糊归属。已冻结 `image_generation_required=true` 的区域必须继续执行图片合同，不得自动换成原生路线；路线变化遵循明确接受的 Change Request。
 
@@ -66,9 +66,9 @@ V3 验收后进入独立 V4 草图阶段。按[页面还原草图作业](visual-
 
 V5 按 `visual_validation.mode` 运行证据验证视觉与功能联合结果。默认 `usability` 在目标及代表性视口/状态提供可读画面，检查布局关系、边界、遮挡、交互和恢复，并与冻结效果图并排核对主要构图及高显著性资源的可观察视觉事实；参考与候选记录视口、实际有效 DPR（动态封顶 2）、语言、操作轨迹、随机种子和动画时间点。只有 `exact` 或明确精确需求时才要求完整 viewport、逐状态/逐区域忠实度矩阵、严格容差、ROI、叠加和像素差证据。默认模式下并排核对不等于逐像素验收，但明显视觉漂移仍须修复。
 
-每个 fidelity/parity case 不可变绑定冻结目标 SHA、当前代码或构建 SHA、scene/state、viewport、实际有效 DPR、语言、随机种子、输入轨迹、动画采样/稳定帧、布局合同版本、视觉基线版本、双方证据、预定义容差、例外 ID 和结论。上游事实或当前受影响候选身份变化才令对应旧案例失效并重新采集；其他单元路径级结果继续有效。默认 `usability` 保留代表性案例，`exact` 或明确全覆盖需求才要求全部视口/状态组合。
+每个 fidelity/parity case 不可变记录冻结目标文件、当前实际代码或构建、scene/state、viewport、实际有效 DPR、语言、随机种子、输入轨迹、动画采样/稳定帧、布局合同版本、视觉基线版本、双方证据、预定义容差、例外 ID 和结论。上游事实或当前受影响候选身份变化才令对应旧案例失效并重新采集；其他单元路径级结果继续有效。默认 `usability` 保留代表性案例，`exact` 或明确全覆盖需求才要求全部视口/状态组合。
 
-每个原生区域还须提交 `native_runtime_evidence`，其 `observed_method`、`observed_delivery_kind`、`render_contract`、`status=passed`、指向消费报告 JSON 的 `evidence` 与 `evidence_sha256`、`candidate_sha256`、`target_sha256`、`baseline_sha256`、`diff_fingerprint` 必须绑定本次真实运行候选。`projectRoot` 可用时必须读取 JSON 工件，校验 `report_schema='native-render-consumption/1.0'`、`consumed=true`，以及与当前区域一致的 `region_id`、`scene_id`、`state_id`；实际 method、delivery kind、render contract 和 candidate/target/baseline/diff 身份必须与 `native_runtime_evidence` 逐值一致。还须复核文件 SHA；不能用仅有匹配 SHA 的无关 JSON 代替实际消费报告。规划参数本身不足以证明运行输出和消费一致。
+每个原生区域还须提交 `native_runtime_evidence`，其 `observed_method`、`observed_delivery_kind`、`render_contract`、`status=passed`、指向消费报告 JSON 的 `evidence` 必须对应本次实际运行对象和结果。`projectRoot` 可用时必须读取 JSON 工件，校验 `report_schema='native-render-consumption/1.0'`、`consumed=true`，以及与当前区域一致的 `region_id`、`scene_id`、`state_id`；实际 method、delivery kind 和 render contract 必须与 `native_runtime_evidence` 逐值一致；candidate/target/baseline/diff 摘要不参与验收。无关 JSON 不能代替实际消费报告。规划参数本身不足以证明运行输出和消费一致。
 
 机器清单生命周期固定为：非效果图 `not-applicable`；效果图完成 V2 拆解确认后为 `v2-ready`，此时允许 fidelity case 为空；只有 V5 已验证才为 `v5-complete`，此时当前验证模式要求的关键 case 必须通过。默认 `usability` 保留代表性场景/状态案例；`exact` 或明确全覆盖需求才要求冻结目标的每个 scene/state 组合至少有一个 passed case。
 
@@ -98,4 +98,4 @@ V5 按 `visual_validation.mode` 运行证据验证视觉与功能联合结果。
 
 场景效果图和生成式位图资源必须引用已冻结的全局视觉基线；候选生成、人工选择、冻结状态、锚点继承和文件门以[全局视觉控制](global-visual-control.md)及控制面 Schema 为准。场景自身从 V1 开始，按本文件的 V2 两次确认、V4 草图组合确认和 V5 运行态联合验收推进。
 
-生成记录必须明确 `origin=generated|provided`；只有 generated 强制绑定基线四元组、全部 `style_reference_inputs`、canonical 全局一致性段、`style_drift_policy=forbid`、实际完整提示词、输出 SHA 与一致性证据。provided 图不得伪造生成记录。记录或路径问题先原地修复，候选未变的提示词/输出证据更新重验当前门；基线、锚点、target SHA 或冻结生成合同真实变化时才令旧记录失效，并按合同返回最早受影响阶段。
+生成记录必须明确 `origin=generated|provided`；只有 generated 强制绑定基线四元组、全部 `style_reference_inputs`、canonical 全局一致性段、`style_drift_policy=forbid`、实际完整提示词、实际输出与一致性证据。provided 图不得伪造生成记录。记录或路径问题先原地修复，候选未变的提示词/输出证据更新重验当前门；基线、锚点、目标实际内容或冻结生成合同真实变化时才令旧记录失效，并按合同返回最早受影响阶段。

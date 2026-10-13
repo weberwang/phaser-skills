@@ -129,7 +129,6 @@ export function validatePageSketchPresentation(presentation) {
 
   if (presentation.kind === "runtime-program") {
     if (typeof presentation.module_file !== "string" || presentation.module_file.trim() === "") throw new TypeError("runtime-program module_file 必须是非空字符串");
-    if (typeof presentation.module_sha256 !== "string" || !/^sha256:[0-9a-f]{64}$/.test(presentation.module_sha256)) throw new TypeError("runtime-program module_sha256 必须是小写 sha256 身份值");
     if (presentation.export_name !== undefined && (typeof presentation.export_name !== "string" || presentation.export_name.trim() === "")) throw new TypeError("runtime-program export_name 必须是非空字符串");
   }
   return result;

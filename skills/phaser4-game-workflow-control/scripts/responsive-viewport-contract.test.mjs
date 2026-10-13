@@ -17,7 +17,6 @@ import {
   validateResponsiveEvidenceRecord,
 } from './responsive-viewport-contract.mjs';
 
-const CANDIDATE = `sha256:${'a'.repeat(64)}`;
 const WORK_ITEM_SCHEMA = JSON.parse(readFileSync(new URL('../references/work-item.schema.json', import.meta.url), 'utf8'));
 const IMPLEMENTATION_PACKAGE_SCHEMA = JSON.parse(readFileSync(new URL('../references/implementation-package.schema.json', import.meta.url), 'utf8'));
 
@@ -101,7 +100,6 @@ function makeEvidence(overrides = {}) {
     screenshot: 'evidence/scene.png',
     sceneId: 'play',
     stateId: 'default',
-    candidateSha256: CANDIDATE,
     layoutContractVersion: 'layout/1.0',
     visualBaselineVersion: 'visual-baseline/1.0',
     matrixCases: [...REPRESENTATIVE_DPR_REQUIREMENTS, ...REPRESENTATIVE_BEHAVIOR_REQUIREMENTS],
@@ -260,10 +258,10 @@ test('合同拒绝缺失矩阵、DPR 上限和生产 DPR 混写', () => {
   }
 });
 
-test('V5 证据验证 CSS/backing、动态 DPR、矩阵和候选身份', () => {
+test('V5 证据验证 CSS/backing、动态 DPR 和实测矩阵', () => {
   const contract = makeContract();
   const evidence = makeEvidence();
-  assert.deepEqual(validateResponsiveEvidenceRecord(evidence, contract, { candidateSha256: CANDIDATE }), []);
+  assert.deepEqual(validateResponsiveEvidenceRecord(evidence, contract), []);
   const wrongAxis = makeEvidence({ designTransform: { ...evidence.designTransform, scale: 800 / 1920 } });
   assert.match(validateResponsiveEvidenceRecord(wrongAxis, contract).join('\n'), /designTransform.scale/);
   const bars = makeEvidence({ canvasRect: { x: 0, y: 25, width: 320, height: 775 } });
@@ -277,7 +275,7 @@ test('V5 证据验证 CSS/backing、动态 DPR、矩阵和候选身份', () => {
     makeMeasuredEvidence(1366, 768, 2, { contextId: 'page-b' }),
     makeMeasuredEvidence(1280, 720, 3, { contextId: 'page-b', samePageWithPrevious: true }),
   ];
-  assert.deepEqual(validateResponsiveEvidenceManifest({ responsiveEvidence: matrix }, contract, { candidateSha256: CANDIDATE, requiredUnits: [{ unitType: 'SCENE', sceneId: 'play' }] }), []);
+  assert.deepEqual(validateResponsiveEvidenceManifest({ responsiveEvidence: matrix }, contract, { requiredUnits: [{ unitType: 'SCENE', sceneId: 'play' }] }), []);
 
   const borrowedMatrix = [...matrix, makeMeasuredEvidence(390, 844, 1, { sceneId: 'secondary', contextId: 'secondary-page' })];
   assert.match(validateResponsiveEvidenceManifest({ responsiveEvidence: borrowedMatrix }, contract, { requiredUnits: [{ unitType: 'SCENE', sceneId: 'play' }, { unitType: 'SCENE', sceneId: 'secondary' }] }).join('\n'), /secondary.*narrow-portrait|secondary.*代表性/);
@@ -289,8 +287,10 @@ test('V5 证据验证 CSS/backing、动态 DPR、矩阵和候选身份', () => {
   assert.match(validateResponsiveEvidenceRecord(badDpr, contract).join('\n'), /rawDevicePixelRatio/);
   const badBacking = { ...evidence, backingSize: { width: 641, height: 1600 } };
   assert.match(validateResponsiveEvidenceRecord(badBacking, contract).join('\n'), /backing/);
-  const badCandidate = { ...evidence, candidateSha256: `sha256:${'b'.repeat(64)}` };
-  assert.match(validateResponsiveEvidenceRecord(badCandidate, contract, { candidateSha256: CANDIDATE }).join('\n'), /candidateSha256/);
+  for (const candidateSha256 of [undefined, 'sha256:stale']) {
+    const withoutCurrentDigest = { ...evidence, candidateSha256 };
+    assert.deepEqual(validateResponsiveEvidenceRecord(withoutCurrentDigest, contract), []);
+  }
   const unverified = { ...evidence, verificationStatus: 'unverified', runtimeMeasured: false };
   assert.match(validateResponsiveEvidenceRecord(unverified, contract).join('\n'), /verified\/PASS/);
   assert.match(validateResponsiveEvidenceRecord({ ...evidence, verificationStatus: 'fail' }, contract).join('\n'), /verified\/PASS/);
@@ -305,7 +305,7 @@ test('V5 证据验证 CSS/backing、动态 DPR、矩阵和候选身份', () => {
 
 test('DISPLAY_LAYER 必须有自己的宿主同屏和 open/interact/close/restore 轨迹', () => {
   const display = makeEvidence({ displayLayerId: 'pause', hostSceneId: 'play', hostSceneState: 'default', resizeTrajectory: [{ event: 'open' }, { event: 'interact' }, { event: 'same-page-resize' }, { event: 'close' }, { event: 'restore' }] });
-  assert.deepEqual(validateResponsiveEvidenceRecord(display, makeContract(), { unitType: 'DISPLAY_LAYER', candidateSha256: CANDIDATE }), []);
+  assert.deepEqual(validateResponsiveEvidenceRecord(display, makeContract(), { unitType: 'DISPLAY_LAYER' }), []);
   const missingRestore = { ...display, resizeTrajectory: [{ event: 'open' }, { event: 'interact' }, { event: 'close' }] };
   assert.match(validateResponsiveEvidenceRecord(missingRestore, makeContract(), { unitType: 'DISPLAY_LAYER' }).join('\n'), /restore/);
 });

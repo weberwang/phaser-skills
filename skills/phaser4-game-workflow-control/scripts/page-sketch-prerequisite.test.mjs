@@ -96,7 +96,7 @@ function rewriteSketch(fixture, document) {
 test('V4 确认门接受 V2 节点、V3 manifest 和正式资源均未漂移的草图', () => {
   const fixture = makeFixture();
   const result = loadConfirmedPageSketch(fixture.work, fixture.root);
-  assert.equal(result.sha256, fixture.sketchRef.sha256);
+  assert.equal(result.reference.path, fixture.sketchRef.path);
   assert.equal(Object.hasOwn(result.document.confirmation, 'confirmed_by'), false);
 });
 
@@ -111,13 +111,19 @@ test('草图门以不可变 V2 证据为权威，Work Item 可不内联复制 V2
   assert.doesNotThrow(() => loadConfirmedPageSketch(fixture.work, fixture.root));
 });
 
-test('V3 证据基线变更后保留旧阶段引用必须拒绝', () => {
+test('V2/V3 Git 基线摘要与旧阶段摘要可不同，不阻断实际来源链', () => {
   const fixture = makeFixture();
-  fixture.work.baselineHash = HASH(Buffer.from('new baseline'));
-  assert.throws(() => loadConfirmedPageSketch(fixture.work, fixture.root), /冻结基线/);
+  const v2 = JSON.parse(readFileSync(join(fixture.root, fixture.v2.path), 'utf8'));
+  const v3 = JSON.parse(readFileSync(join(fixture.root, fixture.v3.path), 'utf8'));
+  v2.baselineId = 'git-commit-sha1-v2';
+  v3.baselineId = 'git-commit-sha1-v3';
+  writeJson(fixture.root, fixture.v2.path, v2);
+  writeJson(fixture.root, fixture.v3.path, v3);
+  fixture.work.baselineId = 'git-commit-sha1-current';
+  assert.doesNotThrow(() => loadConfirmedPageSketch(fixture.work, fixture.root));
 });
 
-/** 验证编辑器初始化、人工确认文件和控制面 gate 使用同一份 schema 与 SHA。 */
+/** 验证编辑器初始化、人工确认文件和控制面 gate 使用同一份 schema 与真实业务身份。 */
 test('initPageSketch 生成的草图可经人工确认后被控制门读取', async () => {
   const fixture = makeFixture();
   const resources = writeJson(fixture.root, 'docs/resources.json', {
@@ -145,7 +151,7 @@ test('initPageSketch 生成的草图可经人工确认后被控制门读取', as
   assert.equal(loaded.document.v3_assets[0].layout_node_id, 'hero');
 });
 
-test('V4 确认门拒绝空确认和保存后未重新确认的内容', () => {
+test('V4 确认门拒绝空确认，但摘要陈旧不阻断已人工确认的草图', () => {
   const fixture = makeFixture();
   const empty = structuredClone(fixture.document);
   empty.confirmation = null;
@@ -155,19 +161,19 @@ test('V4 确认门拒绝空确认和保存后未重新确认的内容', () => {
   const edited = structuredClone(fixture.document);
   edited.layout.offsets.hero.x += 1;
   rewriteSketch(fixture, edited);
-  assert.throws(() => loadConfirmedPageSketch(fixture.work, fixture.root), /内容摘要已漂移/);
+  assert.doesNotThrow(() => loadConfirmedPageSketch(fixture.work, fixture.root));
 });
 
-test('V4 确认门拒绝 V2 节点来源漂移和 V3 正式资源文件篡改', () => {
+test('V4 确认门按节点实际来源拒绝漂移，但不按 V3 资源摘要阻断', () => {
   const fixture = makeFixture();
   const changedNodes = structuredClone(fixture.document);
   changedNodes.nodes[0].target_bounds.x += 2;
   rewriteSketch(fixture, changedNodes);
-  assert.throws(() => loadConfirmedPageSketch(fixture.work, fixture.root), /内容摘要已漂移/);
+  assert.throws(() => loadConfirmedPageSketch(fixture.work, fixture.root), /当前 V2 layout_nodes 来源文件中的节点内容一致/);
 
   const assetFixture = makeFixture();
   writeFileSync(join(assetFixture.root, 'assets/hero.png'), 'tampered hero pixels');
-  assert.throws(() => loadConfirmedPageSketch(assetFixture.work, assetFixture.root), /SHA|sha/);
+  assert.doesNotThrow(() => loadConfirmedPageSketch(assetFixture.work, assetFixture.root));
 });
 
 test('V4 确认门拒绝 V2 或 V3 证据路径穿越和草图候选身份伪造', () => {

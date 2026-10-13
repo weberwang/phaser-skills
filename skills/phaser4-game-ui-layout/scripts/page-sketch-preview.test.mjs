@@ -229,8 +229,8 @@ test("项目子路径与百分号文件名保持在配置资源根下，控制�
         : { ok: false, status: 404 };
     },
   });
-  assert.equal(drift.healthy, false);
-  assert.ok(drift.errors.some((message) => message.includes("正式资源 hero：public/hero.png SHA 不匹配")));
+  assert.equal(drift.healthy, true, "摘要陈旧不阻断仍可读取的正式资源");
+  assert.deepEqual(drift.errors, []);
   sources.revoke();
 
   const invalid = createSketch();

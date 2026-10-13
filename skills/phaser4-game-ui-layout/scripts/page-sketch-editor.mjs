@@ -63,7 +63,6 @@ export async function initializePageSketchApplication({ document, projectRootUrl
   let resizeObserver = null;
   let draftSaved = false;
   let previewHealthy = false;
-  let confirmationHashValid = true;
   let operationInFlight = false;
   let previewMode = false;
   let fullscreenInFlight = false;
@@ -87,13 +86,13 @@ export async function initializePageSketchApplication({ document, projectRootUrl
   /** 根据资源、重排、保存和确认状态启用唯一合法的页面操作。 */
   function updateButtons() {
     const current = fileStore?.getDocument();
-    const hasConfirmation = current?.confirmation?.status === "accepted" && confirmationHashValid;
+    const hasConfirmation = current?.confirmation?.status === "accepted";
     previewButton.disabled = !editor || operationInFlight;
     previewButton.textContent = previewMode ? "返回布局编辑" : "预览正式效果";
     previewButton.setAttribute("aria-pressed", String(previewMode));
     saveButton.disabled = !editor || operationInFlight;
     resetButton.disabled = !editor || operationInFlight || previewMode;
-    confirmButton.disabled = !editor || operationInFlight || !draftSaved || !previewHealthy || Boolean(sources?.errors.length) || !confirmationHashValid || hasConfirmation;
+    confirmButton.disabled = !editor || operationInFlight || !draftSaved || !previewHealthy || Boolean(sources?.errors.length) || hasConfirmation;
     openButton.disabled = operationInFlight;
   }
 
@@ -205,11 +204,9 @@ export async function initializePageSketchApplication({ document, projectRootUrl
       const loadedSources = await loadSources(sketch, { projectRootUrl, pageOrigin: window.location.origin });
       if (generation !== previewGeneration) { loadedSources.revoke?.(); return; }
       sources = loadedSources;
-      confirmationHashValid = !sources.confirmationError;
-      if (sources.confirmationError) renderErrors([sources.confirmationError, ...sources.errors]);
-      else renderErrors(sources.errors);
+      renderErrors(sources.errors);
       if (sources.backgroundLayoutError) throw new Error(sources.backgroundLayoutError);
-      if (!sources.referenceUrl) throw new Error("冻结效果图不能从当前开发服务读取或 SHA 不匹配，请先修复资源路径");
+      if (!sources.referenceUrl) throw new Error("冻结效果图不能从当前开发服务读取或解码，请先修复资源路径");
 
       const mountedPreview = await mountPreview({ host: surface, sketch, sources, Phaser: adapters.Phaser,
         // 显示内容与节点树共用编辑器的选择状态；操作锁和预览模式由同一入口约束。
@@ -227,7 +224,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
         resizeObserver.observe(frame);
       }
 
-      const hasAcceptedConfirmation = sketch.confirmation?.status === "accepted" && confirmationHashValid;
+      const hasAcceptedConfirmation = sketch.confirmation?.status === "accepted";
       draftSaved = hasAcceptedConfirmation;
       previewHealthy = preview.isHealthy() && sources.errors.length === 0;
       editor = mountEditor({
@@ -261,10 +258,10 @@ export async function initializePageSketchApplication({ document, projectRootUrl
         },
       });
       resizeSurface();
-      if (hasAcceptedConfirmation) status.textContent = `V4 草图已确认：${sketch.confirmation.content_sha256}`;
-      else if (sources.errors.length || preview.errors.length || !confirmationHashValid) status.textContent = "草图已载入，但存在阻断项；修复全部资源后才能确认。";
+      if (hasAcceptedConfirmation) status.textContent = "V4 草图已人工确认。";
+      else if (sources.errors.length || preview.errors.length) status.textContent = "草图已载入，但存在阻断项；修复全部资源后才能确认。";
       else status.textContent = "页面草图已载入；点击显示节点或右侧节点树选择，调整坐标后先保存草图再确认。";
-      renderErrors([...sources.errors, ...preview.errors, ...(sources.confirmationError ? [sources.confirmationError] : [])]);
+      renderErrors([...sources.errors, ...preview.errors]);
       updateButtons();
     } catch (error) {
       if (generation !== previewGeneration) return;
@@ -306,7 +303,6 @@ export async function initializePageSketchApplication({ document, projectRootUrl
       const saved = await fileStore.saveDraft(lockedEditor.getLayout());
       if (saved.confirmation !== null) throw new Error("草图修改后 confirmation 必须已清除");
       draftSaved = true;
-      confirmationHashValid = true;
       status.textContent = "草图已保存并读回复核；点击确认草图后才可进入 V5。";
     } catch (error) {
       draftSaved = false;
@@ -319,14 +315,14 @@ export async function initializePageSketchApplication({ document, projectRootUrl
     }
   }
 
-  /** 在全部输入 SHA 与显示节点预览通过后写入带内容摘要的确认回执。 */
+  /** 在全部输入路径可读且实际画面预览通过后写入人工 accepted 确认。 */
   async function onConfirmSketch() {
     if (!editor || operationInFlight || !draftSaved || !previewHealthy || sources?.errors.length || !preview.isHealthy()) return;
     operationInFlight = true;
     const lockedEditor = editor;
     updateButtons();
     try {
-      // 确认哈希计算与文件回写期间冻结节点及操作按钮，防止签收旧快照后继续编辑。
+      // 来源复核与文件回写期间冻结节点及操作按钮，防止签收旧画面后继续编辑。
       lockedEditor.setInteractionEnabled(false);
       const sourceCheck = await verifySources(fileStore.getDocument(), { projectRootUrl, pageOrigin: window.location.origin });
       const sourceErrors = Array.isArray(sourceCheck?.errors) ? sourceCheck.errors : [];
@@ -337,15 +333,14 @@ export async function initializePageSketchApplication({ document, projectRootUrl
       }
       // 来源复核为异步操作，期间 Scene 可能关闭或重排失败；落盘前再次检查实际渲染状态。
       if (!preview.isHealthy()) throw new Error("正式画面未就绪或渲染已失效，不能确认");
-      const saved = await fileStore.confirm({ previewReady: preview.isHealthy(), layout: lockedEditor.getLayout() });
-      confirmationHashValid = true;
-      status.textContent = `草图已确认，可推进 V5：${saved.confirmation.content_sha256}`;
+      await fileStore.confirm({ previewReady: preview.isHealthy(), layout: lockedEditor.getLayout() });
+      status.textContent = "草图已确认，可推进 V5。";
       renderErrors([]);
     } catch (error) {
       status.textContent = `草图确认失败：${error.message}`;
     } finally {
       try { lockedEditor.setInteractionEnabled(true); }
-      catch (error) { confirmationHashValid = false; status.textContent = `确认后无法恢复编辑器：${error.message}`; }
+      catch (error) { status.textContent = `确认后无法恢复编辑器：${error.message}`; }
       operationInFlight = false;
       updateButtons();
     }

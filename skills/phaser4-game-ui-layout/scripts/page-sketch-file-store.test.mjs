@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createPageSketchFileStore, pickPageSketchFileStore } from "./page-sketch-file-store.mjs";
-import { hashPageSketchContent } from "./page-sketch-contract.mjs";
+import { validatePageSketchDocument } from "./page-sketch-contract.mjs";
 
 const SHA = `sha256:${"b".repeat(64)}`;
 
@@ -60,7 +60,7 @@ test("草图保存完整JSON并使已确认回执失效", async () => {
   assert.deepEqual(store.getDocument().layout.offsets.root, { x: 12, y: -4 });
 });
 
-test("草图必须先保存且资源预览通过后才能写确认内容hash", async () => {
+test("草图必须先保存且资源预览通过后才能写人工确认回执", async () => {
   const handle = memoryHandle();
   const store = await createPageSketchFileStore(handle);
   const draft = createSketch().layout;
@@ -68,13 +68,12 @@ test("草图必须先保存且资源预览通过后才能写确认内容hash", a
   await assert.rejects(store.confirm({ previewReady: true, layout: changed }), /未保存/);
   await assert.rejects(store.confirm({ previewReady: false, layout: draft }), /未通过/);
   await store.saveDraft(changed);
-  const beforeConfirmation = store.getDocument();
-  const expectedHash = await hashPageSketchContent(beforeConfirmation);
   const confirmed = await store.confirm({ previewReady: true, layout: changed });
   assert.equal(confirmed.confirmation.status, "accepted");
   assert.equal(Object.hasOwn(confirmed.confirmation, "confirmed_by"), false);
-  assert.equal(confirmed.confirmation.content_sha256, expectedHash);
-  assert.equal(JSON.parse(handle.contents).confirmation.content_sha256, expectedHash);
+  assert.equal(Object.hasOwn(confirmed.confirmation, "content_sha256"), false);
+  assert.equal(Object.hasOwn(JSON.parse(handle.contents).confirmation, "content_sha256"), false);
+  assert.doesNotThrow(() => validatePageSketchDocument({ ...confirmed, confirmation: { ...confirmed.confirmation, content_sha256: "stale-or-malformed" } }));
 });
 
 test("草图被另一个编辑器修改时不会被覆盖", async () => {

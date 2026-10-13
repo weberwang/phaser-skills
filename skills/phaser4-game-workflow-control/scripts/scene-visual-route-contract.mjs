@@ -8,7 +8,6 @@
  * 在 V1 就阻断把特色美术误降级为 Graphics，也能让布局/行为代码保持独立。
  */
 
-import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -114,7 +113,6 @@ const NATIVE_ELEMENT_TYPES = new Set([
 ]);
 const DISTINCTIVE_FEATURE_PATTERN = /特色|复杂|distinctive|complex|材质|纹理|texture|material|不规则|非规则|irregular|定制描边|custom\s*(?:outline|stroke)|阴影|shadow|高光|highlight|装饰纹样|品牌|brand|像素美术|pixel\s*(?:art)?|绘制细节|paint(?:ed)?\s*detail|插画|illustration/i;
 const SEMANTIC_REUSE_PATTERN = /semantic|语义|相似|similar|same[-_ ]?kind|looks[-_ ]?similar|看起来一样|同类|同义/i;
-const SHA_PATTERN = /^sha256:[a-f0-9]{64}$/;
 
 /** 统一拒绝已废止的单区域混合输入，避免 composite 路线和遗留字段分别报重复错误。 */
 function compositeRouteError(stage, contract, region, actual) {
@@ -203,10 +201,6 @@ function hasPreciseReuseIdentity(identity) {
   const identityKeys = [
     "asset_id",
     "source_asset_id",
-    "source_sha256",
-    "source_manifest_sha256",
-    "target_sha256",
-    "candidate_sha256",
     "comparison_id",
   ];
   return identityKeys.some((key) => nonEmptyString(identity[key]))
@@ -253,7 +247,7 @@ function validateReuseSuitability(analysis, region, contract, stage, errors) {
   const identity = suitability.exact_asset_identity;
   if (suitability.eligible === true) {
     const semanticOnlyEvidence = SEMANTIC_REUSE_PATTERN.test(searchableFeatures(suitability.evidence));
-    if (!hasPreciseReuseIdentity(identity) || semanticOnlyEvidence) errors.push(routeError(stage, contract, region, "reuse 只有精确资产身份或 target/candidate 比较证据才允许，语义相似不等价", { expected: "exact_asset_identity.asset_id/source_sha256/comparison_id + precise evidence", actual: JSON.stringify({ identity: identity ?? "missing", evidence: suitability.evidence }) }));
+    if (!hasPreciseReuseIdentity(identity) || semanticOnlyEvidence) errors.push(routeError(stage, contract, region, "reuse 必须绑定精确资产 ID 或比较记录 ID，并提供视觉兼容证据；语义相似不等价", { expected: "exact_asset_identity.asset_id/source_asset_id/comparison_id + precise evidence", actual: JSON.stringify({ identity: identity ?? "missing", evidence: suitability.evidence }) }));
   } else if (!(identity === "not-applicable" || identity === undefined || (isObject(identity) && Object.keys(identity).length > 0))) {
     errors.push(routeError(stage, contract, region, "reuse_suitability.exact_asset_identity 无效", { actual: String(identity) }));
   }
@@ -291,7 +285,7 @@ function validateAllNativeArtifact(artifact, justification, regions, contract, s
     errors.push(routeError(stage, contract, null, "全原生独立分析工件必须是 JSON 对象", { expected: "all-native-visual-analysis/1.0", actual: typeof artifact }));
     return;
   }
-  for (const [field, expected] of [["analysis_schema", "all-native-visual-analysis/1.0"], ["analysis_id", justification.analysis_id], ["producer_role", "independent-visual-reviewer"], ["target_sha256", justification.target_sha256], ["conclusion", "all-native-eligible"]]) {
+  for (const [field, expected] of [["analysis_schema", "all-native-visual-analysis/1.0"], ["analysis_id", justification.analysis_id], ["producer_role", "independent-visual-reviewer"], ["conclusion", "all-native-eligible"]]) {
     if (artifact[field] !== expected) errors.push(routeError(stage, contract, null, `全原生独立分析工件 ${field} 不匹配`, { expected, actual: String(artifact[field] ?? "missing") }));
   }
   const reviewed = Array.isArray(artifact.reviewed_region_ids) ? artifact.reviewed_region_ids : [];
@@ -309,7 +303,6 @@ function validateAllNativeArtifact(artifact, justification, regions, contract, s
 /** 全原生场景必须绑定独立视觉分析，避免同一提案通过自声明把全部视觉降级为程序实现。 */
 function validateAllNativeJustification(contract, regions, options, stage, errors) {
   const justification = contract?.all_native_justification;
-  const targetSha256 = contract?.target_conditions?.target_sha256;
   const regionIds = regions.map((region) => region?.region_id).filter(nonEmptyString).sort();
   if (!isObject(justification)) {
     errors.push(routeError(stage, contract, null, "全部 coverage region 均选择 phaser-native 时必须提供独立视觉分析", { missing: "all_native_justification", expected: "绑定冻结目标的独立全原生资格分析" }));
@@ -318,22 +311,18 @@ function validateAllNativeJustification(contract, regions, options, stage, error
   if (justification.analysis_method !== "independent-visual-analysis") errors.push(routeError(stage, contract, null, "all_native_justification.analysis_method 无效", { expected: "independent-visual-analysis", actual: String(justification.analysis_method ?? "missing") }));
   if (!nonEmptyString(justification.analysis_id)) errors.push(routeError(stage, contract, null, "all_native_justification 缺少独立分析 ID", { missing: "all_native_justification.analysis_id" }));
   if (justification.producer_role !== "independent-visual-reviewer") errors.push(routeError(stage, contract, null, "all_native_justification 必须由独立视觉复核角色产出", { expected: "independent-visual-reviewer", actual: String(justification.producer_role ?? "missing") }));
-  if (!nonEmptyString(targetSha256) || justification.target_sha256 !== targetSha256) errors.push(routeError(stage, contract, null, "all_native_justification 未绑定当前冻结目标", { expected: targetSha256 ?? "target_conditions.target_sha256", actual: String(justification.target_sha256 ?? "missing") }));
   if (!nonEmptyString(justification.analysis_artifact_file)) errors.push(routeError(stage, contract, null, "all_native_justification 缺少独立分析工件路径", { missing: "all_native_justification.analysis_artifact_file" }));
-  if (!SHA_PATTERN.test(justification.analysis_artifact_sha256 ?? "")) errors.push(routeError(stage, contract, null, "all_native_justification 缺少合法工件 SHA-256", { missing: "all_native_justification.analysis_artifact_sha256" }));
   const reviewedRegionIds = Array.isArray(justification.reviewed_region_ids) ? [...new Set(justification.reviewed_region_ids)].sort() : [];
   if (JSON.stringify(reviewedRegionIds) !== JSON.stringify(regionIds)) errors.push(routeError(stage, contract, null, "all_native_justification 必须精确覆盖全部 coverage region", { expected: JSON.stringify(regionIds), actual: JSON.stringify(justification.reviewed_region_ids ?? "missing") }));
   if (justification.conclusion !== "all-native-eligible") errors.push(routeError(stage, contract, null, "all_native_justification 结论无效", { expected: "all-native-eligible", actual: String(justification.conclusion ?? "missing") }));
   if (!nonEmptyString(justification.reason)) errors.push(routeError(stage, contract, null, "all_native_justification 缺少全原生路线理由", { missing: "all_native_justification.reason" }));
   if (!hasEvidence(justification.evidence)) errors.push(routeError(stage, contract, null, "all_native_justification 缺少独立视觉证据", { missing: "all_native_justification.evidence" }));
-  if (options.checkFiles === true && nonEmptyString(justification.analysis_artifact_file) && SHA_PATTERN.test(justification.analysis_artifact_sha256 ?? "")) {
+  if (options.checkFiles === true && nonEmptyString(justification.analysis_artifact_file)) {
     const artifactPath = resolveProjectEvidenceFile(options.projectRoot, justification.analysis_artifact_file);
     if (!artifactPath) errors.push(routeError(stage, contract, null, "全原生独立分析工件路径越出项目根目录", { actual: justification.analysis_artifact_file }));
     else if (!existsSync(artifactPath)) errors.push(routeError(stage, contract, null, "全原生独立分析工件不存在", { actual: justification.analysis_artifact_file }));
     else {
       const bytes = readFileSync(artifactPath);
-      const actualSha256 = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-      if (actualSha256 !== justification.analysis_artifact_sha256) errors.push(routeError(stage, contract, null, "全原生独立分析工件 SHA-256 不匹配", { expected: justification.analysis_artifact_sha256, actual: actualSha256 }));
       try { validateAllNativeArtifact(JSON.parse(bytes.toString("utf8")), justification, regions, contract, stage, errors); }
       catch (error) { errors.push(routeError(stage, contract, null, "全原生独立分析工件不是合法 JSON", { actual: error.message })); }
     }

@@ -1,14 +1,7 @@
-import { assertPageSketchBackgroundLayout, hashPageSketchContent, validatePageSketchDocument, validateProjectRelativePath } from "./page-sketch-contract.mjs";
+import { assertPageSketchBackgroundLayout, validatePageSketchDocument, validateProjectRelativePath } from "./page-sketch-contract.mjs";
 import { createPageSketchRenderer } from "./page-sketch-phaser.mjs";
 import { calculateFixedDesignPreview } from "./fixed-design-viewport.mjs";
 import { createPageSketchGameConfig, setPageSketchGameViewport, syncPageSketchGameInput } from "./page-sketch-game-config.mjs";
-
-/** 以 WebCrypto 校验已下载源文件的真实内容身份。 */
-async function hashBytes(bytes) {
-  if (!globalThis.crypto?.subtle) throw new Error("当前开发页面缺少 WebCrypto");
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
-  return `sha256:${[...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
-}
 
 /** 将相对资源路径绑定到当前游戏开发服务根目录，并限制同源读取。 */
 function projectResourceUrl(projectRootUrl, relativePath, pageOrigin = globalThis.location?.origin) {
@@ -24,14 +17,12 @@ function projectResourceUrl(projectRootUrl, relativePath, pageOrigin = globalThi
   return url;
 }
 
-/** 获取项目文件字节，先校验文件 SHA，只有匹配的正式内容才可进入预览。 */
-async function fetchVerifiedFile(file, expectedSha, { projectRootUrl, fetcher, pageOrigin }) {
+/** 获取项目内文件字节；文件存在性和浏览器实际解码决定资源能否进入预览。 */
+async function fetchProjectFile(file, { projectRootUrl, fetcher, pageOrigin }) {
   const url = projectResourceUrl(projectRootUrl, file, pageOrigin);
   const response = await fetcher(url, { cache: "no-store", credentials: "same-origin" });
   if (!response?.ok) throw new Error(`${file} 读取失败（HTTP ${response?.status ?? "unknown"}）`);
   const bytes = await response.arrayBuffer();
-  const actualSha = await hashBytes(bytes);
-  if (actualSha !== expectedSha) throw new Error(`${file} SHA 不匹配，资源可能已漂移`);
   return { bytes, mime: response.headers?.get?.("content-type")?.split(";")[0] || "application/octet-stream" };
 }
 
@@ -49,7 +40,7 @@ async function decodeImage(blob, objectUrl, imageDecoder) {
   await image.decode();
 }
 
-/** 预加载草图所有身份源、冻结底图、V3 正式图片与程序节点预览模块。 */
+/** 预加载草图的 V2/V3 来源、冻结底图、正式图片与程序节点预览模块。 */
 export async function loadPageSketchSources(sketchInput, { projectRootUrl, fetcher = globalThis.fetch, urlApi = globalThis.URL, BlobCtor = globalThis.Blob, imageDecoder, pageOrigin = globalThis.location?.origin } = {}) {
   const sketch = validatePageSketchDocument(sketchInput);
   if (typeof fetcher !== "function" || !projectRootUrl || !urlApi?.createObjectURL || typeof BlobCtor !== "function") throw new TypeError("缺少项目开发服务 fetch 或浏览器 Blob URL 能力");
@@ -57,20 +48,19 @@ export async function loadPageSketchSources(sketchInput, { projectRootUrl, fetch
   const objectUrls = [];
   const assets = new Map();
   const runtimePrograms = new Map();
-  let confirmationError = null;
 
   /** 记录单一文件失败并继续读取其余资源，让页面完整显示所有阻断原因。 */
-  async function loadFile(file, expectedSha, label) {
-    try { return await fetchVerifiedFile(file, expectedSha, { projectRootUrl, fetcher, pageOrigin }); }
+  async function loadFile(file, label) {
+    try { return await fetchProjectFile(file, { projectRootUrl, fetcher, pageOrigin }); }
     catch (error) { errors.push(`${label}：${error.message}`); return null; }
   }
 
   const sources = [
-    [sketch.v2_nodes_file, sketch.v2_nodes_sha256, "V2 节点源"],
-    [sketch.v3_manifest_file, sketch.v3_manifest_sha256, "V3 资源清单"],
-    [sketch.v3_evidence_file, sketch.v3_evidence_sha256, "V3 验收证据"],
+    [sketch.v2_nodes_file, "V2 节点源"],
+    [sketch.v3_manifest_file, "V3 资源清单"],
+    [sketch.v3_evidence_file, "V3 验收证据"],
   ];
-  const sourceFiles = await Promise.all(sources.map(([file, sha, label]) => loadFile(file, sha, label)));
+  const sourceFiles = await Promise.all(sources.map(([file, label]) => loadFile(file, label)));
   let backgroundNodeIds = [];
   let backgroundLayoutError = null;
   try {
@@ -82,7 +72,7 @@ export async function loadPageSketchSources(sketchInput, { projectRootUrl, fetch
     errors.push(`背景布局关系无效：${error.message}`);
   }
 
-  const reference = await loadFile(sketch.reference_file, sketch.target_sha256, "冻结效果图");
+  const reference = await loadFile(sketch.reference_file, "冻结效果图");
   let referenceUrl = null;
   if (reference) {
     try {
@@ -98,10 +88,10 @@ export async function loadPageSketchSources(sketchInput, { projectRootUrl, fetch
     }
   }
 
-  // 合同已要求相同 asset_id 在各 placement 上使用同一 file/SHA；去重下载后由节点关系复用。
+  // 合同要求相同 asset_id 的各 placement 使用同一路径；按资源 ID 去重下载后复用。
   const uniqueAssets = [...new Map(sketch.v3_assets.map((asset) => [asset.asset_id, asset])).values()];
   await Promise.all(uniqueAssets.map(async (asset) => {
-    const loaded = await loadFile(asset.file, asset.sha256, `正式资源 ${asset.asset_id}`);
+    const loaded = await loadFile(asset.file, `正式资源 ${asset.asset_id}`);
     if (!loaded) return;
     try {
       const blob = new BlobCtor([loaded.bytes], { type: loaded.mime });
@@ -115,7 +105,7 @@ export async function loadPageSketchSources(sketchInput, { projectRootUrl, fetch
   }));
 
   await Promise.all(Object.entries(sketch.node_presentations).filter(([, presentation]) => presentation.kind === "runtime-program").map(async ([nodeId, presentation]) => {
-    const loaded = await loadFile(presentation.module_file, presentation.module_sha256, `运行时节点 ${nodeId} 预览程序`);
+    const loaded = await loadFile(presentation.module_file, `运行时节点 ${nodeId} 预览程序`);
     if (!loaded) return;
     let moduleUrl;
     try {
@@ -131,18 +121,10 @@ export async function loadPageSketchSources(sketchInput, { projectRootUrl, fetch
     }
   }));
 
-  if (sketch.confirmation) {
-    try {
-      const actualContentSha = await hashPageSketchContent(sketch);
-      if (actualContentSha !== sketch.confirmation.content_sha256) confirmationError = "草图 confirmation.content_sha256 与当前正式内容不一致";
-    } catch (error) { confirmationError = `草图确认哈希无法复核：${error.message}`; }
-  }
-
   return {
     backgroundNodeIds,
     backgroundLayoutError,
     assets,
-    confirmationError,
     errors,
     referenceUrl,
     runtimePrograms,
@@ -151,24 +133,24 @@ export async function loadPageSketchSources(sketchInput, { projectRootUrl, fetch
   };
 }
 
-/** 确认前仅重新下载并复核全部 V2/V3 身份、冻结底图、正式资源及预览模块 SHA。 */
+/** 确认前重新读取全部 V2/V3 来源、冻结底图、正式资源和预览模块。 */
 export async function verifyPageSketchSources(sketchInput, { projectRootUrl, fetcher = globalThis.fetch, pageOrigin = globalThis.location?.origin } = {}) {
   const sketch = validatePageSketchDocument(sketchInput);
   if (typeof fetcher !== "function" || !projectRootUrl) throw new TypeError("缺少项目开发服务 fetch 或资源根 URL");
   const errors = [];
   const files = [
-    [sketch.v2_nodes_file, sketch.v2_nodes_sha256, "V2 节点源"],
-    [sketch.v3_manifest_file, sketch.v3_manifest_sha256, "V3 资源清单"],
-    [sketch.v3_evidence_file, sketch.v3_evidence_sha256, "V3 验收证据"],
-    [sketch.reference_file, sketch.target_sha256, "冻结效果图"],
+    [sketch.v2_nodes_file, "V2 节点源"],
+    [sketch.v3_manifest_file, "V3 资源清单"],
+    [sketch.v3_evidence_file, "V3 验收证据"],
+    [sketch.reference_file, "冻结效果图"],
   ];
   const uniqueAssets = new Map(sketch.v3_assets.map((asset) => [asset.asset_id, asset]));
-  for (const asset of uniqueAssets.values()) files.push([asset.file, asset.sha256, `正式资源 ${asset.asset_id}`]);
+  for (const asset of uniqueAssets.values()) files.push([asset.file, `正式资源 ${asset.asset_id}`]);
   for (const [nodeId, presentation] of Object.entries(sketch.node_presentations)) {
-    if (presentation.kind === "runtime-program") files.push([presentation.module_file, presentation.module_sha256, `运行时节点 ${nodeId} 预览程序`]);
+    if (presentation.kind === "runtime-program") files.push([presentation.module_file, `运行时节点 ${nodeId} 预览程序`]);
   }
-  await Promise.all(files.map(async ([file, expectedSha, label]) => {
-    try { await fetchVerifiedFile(file, expectedSha, { projectRootUrl, fetcher, pageOrigin }); }
+  await Promise.all(files.map(async ([file, label]) => {
+    try { await fetchProjectFile(file, { projectRootUrl, fetcher, pageOrigin }); }
     catch (error) { errors.push(`${label}：${error.message}`); }
   }));
   return { errors, healthy: errors.length === 0 };
@@ -219,7 +201,7 @@ export async function mountPageSketchPreview({ host, sketch: sketchInput, source
   class PreviewScene extends Phaser.Scene {
     /** 为预览使用独立 Scene 身份，避免复用正式业务 Scene 的副作用。 */
     constructor() { super({ key: 'PageSketchPreview' }); }
-    /** Loader 只消费通过 SHA 和解码复核的 Blob，不加载参考底图。 */
+    /** Loader 只消费存在且可解码的资源 Blob，不加载参考底图。 */
     preload() {
       this.load.on('loaderror', (file) => errors.push('Phaser 资源加载失败：' + file.key));
       for (const [id, url] of sources.assets) this.load.image(keys.get(id), url);

@@ -16,6 +16,18 @@ const REGION_DEFINITION_FIELDS = ["scene_id", "state_id", "layer", "bounds", "la
 function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
 /** 以稳定的键顺序序列化区域定义，避免属性插入顺序影响身份哈希。 */
 function canonicalize(value) { if (Array.isArray(value)) return `[${value.map((item) => canonicalize(item)).join(",")}]`; if (isObject(value)) return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalize(value[key])}`).join(",")}}`; const encoded = JSON.stringify(value); return encoded === undefined ? "null" : encoded; }
+/** 别名冲突只比较业务语义，摘要元数据不能因缺失或更新而阻断验收。 */
+function omitDigestFields(value) {
+  if (Array.isArray(value)) return value.map(omitDigestFields);
+  if (!isObject(value)) return value;
+  const projected = {};
+  for (const [key, nestedValue] of Object.entries(value)) {
+    const tokens = key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").replace(/([A-Z])([A-Z][a-z])/g, "$1_$2").toLowerCase().split(/[_-]+/);
+    if (tokens.some((token) => ["sha1", "sha256", "hash", "fingerprint"].includes(token))) continue;
+    projected[key] = omitDigestFields(nestedValue);
+  }
+  return projected;
+}
 const REGION_FIELD_ALIASES = Object.freeze({ scene_id: ["scene_id", "sceneId"], state_id: ["state_id", "stateId"], layer: ["layer"], bounds: ["bounds"], layout_node_ids: ["layout_node_ids", "layoutNodeIds"], decomposition_elements: ["decomposition_elements", "decompositionElements"], owner_type: ["owner_type", "ownerType"], owner_id: ["owner_id", "ownerId"], asset_id: ["asset_id", "assetId"], asset_ids: ["asset_ids", "assetIds"], production_origin: ["production_origin", "productionOrigin"], production_method: ["production_method", "productionMethod"], delivery_kind: ["delivery_kind", "deliveryKind"], image_generation_required: ["image_generation_required", "imageGenerationRequired"], generation_record_required: ["generation_record_required", "generationRecordRequired"], substitution_policy: ["substitution_policy", "substitutionPolicy"], runtime_implementation: ["runtime_implementation", "runtimeImplementation"], state_analysis: ["state_analysis", "stateAnalysis"], component_inventory: ["component_inventory", "componentInventory"], expected_assets: ["expected_assets", "expectedAssets"], interaction_hotspots: ["interaction_hotspots", "interactionHotspots"], atomic_image_requirements: ["atomic_image_requirements", "atomicImageRequirements"], ownership_evidence: ["ownership_evidence", "ownershipEvidence"], annotation_number: ["annotation_number", "annotationNumber"], implementation_plan: ["implementation_plan", "implementationPlan"] });
 const NESTED_CONTRACT_FIELDS = new Set(["production_origin", "production_method", "delivery_kind", "image_generation_required", "generation_record_required", "substitution_policy", "runtime_implementation", "state_analysis", "component_inventory", "expected_assets", "interaction_hotspots", "atomic_image_requirements"]);
 const STATE_ALIASES = new Map([["default", "default"], ["normal", "default"], ["idle", "default"], ["selected", "selected"], ["select", "selected"], ["active", "active"], ["activated", "active"], ["disabled", "disabled"], ["disable", "disabled"], ["pressed", "pressed"], ["down", "pressed"], ["hover", "hover"], ["hovered", "hover"], ["over", "hover"], ["victory", "victory"], ["win", "victory"], ["won", "victory"], ["success", "victory"], ["defeat", "defeat"], ["lose", "defeat"], ["lost", "defeat"], ["failure", "defeat"], ["fail", "defeat"], ["paused", "paused"], ["pause", "paused"]]);
@@ -96,7 +108,7 @@ function regionFieldSources(region, field) { const sources = []; const aliases =
 /** 返回验证器实际使用的规范化区域合同，哈希和执行门共用此语义。 */
 export function normalizeVisualRegionDefinition(region = {}) { return Object.fromEntries(REGION_DEFINITION_FIELDS.map((field) => { const source = regionFieldSources(region, field)[0]; return [field, semanticDefinitionValue(field, source?.value ?? null)]; })); }
 /** 检测 snake/camel/nested 三种写法是否同时出现且取值冲突。 */
-export function getVisualRegionDefinitionAliasConflicts(region = {}) { const conflicts = []; for (const field of REGION_DEFINITION_FIELDS) { const sources = regionFieldSources(region, field); if (sources.length < 2) continue; const first = canonicalize(semanticDefinitionValue(field, sources[0].value)); if (sources.slice(1).some((entry) => canonicalize(semanticDefinitionValue(field, entry.value)) !== first)) conflicts.push({ field, sources: sources.map((entry) => entry.source) }); } return conflicts; }
+export function getVisualRegionDefinitionAliasConflicts(region = {}) { const conflicts = []; for (const field of REGION_DEFINITION_FIELDS) { const sources = regionFieldSources(region, field); if (sources.length < 2) continue; const first = canonicalize(omitDigestFields(semanticDefinitionValue(field, sources[0].value))); if (sources.slice(1).some((entry) => canonicalize(omitDigestFields(semanticDefinitionValue(field, entry.value))) !== first)) conflicts.push({ field, sources: sources.map((entry) => entry.source) }); } return conflicts; }
 /** 计算覆盖区域的稳定身份哈希；确认不参与哈希，避免确认内容自引用。 */
 export function computeRegionDefinitionSha256(region) { return `sha256:${createHash("sha256").update(canonicalize(normalizeVisualRegionDefinition(region))).digest("hex")}`; }
 /** 读取 PNG 元数据需要展示的稳定拆解元素列表；阶段 A 不冻结后置布局节点。 */

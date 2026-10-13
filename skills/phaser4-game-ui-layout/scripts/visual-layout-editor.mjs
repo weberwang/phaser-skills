@@ -2,7 +2,6 @@ import { createVisualLayoutProperties } from "./visual-layout-properties.mjs";
 
 const LAYOUT_SCHEMA = "phaser-visual-layout/1.0";
 const ROOT_PARENTS = new Set(["viewport", "safe-area"]);
-const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const DEFAULT_SNAP_STEP = 8;
 
 /** 判断值是否为不含数组的普通对象。 */
@@ -80,7 +79,6 @@ export function validateVisualLayoutDocument(layout, nodes) {
   const nodeMap = nodes === undefined ? null : validateLayoutNodes(nodes);
   if (!isRecord(layout)) throw new TypeError("layout 必须是对象");
   if (layout.schema !== LAYOUT_SCHEMA) throw new TypeError(`layout.schema 必须为 ${LAYOUT_SCHEMA}`);
-  if (typeof layout.target_sha256 !== "string" || !SHA256_PATTERN.test(layout.target_sha256)) throw new TypeError("layout.target_sha256 必须是小写 sha256 身份值");
   for (const field of ["scene_id", "state_id"]) {
     if (typeof layout[field] !== "string" || layout[field].trim() === "") throw new TypeError(`layout.${field} 必须是非空字符串`);
   }

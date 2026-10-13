@@ -17,12 +17,10 @@ function stableHash(value) { return createHash("sha256").update(stableJson(value
 async function evidenceReference(value, basePath, label) {
   if (!value) throw new ReskinError(`控制面缺少 ${label}`);
   const pathValue = typeof value === "string" ? value : value.path ?? value.file;
-  const expected = typeof value === "object" ? value.sha256 ?? value.evidence_sha256 : null;
   if (!pathValue) return { path: null, sha256: stableHash(value), inline: true };
   const path = isAbsolute(pathValue) ? pathValue : resolve(dirname(basePath), pathValue);
   try { if (!(await stat(path)).isFile()) throw new Error("not a file"); } catch { throw new ReskinError(`${label} 证据文件不存在：${path}`); }
   const actual = createHash("sha256").update(await readFile(path)).digest("hex");
-  if (expected && expected !== actual) throw new ReskinError(`${label} 证据 SHA-256 不匹配：${path}`);
   return { path, sha256: actual, inline: false };
 }
 
@@ -40,18 +38,18 @@ export async function readSpineControlBinding(path) {
   const contractEvidence = await evidenceReference(contract, controlPath, "production contract");
   const approvalEvidence = await evidenceReference(approval.evidence, controlPath, "V2 approval");
   const approvalSha = approval.evidence_sha256 ?? approvalEvidence.sha256;
-  if (approvalEvidence.path && approvalSha !== approvalEvidence.sha256) throw new ReskinError("V2 approval evidence_sha256 与文件不一致");
-  if (!approval.evidence || !approvalSha) throw new ReskinError("V2 approval 必须包含 evidence 和 evidence_sha256");
+  // 摘要只作为追踪记录；验收依赖真实证据和人工确认，不要求用户补齐或核对 SHA。
+  if (!approval.evidence) throw new ReskinError("V2 approval 必须包含 evidence");
   const controlSha = createHash("sha256").update(await readFile(controlPath)).digest("hex");
   return { control_manifest_path: controlPath, control_manifest_sha256: controlSha, work_item_id: workItemId, production_contract_sha256: contractEvidence.sha256, production_contract_path: contractEvidence.path, visual_human_approval_sha256: stableHash(approval), visual_human_approval_evidence_sha256: approvalSha, visual_human_approval_evidence_path: approvalEvidence.path };
 }
 
-/** 重新读取控制面并比较所有绑定字段，防止本地 Spine 流程脱离 Work Item。 */
+/** 重新读取控制面的工作项及证据路径，保持任务归属而不比较验收摘要。 */
 export async function assertSpineControlBinding(document) {
   const binding = document.control_binding;
-  if (!binding?.control_manifest_path || !binding.control_manifest_sha256) throw new ReskinError("缺少 Spine 控制面 manifest 绑定");
+  if (!binding?.control_manifest_path) throw new ReskinError("缺少 Spine 控制面 manifest 绑定");
   const current = await readSpineControlBinding(binding.control_manifest_path);
-  const fields = ["control_manifest_sha256", "work_item_id", "production_contract_sha256", "visual_human_approval_sha256", "visual_human_approval_evidence_sha256"];
+  const fields = ["work_item_id", "production_contract_path", "visual_human_approval_evidence_path"];
   for (const field of fields) if (current[field] !== binding[field]) throw new ReskinError(`控制面绑定漂移：${field}`);
   return current;
 }

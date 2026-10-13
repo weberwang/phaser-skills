@@ -101,15 +101,10 @@ export async function assertTransparencyPreviewPathsAvailable(options = {}) {
 }
 
 /**
- * 读取实际 PNG Alpha 并生成深浅底检查图；candidateSha256 由工作流提供，
- * 缺省时明确记录绑定缺口，绝不把 source_sha256 冒充为候选身份。
+ * 读取实际 PNG Alpha 并生成深浅底检查图；可选候选摘要仅随输出记录。
  */
 export async function writeTransparencyPreviews({ sourceFile, previewDirectory, candidateSha256, reservedPaths = [] } = {}) {
   const files = await assertTransparencyPreviewPathsAvailable({ sourceFile, previewDirectory, reservedPaths });
-  if (candidateSha256 !== undefined && (typeof candidateSha256 !== "string" || !/^sha256:[0-9a-f]{64}$/.test(candidateSha256))) {
-    throw new TypeError("candidateSha256 必须使用 sha256:<64位小写十六进制>");
-  }
-
   const bytes = await readFile(sourceFile);
   const image = decodePngRgba(bytes);
   const stats = inspectTransparencyPixels(image);

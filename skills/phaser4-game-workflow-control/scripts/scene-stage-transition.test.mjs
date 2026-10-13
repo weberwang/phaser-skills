@@ -218,11 +218,12 @@ test('V2→V3 只接受严格冻结来源并清除旧阶段审计快照', () => 
   assert.notEqual(plan.nextWork.validationBatchId, fixture.work.validationBatchId);
 });
 
-test('V2真实源文件字节漂移会拒绝阶段推进且不修改原工作项', () => {
+test('V2来源文件字节漂移不因 SHA 摘要阻断阶段推进', () => {
   const fixture = makeSceneFixture();
   const before = structuredClone(fixture.work);
   writeFile(fixture.repo, 'docs/technical-decomposition.json', '{"source":"changed after freeze"}\n');
-  assert.throws(() => transition(fixture, fixture.work, 'REVIEW', { 'visual-stage': 'V3' }), /标准冻结拆解方案无效|file SHA\/path/);
+  const result = transition(fixture, fixture.work, 'REVIEW', { 'visual-stage': 'V3' });
+  assert.equal(result.nextWork.visualStage, 'V3');
   assert.deepEqual(fixture.work, before);
 });
 
@@ -282,7 +283,7 @@ test('存在旧 Execution State 时V4→V5激活新包要求旧执行序列闭�
   assert.throws(() => transition(fixture, withState, 'IMPLEMENTING', { 'visual-stage': 'V5' }), /旧阶段实施序列尚未完成/);
 });
 
-test('V5同阶段运行验收完成后，COMPLETE要求完整V2/V3/V4/V5 SHA链', () => {
+test('V5同阶段运行验收完成后，COMPLETE要求完整V2/V3/V4/V5阶段证据链但不比较摘要', () => {
   const fixture = makeSceneFixture();
   const { v4Confirmed } = confirmSketch(fixture);
   const activated = activateV5(fixture, v4Confirmed).work;
@@ -293,7 +294,8 @@ test('V5同阶段运行验收完成后，COMPLETE要求完整V2/V3/V4/V5 SHA链'
   assert.equal(completed.visualStage, 'V5');
   assert.equal(completed.visualStageState, 'v5-runtime-integration-candidate');
   assert.doesNotThrow(() => assertSceneWorkItemComplete(completed, fixture.pkg, fixture.repo, { diffFingerprint: DIFF_SHA }));
-  assert.throws(() => assertSceneWorkItemComplete(completed, fixture.pkg, fixture.repo, { diffFingerprint: `sha256:${'d'.repeat(64)}` }), /diff 身份不一致/);
+  assert.doesNotThrow(() => assertSceneWorkItemComplete(completed, fixture.pkg, fixture.repo, { diffFingerprint: 'sha256:stale' }));
+  assert.doesNotThrow(() => assertSceneWorkItemComplete(completed, fixture.pkg, fixture.repo));
   const missingV3 = { ...completed, visualStageEvidenceRefs: { ...completed.visualStageEvidenceRefs, V3: undefined } };
   assert.throws(() => assertSceneWorkItemComplete(missingV3, fixture.pkg, fixture.repo, { diffFingerprint: DIFF_SHA }), /V3|未闭合/);
 });

@@ -95,6 +95,26 @@ function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+/** 将驼峰字段名转为可统一识别的蛇形形式，避免摘要别名参与业务事实比较。 */
+function normalizeSummaryFieldName(value) {
+  return String(value).replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+}
+
+/** 仅匹配独立摘要令牌，避免误删 shadow、share_id 等真实视觉或身份字段。 */
+function isSummaryDigestField(value) {
+  const normalized = normalizeSummaryFieldName(value);
+  return /(^|[_-])(sha(?:1|224|256|384|512)?|hash|checksum|fingerprint|digest|diff_identity)([_-]|$)/.test(normalized);
+}
+
+/** 递归移除仅供追踪的摘要字段，保留输入路径、顺序、裁切与其余实际参数。 */
+function withoutSummaryDigests(value) {
+  if (Array.isArray(value)) return value.map(withoutSummaryDigests);
+  if (!isObject(value)) return value;
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !isSummaryDigestField(key))
+    .map(([key, nested]) => [key, withoutSummaryDigests(nested)]));
+}
+
 /** 判断字符串是否具备合同内容。 */
 function nonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
@@ -290,24 +310,10 @@ export function hasFullReferenceInput(referenceInputs, originalFile) {
   });
 }
 
-/** 读取候选身份中的 SHA，兼容 manifestEvidenceIdentity 与 generation_record 直写形式。 */
-function identityValue(identity, names) {
-  if (!isObject(identity)) return undefined;
-  for (const name of names) if (nonEmptyString(identity[name])) return identity[name];
-  return undefined;
-}
-
 /** 校验 effect-image 图像生成的结构化字段、提示词与真实输入绑定。 */
 export function validateEffectImagePromptContract(asset, contract, generation, context = {}, options = {}) {
   const errors = [];
   const referenceTarget = context.reference_target ?? context.referenceTarget ?? contract?.reference_target ?? contract?.referenceTarget ?? {};
-  const expectedIdentity = {
-    ...(isObject(context.candidate_identity) ? context.candidate_identity : {}),
-    ...(isObject(context.candidateIdentity) ? context.candidateIdentity : {}),
-    ...(isObject(context.manifestEvidenceIdentity) ? context.manifestEvidenceIdentity : {}),
-    ...(isObject(context.identity) ? context.identity : {}),
-    ...(isObject(options.identity) ? options.identity : {}),
-  };
   const targetFile = options.referenceOriginalFile ?? options.reference_original_file ?? referenceTarget.original_file ?? referenceTarget.originalFile;
   const region = options.region ?? context.region ?? context.coverage_region ?? context.coverageRegion;
   const identity = collectEffectImagePromptFacts(region, options.sceneReconstructionContract).identity;
@@ -352,36 +358,29 @@ export function validateEffectImagePromptContract(asset, contract, generation, c
   errors.push(...validateEffectImageAssetPrompt(generation.asset_prompt, region, { sceneReconstructionContract: options.sceneReconstructionContract }));
   const paths = [...collectOutputPaths(asset), ...collectOutputPaths(generation)];
   if (targetFile && paths.some((path) => samePath(path, targetFile))) add("effect-image source_file/runtime_file/output 不得等于冻结效果图");
-  const targetSha = options.referenceTargetSha ?? options.reference_target_sha256 ?? expectedIdentity.target ?? expectedIdentity.targetSha256 ?? expectedIdentity.target_sha256 ?? referenceTarget.target_sha256 ?? referenceTarget.targetSha256;
-  const outputSha = [asset?.sha256, asset?.file_sha256, generation?.sha256, generation?.output?.sha256, generation?.output?.file_sha256, generation?.actual_output?.sha256, generation?.actualOutput?.sha256, generation?.output_metadata?.sha256].find(nonEmptyString);
   // effect-image 的原子资产也必须继承根 visual_baseline 和全部全局锚点；局部冻结图不能替代全局真值。
   const globalBaseline = options.visual_baseline ?? context.visual_baseline ?? contract?.visual_baseline;
   errors.push(...validateGlobalVisualGenerationRecord(generation, {
     label: "effect-image generation_record",
     visual_baseline: globalBaseline,
-    target_sha256: targetSha,
-    output_sha256: options.outputSha256 ?? options.output_sha256 ?? outputSha,
   }));
   if (generation.global_visual_consistency_prompt !== CANONICAL_GLOBAL_VISUAL_CONSISTENCY_PROMPT) add("effect-image generation_record.global_visual_consistency_prompt 必须使用 canonical 全局视觉一致性提示词");
   const fullPromptForGlobal = generation.full_prompt ?? generation.actual_full_prompt ?? generation.actual_prompt ?? generation.sent_prompt ?? generation.prompt_sent_text;
   if (nonEmptyString(fullPromptForGlobal) && !fullPromptForGlobal.includes(CANONICAL_GLOBAL_VISUAL_CONSISTENCY_PROMPT)) add("effect-image 实际完整提示词缺少全局视觉一致性段");
-  if (targetSha && outputSha && targetSha === outputSha) add("effect-image source/runtime/output 的文件身份不得复用冻结效果图 SHA");
   const operationValues = [generation.operation, generation.operations, generation.source_operation, generation.reference_operation, generation.reference_usage, generation.referenceUsage, generation.pixel_reuse_operation, generation.pixelReuseOperation, generation.postprocess, generation.post_processing, generation.postProcessing, generation.command_or_recipe, generation.actual_operation, generation.actualOperation, generation.output_operation, generation.outputOperation].flatMap((value) => Array.isArray(value) ? value : [value]).filter((value) => nonEmptyString(value) || isObject(value)).map((value) => typeof value === "string" ? value : JSON.stringify(value)).join(" ");
   if (generation.crop_reference === true || generation.reference_crop === true || /crop[-_ ]?reference|裁切参考|裁剪参考|抠图参考|抠取参考|直接复制参考(?:图)?像素|copy(?:ing)?\s+(?:the\s+)?reference(?:\s+image)?\s+pixels|reuse(?:d)?[-_ ]?(?:reference|ref)[-_ ]?pixels/i.test(operationValues)) add("effect-image 禁止裁切、抠图或复用参考图像素作为输出");
-  if (generation.actual_reference_inputs !== undefined && JSON.stringify(generation.actual_reference_inputs) !== JSON.stringify(generation.reference_inputs)) add("effect-image actual_reference_inputs 必须与真实发送的 reference_inputs 一致");
+  if (generation.actual_reference_inputs !== undefined
+    && JSON.stringify(withoutSummaryDigests(generation.actual_reference_inputs)) !== JSON.stringify(withoutSummaryDigests(generation.reference_inputs))) {
+    add("effect-image actual_reference_inputs 必须与真实发送的 reference_inputs 一致");
+  }
   const actualRegionId = generation.region_id ?? generation.regionId;
   if (identity.region_id && actualRegionId !== identity.region_id) add("effect-image generation_record.region_id 未绑定当前冻结 region");
-  const actualTargetSha = generation.target_sha256 ?? generation.targetSha256 ?? generation.reference_target_sha256 ?? generation.referenceTargetSha256;
-  if (targetSha && actualTargetSha !== targetSha) add("effect-image generation_record.target_sha256 未绑定当前冻结目标");
-  const actualCandidateSha = generation.candidate_sha256 ?? generation.candidateSha256 ?? generation.candidate_identity?.sha256 ?? generation.candidateIdentity?.sha256;
   const contractCandidateIdentity = contract?.candidate_identity ?? contract?.candidateIdentity ?? contract?.visual_decomposition_confirmation?.candidate_identity ?? contract?.visualDecompositionConfirmation?.candidateIdentity ?? {};
-  const expectedCandidate = expectedIdentity.candidate ?? expectedIdentity.candidateSha256 ?? expectedIdentity.candidate_sha256 ?? contractCandidateIdentity.sha256 ?? contractCandidateIdentity.candidate_sha256 ?? contractCandidateIdentity.candidateSha256;
-  if (expectedCandidate && actualCandidateSha !== expectedCandidate) add("effect-image generation_record.candidate_sha256 未绑定当前候选");
-  const expectedDiff = expectedIdentity.diff ?? expectedIdentity.diffFingerprint ?? expectedIdentity.diff_fingerprint ?? contractCandidateIdentity.diff_fingerprint ?? contractCandidateIdentity.diffFingerprint;
-  const actualDiff = generation.diff_fingerprint ?? generation.diffFingerprint ?? generation.candidate_identity?.diff_fingerprint ?? generation.candidateIdentity?.diffFingerprint;
-  if (expectedDiff && actualDiff !== expectedDiff) add("effect-image generation_record.diff_fingerprint 未绑定当前候选 diff");
   const expectedCandidateVersion = options.candidateVersion ?? options.candidate_version ?? context.candidateVersion ?? context.candidate_version ?? contract?.candidate_version ?? contract?.candidateVersion;
   if (expectedCandidateVersion && generation.candidate_version !== expectedCandidateVersion && generation.candidateVersion !== expectedCandidateVersion) add("effect-image generation_record.candidate_version 未绑定当前候选版本");
+  const expectedCandidateId = options.candidateId ?? options.candidate_id ?? contractCandidateIdentity.candidate_id ?? contractCandidateIdentity.candidateId ?? contract?.candidateId ?? contract?.candidate_id;
+  const actualCandidateId = generation.candidate_id ?? generation.candidateId ?? generation.candidate_identity?.candidate_id ?? generation.candidateIdentity?.candidateId;
+  if (nonEmptyString(expectedCandidateId) && nonEmptyString(actualCandidateId) && actualCandidateId !== expectedCandidateId) add("effect-image generation_record.candidate_id 未绑定当前候选");
   return [...new Set(errors)];
 }
 

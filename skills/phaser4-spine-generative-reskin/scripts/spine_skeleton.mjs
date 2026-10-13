@@ -77,7 +77,7 @@ export async function readSkeleton(path) {
 export function skeletonProjection(value) {
   // JSON 对象与 4.x 数组导出顺序可能不同；按语义键排序，避免把纯格式迁移误判成结构漂移。
   const attachments = collectSkins(value.skins).sort((left, right) => stableJson([left.skin, left.slot, left.name]).localeCompare(stableJson([right.skin, right.slot, right.name])));
-  const meshes = attachments.filter((attachment) => attachment.is_mesh).map(({ name, path, type, skin, slot, mesh_sha256 }) => ({ name, path, type, skin, slot, mesh_sha256 }));
+  const meshes = attachments.filter((attachment) => attachment.is_mesh).map(({ name, path, type, skin, slot, mesh_sha256, data }) => ({ name, path, type, skin, slot, mesh_sha256, data }));
   return {
     version: parseSpineVersion(value.skeleton?.spine),
     skeleton_metadata: Object.fromEntries(Object.entries(value.skeleton ?? {}).filter(([key]) => key !== "spine")),
@@ -134,6 +134,10 @@ export async function auditSkeleton(path, atlas = null, targetRuntime = "4.3.13"
     stats,
     bones: projection.bones,
     slots: projection.slots,
+    skeleton_metadata: projection.skeleton_metadata,
+    constraints: projection.constraints,
+    skin_metadata: projection.skin_metadata,
+    animation_semantics: projection.animation_semantics,
     skins: projection.skins,
     attachments: projection.attachments,
     mesh_signatures: projection.meshes,
@@ -160,10 +164,12 @@ export function compareUpgrade(before, after) {
   if (stableJson(before.constraints) !== stableJson(after.constraints)) unknown.push("ik_transform_path_physics_constraints");
   if (stableJson(before.skins) !== stableJson(after.skins)) unknown.push("skin_names");
   if (stableJson(before.skin_metadata) !== stableJson(after.skin_metadata)) unknown.push("skin_bones_constraints");
-  if (stableJson(before.attachments) !== stableJson(after.attachments)) unknown.push("attachment_path_or_type");
-  if (stableJson(before.mesh_signatures) !== stableJson(after.mesh_signatures)) unknown.push("mesh_vertices_triangles_uvs");
+  // 升级仍必须保留实际附件和关键帧语义；比较业务数据，不把追踪摘要作为验收条件。
+  const attachmentData = (items) => items.map(({ mesh_sha256, ...item }) => item);
+  if (stableJson(attachmentData(before.attachments)) !== stableJson(attachmentData(after.attachments))) unknown.push("attachment_path_or_type");
+  if (stableJson(attachmentData(before.mesh_signatures)) !== stableJson(attachmentData(after.mesh_signatures))) unknown.push("mesh_vertices_triangles_uvs");
   if (stableJson(before.stats.animation_names) !== stableJson(after.stats.animation_names)) unknown.push("animation_names_or_semantics");
-  if (stableJson(before.animation_semantics) !== stableJson(after.animation_semantics) || before.animations_sha256 !== after.animations_sha256) unknown.push("animation_keyframes_values_interpolation_semantics");
+  if (stableJson(before.animation_semantics) !== stableJson(after.animation_semantics)) unknown.push("animation_keyframes_values_interpolation_semantics");
   return { allowed_changes: allowed, unknown_changes: [...new Set(unknown)], passed: unknown.length === 0 };
 }
 

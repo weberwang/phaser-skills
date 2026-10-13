@@ -87,7 +87,7 @@ function withoutOutput(callback) {
 test('run/check/status 提供稳定紧凑入口', () => {
   const fixture = makeRepo();
   const workPath = join(fixture.repo, '.workflow-control', 'work-items', 'WI-1.json');
-  const initialized = invoke(fixture.repo, 'init', ['--repo', fixture.repo, '--work-item-id', 'WI-1', '--project-id', 'P-1', '--module-id', 'core', '--domain', 'code', '--stage-id', 'G0', '--baseline-id', fixture.head, '--baseline-version', '1', '--baseline-hash', fixture.head, '--objective', '建立控制面', '--user-text', '请建立控制面工作项', '--object', 'workflow bootstrap', '--allowed-path', 'src']);
+  const initialized = invoke(fixture.repo, 'init', ['--repo', fixture.repo, '--work-item-id', 'WI-1', '--project-id', 'P-1', '--module-id', 'core', '--domain', 'code', '--stage-id', 'G0', '--baseline-id', fixture.head, '--baseline-version', '1', '--objective', '建立控制面', '--user-text', '请建立控制面工作项', '--object', 'workflow bootstrap', '--allowed-path', 'src']);
   assert.equal(initialized.status, 0, initialized.stderr);
   const outsideCwd = mkdtempSync(join(tmpdir(), 'phaser-stable-cwd-'));
   const advanced = invoke(fixture.repo, 'run', ['--repo', fixture.repo, '--work-item', '.workflow-control/work-items/WI-1.json', '--json'], outsideCwd);

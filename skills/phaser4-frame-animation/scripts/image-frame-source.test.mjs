@@ -84,7 +84,7 @@ async function createSourceFixture({ loop = false, middleFrame = false } = {}) {
 }
 
 /** 验证乱序清单仍按帧索引完成覆盖检查，并返回可供打包复用的原始字节。 */
-test("接受乱序来源并返回 SHA 已校验的文件字节", async (t) => {
+test("接受乱序来源并返回已读取的文件字节", async (t) => {
   const fixture = await createSourceFixture();
   t.after(async () => rm(fixture.projectRoot, { recursive: true, force: true }));
   fixture.source.frames.reverse();
@@ -99,7 +99,7 @@ test("接受乱序来源并返回 SHA 已校验的文件字节", async (t) => {
   assert.ok(loaded.files.has("records/0.json"));
   const loadedImage = loaded.files.get("art/0.png");
   assert.ok(Buffer.isBuffer(loadedImage.bytes));
-  assert.equal(loadedImage.sha256, fixture.source.frames[1].image.sha256);
+  assert.equal(loadedImage.sha256, undefined, "文件记录不把验收摘要暴露为可信身份");
   assert.equal(loadedImage.absolutePath, join(fixture.projectRoot, "art", "0.png"));
 });
 
@@ -217,13 +217,19 @@ test("拒绝缺少 prompt 的生成记录", async (t) => {
   await assert.rejects(readImageFrameSource(fixture.manifestFile, { projectRoot: fixture.projectRoot }), /prompt/u);
 });
 
-/** 验证实际图像字节被替换后，声明 SHA 不会继续被信任。 */
-test("拒绝来源图片 SHA 变化", async (t) => {
+/** 验证 SHA 摘要缺失、错误或陈旧不替代路径、图片解码与尺寸检查。 */
+test("来源图片摘要缺失或陈旧不阻断真实文件读取", async (t) => {
   const fixture = await createSourceFixture();
   t.after(async () => rm(fixture.projectRoot, { recursive: true, force: true }));
   await writeFile(join(fixture.projectRoot, "art", "0.png"), await createPng(2, 2, [1, 2, 3, 255]));
-
-  await assert.rejects(readImageFrameSource(fixture.manifestFile, { projectRoot: fixture.projectRoot }), ImageFrameSourceError);
+  for (const frame of fixture.source.frames) {
+    delete frame.image.sha256;
+    delete frame.source_image.sha256;
+    frame.generation_record.sha256 = "not-a-sha";
+  }
+  await writeFile(fixture.manifestFile, `${JSON.stringify(fixture.source, null, 2)}\n`, "utf8");
+  const loaded = await readImageFrameSource(fixture.manifestFile, { projectRoot: fixture.projectRoot });
+  assert.ok(loaded.files.get("art/0.png").bytes.length > 0);
 });
 
 /** 验证修图快照必须从真实原图连续连接到最终图，不能只声明两个不同端点。 */

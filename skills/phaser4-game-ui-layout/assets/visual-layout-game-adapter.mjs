@@ -1,5 +1,5 @@
 import { createPageSketchRenderer } from "../scripts/page-sketch-phaser.mjs";
-import { hashPageSketchContent, validatePageSketchDocument } from "../scripts/page-sketch-contract.mjs";
+import { validatePageSketchDocument } from "../scripts/page-sketch-contract.mjs";
 import { createPageSketchGameConfig, setPageSketchGameViewport } from "../scripts/page-sketch-game-config.mjs";
 
 export { setPageSketchGameViewport } from "../scripts/page-sketch-game-config.mjs";
@@ -16,9 +16,9 @@ export function createFormalPageSketchGameConfig(Phaser, { parent, viewport, ...
 }
 
 /**
- * 为 V5 生成正式 Scene 类：资源 URL 必须来自已校验草图身份的 Blob，布局与显示对象统一交给共享渲染适配器。
+ * 为 V5 生成正式 Scene 类：资源 URL 必须来自读取并解码通过的 Blob，布局与显示对象统一交给共享渲染适配器。
  * @param {object} Phaser Phaser 命名空间。
- * @param {{sketch: object, sources: {assets: Map<string, string>, runtimePrograms?: Map<string, Function>, backgroundNodeIds?: string[], errors?: string[], confirmationError?: string|null}, fonts?: object, sceneKey?: string}} input 草图与 loadPageSketchSources 返回的同一身份资源集合。
+ * @param {{sketch: object, sources: {assets: Map<string, string>, runtimePrograms?: Map<string, Function>, backgroundNodeIds?: string[], errors?: string[]}, fonts?: object, sceneKey?: string}} input 草图与 loadPageSketchSources 返回的预览资源集合。
  * @returns {typeof Phaser.Scene} 可直接交给 Phaser.GameConfig.scene 的 Scene 子类。
  */
 export function createFormalPageSketchScene(Phaser, input) {
@@ -27,29 +27,29 @@ export function createFormalPageSketchScene(Phaser, input) {
   if (!sourceSketch || typeof sourceSketch !== "object") throw new TypeError("缺少已确认的 page-sketch 数据");
   if (!sources || typeof sources !== "object") throw new TypeError("必须传入 loadPageSketchSources 返回的身份资源集合");
   const { assets, runtimePrograms = new Map(), backgroundNodeIds = [] } = sources;
-  if (!(assets instanceof Map)) throw new TypeError("assets 必须是 asset_id 到 SHA 校验 Blob URL 的 Map");
+  if (!(assets instanceof Map)) throw new TypeError("assets 必须是 asset_id 到预览 Blob URL 的 Map");
   if (!(runtimePrograms instanceof Map)) throw new TypeError("runtimePrograms 必须是节点 ID 到 Phaser 挂载函数的 Map");
   if (!Array.isArray(backgroundNodeIds)) throw new TypeError("backgroundNodeIds 必须来自 loadPageSketchSources 的节点数组");
   if (Array.isArray(sources.errors) && sources.errors.length > 0) throw new Error(sources.errors.join("；"));
-  if (sources.confirmationError) throw new Error(sources.confirmationError);
 
   const sketch = structuredClone(validatePageSketchDocument(sourceSketch));
-  const assetHashes = new Map(sketch.v3_assets.map((asset) => [asset.asset_id, asset.sha256]));
+  const assetIds = new Set(sketch.v3_assets.map((asset) => asset.asset_id));
   const assetEntries = [...assets.entries()];
   for (const [assetId, blobUrl] of assetEntries) {
     if (typeof assetId !== "string" || !assetId) throw new TypeError("草图资源缺少 asset_id");
     if (typeof blobUrl !== "string" || !blobUrl.startsWith("blob:")) {
       throw new TypeError(`资源 ${assetId} 必须使用已校验字节创建的 Blob URL`);
     }
-    if (!assetHashes.has(assetId)) throw new TypeError(`资源 ${assetId} 不属于已确认草图`);
+    if (!assetIds.has(assetId)) throw new TypeError(`资源 ${assetId} 不属于已确认草图`);
   }
-  if (assetHashes.size !== assetEntries.length) throw new TypeError("assets 必须为草图中的每个正式 asset_id 提供且仅提供一个 Blob URL");
+  if (assetIds.size !== assetEntries.length || [...assetIds].some((assetId) => !assets.has(assetId))) throw new TypeError("assets 必须为草图中的每个正式 asset_id 提供且仅提供一个 Blob URL");
   const textureKeys = new Map(assetEntries.map(([assetId]) => {
-    const digest = assetHashes.get(assetId).slice("sha256:".length);
+    // Blob URL 每次加载都代表实际预览字节，作为 Phaser 内部纹理键可避免复用旧缓存。
+    const blobUrl = assets.get(assetId);
     const scene = encodeURIComponent(sketch.scene_id);
     const state = encodeURIComponent(sketch.state_id);
     const resource = encodeURIComponent(assetId);
-    return [assetId, `page-sketch:${scene}:${state}:${resource}:${digest}`];
+    return [assetId, `page-sketch:${scene}:${state}:${resource}:${encodeURIComponent(blobUrl)}`];
   }));
   const textureAssetIds = new Map([...textureKeys].map(([assetId, textureKey]) => [textureKey, assetId]));
 
@@ -124,11 +124,7 @@ export function createFormalPageSketchScene(Phaser, input) {
         if (validatedSketch.confirmation?.status !== "accepted") {
           throw new Error("V5 只能消费已经 accepted 的页面草图");
         }
-        const actualContentSha256 = await hashPageSketchContent(validatedSketch);
         if (runToken !== this.pageSketchRunToken) return;
-        if (actualContentSha256 !== validatedSketch.confirmation.content_sha256) {
-          throw new Error("页面草图确认摘要与当前内容不一致");
-        }
         if (this.pageSketchAssetErrors.length > 0) {
           throw new Error(this.pageSketchAssetErrors.join("；"));
         }

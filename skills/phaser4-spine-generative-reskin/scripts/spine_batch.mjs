@@ -170,27 +170,29 @@ export async function createReviewBoard(document, manifestPath, batch, cells, ou
   return { path: outputPath, sha256: createHash("sha256").update(await readFile(outputPath)).digest("hex"), index: indexRecord };
 }
 
-/** 验证审阅图和候选 SHA 仍对应本次批次 revision。 */
+/** 读取本批次的候选与审阅工件；摘要只作记录，不参与验收判定。 */
 export async function acceptanceFingerprint(document, manifestPath, batch, cells, reviewBoard, sha256, resolveArtifact) {
   const candidates = [];
   for (const cell of cells) {
     const path = resolveArtifact(manifestPath, cell.generated_image);
-    if (!path || !cell.result_sha256 || cell.result_sha256 !== await sha256(path)) throw new ReskinError(`批次 ${batch.id} 候选 SHA 漂移：${cell.id}`);
+    if (!path) throw new ReskinError(`批次 ${batch.id} 候选路径缺失：${cell.id}`);
+    try { await readFile(path); } catch (error) { throw new ReskinError(`批次 ${batch.id} 候选不可读：${cell.id}：${error.message}`); }
     candidates.push({ id: cell.id, sha256: cell.result_sha256 });
   }
   const reviewPath = resolveArtifact(manifestPath, reviewBoard.path);
-  if (!reviewPath || reviewBoard.sha256 !== await sha256(reviewPath)) throw new ReskinError(`批次 ${batch.id} 审阅图 SHA 漂移`);
+  if (!reviewPath) throw new ReskinError(`批次 ${batch.id} 审阅图路径缺失`);
+  try { await readFile(reviewPath); } catch (error) { throw new ReskinError(`批次 ${batch.id} 审阅图不可读：${error.message}`); }
   const baseFingerprint = candidateFingerprint(batch, cells, reviewBoard);
   let effectReportSha256 = null;
   if (batch.effect_sequence) {
     const machineReport = batch.effect_sequence.machine_report;
-    if (!machineReport?.path || !machineReport.sha256 || machineReport.candidate_fingerprint !== baseFingerprint) throw new ReskinError(`连续特效批次 ${batch.id} 报告未绑定当前候选指纹`);
+    if (!machineReport?.path) throw new ReskinError(`连续特效批次 ${batch.id} 报告路径缺失`);
     const reportPath = resolveArtifact(manifestPath, machineReport.path);
     const reportRelative = reportPath ? relative(resolve(dirname(manifestPath)), resolve(reportPath)) : "";
     if (!reportPath || isAbsolute(reportRelative) || reportRelative === ".." || reportRelative.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)) throw new ReskinError(`连续特效批次 ${batch.id} 报告路径必须位于候选目录内`);
     let report;
     try { report = JSON.parse(await readFile(reportPath, "utf8")); } catch (error) { throw new ReskinError(`连续特效批次 ${batch.id} 报告不可读：${error.message}`); }
-    if (machineReport.sha256 !== await sha256(reportPath) || report.candidate_fingerprint !== baseFingerprint) throw new ReskinError(`连续特效批次 ${batch.id} 报告 SHA 或候选指纹漂移`);
+    if (report.report_version !== "spine-effect-sequence/1.0" || report.batch_id !== batch.id || Number(report.revision) !== batch.revision) throw new ReskinError(`连续特效批次 ${batch.id} 报告未绑定当前 revision`);
     validateEffectSequence({ ...batch, effect_sequence: { ...batch.effect_sequence, report } }, true);
     effectReportSha256 = machineReport.sha256;
   }

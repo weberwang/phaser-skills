@@ -92,24 +92,19 @@ test("运行消费证据可选且生成图片冻结合同仍在", () => {
     assert.equal(region.required.includes("native_runtime_evidence"), false);
   }
 
+  const digestFields = ["candidate_sha256", "target_sha256", "evidence_sha256", "baseline_sha256", "diff_fingerprint"];
+  for (const schema of schemas) {
+    const runtimeEvidence = schema.$defs.nativeRuntimeEvidence;
+    assert.deepEqual(runtimeEvidence.required, ["observed_method", "observed_delivery_kind", "render_contract", "status", "evidence"]);
+    for (const field of digestFields) {
+      assert.equal(runtimeEvidence.required.includes(field), false);
+      assert.deepEqual(runtimeEvidence.properties[field], { description: "仅作为可选摘要记录，不参与验收或放行。" });
+    }
+  }
   const runtimeEvidence = schemas[0].$defs.nativeRuntimeEvidence;
-  assert.deepEqual(runtimeEvidence.required, [
-    "observed_method",
-    "observed_delivery_kind",
-    "render_contract",
-    "status",
-    "evidence",
-    "candidate_sha256",
-    "target_sha256",
-    "evidence_sha256",
-    "baseline_sha256",
-    "diff_fingerprint",
-  ]);
   assert.equal(runtimeEvidence.properties.status.const, "passed");
   assert.equal(runtimeEvidence.properties.evidence.type, "string");
   assert.equal(runtimeEvidence.properties.evidence.minLength, 1);
-  assert.equal(runtimeEvidence.properties.diff_fingerprint.type, "string");
-  assert.equal(runtimeEvidence.properties.diff_fingerprint.minLength, 1);
 
   for (const schema of [schemas[0], schemas[2]]) {
     const imageGenerationGate = schema.$defs.sceneCoverageRegion.allOf.find(

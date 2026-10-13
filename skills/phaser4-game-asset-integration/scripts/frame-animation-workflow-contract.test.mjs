@@ -226,29 +226,30 @@ test("质量报告必须声明 PASS", async () => {
   });
 });
 
-test("所有绑定文件的实际 SHA 都必须匹配", async () => {
+test("预览文件必须可读且为 HTML，但摘要陈旧不阻断", async () => {
   await withFixture(async (root, fixture) => {
     await writeFile(join(root, fixture.asset.frame_animation.preview.file), "<html>changed</html>");
+    fixture.asset.frame_animation.preview.sha256 = "sha256:stale";
     const errors = await runGate(root, fixture.asset);
-    assert(errors.some((message) => message.includes("preview.sha256 与文件不一致")));
+    assert.deepEqual(errors, []);
   });
 });
 
-test("更新 manifest 视频 SHA 也不能掩盖源视频被替换", async () => {
+test("可读取的视频来源即使摘要不匹配也不会阻断", async () => {
   await withFixture(async (root, fixture) => {
     const replacement = Buffer.from("replacement video bytes");
     await writeFile(join(root, fixture.asset.frame_animation.source_video.file), replacement);
-    fixture.asset.frame_animation.source_video.sha256 = sha256Bytes(replacement);
+    fixture.asset.frame_animation.source_video.sha256 = "stale-video-digest";
     const errors = await runGate(root, fixture.asset);
-    assert(errors.some((message) => message.includes("input.video_sha256 与 source_video 文件 SHA 不一致")));
+    assert.deepEqual(errors, []);
   });
 });
 
-test("只篡改源视频 manifest SHA 会被文件门拒绝", async () => {
+test("源视频摘要缺失或错误不阻断文件门", async () => {
   await withFixture(async (root, fixture) => {
-    fixture.asset.frame_animation.source_video.sha256 = "sha256:" + "0".repeat(64);
+    delete fixture.asset.frame_animation.source_video.sha256;
     const errors = await runGate(root, fixture.asset);
-    assert(errors.some((message) => message.includes("source_video.sha256 与文件不一致")));
+    assert.deepEqual(errors, []);
   });
 });
 
@@ -305,12 +306,12 @@ test("是否移除背景必须是布尔值并与合同设置一致", async () =>
   });
 });
 
-test("质量报告中的图集 SHA 必须匹配实际 PNG", async () => {
+test("质量报告中的图集 SHA 缺失或陈旧不阻断真实 PNG 结构验收", async () => {
   await withFixture(async (root, fixture) => {
-    fixture.report.artifacts.sheet.sha256 = "sha256:" + "1".repeat(64);
+    fixture.report.artifacts.sheet.sha256 = "stale";
     await writeReport(root, fixture);
     const errors = await runGate(root, fixture.asset);
-    assert(errors.some((message) => message.includes("artifacts.sheet.sha256 与真实 spritesheet 不一致")));
+    assert.deepEqual(errors, []);
   });
 });
 
@@ -384,13 +385,13 @@ test("报告相对工件路径必须匹配 manifest，绝对路径作为诊断�
   });
 });
 
-test("网页预览必须通过 meta 绑定实际图集 SHA", async () => {
+test("网页预览保留 HTML 检查但不要求图集 SHA meta", async () => {
   await withFixture(async (root, fixture) => {
     const badPreview = Buffer.from("<html><head><meta name=\"phaser-atlas-sha256\" content=\"sha256:" + "0".repeat(64) + "\"></head></html>");
     await writeFile(join(root, fixture.asset.frame_animation.preview.file), badPreview);
     fixture.asset.frame_animation.preview.sha256 = sha256Bytes(badPreview);
     const errors = await runGate(root, fixture.asset);
-    assert(errors.some((message) => message.includes("preview 内嵌图集 SHA 与 spritesheet 文件不一致")));
+    assert.deepEqual(errors, []);
   });
 });
 

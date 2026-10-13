@@ -93,7 +93,7 @@ node <skill-dir>/scripts/image-inbetween-plan.mjs `
 | `index/game_time_ms/kind` | 游戏帧位、毫秒与 endpoint/keyframe/inbetween 类型；不是视频来源时间戳 |
 | `source_image` | 实际生成原图的 file/SHA，保留其实际输出尺寸 |
 | `image` | 最终固定画布图片的 file/SHA，打包使用此图 |
-| `generation_record` | 实际生成记录 JSON 的 file/SHA，包含非空 prompt、reference_images 与 output_image；输出绑定 source_image，真实参考包含父图 |
+| `generation_record` | 实际生成记录 JSON 的 file，SHA 可省略，包含非空 prompt、reference_images 与 output_image；输出绑定 source_image，真实参考包含父图 |
 | `parents` | 实际用于生成的父图快照 `{index,file,sha256}`；中间帧必须两个父索引且位于两侧，依赖无环 |
 | `repairs`（有修正时） | `{before,after,record}` 的顺序链，各项绑定 file/SHA；从 source_image 连到 image，record 记录问题、方法和前后身份 |
 
@@ -117,7 +117,7 @@ node <skill-dir>/scripts/images-to-atlas.mjs `
 
 此例假设源画布 768×768、底部语义根为 `(384,767)`；尺寸和根点必须取当前设计值。图片命令的相对来源和输出路径均以 `--project-root` 为基准。打包从来源清单读取 FPS/loop，不能另用 CLI 覆盖，不支持独立逐帧时长。`--output-report/--output-preview` 可指定独立证据路径；输出默认拒绝覆盖，修订时使用新候选路径。区域、等比缩放、Alpha 和内容矩形/锚点变换复用视频工具语义。
 
-图片报告使用 `phaser4-image-atlas/1`，绑定来源清单 SHA、每帧实际图与记录、游戏时点、cell 和 Phaser 配置；不用 `video_path/source_timestamp`。accepted 使用 `phaser4-image-atlas-workflow/1`：
+图片报告使用 `phaser4-image-atlas/1`，绑定来源清单路径、每帧实际图与记录，SHA 仅可选追踪、游戏时点、cell 和 Phaser 配置；不用 `video_path/source_timestamp`。accepted 使用 `phaser4-image-atlas-workflow/1`：
 
 ```json
 {
@@ -135,6 +135,6 @@ node <skill-dir>/scripts/images-to-atlas.mjs `
 
 以上摘要须替换为实际 64 位小写十六进制。资产继续登记 `route: frame-animation`；spritesheet 在 `runtime_outputs`，运行时 URL 与报告一致。通用资源清单的来源、许可和人工证据仍须填写，嵌套来源清单不会替代它们。固定 cell/透明留白属于帧动画合同，不把每个帧登记成普通静态资产来绕过帧动画文件门。若上游已经冻结为静态生成图片的 `individual/atlas_allowed=false` 合同，先按既有变更流程明确选择帧动画路线；本技能不自动覆盖该合同，也不通过虚报生产方法解除其限制。
 
-打包后或局部修图后重建图集、报告和预览，复算全部绑定 SHA，旧候选视觉验收失效，完成当前人工审阅再 accepted。分类、优化取舍、时间轴设计确认、真实关键帧确认、后代缺陷审查与最终人工验收保存在设计工件，不扩展为额外报告字段。保留已修图成果，避免全序列重做。
+打包后或局部修图后重建图集、报告和预览，按实际改动重验受影响内容，摘要变化不使验收失效；需要时完成当前人工审阅再 accepted。分类、优化取舍、时间轴设计确认、真实关键帧确认、后代缺陷审查与最终人工验收保存在设计工件，不扩展为额外报告字段。保留已修图成果，避免全序列重做。
 
 图片序列不带视频音轨。声音按既有任务合同独立制作/接入，并绑定同一游戏事件时间轴；角色图片不默认烘入命中特效、声音或镜头反馈。V2/V3/V5 与外部操作授权继续遵守[工作流接入合同](workflow-integration.md)。

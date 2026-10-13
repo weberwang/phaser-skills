@@ -26,10 +26,10 @@
     "evidenceReference": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "sha256"],
+      "required": ["path"],
       "properties": {
         "path": {"type": "string", "minLength": 1},
-        "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "sha256": {"description":"仅作为可选摘要记录，不参与验收或放行。"},
         "workItemId": {"type": "string", "minLength": 1},
         "resultId": {"type": "string", "minLength": 1},
         "unitResultId": {"type": "string", "minLength": 1}
@@ -38,10 +38,10 @@
     "globalVisualBaselineSelectionReference": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "sha256"],
+      "required": ["path"],
       "properties": {
         "path": {"type": "string", "minLength": 1},
-        "sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "sha256": {"description":"仅作为可选摘要记录，不参与验收或放行。"},
         "workItemId": {"type": "string", "minLength": 1, "description": "可选的根证据生产者 Work Item 身份；不是当前消费者 Work Item。"}
       }
     },

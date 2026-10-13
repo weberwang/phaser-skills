@@ -123,7 +123,7 @@ test("草图生成绑定真实V2/V3来源并允许同一正式资源复用到多
     const sketch = await initPageSketch(inputArgs(project.root));
     assert.equal(sketch.schema, "phaser-page-sketch/1.0");
     assert.equal(sketch.confirmation, null);
-    assert.equal(sketch.target_sha256, project.targetSha);
+    assert.equal(Object.hasOwn(sketch, "target_sha256"), false, "草图生成不要求或生成目标摘要");
     assert.deepEqual(sketch.v3_assets.map(({ asset_id, layout_node_id }) => [asset_id, layout_node_id]), [
       ["hero-formal", "hud.hero"],
       ["hero-formal", "hud.hero-copy"],
@@ -187,8 +187,6 @@ test("共享资源归属遵循 V3 普通 shared 与 runtime-required 合同", as
 test("V3 证据身份漂移或正式资源/组件状态未接受时拒绝生成", async () => {
   const cases = [
     { name: "candidateVersion", mutate: (evidence) => { evidence.candidateVersion = "candidate-old"; }, error: /candidateVersion/ },
-    { name: "targetSha256", mutate: (evidence) => { evidence.targetSha256 = `sha256:${"f".repeat(64)}`; }, error: /冻结目标 SHA/ },
-    { name: "diffFingerprint", mutate: (evidence) => { evidence.diffFingerprint = "stale-diff"; }, error: /diffFingerprint/ },
     { name: "formalAssets", mutate: (evidence) => { evidence.formalAssets[0].status = "planned"; }, error: /formalAssets/ },
     { name: "components", mutate: (evidence) => { evidence.components[0].status = "planned"; }, error: /components/ },
   ];
@@ -203,6 +201,23 @@ test("V3 证据身份漂移或正式资源/组件状态未接受时拒绝生成"
     } finally {
       await rm(project.root, { recursive: true, force: true });
     }
+  }
+});
+
+/** 旧目标或变更摘要仅作来源记录，草图入口继续核对路径、候选版本和 accepted 状态。 */
+test("目标与差异摘要缺失、错误或陈旧不阻断草图生成", async () => {
+  const project = await createProject();
+  try {
+    const evidencePath = join(project.root, "docs", "v3-pass.json");
+    const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
+    evidence.targetSha256 = "stale-target";
+    evidence.diffFingerprint = { stale: true };
+    delete evidence.visualManifestSha256;
+    await writeJson(evidencePath, evidence);
+    const sketch = await initPageSketch(inputArgs(project.root));
+    assert.equal(sketch.confirmation, null);
+  } finally {
+    await rm(project.root, { recursive: true, force: true });
   }
 });
 

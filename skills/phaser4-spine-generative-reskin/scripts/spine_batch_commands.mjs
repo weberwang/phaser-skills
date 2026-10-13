@@ -8,8 +8,8 @@ import { assertCurrentBatch, acceptanceFingerprint, batchCells, candidateFingerp
 /**
  * 判断批次确认文本是否有效。
  *
- * 简短“确认”只在调用方已经锁定当前批次、停止审阅态和审阅图 SHA 后使用；
- * 候选 fingerprint、revision 等机器身份约束仍由 batch accept 后续流程校验。
+ * 简短“确认”只在调用方已经锁定当前批次和停止审阅态后使用；
+ * revision 与实际审阅文件仍由 batch accept 后续流程校验。
  */
 export function isBatchConfirmationText(userText, expectedText) {
   if (typeof userText !== "string" || typeof expectedText !== "string") return false;
@@ -28,7 +28,7 @@ export function assertProductionReady(document, options = {}) {
   const upgrade = document.skeleton_upgrade;
   // 冻结视觉合同是前置设计动作，允许在外部 Skeleton 升级前完成；plan/prepare/pack 仍必须经过升级门。
   if (options.skipUpgrade !== true && document.skeleton_audit?.requires_upgrade === true && upgrade?.status !== "PASSED") throw new ReskinError("Skeleton 低于目标 Runtime，必须先通过外部升级候选和目标 Runtime 解析证据");
-  if (upgrade?.status === "PASSED" && (!upgrade.runtime_parse_evidence_path || !upgrade.runtime_parse_evidence_sha256)) throw new ReskinError("升级状态缺少结构化 Runtime 解析证据绑定");
+  if (upgrade?.status === "PASSED" && !upgrade.runtime_parse_evidence_path) throw new ReskinError("升级状态缺少结构化 Runtime 解析证据绑定");
 }
 
 /** 创建命令处理器，主进度文件只保留状态机和 CLI 解析，避免职责膨胀。 */
@@ -50,8 +50,8 @@ export function createBatchCommands(deps) {
       try { runtimeEvidence = JSON.parse(await readFile(runtimeEvidencePath, "utf8")); } catch (error) { throw new ReskinError(`Runtime 解析证据不是 JSON：${error.message}`); }
       const runtimeLogPath = runtimeEvidence?.log_path ? resolve(dirname(path), runtimeEvidence.log_path) : null;
       const runtimeLogSha = runtimeEvidence?.log_sha256;
-      const runtimeLogValid = Boolean(runtimeLogPath && isWithin(dirname(path), runtimeLogPath) && await isFile(runtimeLogPath) && typeof runtimeLogSha === "string" && runtimeLogSha === await sha256(runtimeLogPath));
-      const runtimeEvidenceValid = runtimeEvidence?.report_version === "spine-runtime-parse/1.0" && typeof runtimeEvidence.producer === "string" && runtimeEvidence.producer.trim() && typeof runtimeEvidence.runtime_package === "string" && runtimeEvidence.runtime_package.trim() && runtimeEvidence.runtime_version === document.target_runtime && typeof (runtimeEvidence.command ?? runtimeEvidence.url) === "string" && (runtimeEvidence.command ?? runtimeEvidence.url).trim() && document.target_runtime === runtimeEvidence.target_runtime && runtimeEvidence.parsed === true && runtimeEvidence.candidate_skeleton_sha256 === candidateSha && runtimeLogValid;
+      const runtimeLogValid = Boolean(runtimeLogPath && isWithin(dirname(path), runtimeLogPath) && await isFile(runtimeLogPath));
+      const runtimeEvidenceValid = runtimeEvidence?.report_version === "spine-runtime-parse/1.0" && typeof runtimeEvidence.producer === "string" && runtimeEvidence.producer.trim() && typeof runtimeEvidence.runtime_package === "string" && runtimeEvidence.runtime_package.trim() && runtimeEvidence.runtime_version === document.target_runtime && typeof (runtimeEvidence.command ?? runtimeEvidence.url) === "string" && (runtimeEvidence.command ?? runtimeEvidence.url).trim() && document.target_runtime === runtimeEvidence.target_runtime && runtimeEvidence.parsed === true && runtimeLogValid;
       const result = await verifyUpgradeCandidate(document.skeletons[0].path, candidatePath, { cells: document.cells, pages: document.atlas.pages }, document.target_runtime);
       const passed = result.passed && runtimeEvidenceValid;
       document.skeleton_upgrade = { status: passed ? "PASSED" : "BLOCKED", source_sha256: document.skeletons[0].sha256, target_runtime: document.target_runtime, candidate_path: candidatePath, candidate_sha256: candidateSha, before_sha256: result.before.structure_sha256, after_sha256: result.after.structure_sha256, comparison: result.comparison, runtime_parse_evidence: runtimeEvidenceValid, runtime_parse_evidence_path: relativePath(runtimeEvidencePath, dirname(path)), runtime_parse_evidence_sha256: await sha256(runtimeEvidencePath), runtime_parse_evidence_log_path: runtimeLogPath ? relativePath(runtimeLogPath, dirname(path)) : null, runtime_parse_evidence_log_sha256: runtimeLogValid ? runtimeLogSha : null, checked_at: now() };
@@ -157,7 +157,7 @@ export function createBatchCommands(deps) {
         let report;
         try { report = JSON.parse(await readFile(effectPath, "utf8")); } catch (error) { throw new ReskinError(`连续特效机器报告不是 JSON：${error.message}`); }
         const expectedFingerprint = candidateFingerprint(batch, cells, board);
-        if (report?.report_version !== "spine-effect-sequence/1.0" || report.batch_id !== batch.id || Number(report.revision) !== batch.revision || report.candidate_fingerprint !== expectedFingerprint) throw new ReskinError(`连续特效机器报告未绑定批次 ${batch.id} 当前候选/审阅指纹`);
+        if (report?.report_version !== "spine-effect-sequence/1.0" || report.batch_id !== batch.id || Number(report.revision) !== batch.revision) throw new ReskinError(`连续特效机器报告未绑定批次 ${batch.id} 当前 revision`);
         validateEffectSequence({ ...batch, effect_sequence: { ...batch.effect_sequence, report } }, true);
         batch.effect_sequence.machine_report = { path: relativePath(effectPath, dirname(path)), sha256: await sha256(effectPath), candidate_fingerprint: expectedFingerprint, report_version: report.report_version };
       }
@@ -172,7 +172,7 @@ export function createBatchCommands(deps) {
   }
 
   async function commandBatchAccept(args) {
-    if (!args.manifest || !args.batch || !args.userText || !args.reviewSha) throw new ReskinError("batch accept 需要 --manifest、--batch、--review-sha 和 --user-text");
+    if (!args.manifest || !args.batch || !args.userText) throw new ReskinError("batch accept 需要 --manifest、--batch 和 --user-text");
     const path = resolve(args.manifest);
     return withManifestLock(path, async () => {
       const document = await readManifest(path);
@@ -182,11 +182,9 @@ export function createBatchCommands(deps) {
       if (batch.status !== "REVIEW_READY" || batch.review_stop !== true) throw new ReskinError(`批次 ${batch.id} 尚未进入停止审阅态`);
       const expectedText = `${batch.revision > 0 ? "确认重启版" : "确认"}第${batch.order + 1}批`;
       if (!isBatchConfirmationText(args.userText, expectedText)) throw new ReskinError(`确认文本无效：请回复“确认”或完整确认句“${expectedText}”`);
-      if (args.reviewSha !== batch.review_board.sha256) throw new ReskinError("确认绑定的审阅图 SHA 与当前图不一致");
       const cells = batchCells(document, batch);
-      // acceptanceFingerprint 会重新读取报告并校验候选/审阅 SHA，防止 review 后文件漂移。
+      // 核对真实候选、审阅图和报告；返回的摘要只作追踪，用户无需提供或比较。
       const fingerprint = await acceptanceFingerprint(document, path, batch, cells, batch.review_board, sha256, resolveArtifact);
-      if (args.fingerprint && args.fingerprint !== fingerprint) throw new ReskinError("候选集合 fingerprint 不匹配");
       for (const cell of cells) {
         cell.validation_evidence = [{ path: batch.review_board.path, sha256: batch.review_board.sha256 }];
         await validateCellArtifact(document, path, cell, 0);

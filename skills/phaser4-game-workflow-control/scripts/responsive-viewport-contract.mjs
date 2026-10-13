@@ -38,7 +38,7 @@ export const RUNTIME_EVIDENCE_FIELDS = Object.freeze([
   'cssToPhysicalScale', 'cameraViewport', 'cameraZoom', 'cameraOrigin',
   'safeArea', 'edgeGaps', 'backgroundCoverage', 'keyUiRects', 'inputHitResults',
   'resizeTrajectory', 'pageReloaded', 'screenshot', 'sceneId', 'stateId',
-  'candidateSha256', 'layoutContractVersion', 'visualBaselineVersion',
+  'layoutContractVersion', 'visualBaselineVersion',
 ]);
 
 /** 已知代表性视口类别；必测子集由项目支持方向决定。 */
@@ -55,7 +55,6 @@ export const REPRESENTATIVE_BEHAVIOR_REQUIREMENTS = Object.freeze([
   'orientation-change', 'display-layer-open-interact-close-restore',
 ]);
 
-const SHA256 = /^sha256:[a-f0-9]{64}$/i;
 const STAGE_PATTERN = /^V[1-5]$/i;
 const DPR_NUMBERS = [1, 1.25, 1.5, 2];
 
@@ -431,9 +430,6 @@ export function validateResponsiveEvidenceRecord(record, contract = null, option
   const expectedVisualVersion = options.visualBaselineVersion ?? field(contract, 'visualBaselineVersion', 'visual_baseline_version');
   if (expectedLayoutVersion && field(record, 'layoutContractVersion', 'layout_contract_version') !== expectedLayoutVersion) errors.push(contractError(stage, scope, '旧 layoutContractVersion 证据已失效'));
   if (expectedVisualVersion && field(record, 'visualBaselineVersion', 'visual_baseline_version') !== expectedVisualVersion) errors.push(contractError(stage, scope, '旧 visualBaselineVersion 证据已失效'));
-  const candidate = field(record, 'candidateSha256', 'candidate_sha256');
-  if (!SHA256.test(String(candidate ?? ''))) errors.push(contractError(stage, scope, 'candidateSha256 必须是当前候选的 sha256 身份', 'candidateSha256'));
-  if (options.candidateSha256 && candidate !== options.candidateSha256) errors.push(contractError(stage, scope, '证据 candidateSha256 未绑定当前候选身份'));
   const unitType = String(options.unitType ?? record.unitType ?? '').toUpperCase();
   if (unitType === 'DISPLAY_LAYER' || field(record, 'displayLayerId', 'display_layer_id') !== undefined) {
     if (!nonEmptyString(field(record, 'displayLayerId', 'display_layer_id'))) errors.push(contractError(stage, scope, '独立 DISPLAY_LAYER 必须记录 displayLayerId', 'displayLayerId'));

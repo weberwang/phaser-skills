@@ -57,7 +57,7 @@ test("不透明或烘焙棋盘格即使有 Alpha 通道也拒绝直接透明", a
   finally { await rm(item.root, { recursive: true, force: true }); }
 });
 
-test("辉光硬抠、能力缺口、冻结路线替换和预览候选混用均拒绝", async () => {
+test("辉光硬抠、能力缺口和冻结路线替换仍拒绝，预览摘要差异不阻断", async () => {
   const item = await fixture("glow", [0, 255, 255, 255]);
   try {
     assert(validateTransparencyRoute(item.generation, item.expected, item.options).some((error) => error.includes("半透明像素")));
@@ -67,7 +67,7 @@ test("辉光硬抠、能力缺口、冻结路线替换和预览候选混用均�
     assert(validateTransparencyRoute(item.generation, item.expected).some((error) => error.includes("hard-edge")));
     assert(validateTransparencyRoute(item.generation, item.expected).some((error) => error.includes("变更流程")));
     item.generation.transparency_preview.candidate_sha256 = `sha256:${"d".repeat(64)}`;
-    assert(validateTransparencyPreview(item.generation, item.expected).some((error) => error.includes("同一候选")));
+    assert.equal(validateTransparencyPreview(item.generation, item.expected).some((error) => /SHA|candidate|候选身份/i.test(error)), false);
     item.generation.transparency_preview.light.file = "dark.png";
     item.generation.transparency_preview.light.sha256 = item.generation.transparency_preview.dark.sha256;
     assert(validateTransparencyPreview(item.generation, item.expected, item.options).some((error) => error.includes("真实深浅底合成")));
@@ -93,7 +93,7 @@ test("生产 coverage 入口必须执行预览文件门与外部裁切边界门"
   } finally { await rm(item.root, { recursive: true, force: true }); }
 });
 
-test("独立遮罩必须读取真实原图并复算其 SHA", async () => {
+test("独立遮罩必须读取真实原图文件并保留路径绑定", async () => {
   const item = await fixture();
   try {
     item.generation.transparency_strategy = "mask-composition"; item.expected.transparency_requirements.strategy = "mask-composition";

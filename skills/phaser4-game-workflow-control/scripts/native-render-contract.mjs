@@ -41,20 +41,17 @@ export function validateNativeRuntimeEvidence(region, contract, manifest, option
   if (evidence.observed_method !== analysis.production_method || evidence.observed_delivery_kind !== analysis.delivery_kind) errors.push("native_runtime_evidence 实际生产方式/交付类型与冻结路线不一致");
   if (!isDeepStrictEqual(evidence.render_contract, analysis.native_suitability?.render_contract)) errors.push("native_runtime_evidence.render_contract 与冻结原生参数不一致");
   const identity = manifestEvidenceIdentity(manifest);
-  identity.target ??= contract.target_conditions?.target_sha256;
-  identity.candidate ??= contract.candidate_identity?.sha256 ?? contract.visual_decomposition_confirmation?.candidate_identity?.sha256;
-  identity.diff ??= contract.candidate_identity?.diff_fingerprint ?? contract.visual_decomposition_confirmation?.candidate_identity?.diff_fingerprint;
   errors.push(...validateEvidenceIdentity(evidence, { stage: "V5", region_id: region.region_id, annotation_number: region.annotation_number, expectedMethod: analysis.production_method, observedMethod: evidence.observed_method }, identity, options));
   if (options.projectRoot) {
     const path = safeProjectPath(options.projectRoot, evidence.evidence);
     if (path && existsSync(path) && statSync(path).isFile()) {
-      // SHA 只能证明工件没变；还需读取工件中的消费事实，避免把无关文件绑定为原生输出证据。
+      // 必须读取工件中的实际消费事实，避免把无关文件绑定为原生输出证据。
       try {
         const report = JSON.parse(readFileSync(path, "utf8"));
         if (!isPlainObject(report) || report.report_schema !== "native-render-consumption/1.0" || report.consumed !== true) errors.push("原生运行工件必须记录 native-render-consumption/1.0 和 consumed=true");
         else {
           for (const field of ["region_id", "scene_id", "state_id"]) if (report[field] !== region[field]) errors.push(`原生运行工件 ${field} 未绑定当前区域`);
-          for (const field of ["observed_method", "observed_delivery_kind", "render_contract", "candidate_sha256", "target_sha256", "baseline_sha256", "diff_fingerprint"]) if (!isDeepStrictEqual(report[field], evidence[field])) errors.push(`原生运行工件 ${field} 与消费证据不一致`);
+          for (const field of ["observed_method", "observed_delivery_kind", "render_contract"]) if (!isDeepStrictEqual(report[field], evidence[field])) errors.push(`原生运行工件 ${field} 与消费证据不一致`);
         }
       } catch {
         errors.push("原生运行工件必须是可读取的 JSON 消费记录");

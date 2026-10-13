@@ -3,9 +3,9 @@
 工具写入 `schema_version: 3`，不兼容旧版清单。清单根对象至少包含：
 
 - `atlas.path/sha256/pages[]`：源 Atlas 与每个源 Page 的路径、SHA-256、声明尺寸、原始字段和 `output_name`。
-- `skeletons[]`：一个或多个 `{path, sha256}`，初始化时必须存在。
+- `skeletons[]`：一个或多个 `{path}`，实际文件初始化时必须存在；sha256仅作可选追踪。
 - `target_runtime`、`skeleton_audit`、`source_audit`、`skeleton_upgrade`：版本、结构统计、attachment path 映射、Mesh 指纹、升级候选与未知变更。
-- `asset_input`、`control_binding`：原版目录/独立导出或 Cocos 容器来源，以及 Work Item、production contract、适用 V2 方案证据的路径和 SHA 绑定。
+- `asset_input`、`control_binding`：原版目录/独立导出或 Cocos 容器来源，以及 Work Item、production contract、适用 V2 方案证据的实际路径；SHA 仅作可选追踪。
 - `visual_contract`：角色、方向、六项统一色板、材质语言、光向、`strict_alpha` 和冻结时间。
 - `batches[]`：精确 Region 顺序、mode、alpha lock、revision、审阅板哈希、候选 fingerprint、V4 `spine_batch_acceptance` 和 `ACCEPTED+locked` 状态。
 - `style_references[]`：`{path, sha256}`；不存在或漂移会阻止重建。
@@ -39,13 +39,13 @@ pending -> generating -> generated -> validating -> packing -> packed
 
 每个写清单命令都会先创建 `<progress>.json.lock` 的独占文件锁。锁有固定等待上限，并在超过陈旧阈值后回收；JSON 临时文件名包含进程号和随机 UUID。状态、结果哈希、证据哈希和历史事件通过临时文件写入后原子替换。
 
-`pack/finalize/verify` 都重新核对源 Atlas、全部源 Page、全部 Skeleton、升级后 Skeleton、style reference 和源 Cell 结构参考的 SHA-256。生成图必须位于候选目录内且不能是源 Page、Skeleton、源 Cell 参考或受保护证据的路径。所有审阅证据与运行态证据都必须是候选目录内的真实文件，并在验证时重新计算哈希。
+`pack/finalize/verify` 核对源 Atlas、全部源 Page、全部 Skeleton、升级后 Skeleton、style reference 和源 Cell 结构参考的实际文件及适用内容。生成图必须位于候选目录内且不能是源 Page、Skeleton、源 Cell 参考或受保护证据的路径。所有审阅证据与运行态证据都必须是候选目录内的真实文件。验收不要求或比较 SHA；摘要核对留到最终人工验收后。
 
 ## 完成不变量
 
 1. 所有 Cell 都是 `completed`，且模式属于 `palette-refresh`、`mesh-safe`、`constrained-redraw` 之一。
-2. 每个生成图、源参考、审阅证据和运行态证据都存在，当前 SHA-256 与清单一致。
-3. 源 Atlas/Page/Skeleton/style reference 未漂移；重建 Atlas 和每个 PNG Page 的 SHA-256 一致。
+2. 每个生成图、源参考、审阅证据和运行态证据都存在且实际内容满足对应要求，不比对 SHA-256。
+3. 源 Atlas/Page/Skeleton/style reference 未漂移；重建 Atlas 和每个 PNG Page 文件可读取，摘要不参与验收。
 4. Atlas Page 尺寸、顺序、Region 名称、坐标、trim/orig/offset/rotate/index 与源保持一致。
 5. Page 未覆盖的区域保持透明，且没有从源 Page 回退的像素。
 6. `runtime_validation.status=PASS` 的结构化报告绑定本次 build 的 Atlas/Skeleton/Page/批次指纹、目标 Runtime、完整动画切换、URL、桌面/390px 移动证据、Runtime 原始日志、validation run ID 及 SHA；最终报告明确 `independent-validation-candidate` 或 `integrated-main-game`。

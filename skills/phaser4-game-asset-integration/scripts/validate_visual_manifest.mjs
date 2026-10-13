@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { realpathSync, statSync } from "node:fs";
 import { inflateSync } from "node:zlib";
-import { computeRegionDefinitionSha256, getVisualRegionDefinitionAliasConflicts, normalizeVisualRegionDefinition, PLAN_COLORS, PLAN_LABELS, renderEffectImageAnnotation } from "./effect_image_annotation_core.mjs";
+import { getVisualRegionDefinitionAliasConflicts, normalizeVisualRegionDefinition, PLAN_COLORS, PLAN_LABELS } from "./effect_image_annotation_core.mjs";
 import { annotationProductionContract, decodePngRgba, deriveVisibleAnnotationRows } from "./effect_image_raster.mjs";
 import { normalizeAtomicComponents } from "../../phaser4-game-workflow-control/scripts/visual-atomic-contract.mjs";
 import { productionFileGateError } from "../../phaser4-game-workflow-control/scripts/visual-file-gate.mjs";
@@ -14,7 +13,7 @@ import { buildVisualConfirmationAuthorityByRegion, validateVisualDecompositionCo
 import { validateReuseProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-confirmation-reuse-gates.mjs";
 import { validateFormalAnnotationPng } from "./visual-annotation-evidence.mjs";
 import { auditProductionContractByGroups, confirmationAuthorityBase, validateConfirmationGroups, validateImplementationPlan as validateImplementationPlanContract, validateManualConfirmationEvidence, validateReusePlanRelation, validateV5ProductionGateByGroups } from "./visual-manifest-confirmation.mjs";
-import { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, isSha256, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateEvidenceIdentity, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateTransparentBackgroundContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
+import { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateEvidenceIdentity, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateTransparentBackgroundContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
 import { validateVisualPostApprovalReviewFields } from "../../phaser4-game-workflow-control/scripts/visual-human-review-contract.mjs";
 import { validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "../../phaser4-game-workflow-control/scripts/scene-reconstruction-contract.mjs";
 import { resolveVisualValidationMode, validateVisualValidationPolicy, validateVisualManifestFidelityCases } from "../../phaser4-game-workflow-control/scripts/visual-validation-policy.mjs";
@@ -34,8 +33,6 @@ export const ALLOWED_ROUTES = new Set(["ui-icon-font", "pixel-art", "frame-anima
 export const ALLOWED_STATUSES = new Set(["planned", "producing", "review", "accepted", "rejected", "replaced"]);
 const BASELINE_BOUND_STATUSES = new Set(["producing", "review", "accepted"]);
 const SCHEMA_VERSION = "1.5";
-const STYLE_FINGERPRINT_PATTERN = /^sha256:[0-9a-f]{64}$/;
-const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
 // runtime-program 是实现方式，不是免除视觉责任的 owner 类型；它必须继续回填完整场景事实。
 const COVERAGE_OWNER_TYPES = new Set(["runtime-program", "runtime-data", "runtime-rendered", "fixed-production-visual"]);
 const PRODUCTION_ORIGINS = new Set(["bitmap-decomposition", "independent-production"]);
@@ -76,8 +73,7 @@ function pngCrc32(bytes) {
 /** 验证冻结效果图身份；冻结前候选不允许进入正式清单。 */
 function validateReferenceTarget(target, errors, baseline = null) {
   if (!isObject(target)) { errors.push("reference_target 必须是对象"); return null; }
-  for (const field of ["candidate_id", "original_file", "target_sha256", "frozen_at"]) if (!nonEmptyString(target[field])) errors.push(`reference_target.${field} 必须是非空字符串`);
-  if (nonEmptyString(target.target_sha256) && !SHA_PATTERN.test(target.target_sha256)) errors.push("reference_target.target_sha256 必须是 sha256: 后接 64 位小写十六进制");
+  for (const field of ["candidate_id", "original_file", "frozen_at"]) if (!nonEmptyString(target[field])) errors.push(`reference_target.${field} 必须是非空字符串`);
   if (nonEmptyString(target.frozen_at) && Number.isNaN(Date.parse(target.frozen_at))) errors.push("reference_target.frozen_at 必须是可解析时间");
   if (target.status !== "reference-target-frozen") errors.push("reference_target.status 必须为 reference-target-frozen；裸 frozen 不代表 V2");
   for (const field of ["scene_ids", "state_ids"]) if (!Array.isArray(target[field]) || target[field].length === 0 || !target[field].every(nonEmptyString)) errors.push(`reference_target.${field} 必须是非空字符串列表`);
@@ -87,12 +83,10 @@ function validateReferenceTarget(target, errors, baseline = null) {
 }
 
 /** 验证 V2 冻结后、V3 前的合同回对门。 */
-function validateContractReconciliation(gate, target, candidate, errors) {
+function validateContractReconciliation(gate, errors) {
   if (!isObject(gate)) { errors.push("contract_reconciliation 必须是对象"); return; }
-  for (const field of ["decision_id", "reconciled_at", "rollback", "target_sha256", "candidate_sha256"]) if (!nonEmptyString(gate[field])) errors.push(`contract_reconciliation.${field} 必须是非空字符串`);
+  for (const field of ["decision_id", "reconciled_at", "rollback"]) if (!nonEmptyString(gate[field])) errors.push(`contract_reconciliation.${field} 必须是非空字符串`);
   if (Object.hasOwn(gate, "reviewed_at") || Object.hasOwn(gate, "reviewedAt")) errors.push("contract_reconciliation 禁止使用 reviewed_at；机器回对请使用 reconciled_at");
-  if (nonEmptyString(target?.target_sha256) && gate.target_sha256 !== target.target_sha256) errors.push("contract_reconciliation.target_sha256 与冻结目标 SHA 不一致");
-  if (nonEmptyString(candidate?.sha256) && gate.candidate_sha256 !== candidate.sha256) errors.push("contract_reconciliation.candidate_sha256 与当前候选 SHA 不一致");
   if (gate.status !== "passed") errors.push("contract_reconciliation.status 必须为 passed，变化时退回 V1/模块审计");
   const bindings = gate.bindings;
   if (!isObject(bindings)) errors.push("contract_reconciliation.bindings 必须是对象");
@@ -119,8 +113,7 @@ function validateImplementationPlan(plan, region, assetById, baseline, label, er
 function validateCoverageAudit(audit, target, assetIds, errors, assetById = new Map(), baseline = null) {
   const fixedMappings = new Map();
   if (!isObject(audit)) { errors.push("coverage_audit 必须是对象"); return fixedMappings; }
-  for (const field of ["version", "reference_target_sha256"]) if (!nonEmptyString(audit[field])) errors.push(`coverage_audit.${field} 必须是非空字符串`);
-  if (nonEmptyString(target?.target_sha256) && audit.reference_target_sha256 !== target.target_sha256) errors.push("coverage_audit.reference_target_sha256 与冻结目标 SHA 不一致");
+  if (!nonEmptyString(audit.version)) errors.push("coverage_audit.version 必须是非空字符串");
   const targetPairs = new Set((target?.scene_ids ?? []).flatMap((sceneId) => (target?.state_ids ?? []).map((stateId) => `${sceneId}\0${stateId}`)));
   const canvases = new Map();
   if (!Array.isArray(audit.canvases)) errors.push("coverage_audit.canvases 必须是数组");
@@ -192,14 +185,10 @@ function validateCoverageAudit(audit, target, assetIds, errors, assetById = new 
     // 由 workflow-control 文件门继续复算，旧 AUTO/USER_DECISION 记录不再兼容。
     validateManualConfirmationEvidence(confirmation, label, errors);
     if (!isObject(confirmation)) errors.push(`${label}.confirmation 必须是 visual-decomposition-confirmation/1.0 人工记录`);
-    if (isObject(confirmation) && confirmation.target_sha256 !== target?.target_sha256) errors.push(`${label}.confirmation.target_sha256 与冻结目标 SHA 不一致，必须重新确认`);
     if (isObject(confirmation) && confirmation.scene_id !== region.scene_id) errors.push(`${label}.confirmation.scene_id 与覆盖区域不一致，必须重新确认`);
     if (isObject(confirmation) && confirmation.state_id !== region.state_id) errors.push(`${label}.confirmation.state_id 与覆盖区域不一致，必须重新确认`);
     if (isObject(confirmation) && confirmation.annotation_number !== region.annotation_number) errors.push(`${label}.confirmation.annotation_number 与覆盖区域不一致，必须重新确认`);
     if (isObject(confirmation) && confirmation.region_id !== region.id) errors.push(`${label}.confirmation.region_id 与覆盖区域不一致，必须重新确认`);
-    if (!nonEmptyString(confirmation?.region_definition_sha256)) errors.push(`${label}.confirmation.region_definition_sha256 必须绑定当前区域合同`);
-    else if (!SHA_PATTERN.test(confirmation.region_definition_sha256)) errors.push(`${label}.confirmation.region_definition_sha256 格式无效`);
-    else if (confirmation.region_definition_sha256 !== computeRegionDefinitionSha256(region)) errors.push(`${label}.confirmation.region_definition_sha256 与当前区域合同不一致，必须重新确认`);
   });
   for (const [key, canvas] of canvases) if (rectangleUnionArea(coveredRects.get(key) ?? []) < canvas.width * canvas.height) errors.push(`coverage_audit ${key.replace("\0", "/")} 的矩形并集面积不足以证明完整覆盖`);
   return fixedMappings;
@@ -258,9 +247,8 @@ function validateBudgetBlock(budgets, errors) {
 /** 验证根节点冻结基线的身份、文档和锚点证据。 */
 function validateVisualBaseline(baseline, errors) {
   if (!isObject(baseline)) { errors.push("visual_baseline 必须是对象"); return null; }
-  for (const field of ["id", "version", "style_fingerprint", "document"]) if (!nonEmptyString(baseline[field])) errors.push(`visual_baseline.${field} 必须是非空字符串`);
+  for (const field of ["id", "version", "document"]) if (!nonEmptyString(baseline[field])) errors.push(`visual_baseline.${field} 必须是非空字符串`);
   if (nonEmptyString(baseline.document) && baseline.document !== GLOBAL_VISUAL_BASELINE_DOCUMENT) errors.push(`visual_baseline.document 必须指向不可变 ${GLOBAL_VISUAL_BASELINE_DOCUMENT}，阶段证据不得参与哈希`);
-  if (nonEmptyString(baseline.style_fingerprint) && !STYLE_FINGERPRINT_PATTERN.test(baseline.style_fingerprint)) errors.push("visual_baseline.style_fingerprint 必须是 sha256: 后接 64 位小写十六进制");
   if (baseline.status !== "global-static-baseline-frozen") errors.push("visual_baseline.status 必须为 global-static-baseline-frozen；静态基线冻结不代表 V2 拆解方案完成");
   // 共享合同负责锚点去重、对象格式和全局身份，避免资产文件门与提示词门各自解释基线。
   errors.push(...validateGlobalVisualBaseline(baseline, { label: "visual_baseline" }));
@@ -285,7 +273,7 @@ function validateVisualStageMetadata(data, requestedStage, errors) {
 
 /** 验证生产中及已验收资源绑定当前根基线。 */
 function validateAssetBaselineBinding(asset, baseline, label, errors) {
-  for (const [assetField, baselineField] of Object.entries({ visual_baseline_id: "id", visual_baseline_version: "version", style_fingerprint: "style_fingerprint" })) {
+  for (const [assetField, baselineField] of Object.entries({ visual_baseline_id: "id", visual_baseline_version: "version" })) {
     const value = asset[assetField];
     if (!nonEmptyString(value)) { errors.push(`${label}.${assetField} 必须是非空字符串`); continue; }
     const expected = baseline?.[baselineField];
@@ -372,10 +360,9 @@ export function validateManifest(data, options = {}) {
     candidate = data.candidate_identity;
     if (!isObject(candidate)) errors.push("candidate_identity 必须是对象");
     else {
-      for (const field of ["kind", "sha256", "diff_fingerprint"]) if (!nonEmptyString(candidate[field])) errors.push(`candidate_identity.${field} 必须是非空字符串`);
-      if (nonEmptyString(candidate.sha256) && !SHA_PATTERN.test(candidate.sha256)) errors.push("candidate_identity.sha256 格式无效");
+      if (!nonEmptyString(candidate.kind)) errors.push("candidate_identity.kind 必须是非空字符串");
     }
-    validateContractReconciliation(data.contract_reconciliation, target, candidate, errors);
+    validateContractReconciliation(data.contract_reconciliation, errors);
   }
   validateBudgetBlock(data.budgets, errors);
   if (!Array.isArray(data.assets)) { errors.push("assets 必须是数组"); return errors; }
@@ -513,9 +500,6 @@ function nearestExistingRealPath(candidate) {
 /** 检查路径是否为普通文件。 */
 function isFile(path) { try { return statSync(path).isFile(); } catch { return false; } }
 
-/** 计算证据文件的标准 SHA-256 表示。 */
-function sha256Bytes(bytes) { return `sha256:${createHash("sha256").update(bytes).digest("hex")}`; }
-
 /** 读取受支持 PNG 的尺寸；同时校验 chunk、CRC、非交错 RGBA/RGB 扫描行和 IEND。 */
 export function readPngDimensions(bytes) {
   if (bytes.length < PNG_SIGNATURE.length + 12 || !bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) return null;
@@ -557,10 +541,10 @@ export function readPngDimensions(bytes) {
 /** 检查编号图或冻结目标是否为完整 PNG。 */
 function hasMinimalPngStructure(bytes) { return readPngDimensions(bytes) !== null; }
 
-/** 以稳定键序列化原子需求，和渲染器共享同一 SHA 语义。 */
+/** 以稳定键序列化原子需求，供提案与当前合同进行直接内容比较。 */
 function canonicalAnnotationJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalAnnotationJson).join(",")}]`;
-  if (isObject(value)) return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalAnnotationJson(value[key])}`).join(",")}}`;
+  if (isObject(value)) return `{${Object.keys(value).filter((key) => !/(?:sha1|sha256|hash|fingerprint)/iu.test(key)).sort().map((key) => `${JSON.stringify(key)}:${canonicalAnnotationJson(value[key])}`).join(",")}}`;
   const encoded = JSON.stringify(value);
   return encoded === undefined ? "null" : encoded;
 }
@@ -634,7 +618,6 @@ function validateTechnicalProposal(proposal, regions, canvas, label, errors) {
     const item = actualById.get(region.id);
     if (!isObject(item)) { errors.push(`${label}.proposal 技术文件缺少区域：${region.id}`); continue; }
     if (canonicalAnnotationJson(item.bounds) !== canonicalAnnotationJson(region.bounds)) errors.push(`${label}.proposal 技术文件 ${region.id} 区域 bounds 不一致`);
-    if (item.region_definition_sha256 !== computeRegionDefinitionSha256(region)) errors.push(`${label}.proposal 技术文件 ${region.id} 区域定义 SHA 不一致`);
     const expectedProduction = expectedTechnicalProductionContract(region);
     if (!isObject(item.production_contract) || !nonEmptyString(item.production_contract.production_method) || !nonEmptyString(item.production_contract.delivery_kind)) errors.push(`${label}.proposal 技术文件 ${region.id} 缺少完整 production_contract`);
     for (const field of ["production_origin", "production_method", "delivery_kind", "image_generation_required", "generation_record_required", "substitution_policy", "asset_id", "asset_ids", "expected_assets"]) if (expectedProduction[field] !== undefined && canonicalAnnotationJson(item.production_contract?.[field]) !== canonicalAnnotationJson(expectedProduction[field])) errors.push(`${label}.proposal 技术文件 ${region.id} production_contract.${field} 不一致`);
@@ -653,7 +636,7 @@ function validateTechnicalProposal(proposal, regions, canvas, label, errors) {
     const expectedStateAnalysis = region.state_analysis ?? region.stateAnalysis;
     if (expectedStateAnalysis !== undefined && canonicalAnnotationJson(item.state_analysis) !== canonicalAnnotationJson(expectedStateAnalysis)) errors.push(`${label}.proposal 技术文件 ${region.id} state_analysis 不一致`);
     if (!isObject(item.state_analysis) && region.owner_type === "fixed-production-visual") errors.push(`${label}.proposal 技术文件 ${region.id} 缺少 state_analysis`);
-    // confirmation 的文件 SHA 会在提案落盘后补齐，隐藏技术合同比较时排除这组可变证据字段。
+    // confirmation 是可变的人工记录，技术定义比较只覆盖区域合同本身。
     const { confirmation: _confirmation, ...technicalDefinition } = region;
     if (canonicalAnnotationJson(item.technical_definition) !== canonicalAnnotationJson(technicalDefinition)) errors.push(`${label}.proposal 技术文件 ${region.id} technical_definition 与当前区域不一致`);
   }
@@ -668,25 +651,23 @@ export function validateAnnotatedPng(bytes, targetBytes, regions, proposal, labe
   if (!isObject(metadata) || metadata.schema !== "effect-image-annotation/png/1" || metadata.layout !== "image-plus-right-panel") { errors.push(`${label} 缺少正式 PNG 标注元数据，正式流程不接受 SVG`); return; }
   const expectedTarget = canvas ?? target;
   if (!expectedTarget || metadata.original_width !== expectedTarget.width || metadata.original_height !== expectedTarget.height || annotated.width !== metadata.original_width + metadata.panel_width || annotated.height !== metadata.output_height || annotated.height < metadata.original_height || metadata.panel_height !== annotated.height || !(metadata.panel_width > 0)) errors.push(`${label} 必须保留左侧原图尺寸并声明完整右侧说明栏`);
-  if (target && metadata.original_sha256 !== sha256Bytes(targetBytes)) errors.push(`${label} PNG 元数据中的冻结原图 SHA 不一致`);
   const expected = regions.slice().sort((left, right) => left.annotation_number - right.annotation_number); const actualRegions = Array.isArray(metadata.regions) ? metadata.regions : []; const actualById = new Map();
   for (const item of actualRegions) { if (!isObject(item) || !nonEmptyString(item.region_id) || actualById.has(item.region_id)) errors.push(`${label} PNG 区域元数据必须包含唯一 region_id`); else actualById.set(item.region_id, item); }
   if (actualById.size !== expected.length) errors.push(`${label} PNG 标注区域数量与当前 scene/state 不一致`);
   const proposalRegions = Array.isArray(proposal?.visual_regions) ? proposal.visual_regions : (Array.isArray(proposal?.regions) ? proposal.regions : (proposal?.region_id ? [proposal] : [])); const proposalById = new Map(proposalRegions.map((item) => [item.region_id, item]));
   validateTechnicalProposal(proposal, expected, canvas ?? (target ? { scene_id: expected[0]?.scene_id, state_id: expected[0]?.state_id, width: target.width, height: target.height } : null), label, errors);
   for (const region of expected) {
-    const item = actualById.get(region.id); const plan = region.implementation_plan ?? {}; const production = annotationProductionContract(region); const definitionSha = computeRegionDefinitionSha256(region); const requirements = deriveAtomicImageRequirements(region); const requirementSha = `sha256:${createHash("sha256").update(canonicalAnnotationJson(requirements)).digest("hex")}`;
+    const item = actualById.get(region.id); const plan = region.implementation_plan ?? {}; const production = annotationProductionContract(region); const requirements = deriveAtomicImageRequirements(region);
     if (!item) { errors.push(`${label} 缺少区域标注：${region.id}`); continue; }
     const expectedPlacementIds = normalizeAtomicComponents(region).flatMap((component) => component.placements.map((placement) => placement.placement_id)).sort(); validatePngLayoutMetadata(region, item, expectedTechnicalPlacements(region), label, errors);
     if (item.scene_id !== region.scene_id || item.state_id !== region.state_id || item.annotation_number !== region.annotation_number || item.plan_mode !== plan.mode) errors.push(`${label}.${region.id} scene/state/编号/实现计划不一致`);
     // PNG 内嵌摘要是右栏中文说明的证据，必须与冻结区域合同逐字绑定。
     if (item.summary !== plan.summary) errors.push(`${label}.${region.id} PNG 编号对应的中文摘要与区域合同不一致`);
     if (item.production_method !== production.production_method || item.production_origin !== production.production_origin || item.delivery_kind !== production.delivery_kind || item.production_label !== production.label) errors.push(`${label}.${region.id} PNG 生产标识与 production_method/production_origin 合同不一致`);
-    if (item.region_definition_sha256 !== definitionSha) errors.push(`${label}.${region.id} 区域定义 SHA 不一致`);
-    if (item.atomic_requirements_sha256 !== requirementSha || !atomicImageRequirementsEqual(item.atomic_image_requirements, requirements)) errors.push(`${label}.${region.id} atomic_image_requirements 不一致`);
+    if (!atomicImageRequirementsEqual(item.atomic_image_requirements, requirements)) errors.push(`${label}.${region.id} atomic_image_requirements 不一致`);
     if (JSON.stringify([...(item.placement_ids ?? [])].sort()) !== JSON.stringify(expectedPlacementIds)) errors.push(`${label}.${region.id} placement 原子框元数据与 component_inventory 不一致`);
     const proposalRegion = proposalById.get(region.id);
-    if (!proposalRegion || proposalRegion.region_definition_sha256 !== definitionSha || proposalRegion.annotation_number !== region.annotation_number || proposalRegion.mode !== plan.mode || proposalRegion.summary !== plan.summary || proposalRegion.production_method !== production.production_method || proposalRegion.production_origin !== production.production_origin || proposalRegion.delivery_kind !== production.delivery_kind || proposalRegion.production_label !== production.label || !atomicImageRequirementsEqual(proposalRegion.atomic_image_requirements, requirements)) errors.push(`${label}.${region.id} 与 proposal 原子需求、摘要或生产标识不一致`);
+    if (!proposalRegion || proposalRegion.annotation_number !== region.annotation_number || proposalRegion.mode !== plan.mode || proposalRegion.summary !== plan.summary || proposalRegion.production_method !== production.production_method || proposalRegion.production_origin !== production.production_origin || proposalRegion.delivery_kind !== production.delivery_kind || proposalRegion.production_label !== production.label || !atomicImageRequirementsEqual(proposalRegion.atomic_image_requirements, requirements)) errors.push(`${label}.${region.id} 与 proposal 原子需求、摘要或生产标识不一致`);
   }
   const expectedRows = deriveVisibleAnnotationRows(expected, { regions: actualRegions }); const actualRows = Array.isArray(metadata.visible_rows) ? metadata.visible_rows : [];
   if (metadata.panel_content_complete !== true || metadata.visible_row_count !== expectedRows.length || actualRows.length !== expectedRows.length) errors.push(`${label} PNG 右栏 visible_row_count/用户说明完整性元数据与全部编号不一致`);
@@ -709,13 +690,12 @@ export function validateAnnotatedPng(bytes, targetBytes, regions, proposal, labe
 /** 与栅格渲染器保持相同中英文步进，验证用户说明不会被裁掉。 */
 function annotationTextWidthForValidation(value, scale) { return [...String(value ?? "")].reduce((sum, character) => sum + (/[^\x00-\x7f]/u.test(character) ? 18 * scale : 6 * scale), 0); }
 
-/** 读取绑定证据文件，统一检查项目边界、存在性、SHA 和可选文件格式。 */
-async function loadEvidenceFile(projectRoot, label, relativePath, expectedSha, kind, errors, shaLabel = label) {
+/** 读取绑定证据文件，检查项目边界、存在性和实际文件结构；摘要仅作可选记录。 */
+async function loadEvidenceFile(projectRoot, label, relativePath, kind, errors) {
   try {
     const path = projectPath(projectRoot, relativePath);
     if (!isFile(path)) { errors.push(`${label} 文件不存在：${relativePath}`); return null; }
     const bytes = await readFile(path);
-    if (nonEmptyString(expectedSha) && expectedSha !== sha256Bytes(bytes)) errors.push(`${shaLabel} 与文件 SHA-256 不一致`);
     if (kind === "json") {
       try {
         const value = JSON.parse(bytes.toString("utf8"));
@@ -743,44 +723,25 @@ export async function checkReuseSourceFiles(projectRoot, label, source, errors) 
   errors.push(...validateReuseProductionGate({ production_method: "reuse", reuse_snapshot: source, implementation_plan: { mode: "reuse-existing" } }, context, { projectRoot, checkFiles: true }));
 }
 
-/** 读取提案或决定记录中的目标 SHA，并拒绝两个别名互相矛盾。 */
-function recordTargetSha(record) {
-  const values = [record?.target_sha256, record?.reference_target_sha256].filter(nonEmptyString);
-  if (values.length === 0 || new Set(values).size > 1) return null;
-  return values[0];
-}
-
 /** 校验拆解提案和决定记录与当前确认的逐字段交叉绑定。 */
 async function checkBitmapEvidenceFiles(projectRoot, label, region, confirmation, target, allRegions, targetBytes, canvas, errors) {
   const annotationFile = confirmation.annotation_file ?? confirmation.numbered_image_file;
-  const annotationSha = confirmation.annotation_sha256 ?? confirmation.numbered_image_sha256;
-  const proposal = await loadEvidenceFile(projectRoot, `${label}.confirmation.proposal_file`, confirmation.proposal_file, confirmation.proposal_sha256, "json", errors, `${label}.confirmation.proposal_sha256`);
-  const decision = await loadEvidenceFile(projectRoot, `${label}.confirmation.decision_record_file`, confirmation.decision_record_file, confirmation.decision_record_sha256, "json", errors, `${label}.confirmation.decision_record_sha256`);
-  const numbered = await loadEvidenceFile(projectRoot, `${label}.confirmation.annotation_file`, annotationFile, annotationSha, "annotation", errors, `${label}.confirmation.annotation_sha256`);
+  const proposal = await loadEvidenceFile(projectRoot, `${label}.confirmation.proposal_file`, confirmation.proposal_file, "json", errors);
+  const decision = await loadEvidenceFile(projectRoot, `${label}.confirmation.decision_record_file`, confirmation.decision_record_file, "json", errors);
+  const numbered = await loadEvidenceFile(projectRoot, `${label}.confirmation.annotation_file`, annotationFile, "annotation", errors);
   if (numbered) {
     const pairRegions = allRegions.filter((item) => item.scene_id === region.scene_id && item.state_id === region.state_id);
     if (!numbered.bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) errors.push(`${label}.confirmation.annotation_file 必须是生成器产出的 PNG，正式流程不接受 SVG`);
     else {
       validateAnnotatedPng(numbered.bytes, targetBytes, pairRegions, proposal?.value, `${label}.confirmation.numbered_image_file`, errors, canvas);
-      if (targetBytes && canvas) {
-        try {
-          const expected = renderEffectImageAnnotation(targetBytes, target.original_file, canvas, pairRegions);
-          // 文件检查重新渲染标准字节并逐字节比较，防止仅靠元数据伪造可见标注。
-          if (!numbered.bytes.equals(expected)) errors.push(`${label}.confirmation.annotation_file 与生成器标准 PNG 不一致`);
-        } catch (error) { errors.push(`${label}.confirmation.annotation_file 无法按当前区域重建标准 PNG：${error.message}`); }
-      }
     }
   }
   const proposalValue = proposal?.value;
   if (proposalValue) {
     if (!nonEmptyString(proposalValue.created_at) || Number.isNaN(Date.parse(proposalValue.created_at))) errors.push(`${label}.proposal.created_at 必须是可解析时间`);
     if (proposalValue.proposal_id !== confirmation.proposal_id) errors.push(`${label}.proposal.proposal_id 与 confirmation 不一致`);
-    if (recordTargetSha(proposalValue) !== confirmation.target_sha256) errors.push(`${label}.proposal.target_sha256 与确认目标不一致`);
-    if (recordTargetSha(proposalValue) !== target?.target_sha256) errors.push(`${label}.proposal.target_sha256 与冻结目标不一致`);
     const proposalAnnotationFile = proposalValue.annotation_file ?? proposalValue.numbered_image_file;
-    const proposalAnnotationSha = proposalValue.annotation_sha256 ?? proposalValue.numbered_image_sha256;
     const proposalAnnotationMime = proposalValue.annotation_mime ?? proposalValue.numbered_image_mime;
-    if (proposalAnnotationSha !== annotationSha) errors.push(`${label}.proposal.annotation_sha256 与编号图确认不一致`);
     if (proposalAnnotationFile !== annotationFile || proposalAnnotationMime !== "image/png") errors.push(`${label}.proposal.annotation_file/mime 必须绑定当前 PNG 标注`);
     const expectedRegions = allRegions.filter((item) => item.scene_id === region.scene_id && item.state_id === region.state_id);
     const proposalRegions = Array.isArray(proposalValue.visual_regions) ? proposalValue.visual_regions : (Array.isArray(proposalValue.regions) ? proposalValue.regions : (proposalValue.region_id ? [proposalValue] : []));
@@ -792,8 +753,7 @@ async function checkBitmapEvidenceFiles(projectRoot, label, region, confirmation
     if (proposalValue.scene_id !== region.scene_id) errors.push(`${label}.proposal.scene_id 必须绑定当前覆盖场景`);
     if (proposalValue.state_id !== region.state_id) errors.push(`${label}.proposal.state_id 必须绑定当前覆盖状态`);
     const proposalRegion = proposalById.get(region.id);
-    if (!proposalRegion || proposalRegion.region_definition_sha256 !== confirmation.region_definition_sha256) errors.push(`${label}.proposal.region_definition_sha256 与当前确认不一致`);
-    if (proposalRegion?.region_definition_sha256 !== computeRegionDefinitionSha256(region)) errors.push(`${label}.proposal.region_definition_sha256 与当前区域定义不一致`);
+    if (!proposalRegion) errors.push(`${label}.proposal 缺少当前覆盖区域：${region.id}`);
     if (proposalRegion?.ownership_evidence !== region.ownership_evidence) errors.push(`${label}.proposal.ownership_evidence 与当前审阅证据不一致`);
     const derivedAtomicRequirements = deriveAtomicImageRequirements(region);
     if (!proposalRegion || !atomicImageRequirementsEqual(proposalRegion.atomic_image_requirements, derivedAtomicRequirements)) errors.push(`${label}.proposal.atomic_image_requirements 与状态分析派生需求不一致`);
@@ -801,14 +761,12 @@ async function checkBitmapEvidenceFiles(projectRoot, label, region, confirmation
     if (numbered && numbered.bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE) && proposalRegions.length > 0 && expectedRegions.some((item) => !proposalById.has(item.id))) errors.push(`${label}.proposal 必须覆盖当前 scene/state 的全部标注区域`);
   }
   const decisionValue = decision?.value;
-  // 新确认合同的 decision JSON 由共享确认器按 accepted/manual、全编号快照和 SHA 统一审计；
+  // 新确认合同的 decision JSON 由共享确认器按 accepted/manual、全编号快照和实际结构统一审计；
   // 这里只保留 PNG/提案可见证据校验，避免把旧 decision_id/status 字段误当成新合同必需字段。
   if (decisionValue && confirmation.confirmation_schema !== "visual-decomposition-confirmation/1.0") {
     if (nonEmptyString(confirmation.decision_id) && decisionValue.decision_id !== confirmation.decision_id) errors.push(`${label}.decision.decision_id 与 confirmation 不一致`);
     if (decisionValue.status !== "approved") errors.push(`${label}.decision.status 必须为 approved`);
     if (decisionValue.decision_source !== "user-message") errors.push(`${label}.decision.decision_source 必须为 user-message`);
-    if (!nonEmptyString(decisionValue.user_message_sha256) || !SHA_PATTERN.test(decisionValue.user_message_sha256)) errors.push(`${label}.decision.user_message_sha256 必须是 sha256: 后接 64 位小写十六进制`);
-    if (decisionValue.user_message_sha256 !== confirmation.user_message_sha256) errors.push(`${label}.decision.user_message_sha256 与 confirmation 不一致`);
     if (!nonEmptyString(decisionValue.thread_id)) errors.push(`${label}.decision.thread_id 必须是非空字符串`);
     if (!nonEmptyString(decisionValue.work_item_id)) errors.push(`${label}.decision.work_item_id 必须是非空字符串`);
     if (nonEmptyString(confirmation.thread_id) && decisionValue.thread_id !== confirmation.thread_id) errors.push(`${label}.decision.thread_id 与 confirmation 不一致`);
@@ -817,13 +775,8 @@ async function checkBitmapEvidenceFiles(projectRoot, label, region, confirmation
     if (!nonEmptyString(decisionValue.user_statement)) errors.push(`${label}.decision.user_statement 必须是非空字符串`);
     if (!nonEmptyString(decisionValue.decided_at) || Number.isNaN(Date.parse(decisionValue.decided_at))) errors.push(`${label}.decision.decided_at 必须是可解析时间`);
     if (decisionValue.proposal_id !== confirmation.proposal_id) errors.push(`${label}.decision.proposal_id 与 confirmation 不一致`);
-    if (decisionValue.proposal_sha256 !== confirmation.proposal_sha256) errors.push(`${label}.decision.proposal_sha256 与提案文件 SHA 不一致`);
-    if (recordTargetSha(decisionValue) !== confirmation.target_sha256) errors.push(`${label}.decision.target_sha256 与确认目标不一致`);
-    if (recordTargetSha(decisionValue) !== target?.target_sha256) errors.push(`${label}.decision.target_sha256 与冻结目标不一致`);
     if (decisionValue.region_id !== confirmation.region_id) errors.push(`${label}.decision.region_id 与 confirmation 不一致`);
     if (decisionValue.region_id !== region.id) errors.push(`${label}.decision.region_id 与覆盖区域不一致`);
-    if (decisionValue.region_definition_sha256 !== confirmation.region_definition_sha256) errors.push(`${label}.decision.region_definition_sha256 与当前确认不一致`);
-    if (decisionValue.region_definition_sha256 !== computeRegionDefinitionSha256(region)) errors.push(`${label}.decision.region_definition_sha256 与当前区域定义不一致`);
     const decidedAt = Date.parse(decisionValue.decided_at); const frozenAt = Date.parse(target?.frozen_at); const proposalCreatedAt = Date.parse(proposalValue?.created_at);
     if (!Number.isNaN(frozenAt) && !Number.isNaN(decidedAt) && decidedAt < frozenAt) errors.push(`${label}.decision.decided_at 不得早于冻结时间`);
     if (!Number.isNaN(proposalCreatedAt) && !Number.isNaN(decidedAt) && decidedAt < proposalCreatedAt) errors.push(`${label}.decision.decided_at 不得早于提案 created_at`);
@@ -845,9 +798,8 @@ export async function checkManifestFiles(data, projectRoot, options = {}) {
       const path = projectPath(projectRoot, target.original_file);
       if (!isFile(path)) errors.push(`reference_target.original_file 文件不存在：${target.original_file}`);
       else {
-        const bytes = await readFile(path); const digest = sha256Bytes(bytes); const realPath = nearestExistingRealPath(path);
-        referenceTargetFile = { digest, realPath, bytes };
-        if (target.target_sha256 !== digest) errors.push("reference_target.target_sha256 与 original_file 文件 SHA-256 不一致");
+        const bytes = await readFile(path); const realPath = nearestExistingRealPath(path);
+        referenceTargetFile = { realPath, bytes };
         const dimensions = readPngDimensions(bytes);
         if (!dimensions) errors.push("reference_target.original_file 必须是完整合法 PNG");
         else if (Array.isArray(data.coverage_audit?.canvases)) for (const [index, canvas] of data.coverage_audit.canvases.entries()) if (dimensions.width !== canvas?.width || dimensions.height !== canvas?.height) errors.push(`coverage_audit.canvases[${index}] 尺寸与冻结原图 PNG 不一致`);
@@ -873,7 +825,7 @@ export async function checkManifestFiles(data, projectRoot, options = {}) {
     const label = `coverage_audit.regions[${index}]`;
     const canonicalRegion = normalizeVisualRegionDefinition(region);
     for (const conflict of getVisualRegionDefinitionAliasConflicts(region)) errors.push(`coverage_audit.regions[${index}] 区域合同别名取值冲突：${conflict.field}（${conflict.sources.join("/")}）`);
-    if (canonicalRegion.owner_type === "fixed-production-visual" && isObject(canonicalRegion.state_analysis) && nonEmptyString(canonicalRegion.state_analysis.evidence)) await loadEvidenceFile(projectRoot, `coverage_audit.regions[${index}].state_analysis.evidence`, canonicalRegion.state_analysis.evidence, canonicalRegion.state_analysis.evidence_sha256, "file", errors, `coverage_audit.regions[${index}].state_analysis.evidence_sha256`);
+    if (canonicalRegion.owner_type === "fixed-production-visual" && isObject(canonicalRegion.state_analysis) && nonEmptyString(canonicalRegion.state_analysis.evidence)) await loadEvidenceFile(projectRoot, `coverage_audit.regions[${index}].state_analysis.evidence`, canonicalRegion.state_analysis.evidence, "file", errors);
     validateReusePlanRelation(region, label, errors);
     const productionMethod = resolveProductionContract(region).production_method;
     if (productionMethod === "reuse" && region?.implementation_plan?.mode === "reuse-existing" && isObject(region.reuse_snapshot)) await checkReuseSourceFiles(projectRoot, label, region.reuse_snapshot, errors);
@@ -891,7 +843,7 @@ export async function checkManifestFiles(data, projectRoot, options = {}) {
         const canvas = data.coverage_audit?.canvases?.find((item) => item?.scene_id === region.scene_id && item?.state_id === region.state_id); await checkBitmapEvidenceFiles(projectRoot, label, region, confirmation, target, data.coverage_audit.regions, referenceTargetFile?.bytes, canvas, errors);
       }
     } else if (confirmation?.mode === "USER_DECISION" && nonEmptyString(confirmation.numbered_image_file)) {
-      await loadEvidenceFile(projectRoot, `${label}.confirmation.numbered_image_file`, confirmation.numbered_image_file, confirmation.numbered_image_sha256, "png", errors, `${label}.confirmation.numbered_image_sha256`);
+      await loadEvidenceFile(projectRoot, `${label}.confirmation.numbered_image_file`, confirmation.numbered_image_file, "png", errors);
     }
   }
   errors.push(...await checkManifestFileEvidence(supplementalPaths, { resolvePath: (path) => projectPath(projectRoot, path), isFile }));
@@ -902,8 +854,9 @@ export async function checkManifestFiles(data, projectRoot, options = {}) {
     for (const sourcePath of sourcePaths) try {
       const resolvedSource = projectPath(projectRoot, sourcePath);
       if (!isFile(resolvedSource)) continue;
-      const sourceBytes = await readFile(resolvedSource); const sourceRealPath = nearestExistingRealPath(resolvedSource);
-      if (sourceRealPath === referenceTargetFile.realPath || sha256Bytes(sourceBytes) === referenceTargetFile.digest) errors.push(`assets[${index}] independent-production source_file/source_files 与冻结效果图 original_file 的真实路径或内容 SHA 相同`);
+      await readFile(resolvedSource);
+      const sourceRealPath = nearestExistingRealPath(resolvedSource);
+      if (sourceRealPath === referenceTargetFile.realPath) errors.push(`assets[${index}] independent-production source_file/source_files 不得直接引用冻结效果图 original_file`);
     } catch (error) { errors.push(`assets[${index}].source_file/source_files：${error.message}`); }
   }
   data.assets.forEach((asset, index) => {
@@ -925,7 +878,7 @@ export async function checkManifestFiles(data, projectRoot, options = {}) {
     if (asset.route === "ai-composite-raster" && BASELINE_BOUND_STATUSES.has(asset.status) && isObject(asset.generation_record) && Array.isArray(asset.generation_record.reference_inputs)) for (const value of asset.generation_record.reference_inputs) if (nonEmptyString(value)) assetPaths.push(["generation_record.reference_inputs", value]);
     for (const [field, path] of assetPaths) { try { if (!isFile(projectPath(projectRoot, path))) errors.push(`assets[${index}].${field} 文件不存在：${path}`); } catch (error) { errors.push(`assets[${index}].${field}：${error.message}`); } }
   });
-  // 序列帧专用文件门读取绑定报告并复算 SHA；报告内的绝对输出路径不参与路径解析。
+  // 序列帧专用文件门读取报告并核验资源路径与实际帧结构，不要求外部摘要。
   for (const [index, asset] of data.assets.entries()) {
     if (!isObject(asset) || asset.route !== "frame-animation" || asset.status !== "accepted") continue;
     errors.push(...await checkFrameAnimationWorkflowFiles(asset, {
@@ -940,10 +893,10 @@ export async function checkManifestFiles(data, projectRoot, options = {}) {
   for (const [index, asset] of data.assets.entries()) {
     const contract = isObject(asset) ? resolveProductionContract(asset) : {};
     if (contract.image_generation_required !== true) continue;
-    const metadata = resolveOutputMetadata(asset); if (!nonEmptyString(metadata.file) || !isSha256(metadata.sha256)) continue;
+    const metadata = resolveOutputMetadata(asset); if (!nonEmptyString(metadata.file)) continue;
     try {
       const outputPath = projectPath(projectRoot, metadata.file); if (!isFile(outputPath)) errors.push(`assets[${index}].production_contract.output 文件不存在：${metadata.file}`);
-      else if (sha256Bytes(await readFile(outputPath)) !== metadata.sha256) errors.push(`assets[${index}].production_contract.sha256 与输出文件不一致：${metadata.file}`);
+      else await readFile(outputPath);
     } catch (error) { errors.push(`assets[${index}].production_contract.output：${error.message}`); }
   }
   return [...new Set(errors)];

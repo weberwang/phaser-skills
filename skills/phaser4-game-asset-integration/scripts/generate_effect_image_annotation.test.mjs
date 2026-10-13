@@ -94,11 +94,33 @@ test("生成独立效果图标注 PNG、右栏说明和绑定提案", async () =
   const validErrors = []; validateAnnotatedPng(pngBytes, original, manifest.coverage_audit.regions, proposal, "annotation", validErrors); assert.deepEqual(validErrors, []);
   const tampered = structuredClone(manifest); tampered.coverage_audit.regions[1].bounds.width += 1; const errors = [];
   validateAnnotatedPng(pngBytes, original, tampered.coverage_audit.regions, proposal, "annotation", errors);
-  assert(errors.some((item) => item.includes("区域定义 SHA 不一致") || item.includes("atomic_image_requirements") || item.includes("placement")), "篡改区域后旧标注/提案必须失效");
+  assert(errors.some((item) => item.includes("bounds 不一致") || item.includes("atomic_image_requirements") || item.includes("placement")), "区域几何变化仍需由实际技术内容复核");
   const alteredProposal = structuredClone(proposal); alteredProposal.technical_analysis.regions.find((region) => region.region_id === "hero").bounds.width += 1; const proposalErrors = []; validateAnnotatedPng(pngBytes, original, manifest.coverage_audit.regions, alteredProposal, "annotation", proposalErrors); assert(proposalErrors.some((item) => item.includes("技术文件") && item.includes("bounds")), "篡改技术 JSON 的坐标尺寸必须被验证器发现");
   const alteredMetadata = structuredClone(decoded.metadata); alteredMetadata.visible_rows.find((row) => row.kind === "summary" && row.annotation_number === 2).text = "2 被篡改的摘要"; const alteredLabel = alteredMetadata.visible_rows.find((row) => row.kind === "label" && row.annotation_number === 2); alteredLabel.text = "复用既有资源"; alteredLabel.label = "复用既有资源"; alteredMetadata.regions.find((region) => region.region_id === "hero").summary = "被篡改的区域摘要"; const alteredPng = encodePngRgba(decoded.width, decoded.height, decoded.pixels, alteredMetadata); const summaryErrors = []; validateAnnotatedPng(alteredPng, original, manifest.coverage_audit.regions, proposal, "annotation", summaryErrors); assert(summaryErrors.some((item) => item.includes("右栏第") && item.includes("未精确呈现")), "删除或修改右栏中文摘要必须被验证器发现"); assert(summaryErrors.some((item) => item.includes("中文摘要与区域合同不一致")), "嵌入区域中文摘要被篡改必须被验证器发现"); assert(summaryErrors.some((item) => item.includes("用户说明")), "用户生产标签被篡改必须被验证器发现");
   const missingKind = structuredClone(proposal); delete missingKind.proposal_kind; const missingKindErrors = []; validateAnnotatedPng(pngBytes, original, manifest.coverage_audit.regions, missingKind, "annotation", missingKindErrors); assert(missingKindErrors.some((item) => item.includes("proposal_kind") && item.includes("技术文件")), "缺少 proposal_kind 必须拒绝正式标注");
   const missingTechnical = structuredClone(proposal); delete missingTechnical.technical_analysis; const missingTechnicalErrors = []; validateAnnotatedPng(pngBytes, original, manifest.coverage_audit.regions, missingTechnical, "annotation", missingTechnicalErrors); assert(missingTechnicalErrors.some((item) => item.includes("technical_analysis")), "缺少 technical_analysis 必须拒绝正式标注");
+});
+
+test("缺失或错误的冻结目标、复用来源和状态分析摘要不阻断有效图像标注", async () => {
+  const root = await mkdtemp(join(tmpdir(), "effect-annotation-stale-digests-"));
+  const original = minimalPng(32, 24);
+  const manifest = annotationManifest("invalid-target-digest");
+  await writeFile(join(root, "reference.png"), original);
+  await addReuseEvidence(root, manifest);
+  const badge = manifest.coverage_audit.regions.find((region) => region.id === "badge");
+  const hero = manifest.coverage_audit.regions.find((region) => region.id === "hero");
+  delete badge.reuse_snapshot.source_sha256;
+  badge.reuse_snapshot.source_manifest_sha256 = { stale: true };
+  badge.reuse_snapshot.compatibility_evidence_sha256 = "bad-digest";
+  delete hero.state_analysis.evidence_sha256;
+  hero.state_analysis.reference_target_sha256 = "old-target";
+  const manifestPath = join(root, "visual-assets.json");
+  await writeFile(manifestPath, JSON.stringify(manifest));
+
+  const code = await generateAnnotation([manifestPath, "--project-root", root, "--scene-id", "main", "--state-id", "default", "--output", "evidence/annotation.png", "--proposal", "evidence/annotation-proposal.json"]);
+  assert.equal(code, 0);
+  const decoded = decodePngRgba(await readFile(join(root, "evidence/annotation.png")));
+  assert.equal(decoded.metadata.schema, "effect-image-annotation/png/1");
 });
 
 test("正式标注生成必须同时输出拆解分析技术文件", async () => {

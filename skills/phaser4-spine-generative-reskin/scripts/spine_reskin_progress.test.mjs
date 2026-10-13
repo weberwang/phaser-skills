@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -190,7 +190,7 @@ test("批次覆盖、重复和越序生成 fail closed", async () => {
   assert.equal(await generate(value, "p0:body").then((result) => result.status), 0);
 });
 
-test("审阅图 SHA、完整或简短确认文本和 alpha lock 绑定当前批次", async () => {
+test("完整或简短人工确认无需提供审阅图 SHA，alpha lock 仍约束当前批次", async () => {
   const value = await fixture({ names: ["body", "head"] });
   await freezeContract(value);
   await plan(value, [{ id: "b1", regions: ["p0:body"] }, { id: "b2", regions: ["p0:head"] }]);
@@ -198,10 +198,9 @@ test("审阅图 SHA、完整或简短确认文本和 alpha lock 绑定当前批�
   await generate(value, "p0:body");
   let document = await review(value, "b1");
   const reviewSha = document.batches[0].review_board.sha256;
-  assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", "bad", "--user-text", "确认第1批"]), 2);
   assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", reviewSha, "--user-text", " "]), 2);
   assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", reviewSha, "--user-text", "同意第1批"]), 2);
-  assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", reviewSha, "--user-text", "确认第1批"]), 0);
+  assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b1", "--review-sha", "bad", "--fingerprint", "stale", "--user-text", "确认第1批"]), 0);
   document = JSON.parse(await readFile(value.manifest, "utf8"));
   assert.equal(document.batches[0].status, "ACCEPTED");
   assert.equal(document.batches[0].locked, true);
@@ -210,8 +209,7 @@ test("审阅图 SHA、完整或简短确认文本和 alpha lock 绑定当前批�
   await prepare(value, "b2");
   await generate(value, "p0:head", [20, 220, 30, 255]);
   document = await review(value, "b2");
-  const secondReviewSha = document.batches[1].review_board.sha256;
-  assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b2", "--review-sha", secondReviewSha, "--user-text", " 确认 "]), 0);
+  assert.equal(await main(["batch", "accept", "--manifest", value.manifest, "--batch", "b2", "--user-text", " 确认 "]), 0);
   document = JSON.parse(await readFile(value.manifest, "utf8"));
   assert.equal(document.batches[1].status, "ACCEPTED");
   assert.equal(document.batches[1].locked, true);
@@ -253,7 +251,7 @@ test("Atlas 序列化不在同 Page Header/Region 之间插入空行，仅分隔
   assert.equal(output.slice(0, -1).filter((line) => line === "").length, 0);
 });
 
-test("未接受批次或缺失 runtime 报告不能 pack/finalize，完整报告通过后可 verify", async () => {
+test("无摘要的人工回执和实际运行证据可完成验收，缺失报告仍拒绝", async () => {
   const value = await fixture();
   await freezeContract(value);
   await plan(value, [{ id: "b1", regions: ["p0:body"] }]);
@@ -276,13 +274,22 @@ test("未接受批次或缺失 runtime 报告不能 pack/finalize，完整报告
   const packedDocument = JSON.parse(await readFile(value.manifest, "utf8"));
   const validationRunId = "run-1";
   await writeFile(report, JSON.stringify({ report_version: "spine-runtime-validation/1.0", validation_run_id: validationRunId, build_binding: packedDocument.build.runtime_binding, phaser_spine_game_object: true, animations_from_skeleton_data: true, target_runtime: "4.3.13", target_runtime_parse: { passed: true, producer: "external-phaser-spine-diagnostic", runtime_package: "phaser-spine-runtime", runtime_version: "4.3.13", command: "browser diagnostic page", log_path: "evidence/browser.log", log_sha256: await sha(log), validation_run_id: validationRunId }, default_animation: "Idle", animations: [{ name: "Idle", found: true, switch_passed: true, loop: true }, { name: "Attack", found: true, switch_passed: true, loop: false }], summary: { bone: 1, slot: 1, animation: 2, atlas_page: 1, atlas_region: 1 }, checks: { texture_missing: false, anchor_drift: false, mesh_stretch: false, flicker: false, bad_crop: false }, url: "/spine-validation.html", viewports: { desktop: { width: 1280, height: 720 }, mobile_390: { width: 390, height: 844 } }, screenshots: { desktop: { path: "evidence/desktop.png", sha256: await sha(desktop), validation_run_id: validationRunId }, mobile_390: { path: "evidence/mobile-390.png", sha256: await sha(mobile), validation_run_id: validationRunId } }, browser_log: { path: "evidence/browser.log", sha256: await sha(log), validation_run_id: validationRunId } }));
+  // 模拟人工验收前尚未维护任何摘要；实际资源、任务身份和运行结果必须足够。
+  const withoutDigests = (value) => Array.isArray(value) ? value.map(withoutDigests)
+    : value && typeof value === "object" ? Object.fromEntries(Object.entries(value)
+      .filter(([key]) => !/(?:sha(?:1|256)|fingerprint)/i.test(key)).map(([key, item]) => [key, withoutDigests(item)])) : value;
+  await writeFile(value.manifest, JSON.stringify(withoutDigests(packedDocument)));
+  await writeFile(report, JSON.stringify(withoutDigests(JSON.parse(await readFile(report, "utf8")))));
   assert.equal(await main(["runtime-validate", "--manifest", value.manifest, "--runtime-report", report]), 0);
   assert.equal(await main(["finalize", "--manifest", value.manifest]), 0);
   const verification = join(value.candidate, "verification.json");
   await writeFile(verification, JSON.stringify({ runtime_validation: "PASS", automated_tests: "PASS", typecheck: { status: "NOT_APPLICABLE", reason: "当前技能无独立类型检查脚本" }, build: { status: "NOT_APPLICABLE", reason: "候选资源由脚本直接重建，无独立构建步骤" } }));
   assert.equal(await main(["report", "--manifest", value.manifest, "--output", join(value.candidate, "final-report.json"), "--verification", verification]), 0);
+  await writeFile(value.manifest, JSON.stringify(withoutDigests(JSON.parse(await readFile(value.manifest, "utf8")))));
   assert.equal(await main(["verify", "--manifest", value.manifest]), 0);
   await writeFile(log, "tampered runtime log");
+  assert.equal(await main(["verify", "--manifest", value.manifest]), 0);
+  await rm(log);
   assert.equal(await main(["verify", "--manifest", value.manifest]), 1);
 });
 
@@ -365,7 +372,7 @@ test("Atlas 初始化拒绝重复、重叠、越界和非法 orig/offset", async
   await rejected("page.png\nsize: 8, 8\nformat: RGBA8888\n\na\nxy: 0, 0\nsize: 2, 2\norig: 2, 2\noffset: 2, 0\n", "offset");
 });
 
-test("生成图 SHA 漂移和审阅/运行证据 SHA 漂移会使 verify 失败", async () => {
+test("实际生成图损坏仍使 verify 失败", async () => {
   const value = await fixture();
   await freezeContract(value);
   await plan(value, [{ id: "b1", regions: ["p0:body"] }]);

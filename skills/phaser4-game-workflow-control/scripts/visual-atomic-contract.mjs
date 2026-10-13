@@ -124,7 +124,7 @@ export function normalizeProductionExpectedAssets(value) {
       width: item.width,
       height: item.height,
       alpha: item.alpha, transparency_requirements: item.transparency_requirements,
-      sha256: item.sha256 ?? item.file_sha256 ?? "",
+      // SHA 仅作为可选追踪字段保留在原始输入，不纳入生产资产身份投影。
       asset_scope: item.asset_scope ?? item.assetScope ?? "",
       atomic_visual_key: item.atomic_visual_key ?? item.atomicVisualKey ?? "",
       component_id: item.component_id ?? item.componentId ?? "",

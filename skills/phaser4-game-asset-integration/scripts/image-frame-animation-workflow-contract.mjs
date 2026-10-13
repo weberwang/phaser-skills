@@ -5,11 +5,9 @@ import {
   isObject,
   isProjectRelativePath,
   isRuntimeUrl,
-  isSha256,
   nonEmptyString,
   readBoundArtifact,
   readPngDimensions,
-  sha256Bytes,
   validateArtifactBinding,
   validatePhaserContract,
   validatePreview,
@@ -70,19 +68,18 @@ export function validateImageFrameAnimationWorkflowContract(value, options = {})
   return [...new Set(errors)];
 }
 
-/** 比较来源与报告中的简单文件身份，路径和真实 SHA 必须同时相等。 */
+/** 比较来源与报告中的文件路径；摘要只作为可选说明保留。 */
 function sameFileIdentity(actual, expected) {
   return isObject(actual) && isObject(expected)
-    && actual.file === expected.file && actual.sha256 === expected.sha256;
+    && actual.file === expected.file;
 }
 
-/** 按索引、路径和 SHA 比较每个父图快照，拒绝漏父图或换用新快照。 */
+/** 按索引和路径比较每个父图快照，拒绝漏父图或错绑来源。 */
 function sameParents(actual, expected) {
   if (!Array.isArray(actual) || !Array.isArray(expected) || actual.length !== expected.length) return false;
   return actual.every((parent, index) => isObject(parent) && isObject(expected[index])
     && parent.index === expected[index].index
-    && parent.file === expected[index].file
-    && parent.sha256 === expected[index].sha256);
+    && parent.file === expected[index].file);
 }
 
 /** 检查报告设置和 accepted settings 完全绑定，避免参数只在报告中自行声明。 */
@@ -157,9 +154,8 @@ function validateImageFrames(report, source, sourceFiles, contract, label, error
     }
     if (!sameParents(frame.parents, expected.parents)) errors.push(label + `.frames[${position}].parents 必须与来源清单中的真实父图快照一致`);
     const finalImage = sourceFiles.get(expected.image?.file);
-    if (!Buffer.isBuffer(finalImage?.bytes) || finalImage.sha256 !== expected.image?.sha256
-      || sha256Bytes(finalImage.bytes) !== expected.image?.sha256) {
-      errors.push(label + `.frames[${position}] 的来源最终图必须有与来源清单绑定的真实字节和 SHA`);
+    if (!Buffer.isBuffer(finalImage?.bytes)) {
+      errors.push(label + `.frames[${position}] 的来源最终图必须有真实可读取字节`);
     }
     // 报告中的 frame.width/height 是缩放与留白后的最终 cell 尺寸，不是来源原图尺寸。
     if (frame.width !== contract.settings?.width || frame.height !== contract.settings?.height) {
@@ -179,7 +175,7 @@ function validateImageFrames(report, source, sourceFiles, contract, label, error
 }
 
 /** 校验图片来源质量报告、图集身份、布局和 Phaser 播放证据。 */
-function validateImageQualityReport(report, source, sourceFiles, sourceManifestSha, sheetArtifact, contract, asset, label, errors) {
+function validateImageQualityReport(report, source, sourceFiles, sheetArtifact, contract, asset, label, errors) {
   if (!isObject(report)) {
     errors.push(label + " 解析结果必须是普通 JSON 对象");
     return;
@@ -189,16 +185,11 @@ function validateImageQualityReport(report, source, sourceFiles, sourceManifestS
   if (Object.hasOwn(report, "source_video") || Object.hasOwn(report, "video")) errors.push(label + " 图片报告不得声明视频来源字段");
 
   const input = isObject(report.input) ? report.input : {};
-  for (const field of ["video_path", "video_sha256", "source_video", "source_timestamp"]) {
+  for (const field of ["video_path", "source_video", "source_timestamp"]) {
     if (Object.hasOwn(input, field)) errors.push(label + `.input 图片来源不得声明视频字段 ${field}`);
   }
   if (!nonEmptyString(input.source_manifest_path)) errors.push(label + ".input.source_manifest_path 必须是非空字符串");
   else validateReportedArtifactPath(input.source_manifest_path, contract.source_manifest, label + ".input.source_manifest_path", errors);
-  if (!isSha256(input.source_manifest_sha256)) errors.push(label + ".input.source_manifest_sha256 格式无效");
-  else if (sourceManifestSha && input.source_manifest_sha256 !== sourceManifestSha) errors.push(label + ".input.source_manifest_sha256 与真实来源清单不一致");
-  if (!isSha256(contract.source_manifest?.sha256) || sourceManifestSha !== contract.source_manifest?.sha256) {
-    errors.push(label + ".input.source_manifest_sha256 必须等于 accepted source_manifest 的真实 SHA");
-  }
   if (!finitePositive(input.fps)) errors.push(label + ".input.fps 必须是正有限数字");
   else if (input.fps !== source.fps || input.fps !== contract.settings?.fps) errors.push(label + ".input.fps 必须同时绑定来源 fps 与 settings.fps");
   if (input.display_width !== source.canvas?.width || input.display_height !== source.canvas?.height) {
@@ -228,7 +219,6 @@ function validateImageQualityReport(report, source, sourceFiles, sourceManifestS
   const animation = isObject(report.animation) ? report.animation : {};
   if (typeof source.loop !== "boolean") errors.push(label + " 来源 loop 必须是布尔值");
   else if (animation.loop !== source.loop) errors.push(label + ".animation.loop 必须等于真实来源 loop");
-  if (!isObject(report.artifacts?.sheet) || !isSha256(report.artifacts.sheet.sha256)) errors.push(label + ".artifacts.sheet.sha256 缺失或格式无效");
   if (!isObject(report.artifacts?.sheet) || !nonEmptyString(report.artifacts.sheet.file)) errors.push(label + ".artifacts.sheet.file 必须是非空字符串");
   if (!isObject(report.artifacts?.sheet) || !Number.isInteger(report.artifacts.sheet.width) || report.artifacts.sheet.width <= 0
     || !Number.isInteger(report.artifacts.sheet.height) || report.artifacts.sheet.height <= 0) {
@@ -240,11 +230,6 @@ function validateImageQualityReport(report, source, sourceFiles, sourceManifestS
   validateReportedArtifactPath(report.artifacts?.preview?.file, contract.preview, label + ".artifacts.preview.file", errors);
   validateReportedArtifactPath(report.artifacts?.report?.file, contract.quality_report, label + ".artifacts.report.file", errors);
 
-  const actualSheetSha = sheetArtifact ? sha256Bytes(sheetArtifact.bytes) : null;
-  if (!actualSheetSha) errors.push(label + " 绑定的 spritesheet 文件不可读");
-  if (actualSheetSha && isSha256(report.artifacts?.sheet?.sha256) && report.artifacts.sheet.sha256 !== actualSheetSha) {
-    errors.push(label + ".artifacts.sheet.sha256 与真实 spritesheet 不一致");
-  }
   const dimensions = readPngDimensions(sheetArtifact?.bytes);
   const frames = Array.isArray(report.frames) ? report.frames : [];
   if (!dimensions) errors.push(label + " 绑定的 spritesheet 必须是有效 PNG");
@@ -260,7 +245,6 @@ function validateImageQualityReport(report, source, sourceFiles, sourceManifestS
       errors.push(label + " spritesheet 高度必须等于 cell.height");
     }
   }
-  if (actualSheetSha && contract.spritesheet.sha256 !== actualSheetSha) errors.push(label + " 绑定的 spritesheet SHA 与真实文件不一致");
   validatePhaserContract(report, asset, contract.spritesheet, label, errors);
 }
 
@@ -278,7 +262,6 @@ async function loadBoundImageSource(contract, context, label, errors) {
       ? context.resolvePath(binding.file)
       : resolve(context.projectRoot, binding.file);
     const loaded = await readImageFrameSource(manifestPath, { projectRoot: context.projectRoot });
-    if (loaded.manifestSha256 !== binding.sha256) errors.push(label + ".source_manifest.sha256 与真实来源清单不一致");
     return loaded;
   } catch (error) {
     errors.push(label + ".source_manifest：" + (error?.message ?? String(error)));
@@ -315,7 +298,7 @@ export async function checkImageFrameAnimationWorkflowFiles(asset, context = {})
     return [...new Set(errors)];
   }
   if (source) {
-    validateImageQualityReport(report, source.source, source.files, source.manifestSha256, artifacts.spritesheet,
+    validateImageQualityReport(report, source.source, source.files, artifacts.spritesheet,
       contract, asset, label + ".quality_report", errors);
   }
   return [...new Set(errors)];

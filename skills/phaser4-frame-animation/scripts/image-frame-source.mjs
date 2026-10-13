@@ -4,8 +4,6 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 
 /** 图片帧来源清单的稳定 schema 标识。 */
 export const IMAGE_FRAME_SOURCE_SCHEMA = "phaser4-image-frame-source/1";
-/** 所有文件身份必须使用小写十六进制 SHA-256。 */
-const SHA256_PATTERN = /^sha256:[a-f0-9]{64}$/u;
 /** 与规划器一致的槽位上限，避免不可信 duration/fps 诱发超长完整性扫描。 */
 const MAX_FRAME_COUNT = 100_000;
 /** 限制解码像素总量，防止畸形来源通过压缩图片消耗过量内存。 */
@@ -21,12 +19,11 @@ function nonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-/** 比较文件身份时同时要求清单相对路径和实际内容摘要一致。 */
+/** 文件来源链按实际项目路径关联；声明摘要仅作可选记录。 */
 function sameFileIdentity(first, second) {
   return isObject(first)
     && isObject(second)
-    && first.file === second.file
-    && first.sha256 === second.sha256;
+    && first.file === second.file;
 }
 
 /** 验证清单中的相对路径可移植且不含目录跳转或 Windows 特殊设备名。 */
@@ -45,18 +42,15 @@ function relativeFilePathError(value) {
   return null;
 }
 
-/** 校验文件引用对象的路径与声明摘要字段。 */
+/** 校验文件引用对象的真实项目相对路径；摘要不参与验收。 */
 function validateFileReference(value, field, errors) {
   if (!isObject(value)) {
-    errors.push(`${field} 必须是包含 file 和 sha256 的对象`);
+    errors.push(`${field} 必须是包含 file 的对象`);
     return false;
   }
   const pathError = relativeFilePathError(value.file);
   if (pathError) errors.push(`${field}.file ${pathError}`);
-  if (typeof value.sha256 !== "string" || !SHA256_PATTERN.test(value.sha256)) {
-    errors.push(`${field}.sha256 必须是 sha256:<64位小写十六进制>`);
-  }
-  return !pathError && typeof value.sha256 === "string" && SHA256_PATTERN.test(value.sha256);
+  return !pathError;
 }
 
 /** 统一来源和报告的时间比较，允许毫秒保留六位小数，拒绝负数和实际时间漂移。 */
@@ -180,7 +174,7 @@ export function validateImageFrameSource(source) {
       const parent = parents[parentPosition];
       const parentLabel = `${label}.parents[${parentPosition}]`;
       if (!isObject(parent) || !Number.isSafeInteger(parent.index) || parent.index < 0 || parent.index > tailIndex) {
-        errors.push(`${parentLabel} 必须包含有效父帧 index、file 和 sha256`);
+        errors.push(`${parentLabel} 必须包含有效父帧 index 和 file`);
       } else if (parentIndexes.has(parent.index)) {
         errors.push(`${label}.parents 不得重复引用 index=${parent.index}`);
       } else {
@@ -376,22 +370,15 @@ function parseJsonBytes(bytes, field) {
   }
 }
 
-/** 校验并登记同一相对路径的所有 SHA 声明，拒绝冲突身份。 */
+/** 校验并登记来源链引用的项目文件路径；SHA 只保留为可选说明。 */
 function registerFileDeclaration(declarations, reference, field) {
   const pathError = relativeFilePathError(reference?.file);
   if (pathError) throw new ImageFrameSourceError(`${field}.file ${pathError}`);
-  if (typeof reference?.sha256 !== "string" || !SHA256_PATTERN.test(reference.sha256)) {
-    throw new ImageFrameSourceError(`${field}.sha256 必须是 sha256:<64位小写十六进制>`);
-  }
-  const existing = declarations.get(reference.file);
-  if (existing && existing !== reference.sha256) {
-    throw new ImageFrameSourceError(`同一路径声明了不同 SHA 身份：${reference.file}`);
-  }
-  declarations.set(reference.file, reference.sha256);
+  declarations.set(reference.file, true);
 }
 
-/** 读取项目内指定相对文件，核对实际 SHA 并返回可复用字节记录。 */
-async function readVerifiedFile(rootPath, relativePath, expectedSha256, files) {
+/** 读取项目内指定相对文件并返回可复用字节记录。 */
+async function readProjectFile(rootPath, relativePath, files) {
   if (files.has(relativePath)) return files.get(relativePath);
   const candidatePath = resolve(rootPath, ...relativePath.split("/"));
   if (!isWithinRoot(rootPath, candidatePath)) throw new ImageFrameSourceError(`文件路径逃逸 projectRoot：${relativePath}`);
@@ -409,11 +396,7 @@ async function readVerifiedFile(rootPath, relativePath, expectedSha256, files) {
   } catch (error) {
     throw new ImageFrameSourceError(`来源文件无法读取：${relativePath}（${error.message}）`);
   }
-  const actualSha256 = sha256Bytes(bytes);
-  if (actualSha256 !== expectedSha256) {
-    throw new ImageFrameSourceError(`来源文件 SHA 不匹配：${relativePath}（声明 ${expectedSha256}，实际 ${actualSha256}）`);
-  }
-  const file = { bytes, absolutePath, sha256: actualSha256 };
+  const file = { bytes, absolutePath };
   files.set(relativePath, file);
   return file;
 }
@@ -446,7 +429,7 @@ function validateGenerationRecord(record, frame, frameIndex, files) {
     throw new ImageFrameSourceError(`index=${frameIndex} generation_record.reference_images 必须是数组`);
   }
   if (!isObject(record.output_image) || !sameFileIdentity(record.output_image, frame.source_image)) {
-    throw new ImageFrameSourceError(`index=${frameIndex} generation_record.output_image 必须绑定 source_image 的文件与 SHA`);
+    throw new ImageFrameSourceError(`index=${frameIndex} generation_record.output_image 必须绑定 source_image 的文件路径`);
   }
   for (let index = 0; index < record.reference_images.length; index += 1) {
     const reference = record.reference_images[index];
@@ -459,9 +442,7 @@ function validateGenerationRecord(record, frame, frameIndex, files) {
   }
   for (const reference of record.reference_images) {
     const file = files.get(reference.file);
-    if (!file || file.sha256 !== reference.sha256) {
-      throw new ImageFrameSourceError(`index=${frameIndex} generation_record 引用未通过 SHA 校验：${reference.file}`);
-    }
+    if (!file) throw new ImageFrameSourceError(`index=${frameIndex} generation_record 引用的文件未加载：${reference.file}`);
   }
 }
 
@@ -506,11 +487,11 @@ export async function readImageFrameSource(manifestFile, { projectRoot } = {}) {
   }
 
   const files = new Map();
-  for (const [relativePath, expectedSha256] of declarations) {
-    await readVerifiedFile(rootPath, relativePath, expectedSha256, files);
+  for (const relativePath of declarations.keys()) {
+    await readProjectFile(rootPath, relativePath, files);
   }
 
-  // 先读取所有生成记录，再登记它们的引用文件；同一路径的身份不允许在 JSON 记录中被偷换。
+  // 先读取所有生成记录，再登记它们引用的路径，确保后续图片解码覆盖完整来源链。
   const generationRecords = new Map();
   for (const frame of source.frames) {
     const recordFile = files.get(frame.generation_record.file);
@@ -523,8 +504,8 @@ export async function readImageFrameSource(manifestFile, { projectRoot } = {}) {
     }
     generationRecords.set(frame.index, record);
   }
-  for (const [relativePath, expectedSha256] of declarations) {
-    await readVerifiedFile(rootPath, relativePath, expectedSha256, files);
+  for (const relativePath of declarations.keys()) {
+    await readProjectFile(rootPath, relativePath, files);
   }
 
   const frameByIndex = new Map(source.frames.map((frame) => [frame.index, frame]));
@@ -550,8 +531,8 @@ export async function readImageFrameSource(manifestFile, { projectRoot } = {}) {
       const note = decodeUtf8(recordFile.bytes, `index=${frame.index} repairs[${repairIndex}].record`);
       if (!note.trim()) throw new ImageFrameSourceError(`index=${frame.index} repairs[${repairIndex}].record 不能为空`);
       for (const identity of [repair.before, repair.after]) {
-        if (!note.includes(identity.file) || !note.includes(identity.sha256)) {
-          throw new ImageFrameSourceError(`index=${frame.index} repairs[${repairIndex}].record 必须写明前后文件及 SHA 身份`);
+        if (!note.includes(identity.file)) {
+          throw new ImageFrameSourceError(`index=${frame.index} repairs[${repairIndex}].record 必须写明前后文件路径`);
         }
       }
     }

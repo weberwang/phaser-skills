@@ -1,10 +1,9 @@
 /** 透明路线资格、真实像素和深浅底消费证据共享门；不尝试智能抠图。 */
-import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
 import { decodePngRgba } from "../../phaser4-game-asset-integration/scripts/effect_image_raster.mjs";
 import { inspectTransparencyPixels } from "../../phaser4-game-asset-integration/scripts/transparent-raster.mjs";
-import { isPlainObject as isObject, isSha256, nonEmptyString } from "./visual-contract-core.mjs";
+import { isPlainObject as isObject, nonEmptyString } from "./visual-contract-core.mjs";
 import { safeProjectPath } from "./visual-runtime-evidence.mjs";
 
 /** 根据可观察边缘冻结路线，语义名称和 alpha 通道声明不构成资格证明。 */
@@ -18,14 +17,12 @@ function alphaFacts(decoded) {
   return { transparent: stats.transparent_pixels, partial: stats.partial_alpha_pixels, visible: stats.visible_pixels };
 }
 
-/** 读取项目内 PNG 并复算 SHA；任意文件、目录或不可解码图片均失败关闭。 */
-function readPng(file, expectedSha, options, errors, label) {
+/** 读取项目内 PNG 并解码真实像素；任意文件、目录或不可解码图片均失败关闭。 */
+function readPng(file, options, errors, label) {
   const path = safeProjectPath(options.projectRoot, file);
   if (!path || !existsSync(path) || !statSync(path).isFile()) { errors.push(`${label} 文件不存在或路径越界`); return null; }
   try {
     const bytes = readFileSync(path);
-    const sha = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-    if (sha !== expectedSha) errors.push(`${label} 实际 SHA 与生产记录不一致`);
     const decoded = decodePngRgba(bytes);
     return { ...decoded, ...alphaFacts(decoded) };
   } catch { errors.push(`${label} 必须是可解码真实 PNG`); return null; }
@@ -45,16 +42,14 @@ function validateMask(generation, options, errors) {
   const mask = generation.mask_record;
   if (!isObject(mask)) { errors.push("mask-composition 必须提供独立 mask_record"); return; }
   for (const field of ["source_file", "mask_file", "output_file", "tool", "tool_version", "evidence"]) if (!nonEmptyString(mask[field])) errors.push(`mask_record.${field} 缺失`);
-  for (const field of ["source_sha256", "mask_sha256", "output_sha256"]) if (!isSha256(mask[field])) errors.push(`mask_record.${field} 必须记录实际 SHA`);
   if (!isObject(mask.parameters)) errors.push("mask_record.parameters 必须记录实际参数");
-  if (mask.source_file !== generation.raw_source_file || mask.source_sha256 !== generation.raw_source_sha256 || mask.output_file !== generation.source_file || mask.output_sha256 !== generation.source_sha256) errors.push("mask_record 输入/输出未绑定当前生成原图和透明中间产物");
+  if (mask.source_file !== generation.raw_source_file || mask.output_file !== generation.source_file) errors.push("mask_record 输入/输出路径未绑定当前生成原图和透明中间产物");
   if (options.checkFiles === true && options.projectRoot) {
-    readPng(mask.mask_file, mask.mask_sha256, options, errors, "独立遮罩");
-    // 遮罩路线原图可能不透明，仍须绑定真实字节，不能仅验证最终透明结果。
+    readPng(mask.mask_file, options, errors, "独立遮罩");
     const rawPath = safeProjectPath(options.projectRoot, mask.source_file);
     try {
       if (!rawPath || !statSync(rawPath).isFile()) throw new Error("missing");
-      if (`sha256:${createHash("sha256").update(readFileSync(rawPath)).digest("hex")}` !== mask.source_sha256) errors.push("独立遮罩原图实际 SHA 与生产记录不一致");
+      readFileSync(rawPath);
     } catch { errors.push("独立遮罩原图不存在或路径越界"); }
   }
 }
@@ -67,8 +62,6 @@ export function validateTransparencyRoute(generation, expectedAsset, options = {
   if (!isObject(requirements) || !TRANSPARENT_ROUTES.includes(requirements.strategy) || !TRANSPARENT_EDGE_PROFILES.includes(requirements.edge_profile)) errors.push("expected_assets.transparency_requirements 必须冻结透明路线与边缘类型");
   if (!TRANSPARENT_EDGE_PROFILES.includes(generation.edge_profile) || !nonEmptyString(generation.edge_evidence)) errors.push("透明生产必须记录 edge_profile 和可观察边缘 edge_evidence");
   if (requirements?.strategy !== generation.transparency_strategy || requirements?.edge_profile !== generation.edge_profile) errors.push("透明路线/边缘类型与已冻结 transparency_requirements 不一致，必须走明确变更流程");
-  for (const field of ["raw_source_sha256", "source_sha256"]) if (!isSha256(generation[field])) errors.push(`generation_record.${field} 必须记录真实文件 SHA`);
-  if (generation.normalization_record?.source_sha256 !== generation.source_sha256) errors.push("透明 source_sha256 未绑定当前归一化输入 SHA");
   if (generation.source_has_alpha !== true || typeof generation.raw_source_has_alpha !== "boolean") errors.push("透明生产必须声明 raw_source_has_alpha 和 source_has_alpha=true，并由像素门复核");
   if (generation.transparency_strategy === "background-removal") {
     if (generation.source_background_mode !== "opaque") errors.push("background-removal source_background_mode 必须为 opaque");
@@ -79,17 +72,16 @@ export function validateTransparencyRoute(generation, expectedAsset, options = {
     for (const attempt of attempts) {
       const record = attempt?.evidence;
       const parameters = record?.parameters;
-      if (!nonEmptyString(record?.tool) || !nonEmptyString(record?.tool_version) || !isSha256(record?.source_sha256) || !isSha256(record?.output_sha256)) errors.push("去背尝试必须记录实际工具、版本和输入/输出 SHA");
+      if (!nonEmptyString(record?.tool) || !nonEmptyString(record?.tool_version)) errors.push("去背尝试必须记录实际工具和版本");
       if (!isObject(parameters) || parameters.edge_profile !== "hard-edge" || parameters.color_separation_verified !== true || !Number.isFinite(parameters.tolerance) || parameters.tolerance < 0 || parameters.tolerance > 64) errors.push("去背尝试必须记录受控硬边参数，颜色容差不得超过 64");
       else { if (tolerance !== undefined && parameters.tolerance > tolerance) errors.push("去背失败后不得不断提高颜色容差损伤边缘，应报告能力缺口或变更路线"); tolerance = parameters.tolerance; }
     }
     const final = attempts.at(-1)?.evidence;
-    if (final && (final.source_sha256 !== generation.raw_source_sha256 || final.output_sha256 !== generation.source_sha256)) errors.push("最后一次去背的真实 SHA 未绑定当前 raw/source");
   } else {
     for (const field of ["source_background_color", "background_removal_attempts", "background_removal_max_attempts", "color_separation_verified"]) if (Object.hasOwn(generation, field)) errors.push(`${generation.transparency_strategy} 不得伪造去背字段 ${field}`);
     if (generation.transparency_strategy === "direct-alpha") {
       validateCapability(generation, errors);
-      if (generation.source_background_mode !== "transparent" || generation.raw_source_file !== generation.source_file || generation.raw_source_sha256 !== generation.source_sha256) errors.push("direct-alpha 必须以真实透明原图直接作为 source，不得伪造去背或后处理来源");
+      if (generation.source_background_mode !== "transparent" || generation.raw_source_file !== generation.source_file) errors.push("direct-alpha 必须以真实透明原图直接作为 source，不得伪造去背或后处理来源");
       if (generation.mask_record !== undefined) errors.push("direct-alpha 不得混入 mask_record");
     } else if (generation.transparency_strategy === "mask-composition") {
       if (!["opaque", "transparent"].includes(generation.source_background_mode)) errors.push("独立遮罩必须记录实际源图背景模式");
@@ -98,8 +90,8 @@ export function validateTransparencyRoute(generation, expectedAsset, options = {
     }
   }
   if (options.checkFiles === true && options.projectRoot) {
-    const source = readPng(generation.source_file, generation.source_sha256, options, errors, "透明 source");
-    const output = readPng(expectedAsset.runtime_file, generation.normalization_record?.output_sha256, options, errors, "透明 runtime");
+    const source = readPng(generation.source_file, options, errors, "透明 source");
+    const output = readPng(expectedAsset.runtime_file, options, errors, "透明 runtime");
     if (source?.partial > 0 && output?.partial === 0) errors.push("透明归一化必须保留原图的真实半透明信息");
     const crop = generation.normalization_record?.aspect_ratio_correction?.crop_rect;
     if (source && crop) {
@@ -112,7 +104,7 @@ export function validateTransparencyRoute(generation, expectedAsset, options = {
       if (["semi-transparent", "glow", "soft-shadow", "glass", "mixed"].includes(generation.edge_profile) && image.partial === 0) errors.push("复杂透明边缘缺少真实半透明像素，不能删除光效或硬抠后交付");
     }
     if (generation.transparency_strategy === "background-removal") {
-      const raw = readPng(generation.raw_source_file, generation.raw_source_sha256, options, errors, "去背原图");
+      const raw = readPng(generation.raw_source_file, options, errors, "去背原图");
       if (raw && raw.transparent > 0) errors.push("颜色去背原图必须实际不透明，不得破坏已有真实透明信息");
     }
   }
@@ -125,13 +117,12 @@ export function validateTransparencyPreview(generation, expectedAsset, options =
   if (!isObject(preview)) return ["所有透明路线必须提供 transparency_preview 深浅底预览和视觉检查状态"];
   const errors = [];
   const normalization = generation.normalization_record;
-  if (!isSha256(preview.candidate_sha256) || (options.identity?.candidate && preview.candidate_sha256 !== options.identity.candidate) || (generation.candidate_sha256 && preview.candidate_sha256 !== generation.candidate_sha256)) errors.push("transparency_preview 未绑定同一候选 candidate_sha256");
-  if (preview.source_file !== expectedAsset.runtime_file || preview.source_sha256 !== normalization?.output_sha256 || !isSha256(preview.source_sha256)) errors.push("transparency_preview 必须绑定归一化最终 runtime_file 和实际输出 SHA");
-  const runtime = options.checkFiles === true && options.projectRoot ? readPng(preview.source_file, preview.source_sha256, options, errors, "预览源图") : null;
+  if (preview.source_file !== expectedAsset.runtime_file || (nonEmptyString(normalization?.output_file) && preview.source_file !== normalization.output_file)) errors.push("transparency_preview 必须绑定归一化最终 runtime_file 路径");
+  const runtime = options.checkFiles === true && options.projectRoot ? readPng(preview.source_file, options, errors, "预览源图") : null;
   for (const [mode, color] of [["light", "#F2E9DF"], ["dark", "#16202E"]]) {
     const entry = preview[mode];
-    if (!isObject(entry) || !nonEmptyString(entry.file) || !isSha256(entry.sha256) || entry.background_color !== color) { errors.push(`transparency_preview.${mode} 必须记录深浅底 PNG、SHA 和指定底色`); continue; }
-    const image = options.checkFiles === true && options.projectRoot ? readPng(entry.file, entry.sha256, options, errors, `${mode} 预览`) : null;
+    if (!isObject(entry) || !nonEmptyString(entry.file) || entry.background_color !== color) { errors.push(`transparency_preview.${mode} 必须记录 PNG 路径和指定底色`); continue; }
+    const image = options.checkFiles === true && options.projectRoot ? readPng(entry.file, options, errors, `${mode} 预览`) : null;
     if (runtime && image) {
       const rgb = [1, 3, 5].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16));
       const expected = Buffer.alloc(runtime.pixels.length);

@@ -16,7 +16,7 @@ import { loadPageSketchSources } from "./page-sketch-preview.mjs";
 const HASH_A = `sha256:${"a".repeat(64)}`;
 const HASH_B = `sha256:${"b".repeat(64)}`;
 
-/** 从真实 SHA 绑定的 V3 coverage 清单加载背景，节点自身不携带背景标记。 */
+/** 从真实 V3 coverage 清单加载背景，节点自身不携带背景标记。 */
 async function loadBackgroundSources(sketch) {
   const files = new Map([
     [sketch.v2_nodes_file, new TextEncoder().encode(JSON.stringify({ nodes: sketch.nodes }))],
@@ -28,7 +28,7 @@ async function loadBackgroundSources(sketch) {
     [sketch.reference_file, new TextEncoder().encode("reference")],
     [sketch.v3_assets[0].file, new TextEncoder().encode("background image")],
   ]);
-  // 文件身份必须与本次字节一致，避免绕过加载门后直接手填 backgroundNodeIds。
+  // 夹具保留可选摘要记录，加载门只依赖来源路径与实际资源读取/解码。
   for (const [fileField, shaField] of [["v2_nodes_file", "v2_nodes_sha256"], ["v3_manifest_file", "v3_manifest_sha256"], ["v3_evidence_file", "v3_evidence_sha256"], ["reference_file", "target_sha256"]]) {
     sketch[shaField] = `sha256:${createHash("sha256").update(files.get(sketch[fileField])).digest("hex")}`;
   }

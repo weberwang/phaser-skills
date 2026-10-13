@@ -21,8 +21,8 @@ test("三份工作流 Schema 共享透明策略和边缘事实合同", () => {
     assert.deepEqual(defs.transparencyRequirements.required, ["strategy", "edge_profile"]);
     assert.deepEqual(defs.transparencyRequirements.properties.strategy.enum, expectedStrategies);
     assert.ok(record.required.includes("edge_evidence"), `${name} 未要求可审计的边缘事实`);
-    assert.ok(record.required.includes("raw_source_sha256"), `${name} 未绑定原始输入 SHA`);
-    assert.ok(record.required.includes("source_sha256"), `${name} 未绑定归一化输出 SHA`);
+    assert.equal(record.required.includes("raw_source_sha256"), false, `${name} 不应以原始输入摘要作为透明生产验收门`);
+    assert.equal(record.required.includes("source_sha256"), false, `${name} 不应以归一化输出摘要作为透明生产验收门`);
     assert.ok(record.required.includes("generator") && record.required.includes("generator_version"), `${name} 未记录实际生成工具身份`);
     assert.ok(!record.required.includes("tool") && !record.required.includes("tool_version"), `${name} 不应要求 generation 顶层重复记录处理工具身份`);
     assert.equal(record.properties.tool, undefined, `${name} generation 不应定义重复工具身份字段`);
@@ -79,7 +79,7 @@ test("透明生成预览按候选与归一化 PNG 绑定，并保留 V5 检查�
   // 机器格式检查只负责身份和 Alpha，V5 仍须完成四项视觉检查。
   for (const [name, schema] of Object.entries(schemaDocuments)) {
     const defs = schema.$defs;
-    assert.deepEqual(defs.transparencyPreview.required, ["candidate_sha256", "source_file", "source_sha256", "light", "dark", "inspection"]);
+    assert.deepEqual(defs.transparencyPreview.required, ["source_file", "light", "dark", "inspection"]);
     const previewText = JSON.stringify(defs.transparencyPreview);
     assert.ok(previewText.includes("#F2E9DF"), `${name} 浅底颜色缺失`);
     assert.ok(previewText.includes("#16202E"), `${name} 深底颜色缺失`);

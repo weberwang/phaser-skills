@@ -271,6 +271,19 @@ test("缺完整冻结原图 reference_inputs 时失败", () => {
   assert(errors.some((item) => item.includes("reference_inputs") && item.includes("完整冻结效果图")));
 });
 
+test("实际 reference input 忽略摘要变化但保留路径、顺序和裁切约束", () => {
+  const inputs = [{ file: TARGET_FILE, sha256: `sha256:${"a".repeat(64)}`, crop: { x: 0, y: 0, width: 390, height: 844 } }];
+  const withoutDigest = [{ file: TARGET_FILE, crop: { x: 0, y: 0, width: 390, height: 844 } }];
+  const staleDigest = [{ file: TARGET_FILE, sha256: { malformed: true }, crop: { x: 0, y: 0, width: 390, height: 844 } }];
+  assert.deepEqual(validate(validEffectRecord({ reference_inputs: inputs, actual_reference_inputs: withoutDigest })), []);
+  assert.deepEqual(validate(validEffectRecord({ reference_inputs: inputs, actual_reference_inputs: staleDigest })), []);
+
+  const changedPath = validate(validEffectRecord({ reference_inputs: inputs, actual_reference_inputs: [{ ...withoutDigest[0], file: "evidence/visual/other.png" }] }));
+  assert(changedPath.some((item) => item.includes("actual_reference_inputs 必须与真实发送的 reference_inputs 一致")), changedPath.join("\n"));
+  const changedCrop = validate(validEffectRecord({ reference_inputs: inputs, actual_reference_inputs: [{ ...withoutDigest[0], crop: { x: 1, y: 0, width: 390, height: 844 } }] }));
+  assert(changedCrop.some((item) => item.includes("actual_reference_inputs 必须与真实发送的 reference_inputs 一致")), changedCrop.join("\n"));
+});
+
 test("正向提示‘必须重新设计该角色’失败", () => {
   const assetPrompt = "必须重新设计该角色";
   const statePrompt = "状态：idle";

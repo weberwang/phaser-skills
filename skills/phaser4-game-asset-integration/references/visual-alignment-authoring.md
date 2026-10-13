@@ -6,12 +6,12 @@ V3 完成正式资源生产与资源级验收后，进入 V4 页面还原草图�
 
 ## 草图操作
 
-1. 从当前已确认的 V2 `layout-nodes.json` 和 V3 已验收清单生成草图数据，绑定 Work Item、scene/state、目标 SHA、源节点文件与正式资源文件的 SHA。图片、文本和容器按实际显示节点映射，不把整屏效果图当作正式资源。
+1. 从当前已确认的 V2 `layout-nodes.json` 和 V3 已验收清单生成草图数据，绑定 Work Item、scene/state、实际目标、源节点文件与正式资源文件。图片、文本和容器按实际显示节点映射，不把整屏效果图当作正式资源。
 2. 草图页面在 DOM 工作台中保留设备、显示树、保存确认和坐标操作；正式组合画面必须由 Phaser Canvas 呈现。冻结效果图和编辑框属于独立编辑辅助层，可调底图透明度并查看叠合关系；切换“预览正式效果”时隐藏底图与编辑框，右侧显示树和操作区继续保留。辅助层不参与 Phaser 资源组合，不得进入 V5 发布 Scene。Canvas 使用正式设计空间，辅助层保留冻结草图坐标，两者通过同一布局变换对齐；设备缩放和方向变化时同步更新显示与输入。
 3. 页面展示显示树、父框、目标框和当前节点框。可点击左侧显示内容或编辑框选择，也可点击右侧节点树选择，两种入口同步树高亮、选中框与坐标面板；单纯选择不修改或保存布局。背景、空容器及全部显示节点均可点击选择和拖动。SVG 框只命中边框，内部交给 Phaser 按实际显示层命中；右栏同步展示节点身份、父级、实时坐标、尺寸、偏移、资源和展示配方。选择节点后可拖拽、用方向键微调或输入坐标。移动父节点时子孙一起移动；只修改父节点自身增量，子节点保持父相对位置。逐元素操作不需要反复截图。点击右侧“重置初始布局”可清除全部节点偏移，重新按 V2 冻结节点的初始坐标和父子关系排列；初始布局不是打开文件时已经保存的微调结果。重置先产生未保存草稿，保存后清除旧确认，须重新确认。父子关系以只读 V2 节点快照为基准，不从当前 DOM 推断；保存、确认期间和正式效果预览模式禁用重置。
 4. 点击保存将当前草图数据写回实际 JSON 文件，并重新读取核验。保存不表示确认；文件被外部修改、资源/字体未就绪、runtime-program 异步或渲染失败、健康检查失败或身份漂移时阻断保存或确认，不能用内存状态、下载副本或截图冒充已落盘。
-5. 用户检查组合效果并执行确认，写入确认时间和草图内容 SHA，不需要填写确认人。任何坐标、节点展示、资源或来源身份修改都使确认失效；重新保存后必须重新确认。
-6. 将确认文件的路径和字节 SHA 登记为当前 Work Item 的 `visualStageEvidenceRefs.V4`，提交 `visualStageState=v4-page-sketch-confirmed`。控制面复算内容摘要、V2 来源和 V3 资源身份；通过后才允许 V5 正式实施。
+5. 用户检查组合效果并执行确认，写入确认时间和实际草图文件，不需要填写确认人。任何坐标、节点展示、资源或来源身份修改都使确认失效；重新保存后必须重新确认。
+6. 将确认文件的路径登记为当前 Work Item 的 `visualStageEvidenceRefs.V4`，提交 `visualStageState=v4-page-sketch-confirmed`。控制面读取草图、V2 来源和 V3 实际资源，不复算验收摘要；通过后才允许 V5 正式实施。
 
 ## 工作台与设备预览
 
@@ -29,7 +29,7 @@ V3 清单 `coverage_audit.regions[].layer=background` 用于识别背景 cover �
 
 草图合同为 [`phaser-page-sketch/1.0`](../../phaser4-game-ui-layout/references/page-sketch.schema.json)，结构与内容由共享 `page-sketch-contract.mjs` 校验。`nodes` 保留 V2 目标节点快照，`node_presentations` 保存图片、文本、容器等预览描述，`v3_assets` 把正式资产与显示节点绑定。`layout` 使用 `phaser-visual-layout/1.0`，`offsets[layout_node_id]` 只保存相对父级的 `{x,y}` 增量；viewport、底图、V2 节点源、V3 manifest 与正式验收证据均有文件身份。
 
-`confirmation.content_sha256` 是剔除根 `confirmation` 后、对象键排序且数组保序的 JSON UTF-8 字节 SHA。内容摘要与完整文件字节 SHA 分工不同：前者证明确认了哪份草图内容，后者由 Work Item 引用绑定具体确认文件。校验器拒绝未确认、摘要漂移、漏节点、未知资产和来源文件变化。
+`confirmation.content_sha256` 是剔除根 `confirmation` 后、对象键排序且数组保序的 JSON UTF-8 字节 SHA。Work Item 通过实际草图路径、任务与阶段标识记录人工确认；内容摘要和文件 SHA 仅作可选追踪，不证明或阻断验收。校验器拒绝未确认、漏节点、未知资产或实际来源不满足要求，摘要漂移不影响验收。
 
 V4 预览和 V5 正式 Scene 必须读取同一确认草图，并复用 `scripts/page-sketch-layout.mjs` 的纯布局结果与 `scripts/page-sketch-phaser.mjs` 的 Phaser 渲染适配器；禁止另写 DOM 正式组合画面或 V5 坐标换算。布局先按 V2 基准与节点自身 V4 增量解析全局 target bounds，再映射为 Phaser Container/GameObject；子节点局部位置等于自身世界位置减父世界位置，祖先偏移只传递一次。V2 `anchor` 已参与布局解析，纹理 `origin` 独立表达资源定位，不修改 bounds。图片 fit、文字字段、对齐与裁切规则以[Phaser 适配器](../../phaser4-game-ui-layout/references/phaser-adapter.md)为准；未支持的呈现字段明确报错并阻断 ready。
 

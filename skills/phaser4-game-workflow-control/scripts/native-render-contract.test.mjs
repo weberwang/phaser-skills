@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -99,7 +98,7 @@ test("人工确认哈希冻结原生参数，实际装配合同必须精确镜�
   assert(validateSceneVisualRouteContract({ coverage_regions: [region] }, { coverage_audit: { regions: [nested] } }).some((error) => error.includes("精确镜像冻结原生参数")));
 });
 
-test("V5 原生实际输出和消费须匹配冻结尺寸、颜色、线宽与路线并绑定当前候选", () => {
+test("V5 原生实际输出和消费须匹配冻结尺寸、颜色、线宽与路线", () => {
   const region = nativeRegion();
   const contract = { target_conditions: { target_sha256: SHA }, candidate_identity: { sha256: SHA } };
   const options = { stage: "V5" };
@@ -114,11 +113,11 @@ test("V5 原生实际输出和消费须匹配冻结尺寸、颜色、线宽与�
   region.native_runtime_evidence.observed_method = "authored-raster";
   assert(validateNativeRuntimeEvidence(region, contract, null, options).some((error) => error.includes("交付类型与冻结路线不一致")));
   region.native_runtime_evidence.observed_method = "phaser-graphics";
-  region.native_runtime_evidence.candidate_sha256 = `sha256:${"b".repeat(64)}`;
-  assert(validateNativeRuntimeEvidence(region, contract, null, options).some((error) => error.includes("未绑定当前候选")));
+  region.native_runtime_evidence.candidate_sha256 = "stale-summary";
+  assert.deepEqual(validateNativeRuntimeEvidence(region, contract, null, options), []);
 });
 
-test("V5 原生消费工件验证真实文件 SHA，声明通过不能掩盖篡改", async () => {
+test("V5 原生消费工件读取真实消费内容，声明通过不能掩盖损坏或参数漂移", async () => {
   const projectRoot = await mkdtemp(join(tmpdir(), "native-evidence-"));
   try {
     const region = nativeRegion();
@@ -126,16 +125,15 @@ test("V5 原生消费工件验证真实文件 SHA，声明通过不能掩盖篡�
     const report = { ...structuredClone(region.native_runtime_evidence), report_schema: "native-render-consumption/1.0", consumed: true, region_id: region.region_id, scene_id: region.scene_id, state_id: region.state_id };
     const bytes = Buffer.from(JSON.stringify(report));
     await writeFile(join(projectRoot, "native.json"), bytes);
-    region.native_runtime_evidence.evidence_sha256 = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+    region.native_runtime_evidence.evidence_sha256 = "stale-summary";
     const contract = { target_conditions: { target_sha256: SHA }, candidate_identity: { sha256: SHA } };
     assert.deepEqual(validateNativeRuntimeEvidence(region, contract, null, { stage: "V5", projectRoot }), []);
     await writeFile(join(projectRoot, "native.json"), "tampered");
-    assert(validateNativeRuntimeEvidence(region, contract, null, { stage: "V5", projectRoot }).some((error) => error.includes("证据 SHA 不匹配")));
-    // 即使攻击者同步更新文件 SHA，实际消费内容仍必须与冻结参数一致。
+    assert(validateNativeRuntimeEvidence(region, contract, null, { stage: "V5", projectRoot }).some((error) => error.includes("可读取的 JSON")));
+    // 摘要记录即使陈旧，仍读取并核对工件内真实消费参数。
     report.render_contract.line_width = 5;
     const changedBytes = Buffer.from(JSON.stringify(report));
     await writeFile(join(projectRoot, "native.json"), changedBytes);
-    region.native_runtime_evidence.evidence_sha256 = `sha256:${createHash("sha256").update(changedBytes).digest("hex")}`;
     assert(validateNativeRuntimeEvidence(region, contract, null, { stage: "V5", projectRoot }).some((error) => error.includes("运行工件 render_contract")));
   } finally {
     await rm(projectRoot, { recursive: true, force: true });

@@ -30,7 +30,7 @@ V5 宿主通过 `createFormalPageSketchGameConfig(Phaser, {parent, viewport, ske
 
 正式 Scene 必须把同一次 `loadPageSketchSources` 的结果作为 `sources` 传入工厂模板。`sources.backgroundNodeIds` 来自 V3 manifest 的背景 region 与草图节点关系，可能节点本身没有 `layer`/`role=background` 字段；模板须将它原样传给 renderer，不能从 V2 节点再次推断或省略，否则 V4/V5 背景布局会不同。
 
-草图 SHA 只绑定当前 V4 身份。V5 还要确认实际 Scene 已加载同一资源/字体并且共享渲染器健康，再采集运行画面与几何参数；身份一致不等于 V4/V5 画面一致。
+草图 SHA 仅作可选追踪，不参与 V4/V5 验收。V5 还要确认实际 Scene 已加载同一资源/字体并且共享渲染器健康，再采集运行画面与几何参数；身份一致不等于 V4/V5 画面一致。
 
 运行时 DPR 每次 resize、横竖屏变化和显示密度变化都从设备重新读取：非法值回退 1，正有限值封顶 2。适配器应同时更新 CSS/display 尺寸和 backing 尺寸，并记录 raw/effective DPR；监听器必须在 Scene 销毁、休眠和重新进入时清理。图片生产 1:1 基线只属于 `assetResolutionPolicy`，不能作为运行时 DPR 或降级理由。
 

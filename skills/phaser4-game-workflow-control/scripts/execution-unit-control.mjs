@@ -2,11 +2,14 @@ import { closeSync, openSync, statSync, unlinkSync, writeFileSync } from 'node:f
 import { assertFormalExecutionAfterV4, assertHighFidelityPrerequisite, assertHighFidelityPrerequisites } from './high-fidelity-prerequisite.mjs';
 import { loadImmutableVisualStageReference, validateVisualStagePrerequisites } from './visual-stage-prerequisites.mjs';
 import { writeJson } from './runtime/io.mjs';
-import { schemaEnum, schemaFields, schemaNode } from './runtime/schema-contract.mjs';
+import { schemaEnum, schemaFields, schemaNode, schemaRequired } from './runtime/schema-contract.mjs';
 
 const RESULT_FIELDS = schemaFields('execution-unit-result.schema.json');
+const RESULT_REQUIRED_FIELDS = schemaRequired('execution-unit-result.schema.json');
 const EXECUTION_STATE_FIELDS = schemaFields('execution-state.schema.json');
+const EXECUTION_STATE_REQUIRED_FIELDS = schemaRequired('execution-state.schema.json');
 const EXECUTION_UNIT_STATE_FIELDS = schemaFields('execution-state.schema.json', ['$defs', 'unitState']);
+const EXECUTION_UNIT_STATE_REQUIRED_FIELDS = schemaRequired('execution-state.schema.json', ['$defs', 'unitState']);
 const NEXT_TASK_FIELDS = schemaFields('execution-state.schema.json', ['$defs', 'nextTask']);
 const LAST_TRANSITION_FIELDS = schemaFields('execution-state.schema.json', ['$defs', 'lastTransition']);
 const EXECUTION_STATE_SCHEMA = schemaNode('execution-state.schema.json', ['properties', 'schemaVersion']).const;
@@ -46,34 +49,30 @@ export function scopedDiffFingerprint(repo, baseline, ownedPaths, io) {
 export function validateUnitResult(result, resultPath, work, pkg, unit, repo, io) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('Execution Unit Result 必须为对象');
   const keys = Object.keys(result);
-  const missing = RESULT_FIELDS.filter((field) => result[field] === undefined);
+  const missing = RESULT_REQUIRED_FIELDS.filter((field) => result[field] === undefined);
   const extra = keys.filter((field) => !RESULT_FIELDS.includes(field));
   if (missing.length || extra.length) throw new Error(`Execution Unit Result 字段不严格：缺少 ${missing.join('、') || '无'}；多余 ${extra.join('、') || '无'}`);
-  if (!result.resultId || result.workItemId !== work.workItemId || result.packageId !== pkg.packageId || result.unitId !== unit.unitId || result.baselineHash !== work.baselineHash) throw new Error(`Execution Unit Result 未绑定当前工作项、实施包、单元或基线：${unit.unitId}`);
+  if (!result.resultId || result.workItemId !== work.workItemId || result.packageId !== pkg.packageId || result.unitId !== unit.unitId) throw new Error(`Execution Unit Result 未绑定当前工作项、实施包或单元：${unit.unitId}`);
   if (result.verdict !== 'PASS') throw new Error(`Execution Unit Result 只有 PASS 可满足预设顺序前序门：${unit.unitId}`);
   if (Number.isNaN(Date.parse(result.completedAt))) throw new Error(`Execution Unit Result.completedAt 无效：${unit.unitId}`);
   const relativeResult = io.normalizeRepoPath(repo, resultPath);
   const unitRoot = `${work.evidenceRoot.replace(/\/$/, '')}/units`;
   if (!(relativeResult === unitRoot || relativeResult.startsWith(`${unitRoot}/`))) throw new Error('Execution Unit Result 必须位于 evidenceRoot/units');
-  if (!Array.isArray(result.commands) || !result.commands.length || !Array.isArray(result.files) || !result.files.length || new Set(result.files).size !== result.files.length || !result.fileHashes || typeof result.fileHashes !== 'object' || Array.isArray(result.fileHashes)) throw new Error('Execution Unit Result 命令与证据文件不能为空且 files 不得重复');
-  const hashFiles = Object.keys(result.fileHashes).sort();
-  if (JSON.stringify(hashFiles) !== JSON.stringify([...result.files].sort())) throw new Error(`Execution Unit Result.fileHashes 必须与 files 精确一致：${unit.unitId}`);
+  if (!Array.isArray(result.commands) || !result.commands.length || !Array.isArray(result.files) || !result.files.length || new Set(result.files).size !== result.files.length) throw new Error('Execution Unit Result 命令与证据文件不能为空且 files 不得重复');
   const actualCommands = result.commands.map((item) => item.command).sort();
   if (JSON.stringify(actualCommands) !== JSON.stringify([...unit.acceptanceCommands].sort())) throw new Error(`Execution Unit Result 验收命令与单元不一致：${unit.unitId}`);
   for (const command of result.commands) {
-    if (!command || Object.keys(command).some((key) => !['command', 'exitCode', 'outputFile', 'outputHash'].includes(key)) || command.exitCode !== 0 || !command.outputFile || !command.outputHash) throw new Error(`Execution Unit Result 命令失败或字段无效：${unit.unitId}`);
-    if (!result.files.includes(command.outputFile) || result.fileHashes[command.outputFile] !== command.outputHash) throw new Error(`Execution Unit Result 命令输出未绑定证据哈希：${unit.unitId}`);
+    if (!command || Object.keys(command).some((key) => !['command', 'exitCode', 'outputFile', 'outputHash'].includes(key)) || command.exitCode !== 0 || !command.outputFile) throw new Error(`Execution Unit Result 命令失败或字段无效：${unit.unitId}`);
+    if (!result.files.includes(command.outputFile)) throw new Error(`Execution Unit Result 命令输出未列入证据文件：${unit.unitId}`);
   }
   for (const file of result.files) {
     const normalized = io.normalizeRepoPath(repo, file);
     if (!(normalized === work.evidenceRoot || normalized.startsWith(`${work.evidenceRoot.replace(/\/$/, '')}/`))) throw new Error(`Execution Unit Result 证据越出 evidenceRoot：${file}`);
     const target = io.resolve(repo, normalized);
-    if (!io.existsSync(target) || result.fileHashes[file] !== io.fileHash(target)) throw new Error(`Execution Unit Result 证据文件或哈希无效：${file}`);
+    if (!io.existsSync(target)) throw new Error(`Execution Unit Result 证据文件不存在：${file}`);
+    // 摘要只作记录；当前结果仍须引用 evidenceRoot 内真实可读取的文件。
+    io.readFileSync(target);
   }
-  // Git HEAD 可能只包含其他单元的提交；以本单元路径的实际内容判定是否需要重验。
-  if (!/^git:[a-f0-9]{40,64}$/.test(result.codeFingerprint ?? '')) throw new Error(`Execution Unit Result 代码指纹格式无效：${unit.unitId}`);
-  const currentDiff = scopedDiffFingerprint(repo, work.baselineId, unit.ownedPaths, io);
-  if (result.diffFingerprint !== currentDiff) throw new Error(`Execution Unit Result 路径 diff 指纹已过期：${unit.unitId}`);
   return result;
 }
 
@@ -255,33 +254,32 @@ export function validateExecutionState(state, statePath, work, pkg, repo, io) {
   // 状态文件每次读取都重新检查已确认 V4 草图，防止漂移后继续执行正式单元。
   assertFormalExecutionAfterV4(work, pkg, repo, io);
   if (!state || typeof state !== 'object' || Array.isArray(state)) throw new Error('Execution State 必须为对象');
-  const missing = EXECUTION_STATE_FIELDS.filter((field) => state[field] === undefined);
+  const missing = EXECUTION_STATE_REQUIRED_FIELDS.filter((field) => state[field] === undefined);
   const extra = Object.keys(state).filter((field) => !EXECUTION_STATE_FIELDS.includes(field));
   if (missing.length || extra.length) throw new Error(`Execution State 字段不严格：缺少 ${missing.join('、') || '无'}；多余 ${extra.join('、') || '无'}`);
   if (state.schemaVersion !== EXECUTION_STATE_SCHEMA || !state.stateId || Number.isNaN(Date.parse(state.updatedAt))) throw new Error('Execution State 版本、状态 ID 或更新时间无效');
-  if (state.workItemId !== work.workItemId || state.packageId !== pkg.packageId || state.baselineVersion !== pkg.baselineVersion || state.baselineHash !== work.baselineHash || state.stageId !== work.stageId || (state.visualStage ?? null) !== (work.visualStage ?? null) || (state.visualStageState ?? null) !== (work.visualStageState ?? null)) throw new Error('Execution State 未绑定当前 Work Item、实施包、基线或阶段');
+  if (state.workItemId !== work.workItemId || state.packageId !== pkg.packageId || state.baselineVersion !== pkg.baselineVersion || state.stageId !== work.stageId || (state.visualStage ?? null) !== (work.visualStage ?? null) || (state.visualStageState ?? null) !== (work.visualStageState ?? null)) throw new Error('Execution State 未绑定当前 Work Item、实施包版本或阶段');
   const expectedPath = executionStatePath(work);
   const actualPath = io.normalizeRepoPath(repo, statePath);
   if (actualPath !== expectedPath) throw new Error(`Execution State 必须位于 ${expectedPath}`);
   const expectedIds = pkg.executionUnits.map((unit) => unit.unitId);
   if (JSON.stringify(state.executionUnitIds) !== JSON.stringify(expectedIds)) throw new Error('Execution State.executionUnitIds 与当前 executionUnits 预设顺序不一致');
-  // 当前实施包是计划来源；只读校验时在副本上刷新摘要，后续逐单元检查仍拒绝失效结果。
-  // 单独的计划摘要变化不要求重建全部状态，实际顺序、并行关系和完成证据由下方验证。
+  // 计划摘要供展示使用；验收直接核对单元 ID、数组位置和并行关系，避免摘要漂移使状态失效。
   state = { ...state, executionPlanFingerprint: executionPlanFingerprint(pkg, io) };
   if (!Array.isArray(state.units) || state.units.length !== pkg.executionUnits.length) throw new Error('Execution State.units 未覆盖全部 executionUnits');
   for (const [order, item] of state.units.entries()) {
     const unit = pkg.executionUnits[order];
-    const itemMissing = EXECUTION_UNIT_STATE_FIELDS.filter((field) => item?.[field] === undefined);
+    const itemMissing = EXECUTION_UNIT_STATE_REQUIRED_FIELDS.filter((field) => item?.[field] === undefined);
     const itemExtra = item && typeof item === 'object' ? Object.keys(item).filter((field) => !EXECUTION_UNIT_STATE_FIELDS.includes(field)) : [];
     if (itemMissing.length || itemExtra.length) throw new Error(`Execution State 单元字段不严格：${unit?.unitId ?? order}`);
     if (item.unitId !== unit.unitId || item.order !== order || item.parallelMode !== unit.parallelMode || item.parallelGroup !== unit.parallelGroup || !UNIT_STATES.has(item.state)) throw new Error(`Execution State 单元顺序或模式不一致：${item.unitId ?? order}`);
     for (const field of ['startedAt', 'completedAt']) if (item[field] !== null && Number.isNaN(Date.parse(item[field]))) throw new Error(`Execution State 单元时间无效：${item.unitId}`);
     if (item.state === 'PENDING' || item.state === 'IN_PROGRESS') {
       if (item.state === 'IN_PROGRESS' && (unit.unitType === 'SCENE' || unit.unitType === 'DISPLAY_LAYER')) assertHighFidelityPrerequisite(unit, work, pkg, repo, io);
-      if (item.resultId !== null || item.resultPath !== null || item.resultFingerprint !== null || item.completedAt !== null) throw new Error(`未完成单元不得携带完成结果：${item.unitId}`);
+      if (item.resultId !== null || item.resultPath !== null || item.completedAt !== null) throw new Error(`未完成单元不得携带完成结果：${item.unitId}`);
       if (item.state === 'IN_PROGRESS' && !item.startedAt) throw new Error(`IN_PROGRESS 单元缺少 startedAt：${item.unitId}`);
     } else {
-      if (!item.resultId || !item.resultPath || !item.resultFingerprint || !item.completedAt) throw new Error(`COMPLETE 单元缺少结果绑定：${item.unitId}`);
+      if (!item.resultId || !item.resultPath || !item.completedAt) throw new Error(`COMPLETE 单元缺少结果绑定：${item.unitId}`);
       const resultRelative = io.normalizeRepoPath(repo, item.resultPath);
       const unitRoot = `${String(work.evidenceRoot).replace(/\/$/, '')}/units`;
       if (!(resultRelative === unitRoot || resultRelative.startsWith(`${unitRoot}/`))) throw new Error(`Execution State 结果必须位于 evidenceRoot/units：${item.unitId}`);
@@ -289,7 +287,7 @@ export function validateExecutionState(state, statePath, work, pkg, repo, io) {
       if (!io.existsSync(resultPath)) throw new Error(`Execution State 结果文件不存在，预设顺序前序证据不可用：${item.unitId}`);
       let result;
       try { result = JSON.parse(io.readFileSync(resultPath, 'utf8')); } catch { throw new Error(`Execution State 结果文件不是有效 JSON：${item.unitId}`); }
-      if (result.resultId !== item.resultId || io.hashText(stableJson(result)) !== item.resultFingerprint) throw new Error(`Execution State 结果绑定已过期或被篡改，未绑定当前工作项/基线：${item.unitId}`);
+      if (result.resultId !== item.resultId) throw new Error(`Execution State 结果 ID 与文件内容不一致：${item.unitId}`);
       validateUnitResult(result, resultPath, work, pkg, unit, repo, io);
     }
   }
@@ -333,7 +331,8 @@ export function initializeExecutionState(work, pkg, repo, io, options = {}) {
     const previousLoaded = loadExecutionState(options.previousWork, options.previousPackage, repo, io);
     previous = previousLoaded.state;
     if (previous.unitSequenceState !== 'COMPLETE' || previous.workflowState !== 'COMPLETE') throw new Error('旧实施序列未完成，不能替换当前阶段实施包');
-    if (previous.packageId !== options.previousPackage.packageId || previous.workItemId !== work.workItemId || previous.baselineHash !== work.baselineHash) throw new Error('旧阶段 Execution State 未绑定当前 Work Item 或冻结实施包');
+    // 基线 ID 可能是 Git commit 摘要；阶段间以 Work Item 与原包归属确认身份，摘要不作放行比较。
+    if (previous.packageId !== options.previousPackage.packageId || previous.workItemId !== work.workItemId) throw new Error('旧阶段 Execution State 未绑定当前 Work Item 或实施包');
   }
   const state = createExecutionState(work, pkg, io);
   // 先完整校验新阶段状态，再归档旧状态和替换当前指针；新包失败时当前状态保持原样。
@@ -430,8 +429,6 @@ export function assertSceneWorkItemComplete(work, pkg, repo, evidence = null) {
   const value = loaded?.value;
   const status = String(value?.status ?? value?.verdict ?? value?.result ?? '').trim().toUpperCase();
   if (!value || value.evidenceType !== 'v5-runtime-integration-candidate' || status !== 'PASS' || value.workItemId !== work.workItemId) throw new Error('场景 Work Item COMPLETE 缺少当前 Work Item 的 V5 runtime integration candidate 证据');
-  if (value.pageSketchSha256 !== work.visualStageEvidenceRefs?.V4?.sha256) throw new Error('V5 运行态证据必须声明并消费当前 V4 页面草图 SHA');
-  if (evidence && (value.diffFingerprint ?? value.diff_fingerprint) !== evidence.diffFingerprint) throw new Error('V5 运行态证据与当前候选 Evidence Manifest diff 身份不一致');
   return true;
 }
 

@@ -24,20 +24,13 @@ function field(value, ...names) {
   return undefined;
 }
 
-/** 判断 UI 布局合同身份 SHA；这里只校验已声明的身份，不读取或计算布局文件。 */
-function validLayoutContractSha256(value) {
-  return typeof value === "string" && /^sha256:[a-f0-9]{64}$/.test(value);
-}
-
 /** 提取布局 binding 的统一身份视图，供双 binding 和根身份做确定性比较。 */
 function layoutBindingIdentity(binding) {
   return {
-    targetSha: field(binding, "target_sha256", "targetSha256"),
     sceneId: field(binding, "scene_id", "sceneId"),
     stateId: field(binding, "state_id", "stateId"),
     baselineVersion: field(binding, "visual_baseline_version", "visualBaselineVersion"),
     layoutVersion: field(binding, "layout_contract_version", "layoutContractVersion"),
-    layoutContractSha: field(binding, "layout_contract_sha256", "layoutContractSha256"),
     layoutDecompositionVersion: field(binding, "layout_decomposition_version", "layoutDecompositionVersion"),
     viewport: field(binding, "viewport", "target_viewport", "targetViewport"),
   };
@@ -110,7 +103,6 @@ export function validateLayoutBinding(binding, targetInfo, contract, stage, erro
     return null;
   }
   const required = [
-    [["target_sha256", "targetSha256"], "target_sha256"],
     [["scene_id", "sceneId"], "scene_id"],
     [["state_id", "stateId"], "state_id"],
   ];
@@ -119,7 +111,6 @@ export function validateLayoutBinding(binding, targetInfo, contract, stage, erro
   if (requireLayoutVersion) required.push([["layout_contract_version", "layoutContractVersion"], "layout_contract_version"]);
   if (requireReconstructionVersion) required.push([["reconstruction_contract_version", "reconstructionContractVersion", "contract_version", "contractVersion"], "reconstruction_contract_version"]);
   if (requireLayoutIdentity) {
-    required.push([["layout_contract_sha256", "layoutContractSha256"], "layout_contract_sha256"]);
     required.push([["layout_decomposition_version", "layoutDecompositionVersion"], "layout_decomposition_version"]);
   }
   for (const [names, text] of required) {
@@ -127,12 +118,6 @@ export function validateLayoutBinding(binding, targetInfo, contract, stage, erro
     const valid = text === "viewport" ? validViewport(value) : nonEmptyString(value);
     if (!valid) errors.push(contractError(stage, contract, binding, `${label} 缺少 ${text}`, { missing: `${label}.${text}`, returnStage: "V1/PROPOSAL" }));
   }
-  if (requireLayoutIdentity) {
-    const layoutContractSha = field(binding, "layout_contract_sha256", "layoutContractSha256");
-    if (nonEmptyString(layoutContractSha) && !validLayoutContractSha256(layoutContractSha)) errors.push(contractError(stage, contract, binding, `${label} layout_contract_sha256 格式无效`, { expected: "sha256: 后跟 64 位小写十六进制", actual: layoutContractSha, returnStage: "V1/PROPOSAL" }));
-  }
-  const bindingTargetSha = field(binding, "target_sha256", "targetSha256");
-  if (targetInfo?.targetSha && bindingTargetSha !== targetInfo.targetSha) errors.push(contractError(stage, contract, binding, `${label} 未绑定当前 target SHA`, { expected: targetInfo.targetSha, actual: bindingTargetSha, returnStage: "V1/PROPOSAL" }));
   const bindingSceneId = field(binding, "scene_id", "sceneId");
   if (targetInfo?.sceneId && bindingSceneId !== targetInfo.sceneId) errors.push(contractError(stage, contract, binding, `${label} scene_id 与冻结目标不一致`, { expected: targetInfo.sceneId, actual: bindingSceneId, returnStage: "V1/PROPOSAL" }));
   const bindingStateId = field(binding, "state_id", "stateId");
@@ -146,8 +131,6 @@ export function validateLayoutBinding(binding, targetInfo, contract, stage, erro
   if (targetInfo?.baselineVersion && bindingBaseline !== undefined && bindingBaseline !== targetInfo.baselineVersion) errors.push(contractError(stage, contract, binding, `${label} visual baseline version 与冻结目标不一致`, { expected: targetInfo.baselineVersion, actual: bindingBaseline, returnStage: "V1/PROPOSAL" }));
   const bindingLayoutVersion = field(binding, "layout_contract_version", "layoutContractVersion");
   if (targetInfo?.layoutVersion && bindingLayoutVersion !== targetInfo.layoutVersion) errors.push(contractError(stage, contract, binding, `${label} layout contract version 与冻结目标不一致`, { expected: targetInfo.layoutVersion, actual: bindingLayoutVersion, returnStage: "V1/PROPOSAL" }));
-  const bindingLayoutContractSha = field(binding, "layout_contract_sha256", "layoutContractSha256");
-  if (targetInfo?.layoutContractSha && bindingLayoutContractSha !== targetInfo.layoutContractSha) errors.push(contractError(stage, contract, binding, `${label} layout_contract_sha256 与冻结目标不一致`, { expected: targetInfo.layoutContractSha, actual: bindingLayoutContractSha, returnStage: "V1/PROPOSAL" }));
   const bindingLayoutDecompositionVersion = field(binding, "layout_decomposition_version", "layoutDecompositionVersion");
   if (targetInfo?.layoutDecompositionVersion && bindingLayoutDecompositionVersion !== targetInfo.layoutDecompositionVersion) errors.push(contractError(stage, contract, binding, `${label} layout_decomposition_version 与冻结目标不一致`, { expected: targetInfo.layoutDecompositionVersion, actual: bindingLayoutDecompositionVersion, returnStage: "V1/PROPOSAL" }));
   return layoutBindingIdentity(binding);
@@ -159,12 +142,10 @@ export function validateLayoutBindingConsistency(firstBinding, secondBinding, co
   const first = layoutBindingIdentity(firstBinding);
   const second = layoutBindingIdentity(secondBinding);
   for (const [key, text] of [
-    ["targetSha", "target_sha256"],
     ["sceneId", "scene_id"],
     ["stateId", "state_id"],
     ["baselineVersion", "visual_baseline_version"],
     ["layoutVersion", "layout_contract_version"],
-    ["layoutContractSha", "layout_contract_sha256"],
     ["layoutDecompositionVersion", "layout_decomposition_version"],
   ]) {
     if (first[key] !== undefined && second[key] !== undefined && first[key] !== second[key]) errors.push(contractError(stage, contract, secondBinding, `${firstLabel} 与 ${secondLabel} 的 ${text} 不一致`, { expected: String(first[key]), actual: String(second[key]), returnStage: "V1/PROPOSAL" }));
@@ -190,9 +171,9 @@ export function validateRootLayoutIdentity(contract, targetInfo, responsiveBindi
     if (value !== undefined) candidates.push({ value, label });
   }
   const directIdentityNames = [
-    "target_sha256", "targetSha256", "scene_id", "sceneId", "state_id", "stateId",
+    "scene_id", "sceneId", "state_id", "stateId",
     "visual_baseline_version", "visualBaselineVersion", "layout_contract_version", "layoutContractVersion",
-    "layout_contract_sha256", "layoutContractSha256", "layout_decomposition_version", "layoutDecompositionVersion",
+    "layout_decomposition_version", "layoutDecompositionVersion",
     "viewport", "target_viewport", "targetViewport",
   ];
   if (directIdentityNames.some((name) => contract[name] !== undefined && contract[name] !== null)) candidates.push({ value: contract, label: "scene contract root layout identity" });
@@ -225,7 +206,6 @@ export function validateLayoutNode(node, contract, targetInfo, stage, errors, in
     [["responsive_rule", "responsiveRule"], "responsive_rule"],
   ];
   if (requireIdentity) required.push(
-    [["target_sha256", "targetSha256"], "target_sha256"],
     [["scene_id", "sceneId"], "scene_id"],
     [["state_id", "stateId"], "state_id"],
     [["layout_contract_version", "layoutContractVersion"], "layout_contract_version"],
@@ -243,8 +223,6 @@ export function validateLayoutNode(node, contract, targetInfo, stage, errors, in
           : hasStructuredValue(value);
     if (!valid) errors.push(contractError(stage, contract, node, `${label} 缺少或无效 ${text}`, { missing: `layout_nodes[${index}].${text}`, returnStage: "V1/PROPOSAL" }));
   }
-  const nodeTargetSha = field(node, "target_sha256", "targetSha256");
-  if (nodeTargetSha !== undefined && targetInfo?.targetSha && nodeTargetSha !== targetInfo.targetSha) errors.push(contractError(stage, contract, node, `${label} target SHA 与冻结目标不一致`, { expected: targetInfo.targetSha, actual: nodeTargetSha, returnStage: "V1/PROPOSAL" }));
   const nodeSceneId = field(node, "scene_id", "sceneId");
   if (nodeSceneId !== undefined && targetInfo?.sceneId && nodeSceneId !== targetInfo.sceneId) errors.push(contractError(stage, contract, node, `${label} scene_id 与冻结目标不一致`, { expected: targetInfo.sceneId, actual: nodeSceneId, returnStage: "V1/PROPOSAL" }));
   const nodeStateId = field(node, "state_id", "stateId");

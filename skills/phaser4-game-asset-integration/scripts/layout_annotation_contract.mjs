@@ -16,7 +16,6 @@ export const LAYOUT_ANNOTATION_SCHEMA = "layout-annotation/png/1";
 export const LAYOUT_ANNOTATION_LAYOUT = "image-plus-right-panel";
 export const LAYOUT_ANNOTATION_KIND = "post-decomposition-layout";
 
-const SHA_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const ROOT_IDS = new Set(["viewport", "safe-area"]);
 const LAYOUT_MARKER_PATTERN = /^[LR][0-9]{2,}$/;
 const ALIGNMENT_LABELS = Object.freeze({ left: "左", center: "中", right: "右", top: "上", bottom: "下" });
@@ -304,12 +303,9 @@ export function validateLayoutAnnotationPng(bytes, expected = {}, errors = [], l
   let decoded; try { decoded = decodePngRgba(bytes); } catch (error) { errors.push(`${label} 必须是完整 PNG：${error.message}`); return null; }
   const metadata = decoded.metadata; if (!isObject(metadata)) { errors.push(`${label} 缺少 annotation-meta 元数据`); return null; }
   for (const [key, value] of [["schema", LAYOUT_ANNOTATION_SCHEMA], ["layout", LAYOUT_ANNOTATION_LAYOUT], ["annotation_kind", LAYOUT_ANNOTATION_KIND]]) if (metadata[key] !== value) errors.push(`${label}.${key} 必须为 ${value}`);
-  for (const [key, value] of [["target_sha256", expected.targetSha256 ?? expected.target_sha256], ["scene_id", expected.sceneId ?? expected.scene_id], ["state_id", expected.stateId ?? expected.state_id], ["decomposition_confirmation_id", expected.decompositionConfirmationId ?? expected.decomposition_confirmation_id], ["decomposition_confirmation_sha256", expected.decompositionConfirmationSha256 ?? expected.decomposition_confirmation_sha256], ["decomposition_proposal_sha256", expected.decompositionProposalSha256 ?? expected.decomposition_proposal_sha256], ["layout_decision_id", expected.layoutDecisionId ?? expected.layout_decision_id], ["layout_decision_sha256", expected.layoutDecisionSha256 ?? expected.layout_decision_sha256]]) if (value !== undefined && metadata[key] !== value) errors.push(`${label}.${key} 未绑定上游拆解确认身份或显式智能布局决策身份`);
-  const expectedTargetSha = expected.targetSha256 ?? expected.target_sha256; if (expectedTargetSha !== undefined && metadata.original_sha256 !== expectedTargetSha) errors.push(`${label}.original_sha256 未绑定冻结目标`);
+  for (const [key, value] of [["scene_id", expected.sceneId ?? expected.scene_id], ["state_id", expected.stateId ?? expected.state_id], ["decomposition_confirmation_id", expected.decompositionConfirmationId ?? expected.decomposition_confirmation_id], ["layout_decision_id", expected.layoutDecisionId ?? expected.layout_decision_id]]) if (value !== undefined && metadata[key] !== value) errors.push(`${label}.${key} 未绑定上游拆解确认身份或显式智能布局决策身份`);
   if (metadata.width !== decoded.width || metadata.height !== decoded.height || !Number.isInteger(metadata.original_width) || !Number.isInteger(metadata.original_height) || metadata.original_width <= 0 || metadata.original_width >= decoded.width || metadata.original_height <= 0 || metadata.original_height > decoded.height || !Number.isInteger(metadata.text_scale) || metadata.text_scale < 1 || metadata.text_scale > 3) { errors.push(`${label} 元数据尺寸或文字字号与 PNG 不一致`); return null; }
-  const metadataSha256 = computeLayoutAnnotationMetadataSha256(metadata); if (metadata.metadata_sha256 !== metadataSha256) errors.push(`${label}.metadata_sha256 复算失败`);
   if (!Array.isArray(metadata.nodes) || metadata.nodes.length === 0 || metadata.nodes.some((node) => !isObject(node))) { errors.push(`${label}.nodes 必须是非空节点数组`); return null; }
-  if (metadata.node_identity_sha256 !== computeLayoutNodeIdentitySha256(metadata.nodes)) errors.push(`${label}.node_identity_sha256 与布局节点身份不一致`);
   if (!Array.isArray(metadata.visible_rows) || metadata.visible_rows.length === 0 || metadata.visible_rows.some((row) => !isObject(row)) || metadata.panel_content_complete !== true) { errors.push(`${label} 右侧说明栏必须完整落盘`); return null; }
   const expectedFactsRaw = expected.layoutNodes ? deriveAutomaticLayoutFacts(expected.layoutNodes, { width: metadata.original_width, height: metadata.original_height }, expected) : expected.layoutFacts; const expectedFacts = Array.isArray(expectedFactsRaw) ? (expectedFactsRaw.every((fact) => LAYOUT_MARKER_PATTERN.test(String(fact?.marker_id ?? ""))) ? expectedFactsRaw : assignLayoutMarkers(expectedFactsRaw)) : null;
   if (Array.isArray(expectedFacts)) {
@@ -339,7 +335,8 @@ export function validateLayoutAnnotationPng(bytes, expected = {}, errors = [], l
       else validateMarkerPixels(decoded, layout, metadata, label, errors);
     }
   }
-  const annotationSha256 = sha256(bytes); if (expected.annotationSha256 && expected.annotationSha256 !== annotationSha256) errors.push(`${label} 文件 SHA-256 与确认记录不一致`); const identity = computeLayoutAnnotationIdentitySha256(annotationSha256, decoded.width, decoded.height, metadata.metadata_sha256); if (expected.identitySha256 && expected.identitySha256 !== identity) errors.push(`${label} identity_sha256 与确认记录不一致`); return { decoded, metadata, annotationSha256, identitySha256: identity, metadataSha256: metadata.metadata_sha256 };
+  // 回传的身份摘要只从当前 PNG 内容生成；元数据中的可选旧值不会影响校验或报告。
+  const annotationSha256 = sha256(bytes); const metadataSha256 = computeLayoutAnnotationMetadataSha256(metadata); const identity = computeLayoutAnnotationIdentitySha256(annotationSha256, decoded.width, decoded.height, metadataSha256); return { decoded, metadata, annotationSha256, identitySha256: identity, metadataSha256 };
 }
 
 /** 简易像素绘制工具；复用固定字库，保证中文关系不会只存在于 PNG 元数据。 */

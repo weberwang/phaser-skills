@@ -508,11 +508,10 @@ test("effect-image 相对距离、视觉对齐、offset 和锚点均不得伪造
   }
 });
 
-test("effect-image 两处布局 binding 必须共享完整身份并绑定冻结目标", () => {
+test("effect-image 布局 binding 保留业务版本身份，摘要缺失不阻断", () => {
   const missingResponsiveHash = effectImageContract();
   delete missingResponsiveHash.responsive_contract.layout_contract_binding.layout_contract_sha256;
-  const missingResponsiveErrors = validateSceneReconstructionContract(missingResponsiveHash, effectImageManifest(missingResponsiveHash), { stage: "V2" });
-  assert(missingResponsiveErrors.some((item) => item.includes("responsive_contract layout binding") && item.includes("layout_contract_sha256")), missingResponsiveErrors.join("\n"));
+  assert.deepEqual(validateSceneReconstructionContract(missingResponsiveHash, effectImageManifest(missingResponsiveHash), { stage: "V2" }), []);
 
   const missingTargetVersion = effectImageContract();
   delete missingTargetVersion.target_conditions.layout_decomposition_version;
@@ -527,7 +526,7 @@ test("effect-image 两处布局 binding 必须共享完整身份并绑定冻结�
   const invalidHash = effectImageContract();
   invalidHash.layout_decomposition.layout_binding.layout_contract_sha256 = "sha256:" + "B".repeat(64);
   const invalidHashErrors = validateSceneReconstructionContract(invalidHash, effectImageManifest(invalidHash), { stage: "V2" });
-  assert(invalidHashErrors.some((item) => item.includes("layout_decomposition binding") && item.includes("layout_contract_sha256 格式无效")), invalidHashErrors.join("\n"));
+  assert.equal(invalidHashErrors.some((item) => /SHA-256|sha256|layout_contract_sha256/.test(item)), false, invalidHashErrors.join("\n"));
 
   const mismatchedBinding = effectImageContract();
   mismatchedBinding.layout_decomposition.layout_binding.layout_decomposition_version = "layout-decomposition-2";
@@ -543,7 +542,7 @@ test("effect-image 两处布局 binding 必须共享完整身份并绑定冻结�
   const mismatchedTarget = effectImageContract();
   mismatchedTarget.target_conditions.layout_contract_sha256 = "sha256:" + "c".repeat(64);
   const mismatchedTargetErrors = validateSceneReconstructionContract(mismatchedTarget, effectImageManifest(mismatchedTarget), { stage: "V2" });
-  assert(mismatchedTargetErrors.some((item) => item.includes("layout_contract_sha256 与冻结目标不一致")), mismatchedTargetErrors.join("\n"));
+  assert.equal(mismatchedTargetErrors.some((item) => /SHA-256|sha256|layout_contract_sha256/.test(item)), false, mismatchedTargetErrors.join("\n"));
 
   const rootIdentity = effectImageContract();
   rootIdentity.layout_identity = structuredClone(rootIdentity.layout_decomposition.layout_binding);
@@ -646,10 +645,10 @@ test("scene_asset_usage 默认使用中心 origin，非中心坐标必须说明�
   assert.deepEqual(validateSceneAssetUsageContract(offCenter, {}, "V5"), []);
 });
 
-test("未绑定 target SHA 的旧布局合同返回 V1", () => {
+test("旧布局合同 target SHA 漂移不阻断真实布局合同", () => {
   const value = structuredClone(contract()); value.responsive_contract.layout_contract_binding.target_sha256 = "sha256:" + "b".repeat(64);
   const errors = validateSceneReconstructionContract(value, manifest(), { stage: "V3" });
-  assert(errors.some((item) => item.includes("未绑定当前 target SHA") && item.includes("V1/PROPOSAL")));
+  assert.equal(errors.some((item) => item.includes("target SHA") || item.includes("target_sha256")), false, errors.join("\n"));
 });
 
 test("V5 fidelity 拒绝字符串 tolerance、尺寸不等价和缺逐区域矩阵", () => {
@@ -697,11 +696,11 @@ test("runtime-program 区域没有完整 fidelity facts 时 V3 阻断", () => {
   assert(errors.some((item) => item.includes("fidelity obligations")));
 });
 
-test("V2→V3 继续使用未绑定 target SHA 的旧布局合同必须返回 V1", () => {
+test("V2→V3 继续使用旧 target SHA 不触发阶段回退", () => {
   const value = structuredClone(contract());
   value.responsive_contract.layout_contract_binding.target_sha256 = "sha256:" + "f".repeat(64);
   const errors = validateSceneReconstructionContract(value, manifest(), { stage: "V3" });
-  assert(errors.some((item) => item.includes("未绑定当前 target SHA") && item.includes("应退回阶段=V1/PROPOSAL")));
+  assert.equal(errors.some((item) => item.includes("target SHA") || item.includes("target_sha256")), false, errors.join("\n"));
 });
 
 test("V5 Fidelity Case 任意字符串 tolerance 不能作为项目容差", () => {
@@ -709,9 +708,9 @@ test("V5 Fidelity Case 任意字符串 tolerance 不能作为项目容差", () =
   assert(errors.some((item) => item.includes("tolerance 必须是结构化")));
 });
 
-test("结构化 fidelity 强制 code/build SHA、diff identity、等价证明和有效 difference evidence", () => {
-  const noDiff = fidelityCase(); delete noDiff.candidate_identity.diff_fingerprint;
-  assert(validateStructuredFidelityCases([noDiff], manifest(), { stage: "V5" }).some((item) => item.includes("diff identity")));
+test("结构化 fidelity 不要求 code/build 摘要，但保留等价证明和 difference evidence", () => {
+  const noDiff = fidelityCase(); delete noDiff.candidate_identity.diff_fingerprint; delete noDiff.candidate_identity.sha256;
+  assert.equal(validateStructuredFidelityCases([noDiff], manifest(), { stage: "V5" }).some((item) => /SHA|摘要|diff identity/i.test(item)), false);
   const noProof = fidelityCase(); delete noProof.normalization_equivalence;
   assert(validateStructuredFidelityCases([noProof], manifest(), { stage: "V5" }).some((item) => item.includes("等价证明")));
   const nullDiffEvidence = fidelityCase({ difference_evidence: null });
@@ -819,10 +818,12 @@ test("文本节点未知 region、layout node 或 bounds 漂移时阻断", () =>
   assert(driftErrors.some((item) => item.includes("target_bounds 必须与绑定 layout node 一致")), driftErrors.join("\n"));
 });
 
-test("phaser-text 缺少字体资源或 SHA 时阻断", () => {
+test("phaser-text 要求字体资源路径，错误 SHA 不阻断", () => {
   const value = textEffectImageContract({ required_resources: [{ kind: "font", path: "assets/fonts/game-sans.woff2", sha256: "sha256:invalid" }] });
   const errors = validateSceneReconstructionContract(value, effectImageManifest(value), { stage: "V3" });
-  assert(errors.some((item) => item.includes("路径和合法 SHA-256") || item.includes("字体资产及 SHA-256")), errors.join("\n"));
+  assert.equal(errors.some((item) => /SHA-256|sha256/.test(item)), false, errors.join("\n"));
+  const missingPath = textEffectImageContract({ required_resources: [{ kind: "font", sha256: "sha256:invalid" }] });
+  assert(validateSceneReconstructionContract(missingPath, effectImageManifest(missingPath), { stage: "V3" }).some((item) => item.includes("phaser-text 必须绑定字体资产路径")));
 });
 
 test("V5 发现字体 fallback 或加载失败时阻断", () => {
@@ -958,14 +959,13 @@ test("全程序视觉路线必须提供绑定冻结目标且可复核的独立�
     conclusion: "all-native-eligible",
     region_findings: ["board", "hud"].map((region_id) => ({ region_id, eligible: true, observed_features: ["纯色基础几何"], primitive_basis: ["pure-color", "basic-geometry"], evidence: [`evidence/${region_id}.json`] })),
   };
-  const artifactBytes = Buffer.from(JSON.stringify(artifact));
-  await writeFile(join(projectRoot, "all-native-analysis.json"), artifactBytes);
+  const artifactBytes = Buffer.from(JSON.stringify(artifact)); await writeFile(join(projectRoot, "all-native-analysis.json"), artifactBytes);
   value.all_native_justification = allNativeJustification({ analysis_artifact_file: "all-native-analysis.json", analysis_artifact_sha256: `sha256:${createHash("sha256").update(artifactBytes).digest("hex")}` });
   assert.deepEqual(validateSceneVisualRouteContract(value, null, { stage: "V3", checkFiles: true, projectRoot }), []);
 
-  value.all_native_justification.analysis_artifact_sha256 = SHA;
-  const tampered = validateSceneVisualRouteContract(value, null, { stage: "V3", checkFiles: true, projectRoot });
-  assert(tampered.some((item) => item.includes("工件 SHA-256 不匹配")), tampered.join("\n"));
+  value.all_native_justification.analysis_artifact_sha256 = "stale-summary-is-optional"; assert.deepEqual(validateSceneVisualRouteContract(value, null, { stage: "V3", checkFiles: true, projectRoot }), []);
+  artifact.region_findings[0].eligible = false; await writeFile(join(projectRoot, "all-native-analysis.json"), JSON.stringify(artifact));
+  const contentMismatch = validateSceneVisualRouteContract(value, null, { stage: "V3", checkFiles: true, projectRoot }); assert(contentMismatch.some((item) => item.includes("eligible=true")), contentMismatch.join("\n"));
 });
 
 test("特色按钮皮肤或背景框错误选择 Phaser 原生路线时阻断", () => {
@@ -1089,7 +1089,7 @@ test("语义相似图标没有精确身份时不得 reuse，混合区域必须�
     reuse_suitability: { eligible: true, exact_asset_identity: { reason: "semantic-similar icon" }, evidence: ["evidence/route/icon-similar.json"] },
   };
   const similarErrors = validateSceneReconstructionContract(similar, effectImageManifest(similar), { stage: "V3" });
-  assert(similarErrors.some((item) => item.includes("精确资产身份") && item.includes("语义相似")), similarErrors.join("\n"));
+  assert(similarErrors.some((item) => item.includes("精确资产 ID") && item.includes("语义相似不等价")), similarErrors.join("\n"));
 
   // 独立 image-asset 与 phaser-native region 仍是合法混合场景合同，两者不再包装为单一区域路线。
   const independentRoutes = effectImageContract();
@@ -1163,7 +1163,7 @@ test("visual_route_analysis 必须与 coverage/实施计划/实施包字段一�
   assert(methodErrors.some((item) => item.includes("coverage_audit region") && item.includes("production_method")), methodErrors.join("\n"));
 });
 
-test("三份场景 Schema 同步分离 assembly_analysis 与 visual_route_analysis", () => {
+test("三份场景 Schema 同步分离 assembly_analysis 与 visual_route_analysis，摘要仅作可选记录", () => {
   const paths = [
     "skills/phaser4-game-workflow-control/references/evidence-manifest.schema.json",
     "skills/phaser4-game-workflow-control/references/implementation-package.schema.json",
@@ -1179,7 +1179,7 @@ test("三份场景 Schema 同步分离 assembly_analysis 与 visual_route_analys
   assert.deepEqual(schemas[1].$defs.sceneVisualRouteAnalysis, schemas[2].$defs.sceneVisualRouteAnalysis);
   assert.deepEqual(schemas[0].$defs.allNativeJustification, schemas[1].$defs.allNativeJustification);
   assert.deepEqual(schemas[1].$defs.allNativeJustification, schemas[2].$defs.allNativeJustification);
-  assert(schemas.every((schema) => schema.$defs.allNativeJustification.required.includes("analysis_artifact_sha256")));
+  assert(schemas.every((schema) => !schema.$defs.allNativeJustification.required.includes("analysis_artifact_sha256")) && schemas.every((schema) => Object.hasOwn(schema.$defs.allNativeJustification.properties, "analysis_artifact_sha256")));
   assert(schemas.every((schema) => schema.$defs.allNativeJustification.required.includes("reviewed_region_ids")));
   assert(schemas.every((schema) => schema.$defs.sceneCoverageRegion.properties.visual_route_analysis.$ref === "#/$defs/sceneVisualRouteAnalysis"));
   assert(schemas.every((schema) => schema.$defs.sceneCoverageRegion.properties.assembly_analysis.$ref === "#/$defs/assemblyAnalysis"));

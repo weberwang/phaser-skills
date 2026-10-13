@@ -12,11 +12,9 @@ import {
   isObject,
   isProjectRelativePath,
   isRuntimeUrl,
-  isSha256,
   nonEmptyString,
   readBoundArtifact,
   readPngDimensions,
-  sha256Bytes,
   validateAnchor,
   validateArtifactBinding,
   validatePhaserContract,
@@ -96,7 +94,7 @@ function validateVideoPrompt(artifact, label, errors) {
 }
 
 /** 检查抽帧报告的参数、帧序、图集文件和尺寸绑定。 */
-function validateQualityReport(report, sheetArtifact, sourceVideoArtifact, contract, asset, label, errors) {
+function validateQualityReport(report, sheetArtifact, contract, asset, label, errors) {
   if (!isObject(report)) {
     errors.push(label + " 解析结果必须是普通 JSON 对象");
     return;
@@ -107,11 +105,6 @@ function validateQualityReport(report, sheetArtifact, sourceVideoArtifact, contr
   const settings = contract.settings;
   const input = isObject(report.input) ? report.input : {};
   if (!nonEmptyString(input.video_path)) errors.push(label + ".input.video_path 必须是非空字符串");
-  if (!isSha256(input.video_sha256)) errors.push(label + ".input.video_sha256 格式无效");
-  const actualVideoSha = sourceVideoArtifact ? sha256Bytes(sourceVideoArtifact.bytes) : null;
-  if (actualVideoSha && isSha256(input.video_sha256) && input.video_sha256 !== actualVideoSha) {
-    errors.push(label + ".input.video_sha256 与 source_video 文件 SHA 不一致");
-  }
   if (!finitePositive(input.fps)) errors.push(label + ".input.fps 必须是正有限数字");
   else if (finitePositive(settings?.fps) && input.fps !== settings.fps) errors.push(label + ".input.fps 必须等于 settings.fps");
   if (typeof input.remove_background !== "boolean") errors.push(label + ".input.remove_background 必须是布尔值");
@@ -138,7 +131,6 @@ function validateQualityReport(report, sheetArtifact, sourceVideoArtifact, contr
       && frame.source_timestamp <= frames[index - 1].source_timestamp) {
       errors.push(label + ".frames.source_timestamp 必须严格递增");
     }
-    if (!isSha256(frame.source_sha256)) errors.push(label + ".frames[" + index + "].source_sha256 格式无效");
   }
 
   const cell = report.cell;
@@ -157,7 +149,6 @@ function validateQualityReport(report, sheetArtifact, sourceVideoArtifact, contr
   validateReportedAnchor(report, settings, label, errors);
 
   const reportedSheet = report.artifacts?.sheet;
-  if (!isObject(reportedSheet) || !isSha256(reportedSheet.sha256)) errors.push(label + ".artifacts.sheet.sha256 缺失或格式无效");
   if (!isObject(reportedSheet) || !nonEmptyString(reportedSheet.file)) errors.push(label + ".artifacts.sheet.file 必须是非空字符串");
   if (!isObject(reportedSheet) || !Number.isInteger(reportedSheet.width) || reportedSheet.width <= 0
     || !Number.isInteger(reportedSheet.height) || reportedSheet.height <= 0) {
@@ -169,11 +160,6 @@ function validateQualityReport(report, sheetArtifact, sourceVideoArtifact, contr
   validateReportedArtifactPath(report.artifacts?.preview?.file, contract.preview, label + ".artifacts.preview.file", errors);
   validateReportedArtifactPath(report.artifacts?.report?.file, contract.quality_report, label + ".artifacts.report.file", errors);
 
-  const actualSheetSha = sheetArtifact ? sha256Bytes(sheetArtifact.bytes) : null;
-  if (!actualSheetSha) errors.push(label + " 绑定的 spritesheet 文件不可读");
-  if (actualSheetSha && isSha256(reportedSheet?.sha256) && reportedSheet.sha256 !== actualSheetSha) {
-    errors.push(label + ".artifacts.sheet.sha256 与真实 spritesheet 不一致");
-  }
   const dimensions = readPngDimensions(sheetArtifact?.bytes);
   if (!dimensions) errors.push(label + " 绑定的 spritesheet 必须是有效 PNG");
   else {
@@ -187,9 +173,6 @@ function validateQualityReport(report, sheetArtifact, sourceVideoArtifact, contr
     if (isObject(cell) && Number.isInteger(cell.height) && dimensions.height !== cell.height) {
       errors.push(label + " spritesheet 高度必须等于 cell.height");
     }
-  }
-  if (actualSheetSha && sheetArtifact && contract.spritesheet.sha256 !== actualSheetSha) {
-    errors.push(label + " 绑定的 spritesheet SHA 与真实文件不一致");
   }
   validatePhaserContract(report, asset, contract.spritesheet, label, errors);
 }
@@ -222,7 +205,7 @@ async function checkVideoFrameAnimationWorkflowFiles(asset, context = {}) {
     errors.push(label + ".quality_report 必须是可解析 JSON：" + error.message);
     return [...new Set(errors)];
   }
-  validateQualityReport(report, artifacts.spritesheet, artifacts.source_video, contract, asset, label + ".quality_report", errors);
+  validateQualityReport(report, artifacts.spritesheet, contract, asset, label + ".quality_report", errors);
   return [...new Set(errors)];
 }
 

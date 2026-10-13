@@ -149,21 +149,25 @@ test("API 与 CLI 的相对路径均以 project-root 为根", async (t) => {
   await readFile(join(directory, "cli/hero.png"));
 });
 
-/** 修改已声明图片字节，确认来源门拒绝打包且不产生报告或图集。 */
-test("图片 SHA 变化时拒绝打包且不写入任何输出", async (t) => {
+/** 图片字节发生变化时，打包器从真实可解码内容生成图集，不依赖外部摘要。 */
+test("图片摘要陈旧时仍按当前真实图片字节打包", async (t) => {
   const directory = await testDirectory(t);
   const { manifestPath } = await createImageSource(directory);
-  await writeFile(join(directory, "art/frame-0.png"), await solidPng([1, 2, 3, 255]));
+  const changedSource = await solidPng([1, 2, 3, 255]);
+  await writeFile(join(directory, "art/frame-0.png"), changedSource);
   const outputSheet = join(directory, "tampered.png");
 
-  await assert.rejects(imagesToAtlas({
+  const report = await imagesToAtlas({
     sourceManifest: manifestPath,
     projectRoot: directory,
     outputSheet,
-  }), /SHA|sha|摘要|校验/u);
-  for (const path of ["tampered.png", "tampered.json", "tampered.html"]) {
-    await assert.rejects(readFile(join(directory, path)), { code: "ENOENT" });
-  }
+  });
+  assert.equal(report.status, "PASS");
+  // 被改成可见像素的来源帧应进入图集；全透明帧和闭环引用帧仍按内容规则跳过。
+  assert.equal(report.frames.length, 3);
+  assert.equal((await readFile(outputSheet)).length > 0, true);
+  assert.equal((await readFile(join(directory, "tampered.json"))).length > 0, true);
+  assert.equal((await readFile(join(directory, "tampered.html"))).length > 0, true);
 });
 
 /** 核对输入输出碰撞、覆盖保护及处理后全空失败都不会留下产物。 */

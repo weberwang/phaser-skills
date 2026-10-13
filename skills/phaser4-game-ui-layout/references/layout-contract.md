@@ -24,7 +24,7 @@ Camera 合同必须说明逻辑 viewport 如何映射到物理 backing，zoom �
 
 `resizePolicy` 必须在同一页面完成，不得用刷新页面掩盖重排；resize、safe area 和 DPR 变化后至少重新计算逻辑视口、Canvas backing、safe area、Camera viewport、输入映射和文字排版。仅当 `orientationPolicy.allowed` 同时包含两种方向时，事件数组才必须包含 `orientation-change`，并验证方向切换后的同页重排；所有项目都必须覆盖连续 resize 与 DPR 变化。监听器必须可清理且重复计算幂等。允许在超预算时显式减少滤镜、RenderTexture 或透明全屏层，但不得静默降低 DPR、资源质量或文字清晰度。
 
-`performanceBudget` 至少记录最大 Canvas backing、最大像素总量、RenderTexture、全屏滤镜、透明全屏层、代表性设备和真实测量结果。`representativeViewports` 按 `orientationPolicy.allowed` 覆盖类别：支持竖屏时要求窄/标准竖屏，支持横屏时要求横屏/桌面宽屏；单方向项目用该方向的窄宽尺寸覆盖，并仍包含 DPR 1、1.25/1.5、2 和原始 DPR 大于 2 的封顶样本。`requiredRuntimeEvidence` 必须要求 `viewportRect`、`canvasRect`、`designTransform`、`logicalSize`、`backingSize`、`cssDisplaySize`、原始/有效 DPR、两段缩放、Camera、safe area、边距、背景覆盖、关键 UI、输入命中、resize 轨迹、`pageReloaded`、截图及 scene/state、候选 SHA、合同/基线版本；`designTransform` 记录实际方向、设计宽高、适配轴、比例、可见逻辑区域及居中偏移，必须与当前 CSS 视口一致。缺少真实运行测量只能标记 `unverified`。
+`performanceBudget` 至少记录最大 Canvas backing、最大像素总量、RenderTexture、全屏滤镜、透明全屏层、代表性设备和真实测量结果。`representativeViewports` 按 `orientationPolicy.allowed` 覆盖类别：支持竖屏时要求窄/标准竖屏，支持横屏时要求横屏/桌面宽屏；单方向项目用该方向的窄宽尺寸覆盖，并仍包含 DPR 1、1.25/1.5、2 和原始 DPR 大于 2 的封顶样本。`requiredRuntimeEvidence` 必须要求 `viewportRect`、`canvasRect`、`designTransform`、`logicalSize`、`backingSize`、`cssDisplaySize`、原始/有效 DPR、两段缩放、Camera、safe area、边距、背景覆盖、关键 UI、输入命中、resize 轨迹、`pageReloaded`、截图及 scene/state、候选标识、合同/基线版本；`designTransform` 记录实际方向、设计宽高、适配轴、比例、可见逻辑区域及居中偏移，必须与当前 CSS 视口一致。缺少真实运行测量只能标记 `unverified`。
 
 ## V2 串行拆解与布局标注
 
@@ -36,11 +36,11 @@ Camera 合同必须说明逻辑 viewport 如何映射到物理 backing，zoom �
 
 图上每个框与右栏说明必须使用同一个唯一短编号，并显式列出父编号；编号按确认元素原序分配，合成根使用独立编号，不能为展示重排元素或改变 bounds。技术 ID 仅作为追溯信息，不能代替图上可见编号。密集小框的编号需避让，必要时用引线明确指向所属框。右栏为每个节点提供一份完整自身说明：类型、父级、水平左/中/右与垂直上/中/下停靠、自身/父级锚点及双轴偏移；父容器和空容器同样必须说明相对其上级的停靠方案，不能只列子组件或四边距离。根明确“无上级”，不伪造停靠关系。长说明按实际文字宽度换行并扩展画布高度，不得截断；机器校验同时检查编号映射、父子关系、方案内容与可见区域，元数据自报完整不能代替实际可读内容。
 
-布局图也允许人工修改；修改后必须重新生成最终布局图，并以独立 `layout-annotation-confirmation/1.0` 确认。该确认同时绑定布局图文件/SHA、尺寸、schema/layout、metadata identity、`visual-decomposition-confirmation` 的 ID/SHA、proposal SHA、scene/state/target、用户原文和 receipt。任一图、元数据、布局关系或上游拆解身份变化都使旧确认失效；V2 最终完成门必须同时看到两次人工确认。
+布局图也允许人工修改；修改后必须重新生成最终布局图，并以独立 `layout-annotation-confirmation/1.0` 确认。该确认同时绑定实际布局图文件、尺寸、schema/layout、metadata identity、`visual-decomposition-confirmation` 的 ID、proposal 文件、scene/state/target、用户原文和 receipt。任一图、元数据、布局关系或上游拆解身份变化都使旧确认失效；V2 最终完成门必须同时看到两次人工确认。
 
 布局 PNG 生成时必须在 `--output` 所在的同一候选目录同步产出 `layout-nodes.json`、`layout-decision.json`、自包含 `review.html` 和 `generation-result.json`。审阅页直接消费本批冻结参考图与节点数据，不能建立第二套坐标或关系规则；详细的两栏模板、离线约束、名称回退、下载字节、SHA 身份和错误门见[离线布局审阅产物](layout-review-artifacts.md)。
 
-阶段 B 先由智能视觉判断读取原图与确认后的 `proposal.decomposition_elements`，按该列表逐项产出唯一的 `automatic-layout-decision/1.0` JSON：每个元素必须显式给出 `horizontal_alignment=left|center|right` 和 `vertical_alignment=top|center|bottom`。随后使用 `scripts/generate_layout_annotation.mjs` 生成布局 PNG；命令必须显式传入 manifest、project root、scene/state、输出路径、拆解确认 ID/SHA、proposal SHA、`--layout-decision-file` 和 `--layout-decision-sha256`。生成器拒绝缺失决策、非法枚举、元素漏绑、新增伪造、调序、越界或跨场景输入，不会按测量结果兜底猜测对齐，也不会生成多个布局候选或新的视觉参考图。
+阶段 B 先由智能视觉判断读取原图与确认后的 `proposal.decomposition_elements`，按该列表逐项产出唯一的 `automatic-layout-decision/1.0` JSON：每个元素必须显式给出 `horizontal_alignment=left|center|right` 和 `vertical_alignment=top|center|bottom`。随后使用 `scripts/generate_layout_annotation.mjs` 生成布局 PNG；命令必须显式传入 manifest、project root、scene/state、输出路径、拆解确认 ID 和 `--layout-decision-file`；摘要参数不再必填。生成器拒绝缺失决策、非法枚举、元素漏绑、新增伪造、调序、越界或跨场景输入，不会按测量结果兜底猜测对齐，也不会生成多个布局候选或新的视觉参考图。
 
 每个 `layout_nodes` 节点必须包含：
 
@@ -100,7 +100,7 @@ Camera 合同必须说明逻辑 viewport 如何映射到物理 backing，zoom �
 
 可见文字应承担图标无法可靠表达的语义，不与含义明显的图标永久并列重复说明。图标存在歧义、首次学习成本高、操作高风险或不可逆，或状态与数值需要精确表达时，应保留可见文字；所有仅图标控件仍须提供无障碍可访问名称，该名称可不进入可见布局。证据应覆盖界面是否存在图标与文字重复、通用图标堆叠，以及视觉层级、位置、颜色、形状和动效能否使功能自解释。
 
-效果图还原的可见文字由场景合同中的 `text_decomposition` 独立管理：有文本时使用 `applicability=has-text` 并逐项登记稳定 `text_node_id`、`region_id`、`layout_node_id`、文案来源、语义角色、动态/本地化标记、目标 bounds 和完整 typography facts；确实没有文本时使用 `not-applicable` 并填写 reason。V3 必须为每个文本节点选择 `phaser-text`、`bitmap-text`、`image-text` 或 `hybrid`，说明路线理由、所有权和带资源 SHA-256 的依赖。动态或本地化文字不能烘焙为 `image-text`；图片字标仍要保留可访问语义。原字体未知时保留 `observable_facts`，不能猜填 family，并明确替代字体或位图方案。V5 逐节点记录实际 renderer、字体加载与 fallback、actual/glyph bounds、baseline、测试 ID 和证据，并把 target/candidate 差异绑定预声明 tolerance 或精确例外。
+效果图还原的可见文字由场景合同中的 `text_decomposition` 独立管理：有文本时使用 `applicability=has-text` 并逐项登记稳定 `text_node_id`、`region_id`、`layout_node_id`、文案来源、语义角色、动态/本地化标记、目标 bounds 和完整 typography facts；确实没有文本时使用 `not-applicable` 并填写 reason。V3 必须为每个文本节点选择 `phaser-text`、`bitmap-text`、`image-text` 或 `hybrid`，说明路线理由、所有权和实际资源依赖。动态或本地化文字不能烘焙为 `image-text`；图片字标仍要保留可访问语义。原字体未知时保留 `observable_facts`，不能猜填 family，并明确替代字体或位图方案。V5 逐节点记录实际 renderer、字体加载与 fallback、actual/glyph bounds、baseline、测试 ID 和证据，并把 target/candidate 差异绑定预声明 tolerance 或精确例外。
 
 ### 文字路线判定
 
@@ -118,13 +118,13 @@ Camera 合同必须说明逻辑 viewport 如何映射到物理 backing，zoom �
 
 `critical_alignments` 用于冻结目标中的关键 UI/HUD：通过 `layout_node_id` 绑定布局节点，`element_id` 等于对应 `region_id`。`reference_id` 可指向稳定 region、`viewport` 或具体节点；多节点 region 必须指定具体节点。两种模式均保留唯一 ID、双轴关系、目标证据、双方身份和测试计划；verified 需要真实运行测量、运行证据与通过结果。默认 `usability` 不强制目标精确测量、四轴 delta 或预声明容差，允许合理的位置和尺寸差异；若提供测量字段，其结构必须有效。只有 `exact` 才强制目标几何、四轴 delta、精确差值一致性和项目容差。目标或布局结构实质变化才重新确认，普通运行态微调原地验证。
 
-`parity_cases` 不可变绑定 scene/state、已执行 viewport、实际有效 DPR（(0,2]）、语言、随机种子、输入轨迹、稳定帧/动画采样、合同/基线版本、双方证据、容差、例外 ID 与结论。默认 `usability` 只需代表性案例；`exact` 或明确全覆盖需求才要求完整视口/状态组合。目标或上游候选 SHA 不匹配时对应旧证据不得复用。
+`parity_cases` 不可变绑定 scene/state、已执行 viewport、实际有效 DPR（(0,2]）、语言、随机种子、输入轨迹、稳定帧/动画采样、合同/基线版本、双方证据、容差、例外 ID 与结论。默认 `usability` 只需代表性案例；`exact` 或明确全覆盖需求才要求完整视口/状态组合。依据实际目标、上游事实和当前要求判断证据是否仍可复用，SHA 变化不使证据失效。
 
-specified 可只做结构检查；verified 必须追加 `--check-files --project-root .`，验证冻结原图存在且 SHA 匹配，并拒绝缺失或逃逸项目根目录的目标、运行及 parity 证据路径。
+specified 可只做结构检查；verified 必须追加 `--check-files --project-root .`，验证冻结原图可读取，并拒绝缺失或逃逸项目根目录的目标、运行及 parity 证据路径。
 # 效果图还原布局绑定
 
-当布局服务于 `effect-image` 时，根节点可声明 `scene_reconstruction_binding`，其中必须包含 `target_sha256`、`scene_id`、`state_id`、`target_viewport`、`visual_baseline_version`、`reconstruction_contract_version`、`layout_contract_sha256` 和 `layout_decomposition_version`。`layout_contract_sha256` 是布局合同身份哈希，不是整个文件的递归自哈希：生产方应对合同身份投影（合同 ID/版本、目标 SHA、scene/state、目标 viewport、布局拆解版本、布局决策文件身份，以及按已确认 `decomposition_elements` 原顺序排列的节点 ID、区域、坐标空间、父节点 ID、父目标 bounds、四边相对距离、显式轴向对齐、参照、锚点、偏移、目标几何、尺寸/裁切/响应式策略、层级和计划测试 ID）做确定性规范化后计算；不得为稳定哈希排序公开节点数组，并排除该哈希字段本身以及运行时证据。合同身份变化必须重新计算。
+当布局服务于 `effect-image` 时，根节点可声明 `scene_reconstruction_binding`，其中必须包含 `scene_id`、`state_id`、`target_viewport`、`visual_baseline_version`、`reconstruction_contract_version`和 `layout_decomposition_version`；`layout_contract_sha256` 可选且不参与验收。`layout_contract_sha256` 是布局合同身份哈希，不是整个文件的递归自哈希：可供内部追踪的合同身份投影（合同 ID/版本、目标 SHA、scene/state、目标 viewport、布局拆解版本、布局决策文件身份，以及按已确认 `decomposition_elements` 原顺序排列的节点 ID、区域、坐标空间、父节点 ID、父目标 bounds、四边相对距离、显式轴向对齐、参照、锚点、偏移、目标几何、尺寸/裁切/响应式策略、层级和计划测试 ID）可计算确定性追踪摘要，但工作流不要求或比较该值；不得为稳定哈希排序公开节点数组，并排除该哈希字段本身以及运行时证据。实际合同内容变化时重验受影响关系，不要求重算摘要。
 
-V2→V3 合同回对必须校验该绑定；`legacy_layout_reused`、`uses_generic_layout` 或 target SHA 不一致均退回 `V1/PROPOSAL`，不能沿用旧响应式骨架。
+V2→V3 合同回对必须校验该绑定；`legacy_layout_reused`、`uses_generic_layout` 等真实还原方案不满足要求时退回 `V1/PROPOSAL`，不能沿用旧响应式骨架。
 
 目标 viewport 在 `usability` 下用于确认整体关系、可读性和可操作性，其他代表性 viewport 验证关系不变量；只有 `exact` 或明确精确需求时才要求目标 viewport 的严格还原。布局区域仍须与正式 Scene 结构绑定；整屏截图不能作为交互 Scene、隐藏覆盖层或绝对叠图不能作为布局实现。

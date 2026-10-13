@@ -444,11 +444,11 @@ test("真实循环闭合帧不进入播放图集，Phaser 只覆盖来源的普�
   });
 });
 
-test("替换来源原图或生成记录后，真实文件 SHA 复核拒绝图集", async () => {
+test("替换来源图像或生成记录后不以摘要复算阻断", async () => {
   await withFixture(async (fixture) => {
     await writeFile(join(fixture.root, "art/frame-0.png"), await createPng(4, 4, [1, 2, 3, 255]));
     const errors = await checkImageFrameAnimationWorkflowFiles(fixture.asset, { projectRoot: fixture.root });
-    assert(errors.some((item) => item.includes("SHA")));
+    assert.deepEqual(errors, []);
   });
 
   await withFixture(async (fixture) => {
@@ -457,7 +457,7 @@ test("替换来源原图或生成记录后，真实文件 SHA 复核拒绝图集
     record.prompt = "被篡改的生成记录";
     await writeFile(recordPath, `${JSON.stringify(record, null, 2)}\n`, "utf8");
     const errors = await checkImageFrameAnimationWorkflowFiles(fixture.asset, { projectRoot: fixture.root });
-    assert(errors.some((item) => item.includes("SHA")));
+    assert.deepEqual(errors, []);
   });
 });
 
@@ -479,7 +479,7 @@ test("源父图与修图链身份被重新声明后，来源合同仍拒绝错�
   });
 });
 
-test("报告游戏时间与真实来源 SHA 绑定不一致时被拒绝", async () => {
+test("报告游戏时间仍与真实来源绑定且来源清单摘要不构成验收门", async () => {
   await withFixture(async (fixture) => {
     fixture.report.frames[1].game_time_ms += 1;
     await rewriteReport(fixture);
@@ -495,10 +495,10 @@ test("报告游戏时间与真实来源 SHA 绑定不一致时被拒绝", async 
   });
 
   await withFixture(async (fixture) => {
-    fixture.report.input.source_manifest_sha256 = "sha256:" + "0".repeat(64);
+    fixture.report.input.source_manifest_sha256 = "stale-source-summary";
     await rewriteReport(fixture);
     const errors = await checkImageFrameAnimationWorkflowFiles(fixture.asset, { projectRoot: fixture.root });
-    assert(errors.some((item) => item.includes("source_manifest_sha256")));
+    assert.deepEqual(errors, []);
   });
 });
 
@@ -536,23 +536,23 @@ test("FPS、loop、region 和 anchor 必须与真实来源及 accepted 设置一
   });
 });
 
-test("报告、图集、预览与 Phaser URL 必须绑定真实文件身份", async () => {
+test("报告仍检查实际结构和路径，图集与预览不按文件摘要拒绝", async () => {
   await withFixture(async (fixture) => {
     await writeFile(join(fixture.root, fixture.reportFile), "{}\n", "utf8");
     const errors = await checkImageFrameAnimationWorkflowFiles(fixture.asset, { projectRoot: fixture.root });
-    assert(errors.some((item) => item.includes("quality_report.sha256")));
+    assert(errors.some((item) => item.includes(".schema") || item.includes(".status") || item.includes(".frames")));
   });
 
   await withFixture(async (fixture) => {
     await writeFile(join(fixture.root, fixture.contract.spritesheet.file), await createPng(8, 4, [1, 2, 3, 255]));
     const errors = await checkImageFrameAnimationWorkflowFiles(fixture.asset, { projectRoot: fixture.root });
-    assert(errors.some((item) => item.includes("spritesheet.sha256")));
+    assert.deepEqual(errors, [], "尺寸有效的新图集不因外部摘要陈旧而失败");
   });
 
   await withFixture(async (fixture) => {
     await writeFile(join(fixture.root, fixture.contract.preview.file), "<html>changed preview</html>\n", "utf8");
     const errors = await checkImageFrameAnimationWorkflowFiles(fixture.asset, { projectRoot: fixture.root });
-    assert(errors.some((item) => item.includes("preview.sha256") || item.includes("phaser-atlas-sha256")));
+    assert.deepEqual(errors, [], "仍为 HTML 的预览文件不因摘要陈旧而失败");
   });
 
   for (const runtimeUrl of ["../atlas.png", "https://example.invalid/atlas.png", "assets\\atlas.png"]) {

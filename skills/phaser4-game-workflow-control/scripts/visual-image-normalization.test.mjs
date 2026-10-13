@@ -249,7 +249,7 @@ test("1672×941 两次比例失败可按中心焦点裁成 1664×936 并归一�
     assert.equal(metadata.width, 1920);
     assert.equal(metadata.height, 1080);
     assert.equal(metadata.hasAlpha, true);
-    assert.equal(record.transparency_preview.candidate_sha256, SOURCE_SHA);
+    assert.equal(Object.hasOwn(record.transparency_preview, "candidate_sha256"), false);
     assert.equal(record.alpha_stats.partial_alpha_pixels > 0, true);
     assert.deepEqual(validateImageNormalizationContract({
       expectedAsset: { asset_id: "hero", source_file: source, runtime_file: output, mime_type: "image/png", width: 1920, height: 1080, alpha: true },
@@ -320,12 +320,11 @@ test("透明路线以两次原始输出作证据、去背输出作源图并在�
   }
 });
 
-test("比例修正缺少两次 attempt、绑定、裁切矩形或焦点事实时拒绝", () => {
+test("比例修正保留 attempt 绑定/裁切/焦点检查，摘要变化不阻断", () => {
   const fixture = cropFixture();
   const base = fixture.asset.normalization_record;
   const invalidRecords = [
     { ...base, aspect_ratio_correction: { ...base.aspect_ratio_correction, attempts: base.aspect_ratio_correction.attempts.slice(0, 1) } },
-    { ...base, aspect_ratio_correction: { ...base.aspect_ratio_correction, attempts: base.aspect_ratio_correction.attempts.map((attempt, index) => index === 1 ? { ...attempt, sha256: FIRST_ATTEMPT_SHA } : attempt) } },
     { ...base, aspect_ratio_correction: { ...base.aspect_ratio_correction, attempts: base.aspect_ratio_correction.attempts.map((attempt, index) => index === 1 ? { ...attempt, width: 1673 } : attempt) } },
     { ...base, aspect_ratio_correction: { ...base.aspect_ratio_correction, attempts: base.aspect_ratio_correction.attempts.map((attempt, index) => index === 1 ? { ...attempt, file: "art/other.png" } : attempt) } },
     { ...base, aspect_ratio_correction: { ...base.aspect_ratio_correction, crop_rect: { ...base.aspect_ratio_correction.crop_rect, width: 1663 } } },
@@ -335,6 +334,14 @@ test("比例修正缺少两次 attempt、绑定、裁切矩形或焦点事实时
     const errors = validateImageNormalizationContract({ ...fixture, asset: { ...fixture.asset, normalization_record: record }, generation: fixture.generation, metadata: fixture.metadata });
     assert(errors.length > 0, "非法比例修正记录不应通过合同");
   }
+  const staleDigests = {
+    ...base,
+    source_sha256: "missing-or-stale",
+    output_sha256: "missing-or-stale",
+    aspect_ratio_correction: { ...base.aspect_ratio_correction, attempts: base.aspect_ratio_correction.attempts.map((attempt) => ({ ...attempt, sha256: "missing-or-stale" })) },
+  };
+  const digestErrors = validateImageNormalizationContract({ ...fixture, asset: { ...fixture.asset, normalization_record: staleDigests }, generation: fixture.generation, metadata: fixture.metadata });
+  assert.equal(digestErrors.some((item) => /SHA|摘要/i.test(item)), false, digestErrors.join("\n"));
 });
 
 test("透明目标拒绝没有 Alpha 的原图", async () => {
@@ -363,7 +370,7 @@ test("PNG 声明 Alpha 通道但像素全不透明时拒绝透明目标", async 
   }
 });
 
-test("透明归一化 CLI 生成预览并提示候选绑定缺口", async () => {
+test("透明归一化 CLI 生成预览且不要求 workflow 候选摘要", async () => {
   const directory = await mkdtemp(join(tmpdir(), "phaser-image-normalization-cli-"));
   try {
     const source = join(directory, "source.png");
@@ -377,7 +384,7 @@ test("透明归一化 CLI 生成预览并提示候选绑定缺口", async () => 
     ], { log: (value) => logs.push(value), warn: (value) => warnings.push(value), error: (value) => errors.push(value) });
     assert.equal(exitCode, 0);
     assert.equal(errors.length, 0);
-    assert.match(warnings[0], /未绑定 workflow candidate_sha256/);
+    assert.deepEqual(warnings, []);
     const record = JSON.parse(logs[0]);
     assert.equal(Object.hasOwn(record.transparency_preview, "candidate_sha256"), false);
     assert.equal(record.transparency_preview.inspection.status, "pending");
@@ -432,7 +439,7 @@ test("契约拒绝缺少、失败或错误的归一化记录", () => {
 
 test("视觉生产契约门接线后拒绝失败或错误归一化记录", () => {
   const fixture = normalizedFixture();
-  for (const normalization of [normalizationRecord({ status: "failed" }), normalizationRecord({ output_sha256: SOURCE_SHA })]) {
+  for (const normalization of [normalizationRecord({ status: "failed" }), normalizationRecord({ output_file: "public/wrong.png" })]) {
     const asset = { ...fixture.asset, generation_record: { ...fixture.generation, normalization_record: normalization } };
     const errors = validateImageGenerationContract(asset, fixture.contract, { stage: "V4", annotation_number: 1, region_id: "hero" }, { expectedAsset: fixture.expectedAsset, checkFiles: false });
     assert(errors.some((item) => item.includes("normalization_record")), errors.join("\n"));

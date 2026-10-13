@@ -212,7 +212,7 @@ function rejects(result, pattern) {
 function auditA3(fixture) {
   writeFileSync(join(fixture.repo, 'src', 'main.js'), 'export const value = 2;\n');
   const record = join(fixture.root, 'evidence', 'WI-1', 'diff-audit.json');
-  const result = run('diff-audit', ['--work-item', fixture.workPath, '--implementation-package', fixture.packagePath, '--baseline', fixture.head, '--baseline-hash', HASH, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--record', record], fixture.repo);
+  const result = run('diff-audit', ['--work-item', fixture.workPath, '--implementation-package', fixture.packagePath, '--baseline', 'HEAD~0', '--baseline-hash', HASH, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--record', record], fixture.repo);
   assert.equal(result.status, 0, result.stderr);
   return { record, audit: JSON.parse(result.stdout) };
 }
@@ -251,12 +251,18 @@ function completeUnits(fixture, unitIds) {
 }
 
 /** 创建含两个同阶段 MODULE 代理、委派文件和不可变批次的并行测试夹具。 */
-function prepareParallelFixture(state = 'IMPLEMENTING') {
-  const f = setup({ globalState: state, delegatedAgents: ['module-agent', 'scene-agent'] });
-  const pkg = makePhaseOrderedParallelPackage();
-  pkg.fileOwnership = { 'src/main.js': 'implementer', 'src/module': 'module-agent', 'src/module-peer': 'scene-agent', 'src/scene': 'implementer' };
-  pkg.executionUnits = pkg.executionUnits.map((unit) => unit.unitId === 'MODULE-1' ? { ...unit, owner: 'module-agent' } : unit.unitId === 'MODULE-2' ? { ...unit, owner: 'scene-agent' } : unit);
-  writeJson(f.packagePath, pkg);
+function prepareParallelFixture(state = 'IMPLEMENTING', moduleOnly = false) {
+  const packageFactory = () => {
+    const pkg = makePhaseOrderedParallelPackage();
+    pkg.executionUnits = pkg.executionUnits.map((unit) => unit.unitId === 'MODULE-1' ? { ...unit, owner: 'module-agent' } : unit.unitId === 'MODULE-2' ? { ...unit, owner: 'scene-agent' } : unit);
+    if (moduleOnly) pkg.executionUnits = pkg.executionUnits.filter((unit) => unit.unitType === 'MODULE');
+    pkg.fileOwnership = moduleOnly
+      ? { 'src/module': 'module-agent', 'src/module-peer': 'scene-agent' }
+      : { 'src/main.js': 'implementer', 'src/module': 'module-agent', 'src/module-peer': 'scene-agent', 'src/scene': 'implementer' };
+    return pkg;
+  };
+  const f = setup({ globalState: state, delegatedAgents: ['module-agent', 'scene-agent'], visualStage: moduleOnly ? 'V0' : 'V5', visualStageState: moduleOnly ? 'not-started' : 'v5-runtime-integration-candidate' }, [], packageFactory);
+  const pkg = JSON.parse(readFileSync(f.packagePath, 'utf8'));
   writeExecutionState(f);
   writeJson(join(f.root, 'delegations', 'm.json'), makeDelegation('module-agent', 'MODULE-1', 'PG-1', 'src/module'));
   writeJson(join(f.root, 'delegations', 'm2.json'), makeDelegation('scene-agent', 'MODULE-2', 'PG-1', 'src/module-peer'));
@@ -290,7 +296,7 @@ function makeEvidence(fixture, audit) {
   return { evidenceId: 'EV-1', batchId: 'BATCH-1', workItemId: 'WI-1', baselineHash: HASH, codeFingerprint: `git:${fixture.head}`, diffFingerprint: audit.diffFingerprint, pageSketchSha256: JSON.parse(readFileSync(fixture.workPath, 'utf8')).visualStageEvidenceRefs.V4.sha256, recordedAt: new Date(Date.parse(audit.recordedAt) + 1000).toISOString(), commands: [{ command: 'node --test', exitCode: 0, outputFile: rel, outputHash: hashFile(output) }], environment: { node: process.version }, dataSources: ['git diff'], files: [rel], fileHashes: { [rel]: hashFile(output) }, gateResults: { F0: { ...common, workItemId: 'WI-1', authorizationBasis: 'TASK_SCOPE' }, F1: { ...common }, F2: { ...common, reviewer: 'independent-reviewer', reviewMode: 'INDEPENDENT' }, F3: { ...common, evidenceId: 'EV-1' } }, responsiveEvidence, verdict: 'PASS', uncoveredItems: [], completedOutputs: ['src/main.js'], completedUnitIds: JSON.parse(readFileSync(fixture.packagePath, 'utf8')).executionUnits.map((unit) => unit.unitId), satisfiedExitCriteria: ['tests pass'] };
 }
 
-registerRelaxedWorkflowTests({ assert, test, setup, makeFoundationPackage, makePackage, writeBoundPackage, run, rejects, readFileSync, writeJson, join, rmSync, existsSync, makeEvidence, hash: HASH });
+registerRelaxedWorkflowTests({ assert, test, setup, makeFoundationPackage, makePackage, writeBoundPackage, run, rejects, readFileSync, writeJson, join, rmSync, existsSync, makeEvidence, hash: HASH, prepareParallelFixture, writeUnitResults, makeParallelBatch });
 
 test('基础实施包：仅伪造冻结状态而缺少三候选人工证据时 fail closed', () => {
   const f = setup();
@@ -351,7 +357,7 @@ test('A0-A2：只读、文档和隔离原型依 Work Item 范围直接通过', (
 });
 
 test('A3：有效实施包依 Work Item 范围无需 Approval Ledger', () => {
-  const f = setup();
+  const f = setup(); const pkg = JSON.parse(readFileSync(f.packagePath, 'utf8')); pkg.visualManifestSha256 = 17; writeJson(f.packagePath, pkg);
   const result = run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).explicitApprovalRequired, false);
@@ -604,10 +610,11 @@ test('操作审批：操作与影响精确匹配可通过，篡改或遗漏影�
   assert.deepEqual(ledger.approvals[0].impactSummary, ['替换正式入口']);
 });
 
-test('基线与实施包：旧 hash、范围漂移和所有权缺失均拒绝', () => {
+test('基线与实施包：摘要漂移可通过，范围漂移和所有权缺失仍拒绝', () => {
   const f = setup();
   writeBoundPackage(f, makePackage({ baselineHash: `sha256:${'b'.repeat(64)}` }));
-  rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /当前工作项与基线/);
+  const stalePackage = run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo);
+  assert.equal(stalePackage.status, 0, stalePackage.stderr);
   writeBoundPackage(f, makePackage({ allowedPaths: ['src'] }));
   rejects(run('preflight', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--action-level', 'A3', '--action-type', 'phaser-code-change', '--path', 'src/main.js'], f.repo), /范围不一致/);
   writeBoundPackage(f, makePackage({ fileOwnership: { docs: 'implementer' } }));
@@ -651,9 +658,9 @@ test('A5/A6：错误外部目标、受保护目标和低等级设备动作均拒
   rejects(run('preflight', ['--work-item', f.workPath, '--action-level', 'A5', '--action-type', 'phaser-build-upload', '--object', 'device', '--external', '--external-target', 'store/app', '--device'], f.repo), /必须为 A6/);
 });
 
-test('证据门：SELF 审查、旧指纹和命令失败均拒绝 A3 PASSED', () => {
+test('证据门：SELF 审查仍拒绝，摘要缺失或漂移可验收，失败命令仍拒绝', () => {
   const f = setup();
-  const { audit } = auditA3(f);
+  const { audit } = auditA3(f); writeUnitResults(f);
   const work = JSON.parse(readFileSync(f.workPath, 'utf8')); work.globalState = 'VALIDATING'; writeJson(f.workPath, work);
   const evidence = makeEvidence(f, audit);
   evidence.gateResults.F2 = { ...evidence.gateResults.F2, reviewer: 'implementer', reviewMode: 'SELF' };
@@ -661,19 +668,30 @@ test('证据门：SELF 审查、旧指纹和命令失败均拒绝 A3 PASSED', ()
   rejects(run('transition', ['--work-item', f.workPath, '--to', 'PASSED', '--evidence', path], f.repo), /独立 reviewer/);
   evidence.gateResults.F2 = { ...evidence.gateResults.F2, reviewer: 'independent', reviewMode: 'INDEPENDENT' };
   evidence.diffFingerprint = `sha256:${'c'.repeat(64)}`; path = join(f.root, 'evidence', 'WI-1', 'stale.json'); writeJson(path, evidence);
-  rejects(run('transition', ['--work-item', f.workPath, '--to', 'PASSED', '--evidence', path], f.repo), /旧证据|当前 diff/);
-  const failed = makeEvidence(f, audit); failed.commands[0].exitCode = 1; path = join(f.root, 'evidence', 'WI-1', 'failed.json'); writeJson(path, failed);
-  rejects(run('transition', ['--work-item', f.workPath, '--to', 'PASSED', '--evidence', path], f.repo), /命令失败/);
+  evidence.baselineHash = 'sha256:stale'; evidence.codeFingerprint = 'git:stale'; evidence.commands[0].outputHash = 'sha256:stale';
+  evidence.fileHashes = { 'stale-path': 'not-a-digest' };
+  for (const gate of Object.values(evidence.gateResults)) { gate.baselineHash = 'sha256:stale'; gate.diffFingerprint = 'stale'; }
+  writeJson(path, evidence);
+  const accepted = run('transition', ['--work-item', f.workPath, '--to', 'PASSED', '--evidence', path], f.repo);
+  assert.equal(accepted.status, 0, accepted.stderr);
+
+  const failedFixture = setup();
+  const { audit: failedAudit } = auditA3(failedFixture);
+  const failedWork = JSON.parse(readFileSync(failedFixture.workPath, 'utf8')); failedWork.globalState = 'VALIDATING'; writeJson(failedFixture.workPath, failedWork);
+  const failed = makeEvidence(failedFixture, failedAudit); failed.commands[0].exitCode = 1;
+  path = join(failedFixture.root, 'evidence', 'WI-1', 'failed.json'); writeJson(path, failed);
+  rejects(run('transition', ['--work-item', failedFixture.workPath, '--to', 'PASSED', '--evidence', path], failedFixture.repo), /命令.*失败/);
 });
 
-test('Diff Audit：空 A3、审计后篡改和伪造 owner 均拒绝', () => {
+test('Diff Audit：空 A3 与伪造 owner 拒绝，摘要漂移不阻断同一变更路径', () => {
   const empty = setup();
   rejects(run('diff-audit', ['--work-item', empty.workPath, '--implementation-package', empty.packagePath, '--baseline', empty.head, '--baseline-hash', HASH, '--action-level', 'A3', '--artifact', 'src/main.js', '--record', join(empty.root, 'empty.json')], empty.repo), /禁止空 diff/);
-  const f = setup(); const { record } = auditA3(f);
-  const audit = JSON.parse(readFileSync(record, 'utf8')); audit.entries[0].owner = 'forged'; writeJson(record, audit);
+  const f = setup(); const { record } = auditA3(f); writeUnitResults(f);
+  const audit = JSON.parse(readFileSync(record, 'utf8')); audit.entries[0].owner = 'forged'; audit.baselineId = 'sha1:stale-baseline'; writeJson(record, audit);
   rejects(run('transition', ['--work-item', f.workPath, '--to', 'VALIDATING'], f.repo), /ownership 不一致/);
   audit.entries[0].owner = 'implementer'; writeJson(record, audit); writeFileSync(join(f.repo, 'src', 'main.js'), 'export const value = 10;\n');
-  rejects(run('transition', ['--work-item', f.workPath, '--to', 'VALIDATING'], f.repo), /已过期/);
+  const afterContentEdit = run('transition', ['--work-item', f.workPath, '--to', 'VALIDATING'], f.repo);
+  assert.equal(afterContentEdit.status, 0, afterContentEdit.stderr);
 });
 
 test('并行计划：两个 MODULE 单元可在同组通过并行委派检查', () => {
@@ -764,7 +782,7 @@ test('并行委派：并行组不匹配、所有权冲突或写范围冲突均�
   }
 });
 
-test('单元证据：缺失、旧基线和旧路径 diff 均拒绝 READY，有效 Result 通过', () => {
+test('单元证据：前序顺序仍生效，缺失或漂移摘要不阻断真实 READY', () => {
   const f = setup({ delegatedAgents: ['implementer'] });
   writeJson(f.packagePath, makeSerialPackage());
   writeExecutionState(f);
@@ -773,12 +791,14 @@ test('单元证据：缺失、旧基线和旧路径 diff 均拒绝 READY，有�
   rejects(run('delegate-check', ['--work-item', f.workPath, '--delegation', delegationPath, '--implementation-package', f.packagePath], f.repo), /尚未 READY|预设顺序前序证据/);
   writeUnitResults(f, {}, { completeState: false });
   const sharedResult = join(f.root, 'evidence', 'WI-1', 'units', 'SHARED-1.json');
+  const staleBaseline = JSON.parse(readFileSync(sharedResult, 'utf8')); staleBaseline.baselineHash = 'sha256:stale';
+  delete staleBaseline.diffFingerprint; delete staleBaseline.codeFingerprint; delete staleBaseline.fileHashes; delete staleBaseline.commands[0].outputHash;
+  writeJson(sharedResult, staleBaseline);
   assert.equal(run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', sharedResult], f.repo).status, 0);
   assert.equal(run('delegate-check', ['--work-item', f.workPath, '--delegation', delegationPath, '--implementation-package', f.packagePath], f.repo).status, 0);
-  const staleBaseline = JSON.parse(readFileSync(sharedResult, 'utf8')); staleBaseline.baselineHash = `sha256:${'b'.repeat(64)}`; writeJson(sharedResult, staleBaseline);
-  rejects(run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', sharedResult], f.repo), /当前工作项.*基线|未绑定当前/);
-  writeUnitResults(f); writeFileSync(join(f.repo, 'src', 'main.js'), 'export const value = 77;\n');
-  rejects(run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', sharedResult], f.repo), /diff 指纹已过期/);
+  writeFileSync(join(f.repo, 'src', 'main.js'), 'export const value = 77;\n');
+  const changedCandidate = run('delegate-check', ['--work-item', f.workPath, '--delegation', delegationPath, '--implementation-package', f.packagePath], f.repo);
+  assert.equal(changedCandidate.status, 0, changedCandidate.stderr);
 });
 
 test('委派结构与状态：A0-A2 不携带实施单元，A3 必须携带且仅 IMPLEMENTING', () => {
@@ -812,27 +832,13 @@ test('并行批次：缺 READY、遗漏、重复代理/单元、REVIEW 和历史
   item = prepareParallelFixture(); writeUnitResults(item.f); const history = join(item.f.root, 'delegations', 'batches', 'history.json'); writeJson(history, makeParallelBatch(item.f.repo, ['.workflow-control/delegations/m.json', '.workflow-control/delegations/m2.json'], { batchId: 'PB-HISTORY' })); rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /历史并行批次分配/);
 });
 
-test('并行批次不可变：委派内容、哈希、派生数组和历史批次篡改均拒绝', () => {
-  let item = prepareParallelFixture(); writeUnitResults(item.f);
-  const delegationPath = join(item.f.root, 'delegations', 'm.json'); const changed = JSON.parse(readFileSync(delegationPath, 'utf8')); changed.completionBoundary = '批次后变化'; writeJson(delegationPath, changed);
-  rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /委派文件哈希不匹配/);
-
-  item = prepareParallelFixture(); writeUnitResults(item.f); let batch = JSON.parse(readFileSync(item.batchPath, 'utf8')); batch.delegationHashes[batch.delegationFiles[0]] = `sha256:${'b'.repeat(64)}`; batch.fingerprint = parallelBatchFingerprint(batch); writeJson(item.batchPath, batch);
-  rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /委派文件哈希不匹配/);
-
-  item = prepareParallelFixture(); writeUnitResults(item.f); batch = JSON.parse(readFileSync(item.batchPath, 'utf8')); batch.executionUnitIds = ['MODULE-1', 'UNKNOWN']; batch.assignedAgents = ['fake-agent', 'module-agent']; batch.fingerprint = parallelBatchFingerprint(batch); writeJson(item.batchPath, batch);
-  rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /与委派内容不一致/);
-
-  item = prepareParallelFixture(); writeUnitResults(item.f); const historyPath = join(item.f.root, 'delegations', 'batches', 'history.json'); batch = makeParallelBatch(item.f.repo, ['.workflow-control/delegations/m.json', '.workflow-control/delegations/m2.json'], { batchId: 'PB-HISTORY' }); batch.assignedAgents[0] = 'tampered-agent'; writeJson(historyPath, batch);
-  rejects(run('parallel-check', ['--work-item', item.f.workPath, '--implementation-package', item.f.packagePath, '--batch', item.batchPath], item.f.repo), /历史并行批次损坏/);
-});
-
-test('单元证据严格映射：files 重复或 fileHashes 多余均拒绝', () => {
+test('单元证据严格映射：files 重复拒绝，但摘要映射可缺失或漂移', () => {
   const f = setup(); writeUnitResults(f, {}, { completeState: false }); const resultPath = join(f.root, 'evidence', 'WI-1', 'units', 'SHARED-1.json');
   let result = JSON.parse(readFileSync(resultPath, 'utf8')); result.files.push(result.files[0]); writeJson(resultPath, result);
   rejects(run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', resultPath], f.repo), /files 不得重复/);
-  writeUnitResults(f, {}, { completeState: false }); result = JSON.parse(readFileSync(resultPath, 'utf8')); result.fileHashes['.workflow-control/evidence/WI-1/units/extra.txt'] = `sha256:${'c'.repeat(64)}`; writeJson(resultPath, result);
-  rejects(run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', resultPath], f.repo), /fileHashes 必须与 files 精确一致/);
+  writeUnitResults(f, {}, { completeState: false }); result = JSON.parse(readFileSync(resultPath, 'utf8')); result.fileHashes = { extra: 'not-a-digest' }; result.commands[0].outputHash = 'stale'; delete result.diffFingerprint; delete result.codeFingerprint; delete result.baselineHash; writeJson(resultPath, result);
+  const accepted = run('unit-check', ['--work-item', f.workPath, '--implementation-package', f.packagePath, '--result', resultPath], f.repo);
+  assert.equal(accepted.status, 0, accepted.stderr);
 });
 
 test('A3 COMPLETE：completedUnitIds 或当前 Unit Result 缺失时拒绝', () => {

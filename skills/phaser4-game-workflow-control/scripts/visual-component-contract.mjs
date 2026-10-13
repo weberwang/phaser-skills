@@ -11,7 +11,7 @@ import { getVisualRegionDefinitionAliasConflicts, normalizeVisualRegionDefinitio
 import { atomicImageRequirementsEqual, deriveAtomicImageRequirements, normalizeAtomicComponents, normalizeAtomicImageRequirements } from "./visual-atomic-contract.mjs";
 import { collectImageGenerationRasterViolations } from "./visual-imagegen-format.mjs";
 import { validateFixedVisualProductionMethod } from "./visual-decomposition-confirmation.mjs";
-import { canonicalJson, isPlainObject as isObject, isSha256, nonEmptyString, normalizeContractPath as normalizeProjectRelativePath } from "./visual-contract-core.mjs";
+import { canonicalJson, isPlainObject as isObject, nonEmptyString, normalizeContractPath as normalizeProjectRelativePath } from "./visual-contract-core.mjs";
 
 export { atomicImageRequirementsEqual, deriveAtomicImageRequirements, normalizeAtomicComponents, normalizeAtomicImageRequirements };
 export { validateFixedVisualProductionMethod } from "./visual-decomposition-confirmation.mjs";
@@ -167,7 +167,6 @@ export function normalizeComponentExpectedAsset(value) {
     width: value.width,
     height: value.height,
     alpha: value.alpha, transparency_requirements: value.transparency_requirements,
-    sha256: value.sha256 ?? value.file_sha256,
     share_id: value.share_id ?? value.shareId,
     // 比较合同身份时按项目物理路径归一化；非法路径仍保留原值，交由校验器输出具体错误。
     source_file: normalizeProjectRelativePath(sourceFile) ?? sourceFile,
@@ -267,11 +266,8 @@ function validateStateAnalysis(region, context, errors, options = {}) {
   if (analysis.status !== "complete") fail("status 必须为 complete", { missing: "state_analysis.status=complete" });
   if (analysis.phase !== "before-component-splitting") fail("phase 必须为 before-component-splitting，先状态分析再拆解", { missing: "state_analysis.phase" });
   if (!nonEmptyString(analysis.evidence)) fail("缺少分析证据", { missing: "state_analysis.evidence" });
-  for (const field of ["evidence_sha256", "reference_target_sha256", "analysis_id", "completed_at"]) if (!nonEmptyString(analysis[field])) fail(`缺少 ${field}`, { missing: `state_analysis.${field}` });
-  if (nonEmptyString(analysis.evidence_sha256) && !/^sha256:[a-f0-9]{64}$/.test(analysis.evidence_sha256)) fail("evidence_sha256 格式无效", { missing: "state_analysis.evidence_sha256" });
-  if (nonEmptyString(analysis.reference_target_sha256) && !/^sha256:[a-f0-9]{64}$/.test(analysis.reference_target_sha256)) fail("reference_target_sha256 格式无效", { missing: "state_analysis.reference_target_sha256" });
+  for (const field of ["analysis_id", "completed_at"]) if (!nonEmptyString(analysis[field])) fail(`缺少 ${field}`, { missing: `state_analysis.${field}` });
   if (nonEmptyString(analysis.completed_at) && Number.isNaN(Date.parse(analysis.completed_at))) fail("completed_at 必须是可解析时间", { missing: "state_analysis.completed_at" });
-  if (nonEmptyString(options.referenceTargetSha) && analysis.reference_target_sha256 !== options.referenceTargetSha) fail("reference_target_sha256 必须绑定当前冻结目标", { missing: options.referenceTargetSha });
   if (!Array.isArray(analysis.states) || analysis.states.length === 0) {
     fail("states 必须是非空列表，不能只声明 default", { missing: "state_analysis.states" });
     return { analysis, requirements: new Map() };
@@ -409,7 +405,6 @@ function validateAssetMappings(region, context, errors, stateInfo, inventoryInfo
     if (canonical.production_method === "image-generation" || canonical.image_generation_required === true) for (const violation of collectImageGenerationRasterViolations(rawAsset ?? asset, { requiredMime: true, requiredFileFields: ["source_file", "runtime_file"], fileFields: ["source_file", "runtime_file"] })) assetFail(`${violation.field} ${violation.message}`, { missing: `expected_assets[${index}].${violation.field}` });
     for (const field of ["width", "height"]) if (asset[field] !== undefined && (!Number.isInteger(asset[field]) || asset[field] <= 0)) assetFail(`${field} 必须为正整数`, { missing: `expected_assets[${index}].${field}` });
     if (asset.alpha !== undefined && typeof asset.alpha !== "boolean") assetFail("alpha 必须为布尔值", { missing: `expected_assets[${index}].alpha` });
-    if (asset.sha256 !== undefined && !/^sha256:[a-f0-9]{64}$/.test(asset.sha256)) assetFail("sha256 格式无效", { missing: `expected_assets[${index}].sha256` });
     const key = `${componentId}\0${stateId}`;
     pairs.set(key, (pairs.get(key) ?? 0) + 1);
     duplicateIds.set(asset.asset_id, (duplicateIds.get(asset.asset_id) ?? 0) + 1);
@@ -723,19 +718,14 @@ export function validateComponentAuditEvidence(region, auditUnit, context = {}, 
       if (!nonEmptyString(assetId)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] 缺少 asset_id，运行时消费不能只绑定 component/state`, { missing: "runtime_consumption.component_usages.asset_id" }));
       else if (expectedAsset && assetId !== expectedAsset.asset_id) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] asset_id 与 V3 expected_assets 不一致`, { missing: expectedAsset.asset_id }));
       const runtimeFile = usage?.runtime_file ?? usage?.runtimeFile ?? "";
-      const runtimeSha = usage?.runtime_sha256 ?? usage?.runtimeSha256 ?? "";
       const expectedPlacementIds = placementIdsByComponent.get(componentId) ?? [];
       const observedPlacementIds = Array.isArray(usage?.placement_ids) ? usage.placement_ids.slice().sort() : (Array.isArray(usage?.placementIds) ? usage.placementIds.slice().sort() : null);
       if (!observedPlacementIds || JSON.stringify(observedPlacementIds) !== JSON.stringify(expectedPlacementIds)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] placement_ids 必须精确覆盖该 component 的全部可见 placement`, { missing: expectedPlacementIds.join(",") || "placement_ids" }));
       if (!nonEmptyString(runtimeFile)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] 缺少 runtime_file`, { missing: "runtime_file" }));
-      if (!isSha256(runtimeSha)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] 缺少合法 runtime_sha256`, { missing: "runtime_sha256" }));
       if (expectedAsset?.runtime_file && !sameProjectPath(runtimeFile, expectedAsset.runtime_file)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] runtime_file 与 V3 expected 不一致`, { missing: expectedAsset.runtime_file }));
       const actualItem = actualByPair.get(key);
       const actualItemFile = actualItem?.file ?? actualItem?.path ?? actualItem?.output_file ?? actualItem?.runtime_file ?? actualItem?.runtimeFile ?? "";
-      const actualItemSha = actualItem?.sha256 ?? actualItem?.file_sha256 ?? "";
       if (actualItem && !sameProjectPath(runtimeFile, actualItemFile)) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] runtime_file 与 actual_assets 不一致`, { missing: actualItemFile || "actual_assets.file" }));
-      if (actualItem && !isSha256(actualItemSha)) errors.push(componentError(local, `actual_assets 缺少合法 SHA，无法绑定 runtime_sha256`, { missing: "actual_assets.sha256" }));
-      else if (actualItem && runtimeSha !== actualItemSha) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] runtime_sha256 与 actual_assets SHA 不一致`, { missing: actualItemSha }));
       if (expectedAsset?.atlas_slice) {
         const usageSlice = normalizeAtlasSlice(usage?.atlas_slice ?? usage?.atlasSlice);
         if (!usageSlice) errors.push(componentError(local, `runtime_consumption.component_usages[${index}] 缺少 V3 对应 atlas_slice`, { missing: "atlas_slice" }));

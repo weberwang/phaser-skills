@@ -1,4 +1,4 @@
-import { hashPageSketchContent, validatePageSketchDocument } from "./page-sketch-contract.mjs";
+import { validatePageSketchDocument } from "./page-sketch-contract.mjs";
 import { validateVisualLayoutDocument } from "./visual-layout-editor.mjs";
 
 /** 比较两个合同对象的字段顺序无关 JSON 语义。 */
@@ -24,7 +24,7 @@ async function readCurrent(handle) {
 export async function createPageSketchFileStore(handle) {
   if (!handle || typeof handle.getFile !== "function" || typeof handle.createWritable !== "function") throw new TypeError("需要可读写的 page-sketch.json 文件句柄");
   const initial = await readCurrent(handle);
-  const identity = Object.fromEntries(["target_sha256", "scene_id", "state_id", "work_item_id", "candidate_version"].map((key) => [key, initial.document[key]]));
+  const identity = Object.fromEntries(["scene_id", "state_id", "work_item_id", "candidate_version"].map((key) => [key, initial.document[key]]));
   let document = initial.document;
   let snapshot = initial.source;
   let saving = false;
@@ -73,11 +73,11 @@ export async function createPageSketchFileStore(handle) {
       beginOperation("保存");
       try {
         const normalizedLayout = validateVisualLayoutDocument(layout, document.nodes);
-        for (const field of ["target_sha256", "scene_id", "state_id"]) if (normalizedLayout[field] !== document[field]) throw new Error(`布局 ${field} 与草图身份不一致`);
+        for (const field of ["scene_id", "state_id"]) if (normalizedLayout[field] !== document[field]) throw new Error(`布局 ${field} 与草图身份不一致`);
         return await writeAndReadBack({ ...document, layout: normalizedLayout, confirmation: null });
       } finally { operationInFlight = false; }
     },
-    /** 只有当前内容已保存且真实预览健康时，才能写入绑定内容 hash 的人工确认。 */
+    /** 只有当前内容已保存且真实预览健康时，才能写入人工 accepted 确认。 */
     async confirm({ previewReady, layout } = {}) {
       beginOperation("确认");
       try {
@@ -85,12 +85,9 @@ export async function createPageSketchFileStore(handle) {
         const normalizedLayout = validateVisualLayoutDocument(layout, document.nodes);
         if (!sameJson(normalizedLayout, document.layout)) throw new Error("当前布局还有未保存修改，请先保存草图再确认");
         const contentSnapshot = structuredClone(document);
-        const contentHash = await hashPageSketchContent(contentSnapshot);
-        if (!sameJson(document, contentSnapshot)) throw new Error("计算确认哈希期间草图发生变化，请重新确认最新草图");
         const confirmation = {
           status: "accepted",
           confirmed_at: new Date().toISOString(),
-          content_sha256: contentHash,
         };
         return await writeAndReadBack({ ...contentSnapshot, confirmation });
       } finally { operationInFlight = false; }

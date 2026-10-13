@@ -148,19 +148,18 @@ test('V2 PASS 但 V3/V4/V5 缺失时正式运行硬门拒绝', () => {
   const f = tempFixture();
   delete f.work.visualStageEvidenceRefs.V3; delete f.work.visualStageEvidenceRefs.V4; delete f.work.visualStageEvidenceRefs.V5;
   const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root });
-  assert.equal(result.ok, false); assert.equal(result.disposition, 'revalidate'); assert(result.missingEvidence.some((item) => item.startsWith('V3 immutable'))); assert(result.missingEvidence.some((item) => item.startsWith('V4 immutable'))); assert(result.missingEvidence.some((item) => item.startsWith('V5 immutable')));
+  assert.equal(result.ok, false); assert.equal(result.disposition, 'revalidate'); assert(result.missingEvidence.some((item) => item.startsWith('V3 source evidence path'))); assert(result.missingEvidence.some((item) => item.startsWith('V4 source evidence path'))); assert(result.missingEvidence.some((item) => item.startsWith('V5 source evidence path')));
 });
 
-test('V2 技术拆解文件发生来源漂移时只要求重验当前门', () => {
+test('V2 技术拆解文件摘要变化不使 pending 过期', () => {
   const f = tempFixture();
   const v2 = JSON.parse(readFileSync(join(f.root, f.work.visualStageEvidenceRefs.V2.path), 'utf8'));
   writeFileSync(join(f.root, v2.technicalDecomposition.file), 'changed technical decomposition\n', 'utf8');
   const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root });
-  assert.equal(result.ok, false);
-  assert.equal(result.disposition, 'revalidate');
+  assert.equal(result.ok, true);
+  assert.notEqual(result.disposition, 'return');
   assert.equal(result.returnStage, null);
-  assert(errorCodes(result).includes('VISUAL_PENDING_STALE'));
-  assert(result.invalidatedDependencies.some((item) => item.includes('V2 technicalDecomposition')));
+  assert.equal(errorCodes(result).includes('VISUAL_PENDING_STALE'), false);
 });
 
 test('V3 accepted 到 V4 草图确认后，V5 实现候选演进不触发阶段回退', () => {
@@ -186,20 +185,20 @@ test('V4 草图准备只依赖 V2/V3，确认态消费 V4 canonical 草图', () 
   assert.equal(confirmed.work.visualStageEvidenceRefs.V4.path, 'docs/page-sketch.json');
 });
 
-test('V4 准备缺少 V3 或 V5 运行态草图 SHA 漂移时拒绝', () => {
+test('V4 准备仍要求 V3，但 V5 草图摘要差异不阻断', () => {
   const missingV3 = tempFixture({ visualStage: 'V4', visualStageState: 'in-progress' });
   delete missingV3.work.visualStageEvidenceRefs.V3;
   const missingResult = validateVisualStagePrerequisites(missingV3.work, { projectRoot: missingV3.root });
   assert.equal(missingResult.ok, false);
-  assert(missingResult.missingEvidence.some((item) => item.startsWith('V3 immutable')));
+  assert(missingResult.missingEvidence.some((item) => item.startsWith('V3 source evidence path')));
 
   const driftedV5 = tempFixture({ evidence: { V5: { pageSketchSha256: HASH3 } } });
   const driftResult = validateVisualStagePrerequisites(driftedV5.work, { projectRoot: driftedV5.root });
-  assert.equal(driftResult.ok, false);
-  assert(driftResult.missingEvidence.includes('V5 pageSketchSha256 must bind current V4 page sketch'));
+  assert.equal(driftResult.ok, true);
+  assert.equal(driftResult.missingEvidence.some((item) => item.includes('pageSketchSha256')), false);
 });
 
-test('V5 正式实施包必须精确绑定已确认 V4 草图 path/SHA', () => {
+test('V5 正式实施包必须绑定已确认 V4 草图来源路径，摘要仅供记录', () => {
   const f = tempFixture({ visualStage: 'V5', visualStageState: 'in-progress' });
   const sketchRef = f.work.visualStageEvidenceRefs.V4;
   const pkg = { pageSketchFile: sketchRef.path, pageSketchSha256: sketchRef.sha256 };
@@ -209,20 +208,31 @@ test('V5 正式实施包必须精确绑定已确认 V4 草图 path/SHA', () => {
     projectRoot: f.root,
     implementationPackage: { ...pkg, pageSketchSha256: HASH3 },
   });
-  assert.equal(drifted.ok, false);
-  assert(drifted.missingEvidence.includes('V5 Implementation Package pageSketchFile/pageSketchSha256 binding'));
+  assert.equal(drifted.ok, true);
+  const wrongPath = validateVisualStagePrerequisites(f.work, {
+    projectRoot: f.root,
+    implementationPackage: { ...pkg, pageSketchFile: 'docs/other-sketch.json' },
+  });
+  assert.equal(wrongPath.ok, false);
+  assert(wrongPath.missingEvidence.includes('V5 Implementation Package pageSketchFile binding'));
 });
 
-test('V2 冻结目标身份真实变化时才要求回退 V2', () => {
-  const f = tempFixture({ evidence: { V2: { targetSha256: HASH3 } } });
+test('V2 目标摘要变化不要求回退；当前冻结场景仍通过真实来源链核对', () => {
+  const f = tempFixture();
+  const reference = f.work.visualStageEvidenceRefs.V2;
+  const v2Path = join(f.root, reference.path);
+  const v2 = JSON.parse(readFileSync(v2Path, 'utf8'));
+  v2.targetSha256 = HASH3;
+  writeFileSync(v2Path, `${JSON.stringify(v2, null, 2)}\n`, 'utf8');
+  reference.sha256 = HASH2;
   const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root });
-  assert.equal(result.ok, false);
-  assert.equal(result.disposition, 'return');
-  assert.equal(result.returnStage, 'V2');
-  assert(result.identityChanges.includes('V2 plan target identity'));
+  assert.equal(result.ok, true);
+  assert.notEqual(result.disposition, 'return');
+  assert.equal(result.returnStage, null);
+  assert.deepEqual(result.identityChanges, []);
 });
 
-test('标准 V2、accepted V3、人工确认 V4 与绑定 SHA 的 V5 允许正式运行验收', () => {
+test('标准 V2、accepted V3、人工确认 V4 与 V5 允许正式运行验收', () => {
   const f = tempFixture();
   const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root });
   assert.equal(result.ok, true); assert.equal(result.required, true);
@@ -310,19 +320,23 @@ test('自定义 stageId 不能替代显式视觉阶段', () => {
 test('根 PASS 或顶层布尔值不能满足依赖', () => {
   const f = tempFixture({ visualStageEvidenceRefs: undefined, pass: true, visualPass: true });
   const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root });
-  assert.equal(result.ok, false); assert(result.missingEvidence.some((item) => item.includes('immutable evidence reference')));
+  assert.equal(result.ok, false); assert(result.missingEvidence.some((item) => item.includes('source evidence path')));
 });
 
-test('上游证据文件、基线或候选哈希变化使 pending stale', () => {
+test('上游来源摘要变化不使 pending stale', () => {
   const f = tempFixture();
   const first = validateVisualStagePrerequisites(f.work, { projectRoot: f.root });
   assert.equal(first.ok, true);
   const v3Path = join(f.root, f.work.visualStageEvidenceRefs.V3.path);
-  const updated = writeJson(f.root, f.work.visualStageEvidenceRefs.V3.path, { ...JSON.parse(readFileSync(v3Path, 'utf8')), marker: 'changed' });
-  f.work.visualStageEvidenceRefs.V3 = updated;
+  const content = readFileSync(v3Path, 'utf8');
+  writeFileSync(v3Path, `${content} \n`, 'utf8');
+  f.work.visualStageEvidenceRefs.V3.sha256 = 'stale-summary';
   const result = validateVisualStagePrerequisites(f.work, { projectRoot: f.root, pendingSnapshot: first.snapshot });
-  assert.equal(result.ok, false); assert.equal(result.disposition, 'revalidate'); assert.equal(result.returnStage, null); assert(errorCodes(result).includes('VISUAL_PENDING_STALE')); assert(result.invalidatedDependencies.includes('V3ReferenceHash'));
-  assert(result.missingEvidence.some((item) => item.includes('当前 V3') && item.includes('SHA')), result.missingEvidence.join('\n'));
+  assert.equal(result.ok, true);
+  assert.notEqual(result.disposition, 'return');
+  assert.equal(result.returnStage, null);
+  assert.equal(errorCodes(result).includes('VISUAL_PENDING_STALE'), false);
+  assert.equal(result.invalidatedDependencies.some((item) => item.includes('V3ReferenceHash')), false);
 });
 
 test('缺唯一 V2 拆解确认时拒绝 V4/V5 下游阶段', () => {

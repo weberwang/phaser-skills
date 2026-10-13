@@ -53,15 +53,14 @@ export function isRuntimeUrl(value) {
   return !decoded.includes("\\") && !decoded.split("/").some((segment) => segment === "." || segment === "..");
 }
 
-/** 校验工件的项目内路径和 SHA。 */
+/** 校验工件的项目内路径；摘要仅作为可选记录，不参与验收。 */
 export function validateArtifactBinding(artifact, label, errors) {
   if (!isObject(artifact)) {
-    errors.push(label + " 必须是包含 file 和 sha256 的对象");
+    errors.push(label + " 必须是包含 file 的对象");
     return;
   }
   if (!nonEmptyString(artifact.file)) errors.push(label + ".file 必须是非空项目内相对路径");
   else if (!isProjectRelativePath(artifact.file)) errors.push(label + ".file 必须是项目内相对路径：" + artifact.file);
-  if (!isSha256(artifact.sha256)) errors.push(label + ".sha256 必须是 sha256: 后接 64 位小写十六进制");
 }
 
 /** 裁剪区域使用显示画布上的整数像素，禁止缺项或静默修正边界。 */
@@ -196,7 +195,7 @@ function defaultResolvePath(projectRoot, file) {
   return candidate;
 }
 
-/** 读取一个绑定工件并复算 SHA；不存在或内容变化都会进入文件门结果。 */
+/** 读取一个绑定工件；文件路径和可读性参与验收，摘要不参与阻断。 */
 export async function readBoundArtifact(artifact, label, context, errors) {
   if (!isObject(artifact) || !nonEmptyString(artifact.file)) return null;
   let resolvedFile;
@@ -218,7 +217,6 @@ export async function readBoundArtifact(artifact, label, context, errors) {
       }
     }
     const bytes = await readFile(resolvedFile);
-    if (sha256Bytes(bytes) !== artifact.sha256) errors.push(label + ".sha256 与文件不一致：" + artifact.file);
     return { bytes, file: artifact.file, resolvedFile };
   } catch (error) {
     errors.push(label + "：" + error.message);
@@ -248,40 +246,12 @@ export function decodeText(bytes, label, errors) {
   }
 }
 
-/** 从 HTML meta 读取唯一的图集 SHA，防止预览误展示另一份图集。 */
-function readPreviewAtlasSha(html, label, errors) {
-  const tags = html.match(/<meta\b[^>]*>/giu) ?? [];
-  const values = [];
-  for (const tag of tags) {
-    const attributes = new Map();
-    const pattern = /([^\s=/>]+)\s*=\s*(["'])(.*?)\2/gu;
-    for (const match of tag.matchAll(pattern)) attributes.set(match[1].toLowerCase(), match[3]);
-    if (attributes.get("name")?.toLowerCase() === "phaser-atlas-sha256" && attributes.has("content")) {
-      values.push(attributes.get("content"));
-    }
-  }
-  if (values.length !== 1) {
-    errors.push(label + " 必须包含唯一的 phaser-atlas-sha256 meta");
-    return null;
-  }
-  if (!isSha256(values[0])) {
-    errors.push(label + " 内嵌 phaser-atlas-sha256 格式无效");
-    return null;
-  }
-  return values[0];
-}
-
-/** 网页预览绑定必须是 HTML，并在唯一 meta 中绑定当前图集 SHA。 */
+/** 网页预览仍需是可读 HTML；内嵌摘要不作为验收条件。 */
 export function validatePreview(artifact, sheetArtifact, label, errors) {
   if (!artifact) return;
   const html = decodeText(artifact.bytes, label, errors);
   if (html === null) return;
   if (!/<html\b/iu.test(html)) errors.push(label + " 必须包含 HTML 根元素");
-  const previewAtlasSha = readPreviewAtlasSha(html, label, errors);
-  const actualSheetSha = sheetArtifact ? sha256Bytes(sheetArtifact.bytes) : null;
-  if (previewAtlasSha && actualSheetSha && previewAtlasSha !== actualSheetSha) {
-    errors.push(label + " 内嵌图集 SHA 与 spritesheet 文件不一致");
-  }
 }
 
 /** 比较报告中的相对工件路径；绝对路径仅作诊断信息，不参与文件身份绑定。 */

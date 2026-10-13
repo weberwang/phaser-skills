@@ -21,7 +21,7 @@
 | 门 | 唯一语义 | 核心问题 |
 | --- | --- | --- |
 | F0 | 范围与流程合规 | 当前用户任务、状态、A 等级、路径、目标、基线和停止门是否允许动作？涉及副作用的 A4-A6 是否具备对应的显式批准？ |
-| F1 | 规格一致性 | 实际候选是否匹配已批准需求、范围、模块契约与冻结包？ |
+| F1 | 规格一致性 | 实际交付是否满足当前明确需求、范围、公开接口和硬约束？合同中的早期实现方案是否只是非强制参考？ |
 | F2 | 领域质量 | 产品、架构、玩法、视觉、资源、音频、数值、QA 等专业质量是否达标？ |
 | F3 | 工程验证 | 构建、测试、性能、迁移演练与可复现证据是否绑定当前候选？ |
 | F4 | 高影响集成/发布决策 | 是否允许具有外部写入、付费、真机、破坏性或外部删除、发布副作用的 A4-A6 操作？无副作用本地 A4 不因等级标签额外进入批准门。 |
@@ -32,9 +32,23 @@
 
 证据的职责是确认进入执行/实施或验证的最小充分条件，并绑定当前候选的真实性，不是穷尽性研究目标。在当前用户任务和适用前置硬门允许的边界内，入口、关键调用链或契约、任务范围、主要风险和验收目标已经明确，且没有直接冲突或未决实质取舍时，必须停止探索：A1/A2 冻结当前候选的范围、假设与验收边界，直接进入适用执行/验证；A3 冻结 `Implementation Package` 后进入 `IMPLEMENTING`。
 
-可逆、本地且属于当前任务的 A1/A2 修改可以记录合理假设后直接执行/验证；A3 修改可以记录合理假设后实施，但必须先冻结 `Implementation Package`；无外部副作用的本地 A4 集成也可按任务执行。缺少完全证明不构成停滞理由。仅 A3 包冻结后 implementer 不做开放式重新方案探索，只有需求/范围变化、实质冲突或无法实施才返回。任务内路径、方案、资源清单和验证范围可以随实施更新计划并重验受影响部分。外部写入、付费、真机、破坏性或外部删除、发布等具体副作用仍需精确批准；用户决定、V0-V5 硬门、证据哈希/真实性和共享工作区安全约束不因执行优先而放宽。
+可逆、本地且属于当前任务的 A1/A2 修改可以记录合理假设后直接执行/验证；A3 修改可以记录合理假设后实施，但必须先冻结 `Implementation Package`；无外部副作用的本地 A4 集成也可按任务执行。缺少完全证明不构成停滞理由。仅 A3 包冻结后 implementer 不做开放式重新方案探索，只有需求/范围变化、实质冲突或无法实施才返回。任务内路径、方案、资源清单和验证范围可以随实施更新计划并重验受影响部分。外部写入、付费、真机、破坏性或外部删除、发布等具体副作用仍需精确批准；用户决定、V0-V5 硬门、证据来源与真实性和共享工作区安全约束不因执行优先而放宽。
 
 默认闭环为：`最小必要事实确认 → 冻结候选边界（A3 冻结 Implementation Package）→ 执行/实施 → diff-audit → 推荐并自动执行适用等级的定向验证 → 仅按失败证据修正 → 完成`。已确认事实不得重复读取、搜索或复核，除非出现新的测试/类型/构建失败、运行异常、直接矛盾、需求/范围明确变化、候选身份实际变化或硬门明确失败；审查不得仅因另一种可行方案推翻已满足需求的候选。非阻塞发现记录为未覆盖项/后续事项，不扩大当前 Work Item。
+
+### 按实际完成情况验收
+
+所有阶段取消 SHA-1、SHA-256、文件哈希及候选/差异摘要的验收校验。摘要字段仅为可选追踪记录，缺失、格式错误、陈旧或不一致不影响门判断；不要求补生成、复算或回写摘要，也不据此回退或使人工确认失效。最终人工验收后再处理摘要核对，当前工作流不自动启动该处理。保留文件可读性、真实内容、任务/阶段/单元/场景归属、状态、顺序、明确要求和适用人工确认；内部缓存与防止并发覆盖的事务比较不属于验收。
+
+本规则适用于工作流内所有任务和阶段，包括需求与设计、基础工程、场景、玩法、UI、资源、动画、音频、数值、测试、性能、集成与发布；弹窗只是示例。每项任务验收前都必须核对当前明确要求、实际交付结果和有效证据，再判断差异是否影响完成条件、后续依赖或硬约束，不能根据任务类型或“中途有改动”直接要求修订合同。
+
+验收以当前用户明确要求和实际交付结果为准。合同用于追踪需求、公开接口和硬约束，早期实现方案不要求逐字回写成最终实现；已满足要求的交付，不得仅因过程中的调整或合同描述滞后而判为未完成、要求先修订合同或重新打开已完成工作项。
+
+- 布局微调、资源路径、内部代码组织或其他未被明确要求固定的实现细节发生变化，但功能、交互、可用性和必要约束已满足时，只记录实际结果、必要偏差说明和当前候选证据；不为档案一致而追溯修订 GDD、功能合同、布局目标或其他上游合同。
+- 用户在实施过程中已明确提出的调整纳入当前验收要求，直接在 Work Item 或决定记录中关联原文与实际结果；已经按该要求完成时，不以补改历史合同作为验收前置。只有真实改变后续工作依赖的范围、公开接口或硬约束时，才更新对应契约供后续消费，并只影响相关工作。
+- 所有任务按自身范围和实际完成情况收尾；中途调整过排版、实现组织、处理流程或其他非强制细节，不要求重写合同，也不重开无关任务验收。后续再次修改时，在对应工作项内按实际影响验证当前候选，不因历史过程重做已完成阶段；例如弹窗完成不重开宿主场景验收，模块内部重构不重验未受影响的场景。
+- 实际结果缺少要求的功能、交互失效、越界、不可读或违反明确接口、安全、资源来源、生产方法及精确还原约束时，修复实现；不得通过修改合同降低标准、抹去失败或把未完成包装为完成。
+- 合同修订与证据更新是两件事。当前候选的实际文件、运行测量、生产记录和必要人工确认仍须真实有效；实际内容变化时只更新或重验受影响证据，不篡改冻结工件来消除差异。截图显示效果由用户人工检查，除非用户明确要求自动检查；未经适用验证不得宣称通过。
 
 ### 前进优先与三级处置
 
@@ -72,7 +86,7 @@ Work Item 保存用户原始请求、目标、当前范围、实施计划、路�
 - 大厅或其他宿主场景只实现自己范围内的稳定触发事件/公开接口。弹窗内容、资源、状态、接线和验收由弹窗 Work Item 负责；弹窗未开始、失败或延期均不阻断宿主场景验收。
 - 弹窗与宿主需要联合调试时，在弹窗 Work Item 内消费宿主已冻结的公开接口与上下文证据。联合调试结果证明弹窗自身可用，不回写为场景完成前置，也不要求重新打开已通过的场景验收。
 
-视觉阶段是唯一的机器枚举 `V0`、`V1`、`V2`、`V3`、`V4`、`V5`，且必须同时声明有语义的 `visualStageState`。V0/V1 必须先建立全局基线 brief、生成恰好三张同条件候选效果图、同屏交给人工并确认其中一张；`globalVisualBaselineSelectionRef` 通过后才可写入 `global-static-baseline-frozen`。该引用通过不可变 `path` + `sha256` 跨 Work Item 复用，根证据顶层 `workItemId` 始终是生产者身份，不是当前消费者；该状态只冻结颜色、字体、栅格等静态规则；它不等于 `v2-production-planning-complete`，三候选人工选择也不能替代逐场景 V2 拆解图确认。V2 方案冻结必须由拆解图、技术 JSON、coverage、生产计划和拆解确认证据派生。
+视觉阶段是唯一的机器枚举 `V0`、`V1`、`V2`、`V3`、`V4`、`V5`，且必须同时声明有语义的 `visualStageState`。V0/V1 必须先建立全局基线 brief、生成恰好三张同条件候选效果图、同屏交给人工并确认其中一张；`globalVisualBaselineSelectionRef` 通过后才可写入 `global-static-baseline-frozen`。该引用通过不可变 `path` 跨 Work Item 复用，根证据顶层 `workItemId` 始终是生产者身份，不是当前消费者；该状态只冻结颜色、字体、栅格等静态规则；它不等于 `v2-production-planning-complete`，三候选人工选择也不能替代逐场景 V2 拆解图确认。V2 方案冻结必须由拆解图、技术 JSON、coverage、生产计划和拆解确认证据派生。
 
 ```text
 建立全局视觉基线 brief
@@ -92,7 +106,7 @@ Work Item 保存用户原始请求、目标、当前范围、实施计划、路�
   → 跨场景 INTEGRATION/联合验收 → A4 正式入口（带副作用时进入 F4）
 ```
 
-正式 Scene/UI 注册、Boot→可见 Scene 入口修改、正式消费可见资产、删除旧视觉实现或声明视觉完成，必须由共享视觉前置校验器复核当前场景 Work Item 的 V2 拆解方案、V3 正式资源验收、V4 草图确认；声明视觉完成时另需 V5 运行候选。仅含 `SHARED`/`MODULE` 的 foundation-only 包按是否声明视觉依赖分流：纯工程包不消费视觉产物或正式可见资产，只需当前任务范围、工程基线、冻结实施包和工程证据即可在全局选图前实施；声明视觉合同或资产生产依赖的基础包仍必须通过机器复核的 `globalVisualBaselineSelectionRef`（三张 generated 候选、唯一 SINGLE_HUMAN/CONFIRMED 决定、冻结正文真实 SHA）和 `globalStaticBaselineState=global-static-baseline-frozen`。一旦声明正式入口或可见资源消费等视觉行为，即使单元类型仍为 `SHARED`/`MODULE`，也回到正式 V2/V3/V4 视觉门。包含 `SCENE`、`DISPLAY_LAYER` 或 `INTEGRATION` 的包继续以 V2 `v2-production-planning-complete` 作为规划边界、以 V4 草图确认作为正式执行边界。全局选择根证据的生产者 Work Item 可被多个消费者引用，但场景 V2/V3/V4/V5 证据仍必须绑定当前场景 Work Item；阶段名、`stageId` 文本、根 PASS/布尔值、说明文字和 Approval Ledger 原文都不是证据；所有证据必须使用 Work Item、Unit Result、候选身份和内容哈希的不可变文件引用。证据字段、路径或 SHA 缺失/格式错误先 `repair`，上游事实未变的机器验证失败按 `revalidate` 只重跑当前门；只有上游事实失效、任务范围真实变化或硬门将被绕过时，才按最小范围更新并 `return` 到最早受影响阶段。普通候选身份变化不触发 `RETURN`，不使 V2 拆解确认失效；下游按受影响范围失效，不默认整 Work Item 重做。
+正式 Scene/UI 注册、Boot→可见 Scene 入口修改、正式消费可见资产、删除旧视觉实现或声明视觉完成，必须由共享视觉前置校验器复核当前场景 Work Item 的 V2 拆解方案、V3 正式资源验收、V4 草图确认；声明视觉完成时另需 V5 运行候选。仅含 `SHARED`/`MODULE` 的 foundation-only 包按是否声明视觉依赖分流：纯工程包不消费视觉产物或正式可见资产，只需当前任务范围、工程基线、冻结实施包和工程证据即可在全局选图前实施；声明视觉合同或资产生产依赖的基础包仍必须通过机器复核的 `globalVisualBaselineSelectionRef`（三张 generated 候选、唯一 SINGLE_HUMAN/CONFIRMED 决定、冻结正文实际文件）和 `globalStaticBaselineState=global-static-baseline-frozen`。一旦声明正式入口或可见资源消费等视觉行为，即使单元类型仍为 `SHARED`/`MODULE`，也回到正式 V2/V3/V4 视觉门。包含 `SCENE`、`DISPLAY_LAYER` 或 `INTEGRATION` 的包继续以 V2 `v2-production-planning-complete` 作为规划边界、以 V4 草图确认作为正式执行边界。全局选择根证据的生产者 Work Item 可被多个消费者引用，但场景 V2/V3/V4/V5 证据仍必须绑定当前场景 Work Item；阶段名、`stageId` 文本、根 PASS/布尔值、说明文字和 Approval Ledger 原文都不是证据；所有证据必须使用 Work Item、Unit Result、候选标识和实际文件引用。必要业务字段或路径缺失/格式错误先 `repair`，上游事实未变的机器验证失败按 `revalidate` 只重跑当前门；只有上游事实失效、任务范围真实变化或硬门将被绕过时，才按最小范围更新并 `return` 到最早受影响阶段。普通候选身份变化不触发 `RETURN`，不使 V2 拆解确认失效；下游按受影响范围失效，不默认整 Work Item 重做。
 
 已完成的 A4-A6 副作用批准只覆盖其明确对象、阶段、模块、文件范围和动作等级；这些内容变化时创建新审批，旧记录只读保留。无副作用本地集成和普通任务内迭代不需要审批记录。
 
@@ -103,12 +117,12 @@ effect-image 的 V2 功能归属是拆解确认的一部分，遵守[功能语�
 同一命令内，`loadExecutionState` 完整复核绑定 Result 后，READY 与完成证据只消费该已校验状态；独立命令入口仍重新读取并校验，不能跨命令缓存。
 全局实施顺序先建立任务范围、工程基线和必要的全局视觉基线，再完成 foundation-only 的 `SHARED`/`MODULE`。随后 SCENE Work Item 与 DISPLAY_LAYER Work Item 分别完成自己的 V1→V5。正式代码包顺序为 `SHARED`→`MODULE`→`SCENE`→`INTEGRATION`，或 `SHARED`→`MODULE`→`DISPLAY_LAYER`→`INTEGRATION`；两类视觉单元不得混在同一包。每个正式单元读取所属 Work Item 的 V2/V3 结果和 V4 已确认草图，弹窗的 `hostSceneId` 只绑定宿主上下文和公开接口。
 
-effect-image 的布局拆解在控制面按串行顺序处理：先在确认 proposal 中按原顺序冻结 `decomposition_elements`，再由布局阶段逐项继承 `parent_element_id` 为 `parent_layout_node_id` 并计算 `parent_target_bounds`。智能布局必须结合原图构图、视觉重心和元素语义，按同一顺序生成唯一决策并显式声明 `axis_alignment.horizontal=left|center|right` 与 `vertical=top|center|bottom`；不得依据四边距离自动决定对齐，也不得调序、生成多个布局方案或重新生成/替换视觉参考图。布局标注 PNG 只在冻结原图上叠加父子框与右栏说明。父内容框内的 `relative_position` 只承担测量和漂移复核，`offset` 与两个 `${vertical}-${horizontal}` 锚点按显式视觉决策计算。`reference_id` 必须等于父 ID，父级只能是节点、`viewport` 或 `safe-area`，不得循环或越界；视觉决策文件及父子几何变化都会使布局身份 SHA 失效。
+effect-image 的布局拆解在控制面按串行顺序处理：先在确认 proposal 中按原顺序冻结 `decomposition_elements`，再由布局阶段逐项继承 `parent_element_id` 为 `parent_layout_node_id` 并计算 `parent_target_bounds`。智能布局必须结合原图构图、视觉重心和元素语义，按同一顺序生成唯一决策并显式声明 `axis_alignment.horizontal=left|center|right` 与 `vertical=top|center|bottom`；不得依据四边距离自动决定对齐，也不得调序、生成多个布局方案或重新生成/替换视觉参考图。布局标注 PNG 只在冻结原图上叠加父子框与右栏说明。父内容框内的 `relative_position` 只承担测量和漂移复核，`offset` 与两个 `${vertical}-${horizontal}` 锚点按显式视觉决策计算。`reference_id` 必须等于父 ID，父级只能是节点、`viewport` 或 `safe-area`，不得循环或越界；视觉决策或父子几何实际变化时只重验受影响关系，不检查布局摘要。
 
 进入 A3 `IMPLEMENTING` 时创建 `evidence/<workItemId>/execution-state.json`；纯工程 foundation-only 包在当前任务范围、工程基线、冻结实施包和工程证据就绪后即可在全局选图前初始化，具有视觉依赖的基础包仍须在三候选人工选择证据和全局静态基线冻结后初始化，场景/集成包在 V4 草图确认后进入 V5 正式实施。该状态记录绑定当前 Work Item、Implementation Package、baseline、执行计划指纹和 `executionUnits` 数组位置；只有通过 `unit-check` 的当前 PASS Result 可以把当前单元更新为 `COMPLETE`，并按预设数组激活下一串行单元或下一并行组的 `IN_PROGRESS`。并行组未全部完成时，后续顺序阶段不得提前激活；当前阶段实施序列完成后只输出 `WORKFLOW_COMPLETE`，表示该实施包已闭环，不表示场景 Work Item 已完成。场景 Work Item 继续推进时，必须在同一 `workItemId` 下通过显式阶段入口推进；V3 验收后先进入 V4 草图阶段；V4 确认后在 V5 激活新的正式 Implementation Package并完成实施和运行验收。控制面先按旧包复核完整 Execution State，再清空旧 Diff Audit/validation batch；换包时归档旧状态并初始化新阶段状态，复用包时保留原单元结果。旧状态和 Result 只保留审计用途，不能证明新阶段候选。`delegate-check`、`parallel-check`、`unit-check`、`evidence-check` 和进入 `VALIDATING` 的迁移均必须读取并复核当前阶段状态，缺失、过期、篡改或身份/顺序不一致一律阻断；其中 SCENE/DISPLAY_LAYER 的 READY、委派和激活还必须复核当前 Work Item 的 V2/V3 结果。门禁问题先输出 `repair`/`revalidate` 及其真实受影响单元；只有上游事实失效、任务范围真实变化或硬门将被绕过时才输出 `return`；普通候选身份变化不触发 `RETURN`。
 
-`highFidelityPrerequisite` 是 SCENE/DISPLAY_LAYER 必填、其他类型必须为 null 的严格 nullable 字段，引用当前单元所属 Work Item 的 V2 方案。SCENE 引用场景工作项证据；DISPLAY_LAYER 引用独立弹窗工作项证据，并额外以 scene/layer/host 身份绑定宿主上下文图。两者不得共用一个实施包，也不要求使用同一 `evidenceFile`；缺字段、身份漂移、文件缺失或 SHA 漂移均 fail closed。
+`highFidelityPrerequisite` 是 SCENE/DISPLAY_LAYER 必填、其他类型必须为 null 的严格 nullable 字段，引用当前单元所属 Work Item 的 V2 方案。SCENE 引用场景工作项证据；DISPLAY_LAYER 引用独立弹窗工作项证据，并额外以 scene/layer/host 身份绑定宿主上下文图。两者不得共用一个实施包，也不要求使用同一 `evidenceFile`；必要业务字段缺失、任务归属不符或文件缺失均拒绝；摘要不参与验收。
 
-控制面读取 V2 布局候选目录的实际五份产物，并把 `layout_review_file`、`layout_review_sha256`、`layout_review_identity_sha256`、`layout_nodes_file`、`layout_nodes_sha256` 与 PNG、决策、拆解确认、proposal、target、scene/state 身份逐项复核。`review.html` 仅是候选审阅展示，不能改变状态或替代标准布局 PNG、F2 机器门；缺父节点、成环、越界、顺序/身份漂移或任一 SHA 不一致均 fail closed。字段和页面约束见[离线布局审阅产物](../../phaser4-game-ui-layout/references/layout-review-artifacts.md)。
+控制面读取 V2 布局候选目录的实际五份产物，并把 `layout_review_file`、`layout_nodes_file` 与 PNG、决策、拆解确认、proposal、target、scene/state 身份逐项复核。`review.html` 仅是候选审阅展示，不能改变状态或替代标准布局 PNG、F2 机器门；缺父节点、成环、越界、顺序/身份漂移或必要文件不可读取均拒绝。字段和页面约束见[离线布局审阅产物](../../phaser4-game-ui-layout/references/layout-review-artifacts.md)。
 
 V2→V3 是同一场景 Work Item 的内部阶段推进。V2 拆解与布局确认、V3 正式资源证据、V4 已确认草图、V5 运行态证据分别写入同一 `workItemId` 的不可变阶段引用；V5 正式实施包进入 `IMPLEMENTING` 前必须消费当前 Work Item 的 V2/V3 证据和 V4 已确认草图。阶段实施序列完成只表示当前包完成，只有当前 Work Item 的 V5 运行态联合验收证据闭合后才允许场景 `COMPLETE`。

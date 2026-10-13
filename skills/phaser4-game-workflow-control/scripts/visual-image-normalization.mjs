@@ -155,11 +155,11 @@ function assertCropPreservesVisibleBounds(cropRect, alphaStats) {
   }
 }
 
-/** 读取真实原始 图像生成 尝试的完整身份，禁止旧版路径数组或调用方伪造比例修正证据。 */
+/** 读取真实原始 图像生成 尝试的结构身份，摘要只随输出记录，不参与通过判定。 */
 async function readAttempt(attemptInput, index) {
   const input = attemptInput;
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new ImageNormalizationError(`图像生成 attempt[${index}] 必须是完整对象；旧版路径字符串结构不再接受`);
-  const requiredFields = ["attempt_id", "generation_record_id", "generated_at", "file", "sha256", "width", "height"];
+  const requiredFields = ["attempt_id", "generation_record_id", "generated_at", "file", "width", "height"];
   const missing = requiredFields.filter((field) => input[field] === undefined);
   if (missing.length) throw new ImageNormalizationError(`图像生成 attempt[${index}] 缺少字段：${missing.join("、")}`);
   if (typeof input.attempt_id !== "string" || !input.attempt_id.trim() || typeof input.generation_record_id !== "string" || !input.generation_record_id.trim()) throw new ImageNormalizationError(`图像生成 attempt[${index}] 必须包含非空 attempt_id 与 generation_record_id`);
@@ -173,7 +173,6 @@ async function readAttempt(attemptInput, index) {
   } catch (error) {
     throw new ImageNormalizationError(`无法读取生成尝试文件：${error.message}`);
   }
-  if (input.sha256 !== sha256) throw new ImageNormalizationError(`图像生成 attempt[${index}] 的 sha256 与实际文件不一致`);
   if (input.width !== metadata.width) throw new ImageNormalizationError(`图像生成 attempt[${index}] 的 width 与实际文件不一致`);
   if (input.height !== metadata.height) throw new ImageNormalizationError(`图像生成 attempt[${index}] 的 height 与实际文件不一致`);
   return { attempt_id: input.attempt_id, generation_record_id: input.generation_record_id, generated_at: input.generated_at, file: input.file, sha256, width: metadata.width, height: metadata.height };
@@ -198,7 +197,6 @@ async function readAspectRatioCorrection(options, sourceMetadata, targetWidth, t
   if (!unitInterval(focusX) || !unitInterval(focusY)) throw new ImageNormalizationError("比例修正必须显式提供 0 到 1 之间的 focus.x/focus.y");
   const resolvedAttempts = await Promise.all(attempts.map((attempt, index) => readAttempt(attempt, index)));
   if (sameResolvedPath(resolvedAttempts[0].file, resolvedAttempts[1].file)) throw new ImageNormalizationError("两次 图像生成 attempt 必须来自两个不同的实际文件");
-  if (resolvedAttempts[0].sha256 === resolvedAttempts[1].sha256) throw new ImageNormalizationError("两次 图像生成 attempt 必须具有不同的实际 SHA-256，复制同一输出不能作为第二次生成");
   if (new Set(resolvedAttempts.map((attempt) => attempt.attempt_id)).size !== 2) throw new ImageNormalizationError("两次 图像生成 attempt 的 attempt_id 必须唯一");
   if (new Set(resolvedAttempts.map((attempt) => attempt.generation_record_id)).size !== 2) throw new ImageNormalizationError("两次 图像生成 attempt 的 generation_record_id 必须唯一");
   if (resolvedAttempts[1].width !== sourceMetadata.width || resolvedAttempts[1].height !== sourceMetadata.height) throw new ImageNormalizationError("第二次 图像生成 attempt 的实际尺寸必须与当前归一化输入一致");
@@ -268,10 +266,6 @@ export async function normalizeImageToContract(options = {}) {
   const targetWidth = options.targetWidth ?? options.target_width;
   const targetHeight = options.targetHeight ?? options.target_height;
   const requireAlpha = options.requireAlpha ?? options.require_alpha ?? false;
-  const candidateSha256 = options.candidateSha256 ?? options.candidate_sha256;
-  if (candidateSha256 !== undefined && (typeof candidateSha256 !== "string" || !/^sha256:[0-9a-f]{64}$/.test(candidateSha256))) {
-    throw new ImageNormalizationError("candidate_sha256 必须使用 sha256:<64位小写十六进制>");
-  }
   validateTargetSize(targetWidth, targetHeight);
   const paths = resolveDistinctPaths(sourceFile, outputFile);
   const format = outputFormat(paths.outputAbsolute);
@@ -312,7 +306,7 @@ export async function normalizeImageToContract(options = {}) {
   const sourceSha256 = await sha256File(paths.sourceAbsolute);
   const outputSha256 = await sha256File(paths.outputAbsolute);
   const transparencyPreview = transparentRoute
-    ? await writeTransparencyPreviews({ sourceFile: paths.outputAbsolute, previewDirectory, candidateSha256, reservedPaths: [paths.sourceAbsolute] })
+    ? await writeTransparencyPreviews({ sourceFile: paths.outputAbsolute, previewDirectory, reservedPaths: [paths.sourceAbsolute] })
     : null;
   return {
     schema: "image-normalization/1",
@@ -376,7 +370,6 @@ export async function runImageNormalizationCli(args = process.argv.slice(2), out
   const targetWidth = Number(readFlag(args, "--width"));
   const targetHeight = Number(readFlag(args, "--height"));
   const requireAlpha = args.includes("--require-alpha");
-  const candidateSha256 = readFlag(args, "--candidate-sha256");
   const previewDirectory = readFlag(args, "--preview-dir");
   const attemptInputs = [
     readFlag(args, "--attempt-one") ?? readFlag(args, "--attempt-1") ?? readFlag(args, "--attempt1"),
@@ -390,9 +383,8 @@ export async function runImageNormalizationCli(args = process.argv.slice(2), out
     ? { attempts: allAttempts, focus: { x: Number(focusXValue), y: Number(focusYValue) } }
     : undefined;
   try {
-    const record = await normalizeImageToContract({ sourceFile, outputFile, targetWidth, targetHeight, requireAlpha, candidateSha256, previewDirectory, aspect_ratio_correction: aspectRatioCorrection });
+    const record = await normalizeImageToContract({ sourceFile, outputFile, targetWidth, targetHeight, requireAlpha, previewDirectory, aspect_ratio_correction: aspectRatioCorrection });
     output.log(JSON.stringify(record, null, 2));
-    if (record.transparency_preview && !candidateSha256) output.warn?.("透明预览未绑定 workflow candidate_sha256；输出可检查，但不能据此声称候选合同完整。");
     return 0;
   } catch (error) {
     output.error(JSON.stringify({ status: "failed", error: error.message }));

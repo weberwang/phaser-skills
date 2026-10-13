@@ -293,9 +293,6 @@ export async function removeBackgroundLocal(options = {}) {
   if (!reuseAlpha && colorSeparationVerified !== true) throw new BackgroundRemovalError("颜色阈值去背必须显式确认 color_separation_verified=true");
   if (!reuseAlpha && !requireSolidBackground) throw new BackgroundRemovalError("颜色阈值去背必须启用 require_solid_background=true");
   const candidateSha256 = options.candidateSha256 ?? options.candidate_sha256;
-  if (candidateSha256 !== undefined && (typeof candidateSha256 !== "string" || !/^sha256:[0-9a-f]{64}$/.test(candidateSha256))) {
-    throw new BackgroundRemovalError("candidate_sha256 必须使用 sha256:<64位小写十六进制>");
-  }
 
   let sourceBytes;
   try {

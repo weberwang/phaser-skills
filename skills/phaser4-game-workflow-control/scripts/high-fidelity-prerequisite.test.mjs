@@ -5,7 +5,8 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { assertGlobalVisualBaselineSelection } from './global-visual-baseline-contract.mjs';
-import { assertFormalExecutionAfterV4, assertFormalImplementationAfterV2, assertHighFidelityPrerequisite } from './high-fidelity-prerequisite.mjs';
+import { assertFormalExecutionAfterV4, assertFormalImplementationAfterV2, assertHighFidelityPrerequisite, validateHighFidelityPrerequisiteShape } from './high-fidelity-prerequisite.mjs';
+import { encodePngRgba } from '../../phaser4-game-asset-integration/scripts/effect_image_raster.mjs';
 
 const TARGET_SHA = `sha256:${'a'.repeat(64)}`;
 const CANDIDATE_SHA = `sha256:${'b'.repeat(64)}`;
@@ -154,6 +155,20 @@ test('SCENE 与 DISPLAY_LAYER 使用各自 Work Item 的 V2 拆解还原方案',
     assert.doesNotThrow(() => assertHighFidelityPrerequisite(fixture.unit, fixture.work, fixture.pkg, fixture.repo, fixture.io));
     rmSync(fixture.repo, { recursive: true, force: true });
   }
+});
+
+test('摘要字段可以缺省或变化，严格结构仍拒绝 shadow 等非摘要未知字段', () => {
+  const fixture = makeFixture();
+  const prerequisite = fixture.unit.highFidelityPrerequisite;
+  prerequisite.style_fingerprint = 'stale-style';
+  prerequisite.conditionsFingerprint = 'not-a-sha';
+  assert.deepEqual(validateHighFidelityPrerequisiteShape(fixture.unit), []);
+  delete prerequisite.style_fingerprint;
+  delete prerequisite.conditionsFingerprint;
+  assert.deepEqual(validateHighFidelityPrerequisiteShape(fixture.unit), []);
+  prerequisite.shadow = '保持严格结构';
+  assert(validateHighFidelityPrerequisiteShape(fixture.unit).some((message) => message.includes('shadow')));
+  rmSync(fixture.repo, { recursive: true, force: true });
 });
 
 test('独立 taskId/sourceWorkItemId 不能伪造场景 V2 前置', () => {
@@ -328,17 +343,17 @@ test('全局基线所选候选不在三张候选图中时拒绝', () => {
   rmSync(fixture.repo, { recursive: true, force: true });
 });
 
-test('全局基线候选图、人工决定和冻结正文任一 SHA 漂移时拒绝', () => {
+test('全局基线摘要陈旧不阻断仍可读取的候选、决定和冻结正文', () => {
   const cases = [
-    ['candidate image', (files) => writeFileSync(files.candidates[0], 'candidate-drift\n', 'utf8')],
-    ['human decision', (files) => writeFileSync(files.decision, 'decision-drift\n', 'utf8')],
+    ['candidate image', (files) => writeFileSync(files.candidates[0], encodePngRgba(1, 1, Buffer.from([220, 30, 60, 255])))],
+    ['human decision', (files) => writeFileSync(files.decision, `${JSON.stringify(JSON.parse(readFileSync(files.decision, 'utf8')), null, 4)}\n`, 'utf8')],
     ['baseline document', (files) => writeFileSync(files.document, 'baseline-drift\n', 'utf8')],
   ];
   for (const [, drift] of cases) {
     const fixture = makeFixture();
     const files = writeGlobalBaselineSelectionEvidence(fixture);
     drift(files);
-    assert.throws(() => assertFormalImplementationAfterV2(fixture.work, makeVisualFoundationPackage({ executionUnits: [{ unitType: 'SHARED' }] }), fixture.repo, fixture.io), /SHA-256 已漂移|SHA\/风格指纹已漂移|不是有效 JSON/);
+    assert.doesNotThrow(() => assertFormalImplementationAfterV2(fixture.work, makeVisualFoundationPackage({ executionUnits: [{ unitType: 'SHARED' }] }), fixture.repo, fixture.io));
     rmSync(fixture.repo, { recursive: true, force: true });
   }
 });
@@ -378,7 +393,7 @@ test('V2/V3 资源阶段禁止正式场景执行，V5 必须有已确认草图�
   rmSync(fixture.repo, { recursive: true, force: true });
 });
 
-test('当前 Work Item、候选与 diff 身份漂移均 fail closed', () => {
+test('Work Item 身份漂移仍失败，target/candidate/diff 摘要差异不阻断', () => {
   const prerequisiteWorkItem = makeFixture();
   prerequisiteWorkItem.unit.highFidelityPrerequisite.workItemId = 'OTHER-WI';
   assert.throws(() => assertHighFidelityPrerequisite(prerequisiteWorkItem.unit, prerequisiteWorkItem.work, prerequisiteWorkItem.pkg, prerequisiteWorkItem.repo, prerequisiteWorkItem.io), /当前 Work Item/);
@@ -391,12 +406,12 @@ test('当前 Work Item、候选与 diff 身份漂移均 fail closed', () => {
 
   const candidate = makeFixture();
   writeEvidenceFile(candidate, { candidateSha256: `sha256:${'d'.repeat(64)}` });
-  assert.throws(() => assertHighFidelityPrerequisite(candidate.unit, candidate.work, candidate.pkg, candidate.repo, candidate.io), /target\/candidate\/diff/);
+  assert.doesNotThrow(() => assertHighFidelityPrerequisite(candidate.unit, candidate.work, candidate.pkg, candidate.repo, candidate.io));
   rmSync(candidate.repo, { recursive: true, force: true });
 
   const diff = makeFixture();
   writeEvidenceFile(diff, { diffFingerprint: 'sha256:other-scene-v2-diff' });
-  assert.throws(() => assertHighFidelityPrerequisite(diff.unit, diff.work, diff.pkg, diff.repo, diff.io), /target\/candidate\/diff/);
+  assert.doesNotThrow(() => assertHighFidelityPrerequisite(diff.unit, diff.work, diff.pkg, diff.repo, diff.io));
   rmSync(diff.repo, { recursive: true, force: true });
 });
 
@@ -408,11 +423,11 @@ test('唯一拆解确认必须是绑定身份的 manual PASS 事实', () => {
 
   const identity = makeFixture();
   writeEvidenceFile(identity, { visualDecompositionConfirmation: { ...identity.evidence.visualDecompositionConfirmation, diffFingerprint: 'sha256:other-scene-v2-diff' } });
-  assert.throws(() => assertHighFidelityPrerequisite(identity.unit, identity.work, identity.pkg, identity.repo, identity.io), /visualDecompositionConfirmation.*target\/candidate\/diff/);
+  assert.doesNotThrow(() => assertHighFidelityPrerequisite(identity.unit, identity.work, identity.pkg, identity.repo, identity.io));
   rmSync(identity.repo, { recursive: true, force: true });
 });
 
-test('缺字段、非 COMPLETE、宿主身份漂移和 SHA 漂移均 fail closed', () => {
+test('缺字段、非 COMPLETE 和宿主身份漂移仍 fail closed；证据摘要变化不阻断', () => {
   const missing = makeFixture();
   delete missing.unit.highFidelityPrerequisite.evidenceFile;
   assert.throws(() => assertHighFidelityPrerequisite(missing.unit, missing.work, missing.pkg, missing.repo, missing.io), /V2/);
@@ -420,7 +435,7 @@ test('缺字段、非 COMPLETE、宿主身份漂移和 SHA 漂移均 fail closed
 
   const pending = makeFixture();
   writeEvidenceFile(pending, { status: 'PENDING' });
-  assert.throws(() => assertHighFidelityPrerequisite(pending.unit, pending.work, pending.pkg, pending.repo, pending.io), /V2 拆解方案未绑定当前 Work Item、scene 或 target\/candidate\/diff/);
+  assert.throws(() => assertHighFidelityPrerequisite(pending.unit, pending.work, pending.pkg, pending.repo, pending.io), /V2 拆解方案未绑定当前 Work Item、场景、完成状态或冻结状态/);
   rmSync(pending.repo, { recursive: true, force: true });
 
   const identity = makeFixture('DISPLAY_LAYER');
@@ -429,8 +444,8 @@ test('缺字段、非 COMPLETE、宿主身份漂移和 SHA 漂移均 fail closed
   rmSync(identity.repo, { recursive: true, force: true });
 
   const drift = makeFixture();
-  writeFileSync(drift.evidencePath, `${readFileSync(drift.evidencePath, 'utf8')}drift\n`, 'utf8');
-  assert.throws(() => assertHighFidelityPrerequisite(drift.unit, drift.work, drift.pkg, drift.repo, drift.io), /SHA-256 已漂移/);
+  writeFileSync(drift.evidencePath, `${readFileSync(drift.evidencePath, 'utf8')} \n`, 'utf8');
+  assert.doesNotThrow(() => assertHighFidelityPrerequisite(drift.unit, drift.work, drift.pkg, drift.repo, drift.io));
   rmSync(drift.repo, { recursive: true, force: true });
 });
 

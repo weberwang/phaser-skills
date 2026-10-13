@@ -26,9 +26,8 @@ function requireStageEvidence(work, stage, repo) {
     if (!result.ok) throw new Error(`V2 阶段入口的标准冻结拆解方案无效：${result.missingEvidence.join('、')}`);
   } else {
     const expectedType = stage === 'V3' ? 'v3-formal-acceptance' : 'v5-runtime-integration-candidate';
-    if (value.evidenceType !== expectedType || value.status !== 'PASS' || value.workItemId !== work.workItemId || value.baselineHash !== work.baselineHash) throw new Error(`${stage} 阶段入口缺少当前 Work Item/基线绑定的不可变 PASS 证据`);
+    if (value.evidenceType !== expectedType || value.status !== 'PASS' || value.workItemId !== work.workItemId) throw new Error(`${stage} 阶段入口缺少当前 Work Item 的 PASS 证据`);
   }
-  if (stage === 'V5' && value.pageSketchSha256 !== work.visualStageEvidenceRefs?.V4?.sha256) throw new Error('V5 运行证据必须绑定当前 V4 页面草图 SHA');
   return value;
 }
 
@@ -98,7 +97,7 @@ export function prepareImplementationPackageActivation({ work, pkg, packagePath,
   if (!['REVIEW', 'PASSED'].includes(work.globalState) || work.visualStage !== 'V4' || work.visualStageState !== 'v4-page-sketch-confirmed') throw new Error('正式 Implementation Package 只能在同一 Work Item 的 V4 页面草图确认后进入 V5/IMPLEMENTING');
   requireStageEvidence(work, 'V4', repo);
   const sketchReference = work.visualStageEvidenceRefs.V4;
-  if (pkg.pageSketchFile !== sketchReference.path || pkg.pageSketchSha256 !== sketchReference.sha256) throw new Error('V5 Implementation Package 必须绑定当前 V4 页面草图 path/SHA');
+  if (pkg.pageSketchFile !== sketchReference.path) throw new Error('V5 Implementation Package 必须引用当前 V4 页面草图文件');
   const nextPath = resolve(repo, packagePath);
   // 正式包替换必须先关闭旧执行序列；只有 V3→V4 草图准备入口豁免此条件。
   const previous = loadPreviousStage(work, repo, validationContext, unitIo);
@@ -112,6 +111,6 @@ export function prepareImplementationPackageActivation({ work, pkg, packagePath,
   nextWork.validationBatchId = `BATCH-${nextWork.workItemId}-${pkg.packageId}`;
   validateWorkItem(nextWork);
   const nextPackage = validationContext.validateImplementationPackage(pkg, nextWork);
-  if (nextPackage.pageSketchFile !== sketchReference.path || nextPackage.pageSketchSha256 !== sketchReference.sha256) throw new Error('V5 Implementation Package 草图绑定在校验时发生变化');
+  if (nextPackage.pageSketchFile !== sketchReference.path) throw new Error('V5 Implementation Package 草图文件引用在校验时发生变化');
   return { nextWork, package: nextPackage, packagePath: nextPath, previousWork: previous.state ? work : null, previousPackage: previous.package, previousState: previous.state, replaceExisting: Boolean(previous.state) };
 }

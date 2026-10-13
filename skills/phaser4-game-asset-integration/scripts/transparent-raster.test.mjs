@@ -35,7 +35,7 @@ test("空主体边界稳定返回零尺寸范围", () => {
   });
 });
 
-test("深浅底预览保留同一候选与源图哈希并正确合成半透明像素", async () => {
+test("深浅底预览保留可选候选记录并正确合成半透明像素", async () => {
   const directory = await mkdtemp(join(tmpdir(), "transparent-raster-"));
   try {
     const sourceFile = join(directory, "glow.png");
@@ -45,12 +45,12 @@ test("深浅底预览保留同一候选与源图哈希并正确合成半透明�
     const record = await writeTransparencyPreviews({
       sourceFile,
       previewDirectory,
-      candidateSha256: `sha256:${"a".repeat(64)}`,
+      candidateSha256: "candidate-after-edit",
     });
-    assert.equal(record.candidate_sha256, `sha256:${"a".repeat(64)}`);
+    assert.equal(record.candidate_sha256, "candidate-after-edit");
     assert.match(record.source_sha256, /^sha256:[a-f0-9]{64}$/);
     assert.deepEqual(record, {
-      candidate_sha256: `sha256:${"a".repeat(64)}`,
+      candidate_sha256: "candidate-after-edit",
       source_file: sourceFile,
       source_sha256: `sha256:${createHash("sha256").update(sourceBytes).digest("hex")}`,
       light: { file: join(previewDirectory, "glow.light.png"), sha256: record.light.sha256, background_color: "#F2E9DF" },

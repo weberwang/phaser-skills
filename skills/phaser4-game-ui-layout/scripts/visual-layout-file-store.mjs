@@ -1,8 +1,8 @@
 import { validateVisualLayoutDocument } from "./visual-layout-editor.mjs";
 
-/** 核对编辑文件始终绑定同一个已冻结目标和场景状态。 */
+/** 核对编辑文件始终绑定同一个场景与状态。 */
 function assertIdentity(layout, identity) {
-  for (const field of ["target_sha256", "scene_id", "state_id"]) {
+  for (const field of ["scene_id", "state_id"]) {
     if (layout[field] !== identity[field]) throw new Error(`布局文件 ${field} 与当前编辑目标不一致`);
   }
 }
@@ -25,7 +25,7 @@ export async function createVisualLayoutFileStore(handle, nodes) {
   const initialText = await initialFile.text();
   let initial;
   try { initial = validateVisualLayoutDocument(JSON.parse(initialText), nodes); } catch (error) { throw new Error(`布局文件无效：${error.message}`); }
-  const identity = { target_sha256: initial.target_sha256, scene_id: initial.scene_id, state_id: initial.state_id };
+  const identity = { scene_id: initial.scene_id, state_id: initial.state_id };
   let snapshot = initialText;
   let saving = false;
 

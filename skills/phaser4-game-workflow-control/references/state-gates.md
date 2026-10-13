@@ -12,6 +12,8 @@
 
 ## 三级处置
 
+先按[实际完成情况验收](control-model.md#按实际完成情况验收)判断是否存在真实失败。交付已满足当前明确要求，只有非强制实现细节与早期合同描述不同，不构成门禁失败，也不要求修订合同或进入 `RETURN`；当前候选证据缺失或失效仍按下述规则补齐。
+
 所有门禁失败必须先给出以下三类处置之一，并只使真实受影响范围及其下游失效：
 
 1. `repair`：修复当前记录、字段、路径、文件绑定或可补的证据；不改变冻结候选，不回退阶段，修复后重新运行当前门。
@@ -48,10 +50,10 @@ V0-V5、G0-G3 与领域阶段是 `stageId`，不是另一套状态机。只有�
 | V1 | `in-progress`/过程状态 | 视觉契约、冻结图、布局和容差 |
 | V2 | `v2-production-planning-complete` | 拆解图、技术 JSON、coverage、component×state、父子/停靠/对齐/显示层事实、生产方案和拆解确认 |
 | V3 | `v3-formal-acceptance-complete` | 正式资产、组件资源状态、`visualManifestFile`/`visualManifestSha256` 与生产验收 |
-| V4 | `v4-page-sketch-confirmed` | `phaser-page-sketch/1.0` 文件、V2/V3 来源、资源 SHA、确认时间与内容摘要 |
+| V4 | `v4-page-sketch-confirmed` | `phaser-page-sketch/1.0` 文件、V2/V3 来源、实际资源与确认时间 |
 | V5 | `v5-runtime-integration-candidate` | runtime replay、fresh fidelity、正式 Scene 消费、无替代 |
 
-V3→V4 不要求先完成正式 Scene 代码。V4 保存不产生完成态；确认内容后才允许登记 V4 不可变引用并进入 V5。正式执行准入和 COMPLETE 会重新读取草图及来源文件，V5 运行候选必须提供 `pageSketchSha256` 等于当前 V4 引用 SHA。
+V3→V4 不要求先完成正式 Scene 代码。V4 保存不产生完成态；确认内容后才允许登记 V4 不可变引用并进入 V5。正式执行准入和 COMPLETE 会重新读取草图及来源文件，V5 运行候选须消费当前 V4 草图及其有效人工确认，不要求 `pageSketchSha256`。
 
 `global-static-baseline-frozen` 是静态基线的独立状态，不是 V2 完成状态。正式可见 Scene/UI 工作进入集成状态前，校验器必须从 V2→V3→V4→V5 的不可变文件证据派生运行候选；无副作用本地 A4 不因等级标签额外进入批准门。裸 `frozen`、未知阶段、根摘要、手写 PASS 或 `stageId=main/integration/production-entry` 均失败。
 
@@ -59,15 +61,15 @@ V3→V4 不要求先完成正式 Scene 代码。V4 保存不产生完成态；�
 
 任务范围和工程基线完成后，纯工程 foundation-only 包可先完成 `SHARED` 最小项目骨架和 `MODULE` 场景无关基础模块；只有具有视觉合同或资产生产依赖的基础包才需先建立全局基线 brief，生成恰好三张同条件候选效果图并同屏交给人工，人工选择确认一张后以 `globalVisualBaselineSelectionRef` 正式冻结 `visual_baseline`。基础实施完成后按各场景 Work Item 进入 V1；每个 V1 内生成或接收并冻结当前场景的 scene master/reference target、必需 transient display-layer 宿主上下文图、`scene_reconstruction_contract` 和初步还原草案，集合按 scene/state 分项而非一张合并图；随后该场景才在 V2 完成拆解图确认与生产方案。
 
-具有视觉依赖的 foundation-only 包必须同时通过 `globalVisualBaselineSelectionRef` 的三候选/唯一人工确认/真实 SHA 文件门和 `globalStaticBaselineState=global-static-baseline-frozen`，缺失任一项时 fail closed；纯工程包只需当前任务范围、工程基线、冻结实施包和工程证据，不等待全局选图；一旦基础包声明正式入口或可见资源消费等视觉行为，即回到正式 V2/V3 门。混入 SCENE/DISPLAY_LAYER/INTEGRATION 的包仍以 V2 `v2-production-planning-complete` 为规划边界，并以 V4 草图确认作为正式执行边界。全局选择是独立硬门，不能替代逐场景 V2。参考模式的 `effect-image` 仍在同一 Work Item 内完成 V1→V5。
+具有视觉依赖的 foundation-only 包必须同时通过 `globalVisualBaselineSelectionRef` 的三候选/唯一人工确认/实际文件门和 `globalStaticBaselineState=global-static-baseline-frozen`，缺失任一项时 fail closed；纯工程包只需当前任务范围、工程基线、冻结实施包和工程证据，不等待全局选图；一旦基础包声明正式入口或可见资源消费等视觉行为，即回到正式 V2/V3 门。混入 SCENE/DISPLAY_LAYER/INTEGRATION 的包仍以 V2 `v2-production-planning-complete` 为规划边界，并以 V4 草图确认作为正式执行边界。全局选择是独立硬门，不能替代逐场景 V2。参考模式的 `effect-image` 仍在同一 Work Item 内完成 V1→V5。
 
 正式代码包按 `SHARED`→`MODULE`→`SCENE`→`INTEGRATION` 或 `SHARED`→`MODULE`→`DISPLAY_LAYER`→`INTEGRATION` 排列；SCENE 与 DISPLAY_LAYER 不得混在同一包。各正式单元读取所属 Work Item 的 V2/V3 证据和 V4 已确认草图，`hostSceneId` 不构成宿主场景完成依赖。
 
 ## 高保真前置
 
-`highFidelityPrerequisite` 必须是不可变引用：`workItemId`、`status=COMPLETE`、`stage=V2`、`frozen=true`、`sceneId`/`displayLayerId`/`hostSceneId`、冻结 `targetSha256`、`candidateSha256`、`diffFingerprint`、仓库内相对 `evidenceFile` 与当前 `evidenceSha256`。证据文件须为 `phaser4-scene-v2-reconstruction-plan/1.0` 的单一场景根结果：根提供 `sceneMaster`、`sceneReconstructionContract`、`decompositionAnnotation`、`technicalDecomposition`、`visualDecompositionConfirmation`、`visualProductionContract`、`visualProductionUnits` 和 `displayLayerContexts[]`。
+`highFidelityPrerequisite` 必须是不可变引用：`workItemId`、`status=COMPLETE`、`stage=V2`、`frozen=true`、`sceneId`/`displayLayerId`/`hostSceneId`、仓库内相对 `evidenceFile`；摘要字段可选且不参与验收。证据文件须为 `phaser4-scene-v2-reconstruction-plan/1.0` 的单一场景根结果：根提供 `sceneMaster`、`sceneReconstructionContract`、`decompositionAnnotation`、`technicalDecomposition`、`visualDecompositionConfirmation`、`visualProductionContract`、`visualProductionUnits` 和 `displayLayerContexts[]`。
 
-SCENE 与 DISPLAY_LAYER 使用同一 `evidenceFile`，candidate/diff/target 与 scene/layer/host 身份必须一致。缺字段、格式、路径、越界、缺文件或可补的 SHA 绑定错误先 `repair` 并重验当前门；上游事实未变但机器证据过期/失败时为 `revalidate`。只有上游事实失效、任务范围真实变化或硬门将被绕过才 `return` 到最早受影响阶段；普通候选身份变化不触发回退。
+SCENE 与 DISPLAY_LAYER 使用同一 `evidenceFile`，scene/layer/host 及任务归属必须一致，candidate/diff/target 摘要仅作可选追踪。必要业务字段、格式、路径、越界或缺文件错误先 `repair` 并重验当前门；上游事实未变但机器证据过期/失败时为 `revalidate`。只有上游事实失效、任务范围真实变化或硬门将被绕过才 `return` 到最早受影响阶段；普通候选身份变化不触发回退。
 
 V2→V3 是同一场景 Work Item 的内部阶段推进。V2 拆解与布局确认、V3 正式资源证据、V4 已确认草图、V5 运行态证据分别写入同一 `workItemId` 的不可变阶段引用；V5 正式实施包进入 `IMPLEMENTING` 前必须消费当前 Work Item 的 V2/V3 证据和 V4 已确认草图。阶段实施序列完成只表示当前包完成，只有当前 Work Item 的 V5 运行态联合验收证据闭合后才允许场景 `COMPLETE`。
 
@@ -83,10 +85,10 @@ V2→V3 是同一场景 Work Item 的内部阶段推进。V2 拆解与布局确�
 
 ## 视觉生产硬门
 
-V2 必须完成逐 region 状态分析，绑定分析证据 SHA、冻结目标 SHA、分析 ID 和完成时间后，才能声明 `component_inventory`。`annotation_number` 只是审阅区域编号，不是资产数量单位；唯一原子部件由 `component_id/atomic_visual_key` 标识，重复实例用 `placements` 表达。效果图拆解分析 PNG、原子部件、状态和资产需求清单必须使用 `visual-decomposition-confirmation/1.0` 记录并由用户 `status=accepted`、`confirmation_mode=manual` 确认后才能进入 Implementation Package；缺失、pending、AUTO、旧字段、旧 SHA、漏编号或区域定义变化一律拒绝。
+V2 必须完成逐 region 状态分析，记录实际分析证据、目标文件、分析 ID 和完成时间后，才能声明 `component_inventory`。`annotation_number` 只是审阅区域编号，不是资产数量单位；唯一原子部件由 `component_id/atomic_visual_key` 标识，重复实例用 `placements` 表达。效果图拆解分析 PNG、原子部件、状态和资产需求清单必须使用 `visual-decomposition-confirmation/1.0` 记录并由用户 `status=accepted`、`confirmation_mode=manual` 确认后才能进入 Implementation Package；缺失、pending、AUTO、旧字段、漏编号或区域定义变化一律拒绝。
 
 生成式位图的每个唯一 `component_id × required state_id` 必须绑定一个独立位图，并强制 `delivery_mode=individual`、`atlas_allowed=false`，不能使用图集；其尺寸由验证器按逻辑像素 `ceil(max placement width/height × intended_scale_range.max)` 自动计算，`expected_assets.width/height` 必须精确等于该最小值，图片生产基线 `max_dpr=1` 和 `padding_policy=none` 必须存在；运行时实际 DPR 仍由设备动态读取并封顶为 2，历史 1.5/2 倍生产证据须重生成或标记 `stale`。固定视觉组件只允许 `image-generation`、`authored-raster` 或有证据的 `reuse`，交付为真实 PNG/JPG 位图；非图片逻辑、交互热区、碰撞或布局才能使用程序绘制。
 
 V3 `production_contract_audit` 必须逐部件核对实际输出和 `component_usages`；F2 只消费 `validationMode=MACHINE` 的确定性机器事实，不再产生 `production_contract_review` 或 `component_reviews`；V5 还必须绑定 F3 runtime replay、非空 freshness-bound fidelity cases、运行时实际消费及无未批准替换。
 
-Spine 换皮的 `spine_batch_acceptance` 只表示局部批次生产锁定。它必须绑定批次 revision、审阅图 SHA、候选 Cell SHA 和 Region 顺序，但不写入全局 Approval Ledger、不计为场景 V2 拆解确认，也不得绕过 V5 运行态证据。
+Spine 换皮的 `spine_batch_acceptance` 只表示局部批次生产锁定。它必须核对批次 revision、实际审阅图、候选 Cell 和 Region 顺序，但不写入全局 Approval Ledger、不计为场景 V2 拆解确认，也不得绕过 V5 运行态证据。

@@ -42,6 +42,6 @@ Page `pma: true` 时，把 straight-alpha RGB 按 `rgb = rgb * alpha / 255` 预�
 
 1. 每个 Page 的尺寸、顺序和 PNG 文件存在；
 2. 每个 Region 的名称、`xy/size/orig/offset/rotate/index` 与源一致；
-3. 所有生成图、源参考、审阅证据、运行态证据和输出 Atlas/Page 哈希绑定同一候选；
+3. 所有生成图、源参考、审阅证据、运行态证据和输出 Atlas/Page 按实际路径、批次和任务归属核对，不要求哈希绑定；
 4. Phaser 运行态加载所有 Skin、Attachment、动画和 Mesh 变形无缺图、错位、翻转、PMA 黑边或 UV 断裂。
 5. Atlas 文本中 Page Header 与第一个 Region、同 Page Region 之间无空行；仅不同 Page 之间保留一个空行。

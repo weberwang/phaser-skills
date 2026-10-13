@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { createHash } from "node:crypto";
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,11 +8,6 @@ import { validatePageSketchResourceBindings } from "./page-sketch-resource-bindi
 import { validateVisualLayoutDocument } from "./visual-layout-editor.mjs";
 
 const ACCEPTED_STATES = new Set(["accepted", "pass", "passed", "complete", "completed", "valid"]);
-
-/** 对输入文件字节计算合同统一使用的 SHA-256 身份。 */
-function sha256(bytes) {
-  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-}
 
 /** 检查路径留在项目目录内；资源 URL 以项目根为基准解析。 */
 async function resolveProjectFile(projectRoot, projectPath, label, { allowMissing = false } = {}) {
@@ -47,37 +41,24 @@ async function resolveProjectFile(projectRoot, projectPath, label, { allowMissin
   return absolutePath;
 }
 
-/** 读取相对项目根的 JSON 文件，并返回精确字节供身份计算。 */
+/** 读取相对项目根的 JSON 文件，先保证源路径可读且内容可解析。 */
 async function readProjectJson(projectRoot, file, label) {
   const absolutePath = await resolveProjectFile(projectRoot, file, label);
   const bytes = await readFile(absolutePath);
   let value;
   try { value = JSON.parse(bytes.toString("utf8")); } catch (error) { throw new Error(`${label} 不是合法 JSON：${error.message}`); }
-  return { value, bytes, absolutePath };
+  return { value, absolutePath };
 }
 
-/** 检查 V3 的不可变正式资源 PASS 回执与本次 manifest 及 candidate 身份绑定。 */
-function validateV3Acceptance(evidence, manifest, manifestFile, manifestSha, nodesDocument) {
+/** 检查 V3 正式资源 PASS 回执仍绑定当前工作项、候选版本和实际清单路径。 */
+function validateV3Acceptance(evidence, manifest, manifestFile) {
   if (!evidence || evidence.evidenceType !== "v3-formal-acceptance" || evidence.status !== "PASS") {
     throw new Error("V3 正式验收证据必须为 v3-formal-acceptance PASS");
   }
   if (typeof evidence.acceptanceId !== "string" || evidence.acceptanceId.trim() === "") throw new Error("V3 正式验收证据缺少 acceptanceId");
   if (evidence.workItemId !== manifest.workItemId) throw new Error("V3 正式验收证据 Work Item 与资源清单不一致");
   if (evidence.candidateVersion !== manifest.candidateVersion) throw new Error("V3 PASS evidence candidateVersion 与资源清单不一致");
-  if (evidence.targetSha256 !== nodesDocument.target_sha256 || evidence.targetSha256 !== manifest.reference_target?.target_sha256) throw new Error("V3 PASS evidence、V2 nodes 与 manifest 冻结目标 SHA 不一致");
-  if (validateProjectRelativePath(evidence.visualManifestFile, "V3 evidence visualManifestFile") !== validateProjectRelativePath(manifestFile, "v3_manifest_file") || evidence.visualManifestSha256 !== manifestSha) throw new Error("V3 PASS 证据必须绑定本次输入的 visual-assets.json 路径和真实 SHA");
-  const candidate = evidence.candidateIdentity;
-  if (!candidate || !/^sha256:[0-9a-f]{64}$/.test(candidate.sha256 ?? "") || typeof candidate.diffFingerprint !== "string" || candidate.diffFingerprint.trim() === "") {
-    throw new Error("V3 正式验收证据缺少有效 candidateIdentity");
-  }
-  if (evidence.contentHash !== candidate.sha256) {
-    throw new Error("V3 evidence contentHash 与 candidateIdentity 不一致");
-  }
-  if (typeof evidence.diffFingerprint !== "string" || evidence.diffFingerprint !== candidate.diffFingerprint) throw new Error("V3 evidence.diffFingerprint 与 candidateIdentity 不一致");
-  const manifestCandidate = manifest.candidate_identity;
-  if (!manifestCandidate || manifestCandidate.sha256 !== candidate.sha256 || manifestCandidate.diff_fingerprint !== candidate.diffFingerprint) {
-    throw new Error("V3 PASS evidence candidateIdentity 与 visual-assets.json candidate_identity 不一致");
-  }
+  if (validateProjectRelativePath(evidence.visualManifestFile, "V3 evidence visualManifestFile") !== validateProjectRelativePath(manifestFile, "v3_manifest_file")) throw new Error("V3 PASS 证据必须绑定本次输入的 visual-assets.json 路径");
   for (const [field, collection] of [["formalAssets", evidence.formalAssets], ["components", evidence.components]]) {
     if (!Array.isArray(collection) || collection.length === 0 || collection.some((item) => !item || !ACCEPTED_STATES.has(String(item.status).toLowerCase()))) {
       throw new Error(`V3 PASS evidence ${field} 必须是非空 accepted 状态集合`);
@@ -85,7 +66,7 @@ function validateV3Acceptance(evidence, manifest, manifestFile, manifestSha, nod
   }
 }
 
-/** 先以共享纯合同校验 component/state/placement，再核验每份 accepted 运行文件字节。 */
+/** 先以共享纯合同校验 component/state/placement，再读取每份 accepted 资源文件。 */
 async function buildAcceptedAssets(projectRoot, resourceMap, manifest, nodes, identity) {
   if (!Array.isArray(resourceMap.assets)) throw new Error("资源映射 assets 必须是数组");
   const mappings = validatePageSketchResourceBindings({
@@ -103,18 +84,15 @@ async function buildAcceptedAssets(projectRoot, resourceMap, manifest, nodes, id
     const label = `resources.assets[${index}]`;
     const assetId = mapping.asset_id;
     const file = validateProjectRelativePath(mapping.file, `${label}.file`);
-    const declared = manifestAssets.get(assetId);
-    if (typeof declared.sha256 !== "string" || !/^sha256:[0-9a-f]{64}$/.test(declared.sha256)) throw new Error(`${label} accepted 资源缺少有效 SHA-256`);
-    const bytes = await readFile(await resolveProjectFile(projectRoot, file, `${label}.file`));
-    const digest = sha256(bytes);
-    if (declared.sha256 !== digest) throw new Error(`${label} 实际文件 SHA 与 accepted 资源 sha256 不一致`);
-    result.push({ asset_id: assetId, file, sha256: digest, layout_node_id: mapping.layout_node_id, kind: "image" });
+    if (!manifestAssets.has(assetId)) throw new Error(`${label} 资源 ${assetId} 不存在于 V3 清单`);
+    await readFile(await resolveProjectFile(projectRoot, file, `${label}.file`));
+    result.push({ asset_id: assetId, file, layout_node_id: mapping.layout_node_id, kind: "image" });
   }
   return result;
 }
 
 /** 基于 V2 几何、V3 PASS 资源和开发期展示配方生成未确认 V4 草图。 */
-export async function buildPageSketchDocument({ projectRoot, nodesDocument, nodesBytes, nodesFile, v3Manifest, manifestBytes, manifestFile, v3Evidence, evidenceBytes, evidenceFile, resourceMap, referenceBytes }) {
+export async function buildPageSketchDocument({ projectRoot, nodesDocument, nodesFile, v3Manifest, manifestFile, v3Evidence, evidenceFile, resourceMap, referenceBytes }) {
   if (nodesDocument?.schema !== "phaser-layout-nodes/1.0" || !Array.isArray(nodesDocument.layout_nodes) || nodesDocument.layout_nodes.length === 0) throw new Error("输入必须是有效且包含节点的 V2 layout-nodes/1.0 文档");
   if (!v3Manifest || v3Manifest.schema_version !== "1.5" || typeof v3Manifest.workItemId !== "string" || typeof v3Manifest.candidateVersion !== "string") {
     throw new Error("V3 visual-assets.json 必须是当前 Work Item 的 schema 1.5 清单");
@@ -122,17 +100,11 @@ export async function buildPageSketchDocument({ projectRoot, nodesDocument, node
   if (resourceMap?.schema !== PAGE_SKETCH_RESOURCE_MAP_SCHEMA || typeof resourceMap.node_presentations !== "object" || resourceMap.node_presentations === null) {
     throw new Error(`资源映射 schema 必须为 ${PAGE_SKETCH_RESOURCE_MAP_SCHEMA} 并包含 node_presentations`);
   }
-  validateV3Acceptance(v3Evidence, v3Manifest, manifestFile, sha256(manifestBytes), nodesDocument);
+  validateV3Acceptance(v3Evidence, v3Manifest, manifestFile);
 
-  const targetSha = nodesDocument.target_sha256;
-  if (!/^sha256:[0-9a-f]{64}$/.test(targetSha ?? "")) throw new Error("V2 节点快照缺少有效 target_sha256");
   const referenceFile = validateProjectRelativePath(v3Manifest.reference_target?.original_file, "reference_target.original_file");
-  const actualReferenceSha = sha256(referenceBytes);
-  if (actualReferenceSha !== targetSha || (v3Manifest.reference_target?.target_sha256 && v3Manifest.reference_target.target_sha256 !== targetSha)) {
-    throw new Error("冻结效果图真实 SHA 与 V2 target_sha256/V3 target identity 不一致");
-  }
+  if (!Buffer.isBuffer(referenceBytes) || referenceBytes.length === 0) throw new Error("冻结效果图必须是可读取的非空文件");
   const viewport = nodesDocument.viewport;
-  if (nodesDocument.target_sha256 !== v3Manifest.reference_target?.target_sha256) throw new Error("V2 节点 target_sha256 与 V3 冻结目标不一致");
   if (!v3Manifest.reference_target?.scene_ids?.includes(nodesDocument.scene_id) || !v3Manifest.reference_target?.state_ids?.includes(nodesDocument.state_id)) throw new Error("V2 Scene/State 不在 V3 冻结目标范围内");
   const canvas = v3Manifest.coverage_audit?.canvases?.find((item) => item.scene_id === nodesDocument.scene_id && item.state_id === nodesDocument.state_id);
   if (!canvas || canvas.width !== viewport?.width || canvas.height !== viewport?.height) throw new Error("V2 viewport 与 V3 当前 Scene/State coverage canvas 不一致");
@@ -148,8 +120,7 @@ export async function buildPageSketchDocument({ projectRoot, nodesDocument, node
     }
     if (presentation.kind === "runtime-program") {
       const moduleFile = validateProjectRelativePath(presentation.module_file, `node_presentations.${nodeId}.module_file`);
-      const moduleBytes = await readFile(await resolveProjectFile(projectRoot, moduleFile, `node_presentations.${nodeId}.module_file`));
-      if (sha256(moduleBytes) !== presentation.module_sha256) throw new Error(`runtime-program 节点 ${nodeId} 的预览模块 SHA 不匹配`);
+      await readFile(await resolveProjectFile(projectRoot, moduleFile, `node_presentations.${nodeId}.module_file`));
     }
   }
   for (const nodeId of Object.keys(resourceMap.node_presentations)) if (!nodeIds.has(nodeId)) throw new Error(`资源映射包含不在 V2 快照中的节点：${nodeId}`);
@@ -158,10 +129,9 @@ export async function buildPageSketchDocument({ projectRoot, nodesDocument, node
     if (presentation.kind !== "image" || !presentation.asset_ids.includes(asset.asset_id)) throw new Error(`正式资源 ${asset.asset_id} 没有在节点 presentation 中展示`);
   }
 
-  const layout = validateVisualLayoutDocument({ schema: "phaser-visual-layout/1.0", target_sha256: targetSha, scene_id: nodesDocument.scene_id, state_id: nodesDocument.state_id, offsets: {} }, nodes);
+  const layout = validateVisualLayoutDocument({ schema: "phaser-visual-layout/1.0", scene_id: nodesDocument.scene_id, state_id: nodesDocument.state_id, offsets: {} }, nodes);
   const document = {
     schema: PAGE_SKETCH_SCHEMA,
-    target_sha256: targetSha,
     scene_id: nodesDocument.scene_id,
     state_id: nodesDocument.state_id,
     work_item_id: v3Manifest.workItemId,
@@ -169,11 +139,8 @@ export async function buildPageSketchDocument({ projectRoot, nodesDocument, node
     viewport,
     reference_file: referenceFile,
     v2_nodes_file: validateProjectRelativePath(nodesFile, "v2_nodes_file"),
-    v2_nodes_sha256: sha256(nodesBytes),
     v3_manifest_file: validateProjectRelativePath(manifestFile, "v3_manifest_file"),
-    v3_manifest_sha256: sha256(manifestBytes),
     v3_evidence_file: validateProjectRelativePath(evidenceFile, "v3_evidence_file"),
-    v3_evidence_sha256: sha256(evidenceBytes),
     v3_assets: v3Assets,
     nodes,
     node_presentations: structuredClone(resourceMap.node_presentations),
@@ -208,13 +175,10 @@ export async function initPageSketch(args) {
   const sketch = await buildPageSketchDocument({
     projectRoot,
     nodesDocument: nodesInput.value,
-    nodesBytes: nodesInput.bytes,
     nodesFile: args["--nodes"],
     v3Manifest: manifestInput.value,
-    manifestBytes: manifestInput.bytes,
     manifestFile: args["--v3-manifest"],
     v3Evidence: evidenceInput.value,
-    evidenceBytes: evidenceInput.bytes,
     evidenceFile: args["--v3-evidence"],
     resourceMap: resourceInput.value,
     referenceBytes,

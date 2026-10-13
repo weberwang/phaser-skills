@@ -1,5 +1,4 @@
 import assert from "node:assert/strict"; import { prepareTransparencyFixture } from "./transparent-route-test-fixtures.mjs";
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -228,11 +227,11 @@ test("图像生成 缺少生成记录和提示词时拒绝", () => {
   assert(errors.some((item) => item.includes("generation_record")));
 });
 
-test("V5 图像运行验收要求正式资源身份和实际消费证据", () => {
+test("V5 图像运行验收检查资源身份和实际消费，摘要错误不阻断", () => {
   const contract = independentContract({ production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true });
   const errors = validateImageGenerationContract(imageGenAsset({ width: 0, sha256: "bad", runtime_consumption: null, runtime_consumed: true }), contract, { stage: "V5", annotation_number: 4, region_id: "r4" }, { requireRuntimeConsumption: true });
   assert(errors.some((item) => item.includes("width")));
-  assert(errors.some((item) => item.includes("SHA-256")));
+  assert.equal(errors.some((item) => item.includes("SHA-256")), false, errors.join("\n"));
   assert(errors.some((item) => item.includes("runtime_consumption")));
 });
 
@@ -784,9 +783,9 @@ test("多部件 图像生成 不得复用同一个 generation_record.record_id",
   assert(errors.some((item) => item.includes("record_id=GEN-1") && item.includes("component_id=component-2")), errors.join("\n"));
 });
 
-test("V5 文件门按 RGBA 像素指纹拒绝不同 ID/路径的重复 PNG", async () => {
+test("V5 文件门不按 RGBA 像素摘要拒绝不同 ID/路径的重复 PNG", async () => {
   const root = await mkdtemp(join(tmpdir(), "visual-raster-dedupe-")); await mkdir(join(root, "evidence"), { recursive: true }); await writeFile(join(root, "evidence/runtime.json"), "runtime");
-  const png = encodePngRgba(2, 2, Buffer.alloc(16, 128)); const pngSha = `sha256:${createHash("sha256").update(png).digest("hex")}`; const identity = { evidence_sha256: HASH, candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1" };
+  const png = encodePngRgba(2, 2, Buffer.alloc(16, 128)); const pngSha = "stale-summary-is-optional"; const identity = { evidence_sha256: HASH, candidate_sha256: HASH, target_sha256: HASH, baseline_sha256: HASH, diff_fingerprint: "diff-1" };
   const region = refreshAtomicRequirements({ ...multiComponentRegion(2), id: "duplicate-pixels", annotation_number: 5, production_origin: "independent-production", production_method: "image-generation", delivery_kind: "raster-image", image_generation_required: true, generation_record_required: true, substitution_policy: "user-change-request-only" });
   region.expected_assets = region.expected_assets.map((asset, index) => ({ ...asset, mime_type: "image/png", width: 2, height: 2, alpha: true, transparency_requirements: { strategy: "background-removal", edge_profile: "hard-edge" }, sha256: pngSha, source_file: `art/unique-${index + 1}.png`, runtime_file: `public/unique-${index + 1}.png` })); region.asset_ids = region.expected_assets.map((asset) => asset.asset_id); refreshAtomicRequirements(region);
   const assets = region.expected_assets.map((expected, index) => {
@@ -796,7 +795,9 @@ test("V5 文件门按 RGBA 像素指纹拒绝不同 ID/路径的重复 PNG", asy
   await mkdir(join(root, "public"), { recursive: true }); for (const expected of region.expected_assets) await writeFile(join(root, expected.runtime_file), png);
   const actualAssets = region.expected_assets.map((expected) => ({ ...expected, file: expected.runtime_file })); const usages = region.expected_assets.map((expected) => ({ component_id: expected.component_id, state_id: expected.state_id, asset_id: expected.asset_id, placement_ids: [expected.component_id === "component-1" ? "placement-1" : "placement-2"], runtime_file: expected.runtime_file, runtime_sha256: pngSha, status: "passed" }));
   const manifest = { workItemId: "work-item-1", candidateVersion: "candidate-1", candidate_identity: { sha256: HASH, diff_fingerprint: "diff-1" }, visual_baseline: { style_fingerprint: HASH }, reference_target: { target_sha256: HASH }, coverage_audit: { regions: [region] }, assets, production_contract_audit: { status: "passed", candidate_version: "candidate-1", candidate_sha256: HASH, target_sha256: HASH, audited_at: "2026-08-15T00:00:00Z", units: [{ annotation_number: 5, region_id: region.id, observed_method: "image-generation", observed_delivery_kind: "raster-image", status: "passed", expected_assets: region.expected_assets, actual_assets: actualAssets, runtime_consumption: { status: "passed", evidence: "evidence/runtime.json", ...identity, component_usages: usages } }] } };
-  const errors = await auditProductionContract(manifest, { projectRoot: root, checkFiles: true }); assert(errors.some((item) => item.includes("相同位图像素") && item.includes("component_id=component-2")), errors.join("\n"));
+  const errors = await auditProductionContract(manifest, { projectRoot: root, checkFiles: true });
+  assert.equal(errors.some((item) => /相同位图像素|SHA-256|摘要/.test(item)), false, errors.join("\n"));
+  assert(errors.some((item) => item.includes("文件不存在") || item.includes("实际尺寸与记录不一致")), errors.join("\n"));
 });
 
 test("atlas 禁止同一图集内完全相同或重叠 rect，且热区变体不能伪装资产", () => {
@@ -836,7 +837,7 @@ test("atlas slice 拒绝负坐标与越过 atlas_size 边界", () => {
   assert(overflowErrors.some((item) => item.includes("越过 atlas_size 边界")), overflowErrors.join("\n"));
 });
 
-test("V5 actual_assets 和 runtime usage 必须绑定 runtime_file 与实际 SHA", async () => {
+test("V5 actual_assets 和 runtime usage 按 runtime_file 绑定，runtime SHA 仅为可选摘要", async () => {
   const base = v5FixtureManifest(IMAGEGEN_REGRESSION_FIXTURES[0]);
   const sourceSubstitution = structuredClone(base);
   sourceSubstitution.production_contract_audit.units[0].actual_assets[0].file = "art/①.png";
@@ -850,6 +851,7 @@ test("V5 actual_assets 和 runtime usage 必须绑定 runtime_file 与实际 SHA
   wrongSha.production_contract_audit.units[0].runtime_consumption.component_usages[0].runtime_sha256 = `sha256:${"b".repeat(64)}`;
   const wrongShaErrors = await auditProductionContract(wrongSha, { checkFiles: false });
   assert(wrongShaErrors.some((item) => item.includes("checkFiles=true") && item.includes("projectRoot")), wrongShaErrors.join("\n"));
+  assert.equal(wrongShaErrors.some((item) => item.includes("SHA-256")), false, wrongShaErrors.join("\n"));
 });
 
 test("图像生成 区域强制 individual，atlas/横向组图不能作为位图交付", () => {

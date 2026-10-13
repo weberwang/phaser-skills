@@ -4,7 +4,6 @@ import { validateEffectImageParentChildLayoutNodes } from "../../phaser4-game-wo
 import { buildDecompositionElements, decompositionElementIds, validateDecompositionElements } from "./decomposition-elements.mjs";
 import { resolveVisualValidationMode, visualBoundsOutsideViewport } from "../../phaser4-game-workflow-control/scripts/visual-validation-policy.mjs";
 
-const SHA_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
 /** 判断值是否为普通 JSON 对象。 */
 function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
@@ -72,16 +71,16 @@ function validateLayoutAnnotationBinding(data, decomposition, nodeById, label, e
   const annotation = decomposition.layout_annotation;
   const confirmation = decomposition.layout_annotation_confirmation;
   if (!isObject(annotation)) { errors.push(`${label}.layout_annotation 必须存在；布局图只能在拆解确认后生成`); return; }
-  for (const field of ["layout_annotation_file", "layout_annotation_sha256", "layout_annotation_width", "layout_annotation_height", "layout_annotation_schema", "layout_annotation_layout", "layout_annotation_metadata_sha256", "layout_annotation_identity_sha256", "layout_review_file", "layout_review_sha256", "layout_review_identity_sha256", "layout_nodes_file", "layout_nodes_sha256", "decomposition_confirmation_id", "decomposition_confirmation_sha256", "proposal_sha256", "layout_decision_file", "layout_decision_sha256", "layout_decision_id", "target_sha256", "scene_id", "state_id"]) if (!Object.hasOwn(annotation, field)) errors.push(`${label}.layout_annotation.${field} 必须存在`);
+  for (const field of ["layout_annotation_file", "layout_annotation_width", "layout_annotation_height", "layout_annotation_schema", "layout_annotation_layout", "layout_review_file", "layout_nodes_file", "decomposition_confirmation_id", "layout_decision_file", "layout_decision_id", "scene_id", "state_id"]) if (!Object.hasOwn(annotation, field)) errors.push(`${label}.layout_annotation.${field} 必须存在`);
+  for (const field of ["layout_annotation_file", "layout_review_file", "layout_nodes_file", "layout_decision_file", "decomposition_confirmation_id", "layout_decision_id", "scene_id", "state_id"]) if (!isString(annotation[field])) errors.push(`${label}.layout_annotation.${field} 必须是非空字符串`);
   if (annotation.layout_annotation_schema !== "layout-annotation/png/1" || annotation.layout_annotation_layout !== "image-plus-right-panel") errors.push(`${label}.layout_annotation schema/layout 不符合独立布局 PNG 合同`);
   for (const field of ["layout_annotation_width", "layout_annotation_height"]) if (!Number.isInteger(annotation[field]) || annotation[field] <= 0) errors.push(`${label}.layout_annotation.${field} 必须是正整数`);
-  for (const field of ["layout_annotation_sha256", "layout_annotation_metadata_sha256", "layout_annotation_identity_sha256", "layout_review_sha256", "layout_review_identity_sha256", "layout_nodes_sha256", "decomposition_confirmation_sha256", "proposal_sha256", "layout_decision_sha256", "target_sha256"]) if (Object.hasOwn(annotation, field) && (!isString(annotation[field]) || !SHA_PATTERN.test(annotation[field]))) errors.push(`${label}.layout_annotation.${field} 必须是合法 sha256`);
   const target = data.scene_reconstruction_contract?.target_conditions;
-  for (const [field, expected] of [["target_sha256", target?.target_sha256], ["scene_id", target?.scene_id], ["state_id", target?.state_id]]) if (expected !== undefined && annotation[field] !== expected) errors.push(`${label}.layout_annotation.${field} 未绑定当前冻结场景`);
+  for (const [field, expected] of [["scene_id", target?.scene_id], ["state_id", target?.state_id]]) if (expected !== undefined && annotation[field] !== expected) errors.push(`${label}.layout_annotation.${field} 未绑定当前冻结场景`);
   const expectedNodeIds = [...nodeById.keys()]; const actualNodeIds = Array.isArray(annotation.layout_node_ids) ? annotation.layout_node_ids : null;
   if (!actualNodeIds || actualNodeIds.length === 0 || canonicalLayoutJson(actualNodeIds) !== canonicalLayoutJson(expectedNodeIds)) errors.push(`${label}.layout_annotation.layout_node_ids 必须按布局节点原顺序完整且只能来自已确认拆解`);
   if (!isObject(confirmation) || confirmation.status !== "accepted" || confirmation.confirmation_mode !== "manual") errors.push(`${label}.layout_annotation_confirmation 必须是 accepted/manual`);
-  else for (const field of ["layout_annotation_file", "layout_annotation_sha256", "layout_annotation_width", "layout_annotation_height", "layout_annotation_schema", "layout_annotation_layout", "layout_annotation_metadata_sha256", "layout_annotation_identity_sha256", "layout_review_file", "layout_review_sha256", "layout_review_identity_sha256", "layout_nodes_file", "layout_nodes_sha256", "decomposition_confirmation_id", "decomposition_confirmation_sha256", "proposal_sha256", "layout_decision_file", "layout_decision_sha256", "layout_decision_id"]) if (confirmation[field] !== annotation[field]) errors.push(`${label}.layout_annotation_confirmation.${field} 未绑定最终布局图或显式布局决策`);
+  else for (const field of ["layout_annotation_file", "layout_annotation_width", "layout_annotation_height", "layout_annotation_schema", "layout_annotation_layout", "layout_review_file", "layout_nodes_file", "decomposition_confirmation_id", "layout_decision_file", "layout_decision_id"]) if (confirmation[field] !== annotation[field]) errors.push(`${label}.layout_annotation_confirmation.${field} 未绑定最终布局图或显式布局决策`);
 }
 
 /** 校验 technical_analysis 的聚合布局节点身份。 */
@@ -130,14 +129,11 @@ export function validateEffectImageLayoutBindings(data, errors, options = {}) {
   const target = contract?.target_conditions;
   const binding = decomposition.layout_binding ?? decomposition.layout_contract_binding ?? decomposition.binding ?? decomposition;
   const identity = {
-    target_sha256: binding?.target_sha256,
     scene_id: binding?.scene_id,
     state_id: binding?.state_id,
     layout_contract_version: binding?.layout_contract_version,
   };
   for (const field of Object.keys(identity)) if (!nonEmptyString(identity[field])) errors.push(`${label}.${field} 必须是非空字符串`);
-  if (nonEmptyString(data?.reference_target?.target_sha256) && identity.target_sha256 !== data.reference_target.target_sha256) errors.push(`${label}.target_sha256 与 reference_target.target_sha256 不一致`);
-  if (nonEmptyString(target?.target_sha256) && identity.target_sha256 !== target.target_sha256) errors.push(`${label}.target_sha256 与 scene_reconstruction_contract.target_conditions 不一致`);
   if (nonEmptyString(target?.scene_id) && identity.scene_id !== target.scene_id) errors.push(`${label}.scene_id 与冻结场景不一致`);
   if (nonEmptyString(target?.state_id) && identity.state_id !== target.state_id) errors.push(`${label}.state_id 与冻结状态不一致`);
   if (nonEmptyString(target?.layout_contract_version) && identity.layout_contract_version !== target.layout_contract_version) errors.push(`${label}.layout_contract_version 与冻结布局合同版本不一致`);
@@ -168,7 +164,6 @@ export function validateEffectImageLayoutBindings(data, errors, options = {}) {
     else nodeById.set(nodeId, node);
     if (!nonEmptyString(node.region_id)) errors.push(`${nodeLabel}.region_id 必须是非空字符串`);
     if (!validLayoutBounds(node.target_bounds)) errors.push(`${nodeLabel}.target_bounds 必须包含有限的 x/y 和正数 width/height`);
-    if (nonEmptyString(node.target_sha256) && node.target_sha256 !== identity.target_sha256) errors.push(`${nodeLabel}.target_sha256 与布局拆解身份不一致`);
     if (nonEmptyString(node.scene_id) && node.scene_id !== identity.scene_id) errors.push(`${nodeLabel}.scene_id 与布局拆解身份不一致`);
     if (nonEmptyString(node.state_id) && node.state_id !== identity.state_id) errors.push(`${nodeLabel}.state_id 与布局拆解身份不一致`);
     if (nonEmptyString(node.layout_contract_version) && node.layout_contract_version !== identity.layout_contract_version) errors.push(`${nodeLabel}.layout_contract_version 与布局拆解身份不一致`);

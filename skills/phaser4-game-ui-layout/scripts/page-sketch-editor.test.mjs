@@ -97,7 +97,7 @@ function createSketch() {
 }
 
 /** 异步复核资源期间 Scene 可能失效，确认落盘必须检查最新渲染状态。 */
-test("来源 SHA 复核通过但 Scene 已关闭时不得确认", async () => {
+test("来源文件复核通过但 Scene 已关闭时不得确认", async () => {
   const { document, elements } = createPageDocument();
   let healthy = true;
   let confirmations = 0;
