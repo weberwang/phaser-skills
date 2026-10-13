@@ -7,6 +7,8 @@ description: 为 Phaser 4 的 2D 游戏设计、实现或审查汁水感（Juice
 
 把当前任务内的玩家操作和规则变化转成及时、可理解、符合主题的反馈。先保证信息和因果清楚，再选择形变、粒子、声音、镜头或时间表现；安静反馈可以成立，不以数量或强度作为质量标准。
 
+可见反馈遵守[游戏内文案](../phaser4-game-ui-layout/references/game-copy.md)：奖励、消耗和状态优先用图标、数字、符号或局部变化表达；需要文字时沿用当前可见短标签与显示条件，不把事件规格中的原因、结算规则或设计意图直接做成浮字、Toast 或说明面板。
+
 ## 控制面与职责
 
 本领域可提议、审查，并在当前用户任务的 Work Item、Implementation Package 和路径所有权范围内修改反馈设计、配置或实现；结论回到 [phaser4-game-workflow-control](../phaser4-game-workflow-control/SKILL.md) 审计与状态迁移。不拥有全局状态、审批账本或第二套生命周期，不新增汁水阶段、强制工件或审批门。

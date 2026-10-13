@@ -72,7 +72,7 @@ node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs
 
 UI 响应式验证按合同的 `orientationPolicy.allowed` 选择视口方向：单方向项目只验证支持方向内的窄宽尺寸、DPR 和连续 resize；只有同时支持竖屏与横屏时才验证方向切换。
 
-程序化文本必须同时支持英语、简体中文、日语、俄语和西班牙语，并逐语言验证字形宽度、字体回退、基线、断行和容器适配。文案优先使用 `x3`、`+10`、图标+数值等短促游戏化表达；每种语言独立选择单行或换行，允许不同语言采用不同策略，但禁止截断。
+玩家可见内容遵循[游戏内文案](skills/phaser4-game-ui-layout/references/game-copy.md)：优先图片、图标、数字与符号，例如金币图标 `+100`，不重复写「获得 100 金币」；文字只保留必要的短名称、短动作、短状态或说明。该原则贯穿策划、美术 brief、效果图、布局和验收。程序化文本仍须支持英语、简体中文、日语、俄语和西班牙语，并逐语言验证字形宽度、字体回退、基线、断行和容器适配；每种语言独立选择单行或换行，禁止截断，也不把符号表达扩写成解释句。
 
 详细状态、门、Schema 和返工语义见 [`phaser4-game-workflow-control`](skills/phaser4-game-workflow-control/SKILL.md) 及其 [`control-model.md`](skills/phaser4-game-workflow-control/references/control-model.md)、[`state-gates.md`](skills/phaser4-game-workflow-control/references/state-gates.md)、[`schemas.md`](skills/phaser4-game-workflow-control/references/schemas.md)。
 

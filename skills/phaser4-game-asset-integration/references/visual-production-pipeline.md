@@ -1,5 +1,7 @@
 # V0-V5 视觉生产管线
 
+玩家可见内容沿用[游戏内文案](../../phaser4-game-ui-layout/references/game-copy.md#工作流接入)：V0/V1 分开内部功能说明与可见表达；全局候选、场景主图和显示层上下文图发送明确的可见文字范围与生成约束；V2 只拆解冻结目标中的文字；V3 不给图标/皮肤附加说明；V4/V5 绑定同一可见表达与真实数值。普通资产、程序界面与 effect-image 均适用；图像显示结论仍由用户人工确认。
+
 场景 Work Item 只生产自身画面和常驻 HUD；modal/popup 等弹窗建立独立 DISPLAY_LAYER Work Item。弹窗 required state 仍需完整宿主上下文、拆解、布局和资源前置，但其未完成不阻断场景 V5。字段和调度边界见[控制模型](../../phaser4-game-workflow-control/references/control-model.md#弹窗工作项与场景解耦)。
 
 effect-image 生成式位图的完整提示词与实际参考输入合同统一见[Effect-image 生成式位图忠实还原提示词合同](effect-image-prompt-contract.md)；管线只引用该合同，不重复维护模板正文。透明工具声明与实际输出证据的边界见[生成式透明能力审计](transparency-capability-audit.md)。

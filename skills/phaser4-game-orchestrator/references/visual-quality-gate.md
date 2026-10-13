@@ -32,6 +32,8 @@
 
 ## 统一门
 
+文案按[游戏内文案](../../phaser4-game-ui-layout/references/game-copy.md#检查与返修)在效果图冻结前、V4 草图和 V5 运行中复核：实际提示词与文本绑定沿用玩家可见表达，详细规格不进入画面。该项归入已有玩法可读与游戏感检查，不新增确认链；无人工显示结论时保持未验证。
+
 F0-F4、任务范围、高影响操作批准和失败处置以[控制模型](../../phaser4-game-workflow-control/references/control-model.md)与[状态、阶段与停止门](../../phaser4-game-workflow-control/references/state-gates.md)为唯一来源。本领域只提交视觉领域 F2、当前候选的 F3 证据，以及与 V2/V3/V4/V5 产物的绑定关系；机器检查不能替代两次 V2 确认。
 
 冻结前候选图、临时提示和评审草稿保持 transient；冻结后记录原图、候选 ID、时间及 scene/state，SHA 仅可选追踪。V1/V2/V5 沿用同一生产 Scene 骨架；fidelity/parity case 必须关联实际目标/候选文件、适用的复现条件、合同/基线版本、双方证据、容差、例外和结论。默认 `visual_validation.mode=usability` 使用代表性视口/状态并检查关系、可读性、边界和交互；只有 `exact` 或明确需求时才要求完整矩阵和严格差异。上游事实或当前受影响候选身份变化才使对应案例失效。

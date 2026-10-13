@@ -13,7 +13,7 @@
 | 文件 | 领域权威内容 |
 | --- | --- |
 | `docs/project-profile.yaml` | 项目身份、渠道和约束 |
-| `docs/GDD.md` | 已批准需求、完整功能/场景清单、范围、玩法、验收与端到端追踪 |
+| `docs/GDD.md` | 已批准需求、完整功能/场景清单、范围、玩法、验收与端到端追踪；分开内部规则与[玩家可见表达](../../phaser4-game-ui-layout/references/game-copy.md#工作流接入)，供生成与界面实现共用 |
 | `docs/visual-baseline.md` | 不可变冻结全局视觉规则正文；完整文件 SHA-256 形成风格指纹 |
 | `docs/visual-design.md` | 可追加的方向探索、基线索引与 V2/V3/V4/V5 阶段证据，不参与风格指纹 |
 | `docs/TDD.md` | 模块、公共基础、场景依赖/实施序列、分项完成事实、能力、平台和服务边界 |

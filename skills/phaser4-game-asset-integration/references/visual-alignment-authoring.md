@@ -32,6 +32,8 @@ V3 清单 `coverage_audit.regions[].layer=background` 用于识别背景 cover �
 
 草图合同为 [`phaser-page-sketch/1.0`](../../phaser4-game-ui-layout/references/page-sketch.schema.json)，结构与内容由共享 `page-sketch-contract.mjs` 校验。`nodes` 保留 V2 目标节点快照，`node_presentations` 保存图片、文本、容器等预览描述，`v3_assets` 把正式资产与显示节点绑定。`layout` 使用 `phaser-visual-layout/1.0`，`offsets[layout_node_id]` 只保存相对父级的 `{x,y}` 增量；viewport、底图、V2 节点源、V3 manifest 与正式验收证据均有文件身份。
 
+`node_presentations[layout_node_id].text` 只填写[当前玩家可见表达](../../phaser4-game-ui-layout/references/game-copy.md#资源拆解与界面实现)中的实际短标签或示例数值，并对应 V2 文本节点来源；描述字段、节点名称、GDD 规则和制作备注不得作为默认显示文字。V5 同一渲染器会原样显示该字段，运行时数值更新也只绑定真实业务数据和已定义格式。结构校验与文字不溢出不证明文案合格；用户在现有草图确认中检查是否有规格说明或重复解释。
+
 `confirmation.content_sha256` 是剔除根 `confirmation` 后、对象键排序且数组保序的 JSON UTF-8 字节 SHA。Work Item 通过实际草图路径、任务与阶段标识记录人工确认；内容摘要和文件 SHA 仅作可选追踪，不证明或阻断验收。校验器拒绝未确认、漏节点、未知资产或实际来源不满足要求，摘要漂移不影响验收。
 
 V4 预览和 V5 正式 Scene 必须读取同一确认草图，并复用 `scripts/page-sketch-layout.mjs` 的纯布局结果与 `scripts/page-sketch-phaser.mjs` 的 Phaser 渲染适配器；禁止另写 DOM 正式组合画面或 V5 坐标换算。布局先按 V2 基准与节点自身 V4 增量解析全局 target bounds，再映射为 Phaser Container/GameObject；子节点局部位置等于自身世界位置减父世界位置，祖先偏移只传递一次。V2 `anchor` 已参与布局解析，纹理 `origin` 独立表达资源定位，不修改 bounds。图片 fit、文字字段、对齐与裁切规则以[Phaser 适配器](../../phaser4-game-ui-layout/references/phaser-adapter.md)为准；未支持的呈现字段明确报错并阻断 ready。

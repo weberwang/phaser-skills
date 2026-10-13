@@ -27,6 +27,8 @@ description: Phaser 4 游戏领域编排角色；在全局控制面已建立 Wor
 
 ## 视觉与场景
 
+策划、效果图和实现交接同一份[玩家可见表达](../phaser4-game-ui-layout/references/game-copy.md#工作流接入)。委派生成任务时附带可见文字范围与禁止绘制内部说明的约束，委派界面实现时附带短标签、数值来源和显示条件；内部 GDD/brief 全文不能替代这份交接，也不能直接进入画面。
+
 图片交付按[图片优先的确认方式](../phaser4-game-workflow-control/references/simplified-workflow.md#图片优先的确认方式)执行：领域代理内部整理记录并直接产图或真实预览，主代理展示候选及少量检查点，不以文字提案确认作为常规制作前置；已确认目标内返修直接提交前后对照。真实图片与素材依赖仍按对应阶段确认。
 
 效果图还原和正式 Scene 接入属于当前场景 Work Item；常驻 HUD 随场景闭环。modal/popup 等弹窗按[独立工作项规则](../phaser4-game-workflow-control/references/control-model.md#弹窗工作项与场景解耦)另建 DISPLAY_LAYER Work Item，独立提交宿主上下文、组件/状态、布局合同和运行态证据，不影响大厅或其他宿主场景验收。

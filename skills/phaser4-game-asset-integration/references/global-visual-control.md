@@ -24,6 +24,8 @@
 
 使用相同 brief、目标视口、参考输入和实际生成条件生成恰好三张候选效果图，并将三张图同屏交给人工比较；候选必须关联实际图片和 generated generation record 文件，不要求摘要。`global-visual-baseline-selection/1.1` 证据还必须绑定生产者 Work Item、brief、generation batch、唯一候选 ID、唯一 `SINGLE_HUMAN`/`CONFIRMED` 选择、selectedCandidateId、决定记录文件、确认时间和用户原文。候选生成记录仍使用 `global-visual-baseline-candidate-generation/1.0`；决定文件使用 `global-visual-baseline-selection-decision/1.1`。
 
+三候选使用相同的玩家可见表达与示例数值，实际提示词按[效果图文案约束](../../phaser4-game-ui-layout/references/game-copy.md#效果图生成)分离内部 brief 与可见文字。不得将核心循环、玩法介绍或验收说明当作界面文字绘制；该检查纳入下述玩法可读人工评估，未完成时不声称画面通过。
+
 人工选择同时完成逐候选五项检查：主题贴合 `themeFit`、受众适配 `audienceFit`、玩法可读 `readability`、静态观看舒适 `comfort`、美术完成度 `craft`。`humanSelection.candidateAssessments` 与决定文件保存同一份按 candidateId 绑定的实际人工结果；每项填写 `status=passed|failed|unverified` 与具体 `reason`。所选候选五项必须均为 passed，不能用平均分或用户偏好抵消失败。三张都不合格时保留失败材料、修正生成方案并重新生产三候选，保持 draft/pending；没有合格且经人工选择的候选不能冻结。代理只提供图片和检查要点，不自动分析图像或替用户填写通过；未收到实际评价时保持未验证。
 
 人工确认完成前，`visual_baseline.status` 和 Work Item `globalStaticBaselineState` 只能保持 draft/pending，不能写入 `global-static-baseline-frozen`。确认后冻结身份必须同时绑定 baseline ID/version、`docs/visual-baseline.md`、冻结正文实际文件、primary anchor 和 selected candidate；候选、决定、brief、正文或锚点实际内容变化时按影响验证，摘要变化不使引用失效或重开三候选流程。该全局人工选择是独立硬门，不能替代每个场景 V2 的拆解图确认。
@@ -36,6 +38,8 @@
 | 正式冻结 | `globalVisualBaselineSelectionRef`、冻结正文、真实风格指纹、primary anchor/selected candidate | global-static-baseline-frozen | 只写状态字段 |
 
 ## 全局视觉冻结表
+
+游戏内信息表达按[游戏内文案](../../phaser4-game-ui-layout/references/game-copy.md)进入 brief、候选效果图和冻结基线：优先图片、图标、数字与符号，只安排必要的短标签或说明，不把内部玩法描述直接绘制到界面。
 
 全局规则在 G0/V0 的 brief 与三候选人工选择门中建立，并在确认后正式冻结；之后每个场景的 V1/V2 只冻结该场景的目标和方案，不得把场景 V2 当作全局基线选择。每项写明不变量、量化范围、允许变量、禁止项和证据：
 
