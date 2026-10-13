@@ -82,6 +82,7 @@ node <skill-dir>/scripts/images-to-atlas.mjs --help
 | --- | --- |
 | 用途判断与类型制作 | 上方对应的一份分类参考；涉及独立特效或 UI 位图时再读取其规则 |
 | 从玩法与表现意图推导时长、节奏及检查点 | [intent-driven-design.md](references/intent-driven-design.md)，在动作分析时读取并写入既有设计工件，制作与验收复用 |
+| 需要反馈语义、类型适用或事件覆盖规则 | [Phaser 2D 汁水感设计指南](../phaser4-game-juice/references/design-guide.md)；本 Skill 仍按既有时间轴设计、真实素材审阅和完整序列人工验收生产帧动画 |
 | 游戏时间、分组、阶段及修正 | [action-timing.md](references/action-timing.md) |
 | 效果图尺寸推理、合批与空间裁剪 | [region-planning.md](references/region-planning.md) |
 | 图片首尾、关键帧、双图参考递归与图片来源合同 | [image-inbetween.md](references/image-inbetween.md) |

@@ -78,6 +78,7 @@ UI 响应式验证按合同的 `orientationPolicy.allowed` 选择视口方向：
 
 - `$phaser4-game-orchestrator`：领域拆分、交接和执行协调。
 - `$phaser4-game-production`：制作策划、GDD、功能契约和验收范围。
+- [`$phaser4-game-juice`](skills/phaser4-game-juice/SKILL.md)：汁水感与动态反馈的独立领域能力；用户明确提出相关需求，或当前核心事件缺少明确反馈语义时按需引用。它沿用当前 Work Item 和既有制作、玩法、UI、动画、音频与 QA 流程，不把普通玩法任务扩成全量润色。见[完整设计指南](skills/phaser4-game-juice/references/design-guide.md)。
 - `$phaser4-game-architecture`：工程架构与公开契约。
 - `$phaser4-gameplay-development`：玩法规则、状态和交互实现。
 - `$phaser4-game-asset-integration`、`$phaser4-game-ui-layout`：资源、效果图还原和 UI 布局。

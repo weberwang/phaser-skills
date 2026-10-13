@@ -31,6 +31,10 @@ description: Phaser 4 游戏领域编排角色；在全局控制面已建立 Wor
 
 场景 V2 的布局交付必须同时提供标准布局 PNG、`layout-nodes.json`、`layout-decision.json`、自包含 `review.html` 和 `generation-result.json`，并在独立布局确认及场景根计划中关联同批参考、拆解、决策、节点、PNG 和实际审阅页。屏幕 UI 还按[Phaser UI 节点组织](../phaser4-game-ui-layout/references/layout-hierarchy.md)在 V1 定义根层级，在 V2 确认父级职责与 `ui_layout` 字段，在 V4 草图中检查职责、输入和裁切边界，在 V5 验证视口变化下的运行结果。编排只引用[离线布局审阅产物](../phaser4-game-ui-layout/references/layout-review-artifacts.md)的通用规则，不为场景手写审阅页；页面候选状态不等于人工确认。
 
+## 汁水感与动态反馈路由
+
+汁水感是按需调用的独立领域能力：用户明确提出汁水、打击感或动态反馈需求时调用；已有任务包含核心反馈，但事件语义仍不清楚时也可按需引用。它沿用当前场景或玩法 Work Item，不把普通玩法修改扩为全量润色，也不增加阶段、审批门或强制工件。按[工作流接入说明](../phaser4-game-juice/references/workflow-integration.md)安排职责：制作在既有 GDD/契约确定意图和关键事件，玩法负责规则、碰撞、状态、触发与交互代码，架构维护跨模块坐标约定；UI 负责布局、焦点表现与布局坐标合同，反馈对象仅使用独立表现偏移，不覆盖基础布局值、不争抢焦点或输入处理。动画与音频沿用各自的生产及生命周期规则，QA 核对事件边界并将动态显示、舒适度和手感交由用户人工验收。完整语义与类型规则见[汁水感设计指南](../phaser4-game-juice/references/design-guide.md)。
+
 ## 状态与返工
 
 本领域不直接迁移全局状态。证据失败优先原地 `repair`，上游事实未变时 `revalidate`，只有上游事实失效、任务范围真实变化或硬门将被绕过时才按最小范围 `return`；普通候选身份变化不触发回退，已确认事实不重复搜索或推翻。
