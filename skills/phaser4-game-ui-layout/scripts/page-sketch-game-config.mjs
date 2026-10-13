@@ -7,11 +7,14 @@ export function calculatePageSketchGameViewport(viewport) {
 }
 
 /** V4/V5 共用游戏配置；两端必须传入同一个项目 Phaser，避免预览使用另一套引擎。 */
-export function createPageSketchGameConfig(Phaser, { parent, viewport, scene, callbacks } = {}) {
+export function createPageSketchGameConfig(Phaser, { parent, viewport, scene, callbacks, sketch } = {}) {
   if (!Number.isFinite(Phaser?.AUTO) || !Number.isFinite(Phaser?.Scale?.NONE)) throw new TypeError("需要项目实际使用的 Phaser 渲染与 Scale 配置");
   const size = calculatePageSketchGameViewport(viewport);
+  // 原生 NineSlice 依赖 WebGL；两端明确选择同一后端，避免 AUTO 降为 Canvas 后底板不可见。
+  const usesNineSlice = Object.values(sketch?.node_presentations ?? {}).some((presentation) => presentation?.object_fit === "nine-slice");
+  if (usesNineSlice && !Number.isFinite(Phaser.WEBGL)) throw new TypeError("九宫格草图需要支持 WebGL NineSlice 的项目 Phaser");
   return {
-    type: Phaser.AUTO, parent, width: size.width, height: size.height,
+    type: usesNineSlice ? Phaser.WEBGL : Phaser.AUTO, parent, width: size.width, height: size.height,
     transparent: true, scene, scale: { mode: Phaser.Scale.NONE, autoRound: false }, callbacks,
   };
 }

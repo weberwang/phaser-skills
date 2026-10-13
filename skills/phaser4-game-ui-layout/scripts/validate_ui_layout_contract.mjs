@@ -161,6 +161,9 @@ function validateCriticalAlignments(items, ids, layoutNodes, status, errors, mod
   items.forEach((item, index) => {
     const label = `critical_alignments[${index}]`;
     if (!isObject(item)) { errors.push(`${label} 必须是对象`); return; }
+    // 可用性模式不自动要求像素矩阵，但项目已声明的关键几何容差必须兑现。
+    const declaredTolerance = Object.hasOwn(item, "tolerance");
+    const enforceGeometry = exact || declaredTolerance;
     for (const field of ["id", "layout_node_id", "element_id", "reference_id", "planned_test_id"]) if (!isString(item[field])) errors.push(`${label}.${field} 必须是非空字符串`);
     if (isString(item.id)) { if (alignmentIds.has(item.id)) errors.push(`${label}.id 重复：${item.id}`); alignmentIds.add(item.id); }
     if (!ids.has(item.element_id)) errors.push(`${label}.element_id 引用未知 UI ID：${item.element_id}`);
@@ -175,8 +178,8 @@ function validateCriticalAlignments(items, ids, layoutNodes, status, errors, mod
       if (!isObject(relation)) errors.push(`${label}.${axis} 缺少关系`);
       else for (const field of ["type", "element_anchor", "reference_anchor"]) if (!isString(relation[field])) errors.push(`${label}.${axis}.${field} 必须是非空字符串`);
     }
-    if (exact || item.target_measurement != null) validateMeasurement(item.target_measurement, `${label}.target_measurement`, errors);
-    if (exact && layoutNode && item.target_measurement != null && !sameBounds(item.target_measurement, layoutNode.target_bounds)) errors.push(`${label}.target_measurement 与绑定布局节点 target_bounds 不一致，存在目标几何漂移`);
+    if (enforceGeometry || item.target_measurement != null) validateMeasurement(item.target_measurement, `${label}.target_measurement`, errors);
+    if (enforceGeometry && layoutNode && item.target_measurement != null && !sameBounds(item.target_measurement, layoutNode.target_bounds)) errors.push(`${label}.target_measurement 与绑定布局节点 target_bounds 不一致，存在目标几何漂移`);
     if (!Array.isArray(item.target_evidence) || item.target_evidence.length === 0 || !item.target_evidence.every(isString)) errors.push(`${label}.target_evidence 必须是非空字符串数组`);
     const runtimeMeasurement = item.runtime_measurement ?? item.actual_bounds;
     if (status === "verified") {
@@ -185,7 +188,7 @@ function validateCriticalAlignments(items, ids, layoutNodes, status, errors, mod
       validateMeasurement(runtimeMeasurement, `${label}.runtime_measurement`, errors);
       if (exact || item.delta != null) validateDelta(item.delta, `${label}.delta`, errors);
       if (isObject(item.target_measurement) && isObject(runtimeMeasurement) && isObject(item.delta) && ["x", "y", "width", "height"].every((field) => isNumber(item.target_measurement[field]) && isNumber(runtimeMeasurement[field]) && isNumber(item.delta[field]))) {
-        if (exact) for (const field of ["x", "y", "width", "height"]) if (item.delta[field] !== runtimeMeasurement[field] - item.target_measurement[field]) errors.push(`${label}.delta.${field} 必须等于 runtime_measurement 与 target_measurement 的差值`);
+        if (enforceGeometry) for (const field of ["x", "y", "width", "height"]) if (item.delta[field] !== runtimeMeasurement[field] - item.target_measurement[field]) errors.push(`${label}.delta.${field} 必须等于 runtime_measurement 与 target_measurement 的差值`);
       }
       if (item.test_status !== "passed") errors.push(`${label}.test_status 必须为 passed，未执行测试不得通过`);
       if (!Array.isArray(item.runtime_evidence) || item.runtime_evidence.length === 0 || !item.runtime_evidence.every(isString)) errors.push(`${label}.runtime_evidence 必须是非空字符串数组`);
@@ -193,8 +196,29 @@ function validateCriticalAlignments(items, ids, layoutNodes, status, errors, mod
       if (runtimeMeasurement != null) validateMeasurement(runtimeMeasurement, `${label}.runtime_measurement`, errors);
       if (item.delta != null) validateDelta(item.delta, `${label}.delta`, errors);
     }
-    if (exact && (!isObject(item.tolerance) || !isString(item.tolerance.unit) || !isNumber(item.tolerance.value) || item.tolerance.value < 0)) errors.push(`${label}.tolerance 必须是项目定义的 unit 与非负 value`);
+    if (enforceGeometry) validateAlignmentTolerance(item, runtimeMeasurement, status, label, errors);
   });
+}
+
+/** 直接比较同坐标空间的实测矩形，不允许手写 passed 或伪造 delta 掩盖关键布局偏差。 */
+function validateAlignmentTolerance(item, runtimeMeasurement, status, label, errors) {
+  const tolerance = item.tolerance;
+  if (!isObject(tolerance) || !isNumber(tolerance.value) || tolerance.value < 0) {
+    errors.push(`${label}.tolerance 必须是项目定义的 unit 与非负 value`);
+    return;
+  }
+  if (!["px", "logical-px", "css-px", "css-logical-px"].includes(tolerance.unit)) {
+    errors.push(`${label}.tolerance.unit 必须是同一布局坐标空间的像素单位`);
+    return;
+  }
+  if (status !== "verified" || !isObject(item.target_measurement) || !isObject(runtimeMeasurement)) return;
+  for (const field of ["x", "y", "width", "height"]) {
+    const targetValue = item.target_measurement[field];
+    const actualValue = runtimeMeasurement[field];
+    if (isNumber(targetValue) && isNumber(actualValue) && Math.abs(actualValue - targetValue) > tolerance.value) {
+      errors.push(`${label}.runtime_measurement.${field} 超出声明容差 ${tolerance.value}${tolerance.unit}`);
+    }
+  }
 }
 
 /** 验证布局 parity case 绑定同一目标、候选和可复现条件。 */

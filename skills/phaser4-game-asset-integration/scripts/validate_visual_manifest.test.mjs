@@ -11,7 +11,7 @@ import { registerVisualManifestUsabilityCases } from "./visual-manifest-usabilit
 import { technicalRegionSnapshot } from "./generate_effect_image_annotation.mjs";
 import { checkManifestFiles as runManifestFileCheck, computeRegionDefinitionSha256, main, readPngDimensions, validateManifest } from "./validate_visual_manifest.mjs";
 import { annotationProductionContract, decodePngRgba } from "./effect_image_raster.mjs";
-import { renderEffectImageAnnotation } from "./effect_image_annotation_core.mjs";
+import { renderEffectImageAnnotation } from "./effect_image_annotation_core.mjs"; import { buildDecompositionElements } from "./decomposition-elements.mjs";
 import { deriveAtomicImageRequirements } from "../../phaser4-game-workflow-control/scripts/visual-atomic-contract.mjs";
 import { buildEffectImageAssetPrompt, buildEffectImageFullPrompt, EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, EFFECT_IMAGE_NEGATIVE_PROMPT, resolveProductionContract } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
 import { configureManifestTransparentFixture, writeManifestTransparentFixtures } from "./visual-manifest-transparent-fixtures.mjs";
@@ -503,7 +503,7 @@ async function writeConfirmationFixtureFiles(root, manifest, annotationBytes = n
     const visualRegions = groupRegions.map((region) => { const production = annotationProductionContract(region); return { region_id: region.id, annotation_number: region.annotation_number, mode: region.implementation_plan?.mode, summary: region.implementation_plan?.summary, production_method: production.production_method, production_origin: production.production_origin, delivery_kind: production.delivery_kind, production_label: production.label, ownership_evidence: region.ownership_evidence, region_definition_sha256: computeRegionDefinitionSha256(region), atomic_image_requirements: Array.isArray(region.atomic_image_requirements) ? region.atomic_image_requirements : deriveAtomicImageRequirements(region) }; });
     const canvasSnapshot = { scene_id: canvas.scene_id, state_id: canvas.state_id, width: canvas.width, height: canvas.height };
     const technicalRegions = groupRegions.map((region) => ({ ...technicalRegionSnapshot(region), layout_node_ids: [...(region.layout_node_ids ?? [])] }));
-    const technicalLayoutNodeIds = groupRegions.flatMap((region) => region.layout_node_ids ?? []); const decompositionElements = groupRegions.flatMap((region) => region.decomposition_elements ?? []);
+    const technicalLayoutNodeIds = groupRegions.flatMap((region) => region.layout_node_ids ?? []); const decompositionElements = buildDecompositionElements(groupRegions); // 共用实际元素投影，保留 owner/route/九宫格等冻结事实。
     const proposal = { schema_version: "1.5", proposal_kind: "effect-image-decomposition-technical-analysis", proposal_id: confirmation.proposal_id, created_at: "2026-08-15T00:15:00Z", target_sha256: manifest.reference_target.target_sha256, scene_id: first.scene_id, state_id: first.state_id, canvas: canvasSnapshot, annotation_file: confirmation.annotation_file, annotation_mime: "image/png", annotation_sha256: annotationSha, decomposition_elements: decompositionElements, regions: regionsSnapshot, visual_regions: visualRegions, technical_analysis: { schema_version: "1", canvas: canvasSnapshot, layout_node_ids: technicalLayoutNodeIds, decomposition_elements: decompositionElements, regions: technicalRegions } };
     const proposalBytes = Buffer.from(`${JSON.stringify(proposal, null, 2)}\n`);
     const proposalPath = join(root, confirmation.proposal_file);

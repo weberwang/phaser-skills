@@ -20,12 +20,19 @@
 - [Change Request](change-request.schema.json)
 - [视觉阶段硬门](visual-stage.schema.json)
 - [页面还原草图](../../phaser4-game-ui-layout/references/page-sketch.schema.json)
+- [项目美术 brief](game-art-brief.schema.json)
+- [全局视觉基线选择](global-visual-baseline-selection.schema.json)
+- [运行美术验收](art-experience-acceptance.schema.json)
 
 ## 视觉阶段 Schema
 
 `visualStage` 只能是 `V0` 至 `V5`，`visualStageState` 只能使用带上下文的状态：`global-static-baseline-frozen`、`v2-production-planning-complete`、`v3-formal-acceptance-complete`、`v4-page-sketch-confirmed`、`v5-runtime-integration-candidate`（以及明确的过程/失效状态）。裸 `frozen`、未知阶段、缺少阶段语义或冲突声明均失败。
 
 全局基线冻结前必须先建立视觉 brief，生成恰好三张同条件候选效果图，同屏交给人工并由唯一 `SINGLE_HUMAN`/`CONFIRMED` 记录选择其中一张；候选图片路径只允许 PNG/JPEG，文件门还会检查真实图片魔数，不能用同后缀文本伪装。`globalVisualBaselineSelectionRef` 必须绑定独立的选择根证据、三张 generated 图片及生成记录、决定文件和冻结正文实际文件。完整字段见 [`global-visual-baseline-selection.schema.json`](global-visual-baseline-selection.schema.json)，机器文件门由 `global-visual-baseline-contract.mjs` 核对实际文件与业务内容。只有该引用完整通过文件门后才能写入 `global-static-baseline-frozen`；全局选择是独立硬门，不能替代逐场景 V2 拆解图确认。
+
+选择根与决定文件分别使用 `phaser4-global-visual-baseline-selection/1.1` 和 `phaser4-global-visual-baseline-selection-decision/1.1`，不提供旧格式放行。`brief.path` 的真实内容为 `phaser4-game-art-brief/1.0` JSON，绑定生产者 `workItemId`/`briefId`，并声明 `theme`、`audience`、`coreLoop`、`experienceGoals`、`viewingContext`、`visualHierarchy` 和 `stimulusBudget`。预算的 `baseline`、`interaction`、`peak` 各含 `brightnessContrast`、`screenCoverage`、`duration`、`triggerFrequency`、非负整数 `maxConcurrent`、`recovery`、`blendPolicy`；另含 `measurementMethod`。文本预算说明项目实际限制和单位，不虚构通用阈值。
+
+`humanSelection.candidateAssessments` 与实际决定文件中的同名数组按三候选 ID 唯一完整绑定，每项为 `candidateId` 与 `checks`。`checks` 恰含 `themeFit`、`audienceFit`、`readability`、`comfort`、`craft`，各项为 `status=passed|failed|unverified` 和非空 `reason`。所选候选五项均须 passed；未选候选允许失败或未验证，三张全部不合格时不能形成可放行的冻结根。根与决定内容按语义核对，不因 JSON 对象键顺序或候选评估数组顺序变化误报，也不以摘要替代实际内容。判断标准见[游戏美术体验与质量契约](../../phaser4-game-asset-integration/references/art-quality-contract.md)，机器验证的是实际人工结果的结构与绑定，不自动判断像素质量。
 
 选择根证据顶层 `workItemId` 是生成并冻结三候选及人工决定的生产者身份；消费者 Work Item 只通过引用的 `path` 复用该根证据，不得将消费者身份写回根、候选生成记录或人工决定。
 
@@ -106,5 +113,9 @@ V5 的合同还必须声明 `combination_preacceptance`，固定视觉实施单�
 根因只使用 `方案缺失`、`执行问题`、`验收问题`。缺字段或记录问题先 `repair`，上游事实未变的机器验证问题用 `revalidate`；只有 `upstream-fact-invalidated`、`scope-changed` 或 `hard-gate-would-be-bypassed` 时才给出 `returnStage`，并取最早受影响阶段。普通候选身份变化不触发回退。
 
 场景 V2 不再保留旧式 `visual_human_approval`。还原方案确认使用 `visual-decomposition-confirmation/1.0`，绑定拆解图、技术 JSON、生产方案、target、baseline、candidate/diff、全部编号和用户原文。`v2Artifact.human_review`、`v2StructuredReview`、`combinationPreacceptance`、`structuredFidelityCase.human_review`、逐 `fidelityRegionResult.human_review`、F2 review 和 `component_reviews[].human_review` 均不是人工审阅要求；这些工件必须改用当前身份绑定的确定性机器 evidence 和 status，hash 可选且不参与验收。V5 COMPLETE 的 `all_visual_artifacts_human_reviewed` 不能单独满足 schema/运行时硬门。
+
+上述限制针对机器工件中的重复审阅字段，不取消现有选图、拆解、布局、草图和运行验收中的实际人工视觉确认。观看舒适、主题/受众适配与美术完成度意见保存在现有任务验收材料，机器 F2 的 `validationMode=MACHINE` 只表示事实核对；不能将其单独表述为美术或持续游玩已通过。
+
+V5 实际运行候选的 `artExperienceAcceptance` 使用 `phaser4-art-experience-acceptance/1.0`，引用[运行美术验收 Schema](art-experience-acceptance.schema.json)。它绑定 work item、candidate 与场景上下文，保存五项 checks、实际用户原文和确认时间，以及观看情境和四类 scenarios：`normal-play`、`repeated-feedback`、`event-peak`、`overlap-peak`。正常使用必须 required；其他情境允许有理由的 not-applicable。required 记录真实 `recordingFile`、有效起止秒数、非负整数触发次数/并发和人工观察；not-applicable 的文件、时段和计数为空，不伪造检查。整体与五项 checks 全 passed、文件可读取且身份正确后才满足 V5 完成门。机器只校验人工结果与录屏文件绑定，不分析视频、不自动生成通过结果；该对象属于现有运行验收，不恢复旧复核字段或新增审批阶段。
 
 效果图相关 Schema 统一使用 `origin=provided|generated`。generated 的 `reference_target`、上下文效果图、V2 artifact 或原子 expected asset 必须带 `generation_record`；provided 禁止带生成记录。generation record 的身份字段、完整 `style_reference_inputs`、canonical 全局视觉一致性提示词、`style_drift_policy=forbid`、实际 `full_prompt`、输出文件、`consistency_status=passed` 与 `consistency_evidence` 由共享合同进一步校验，Schema 不承担项目具体美术风格解释。

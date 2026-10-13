@@ -116,7 +116,7 @@ Camera 合同必须说明逻辑 viewport 如何映射到物理 backing，zoom �
 
 `invariants` 的每一项都包含稳定 ID、非空描述/表达式、非空且全部有效的适用区域、非负容差和 `evidence.automation`/`evidence.visual` 字符串项。关系表达优先描述相对中心、边界距离、间距、遮挡和断点结构，而非一个孤立屏幕坐标。`evidence_matrix` 必须绑定同一候选、合同版本、动态封顶 2 的 DPR 策略和已执行的视口条件；默认 `usability` 覆盖基准及代表性窄/宽、项目支持方向和关键状态，验证关系不变量与可用性。只有 `exact` 或项目明确要求时才覆盖断点邻值、宽高、字号、本地化、安全区、动作态、DPR、动态值、Scene 生命周期和覆盖层/键盘/滚动的完整组合；`orientation` 轴只在项目同时支持两种方向时强制，并只覆盖 `orientationPolicy.allowed` 声明的方向。精确矩阵启用 Golden 精确视觉。
 
-`critical_alignments` 用于冻结目标中的关键 UI/HUD：通过 `layout_node_id` 绑定布局节点，`element_id` 等于对应 `region_id`。`reference_id` 可指向稳定 region、`viewport` 或具体节点；多节点 region 必须指定具体节点。两种模式均保留唯一 ID、双轴关系、目标证据、双方身份和测试计划；verified 需要真实运行测量、运行证据与通过结果。默认 `usability` 不强制目标精确测量、四轴 delta 或预声明容差，允许合理的位置和尺寸差异；若提供测量字段，其结构必须有效。只有 `exact` 才强制目标几何、四轴 delta、精确差值一致性和项目容差。目标或布局结构实质变化才重新确认，普通运行态微调原地验证。
+`critical_alignments` 用于冻结目标中的关键 UI/HUD：通过 `layout_node_id` 绑定布局节点，`element_id` 等于对应 `region_id`。`reference_id` 可指向稳定 region、`viewport` 或具体节点；多节点 region 必须指定具体节点。两种模式均保留唯一 ID、双轴关系、目标证据、双方身份和测试计划；verified 需要真实运行测量、运行证据与通过结果。默认 `usability` 不强制整屏精确测量或全矩阵；但项目显式提供 `tolerance` 时，该项必须绑定真实目标矩形，verified 按同空间 x/y/width/height 实测差值校验容差，不能用手写通过或伪造 delta 放行。支持 `px/logical-px/css-px/css-logical-px`，不能用未经换算的比例单位。未声明容差的普通项允许合理的位置和尺寸差异；`exact` 仍强制完整几何与四轴 delta 等材料。目标或布局结构实质变化才重新确认，普通运行态微调原地验证。V4/V5 的校准、边距和素材可见边界口径见[布局校准](layout-calibration.md)。
 
 `parity_cases` 不可变绑定 scene/state、已执行 viewport、实际有效 DPR（(0,2]）、语言、随机种子、输入轨迹、稳定帧/动画采样、合同/基线版本、双方证据、容差、例外 ID 与结论。默认 `usability` 只需代表性案例；`exact` 或明确全覆盖需求才要求完整视口/状态组合。依据实际目标、上游事实和当前要求判断证据是否仍可复用，SHA 变化不使证据失效。
 

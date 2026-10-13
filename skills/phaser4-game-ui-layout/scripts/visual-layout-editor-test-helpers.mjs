@@ -1,4 +1,5 @@
 import { mountVisualLayoutEditor } from "./visual-layout-editor.mjs";
+import { calculatePageSketchNodeBounds } from "./page-sketch-layout.mjs";
 
 const targetSha = `sha256:${"a".repeat(64)}`;
 
@@ -177,12 +178,7 @@ function createMountedEditor({ save: saveCallback = async () => {}, getViewportR
   /** 用布局偏移重建运行时节点 bounds，代表正式 Scene 的同步重排入口。 */
   function applyRuntimeLayout(nextLayout) {
     for (const node of nodes) {
-      const offset = nextLayout.offsets[node.layout_node_id] ?? { x: 0, y: 0 };
-      runtimeBounds.set(node.layout_node_id, {
-        ...node.target_bounds,
-        x: node.target_bounds.x + offset.x,
-        y: node.target_bounds.y + offset.y,
-      });
+      runtimeBounds.set(node.layout_node_id, calculatePageSketchNodeBounds(nextLayout, nodes, node.layout_node_id));
     }
   }
   applyRuntimeLayout(layout);

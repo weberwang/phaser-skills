@@ -7,6 +7,7 @@
 import { buildSolidBackgroundPrompt, DEFAULT_SOURCE_BACKGROUND_COLOR, expressesDirectAlphaProduction, expressesSolidBackgroundProduction, TRANSPARENT_BACKGROUND_REMOVAL_PROMPT, normalizeSourceBackgroundColor } from "./visual-transparent-background-contract.mjs";
 import { CANONICAL_GLOBAL_VISUAL_CONSISTENCY_PROMPT, GLOBAL_VISUAL_CONSISTENCY_PROMPT, validateGlobalVisualGenerationRecord } from "./global-visual-consistency-contract.mjs";
 import { TRANSPARENT_EDGE_PROFILES } from "./transparent-route-contract.mjs";
+import { isNineSliceStretch, validateNineSliceContract } from "../../phaser4-game-ui-layout/scripts/nine-slice-contract.mjs";
 
 /** effect-image 生成记录必须声明的重建模式。 */
 export const EFFECT_IMAGE_RECONSTRUCTION_MODE = "reference-faithful";
@@ -205,6 +206,15 @@ export function buildEffectImageAssetPrompt({ region, sceneReconstructionContrac
   return { prompt: lines.join("\n"), facts, missing, identity, region: resolvedRegion };
 }
 
+/** 将 V2 已确认切片事实写入实际生产提示词，避免按整块显示尺寸生成大底板。 */
+export function buildNineSliceProductionPrompt(decision) {
+  if (decision === undefined) return "";
+  const normalized = validateNineSliceContract(decision);
+  if (!isNineSliceStretch(normalized)) return "";
+  const { source_size: size, borders } = normalized;
+  return `九宫格生产合同：最终未裁切源图 ${size.width}×${size.height}px；源帧切片边宽 left=${borders.left}px、right=${borders.right}px、top=${borders.top}px、bottom=${borders.bottom}px。四角固定，左右边仅纵向拉伸，上下边仅横向拉伸，中心双向拉伸。只生产已确认的底板皮肤，中心保持可拉伸；文字、图标与独立装饰另作节点。保留冻结参考的角边、材质和色彩，不按整块显示尺寸扩充源图，不裁掉边框、不新增外侧 padding。切片值以最终源图像素为准。`;
+}
+
 /** 组合实际发送给图像生成器的完整正向/负向提示词，供生成器与记录共用。 */
 export function buildEffectImageFullPrompt({ assetPrompt, statePrompt = "", globalPromptPrefix = EFFECT_IMAGE_GLOBAL_PROMPT_PREFIX, globalConsistencyPrompt = GLOBAL_VISUAL_CONSISTENCY_PROMPT, negativePrompt = EFFECT_IMAGE_NEGATIVE_PROMPT, transparentBackground = false, expectedAlpha = false, expectedAsset = null, backgroundColor, transparencyStrategy, edgeProfile, colorSeparationVerified = false, capability } = {}) {
   const needsTransparency = transparentBackground === true || expectedAlpha === true || expectedAsset?.alpha === true;
@@ -224,7 +234,8 @@ export function buildEffectImageFullPrompt({ assetPrompt, statePrompt = "", glob
       sourceBackgroundPrompt = "为已冻结的独立遮罩/人工 Alpha 创作路线生产原始主体，保留半透明、辉光、阴影、毛发或玻璃边缘；禁止颜色阈值硬抠、删除光效和烘焙棋盘格。独立遮罩与合成过程另行记录并验证。";
     } else throw new TypeError("透明资产必须显式选择已冻结的 transparencyStrategy 和 edgeProfile");
   }
-  return [globalPromptPrefix, globalConsistencyPrompt, assetPrompt, statePrompt, sourceBackgroundPrompt, negativePrompt].filter(nonEmptyString).join("\n\n");
+  const nineSlicePrompt = buildNineSliceProductionPrompt(expectedAsset?.nine_slice);
+  return [globalPromptPrefix, globalConsistencyPrompt, assetPrompt, statePrompt, nineSlicePrompt, sourceBackgroundPrompt, negativePrompt].filter(nonEmptyString).join("\n\n");
 }
 
 /** 判断一段文本是否确实包含忠实还原语义，而非只提到参考图。 */
@@ -319,6 +330,12 @@ export function validateEffectImagePromptContract(asset, contract, generation, c
   const identity = collectEffectImagePromptFacts(region, options.sceneReconstructionContract).identity;
   const add = (message) => errors.push(message);
   if (!isObject(generation)) return ["effect-image generation_record 必须是对象"];
+  try {
+    const expectedAsset = options.expectedAsset ?? contract?.expected_assets?.find((item) => item.asset_id === (asset?.id ?? asset?.asset_id));
+    const nineSlicePrompt = buildNineSliceProductionPrompt(expectedAsset?.nine_slice);
+    const sentPrompt = ["full_prompt", "actual_prompt", "prompt_sent", "sent_prompt", "positive_prompt", "prompt"].map((key) => generation[key]).find(nonEmptyString);
+    if (nineSlicePrompt && !sentPrompt?.includes(nineSlicePrompt)) add("九宫格生成记录的实际提示词必须包含已冻结的小图尺寸和切片生产段");
+  } catch (error) { add(`九宫格生产提示词无效：${error.message}`); }
   for (const [field, expected] of [["reconstruction_mode", EFFECT_IMAGE_RECONSTRUCTION_MODE], ["reference_input_mode", EFFECT_IMAGE_REFERENCE_INPUT_MODE], ["pixel_reuse_policy", EFFECT_IMAGE_PIXEL_REUSE_POLICY]]) if (generation[field] !== expected) add(`effect-image generation_record.${field} 必须为 ${expected}`);
   if (!hasFullReferenceInput(generation.reference_inputs, targetFile)) add("effect-image generation_record.reference_inputs 必须包含完整冻结效果图 reference_target.original_file");
   if (generation.style_reference_inputs !== undefined && (!Array.isArray(generation.style_reference_inputs) || !generation.style_reference_inputs.every((item) => nonEmptyString(item) || isObject(item)))) add("effect-image style_reference_inputs 只能是补充参考列表");

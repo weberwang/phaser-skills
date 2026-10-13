@@ -24,6 +24,8 @@
     .control-section { display: grid; gap: 9px; }
     .control-row { display: flex; gap: 8px; }
     .control-row > * { flex: 1; min-width: 0; }
+    /* 保存确认在长显示树滚动时保持可达，避免每次校准后寻找顶部按钮。 */
+    #file-actions { position: sticky; top: 0; z-index: 2; padding: 10px 0; background: #172438; border-bottom: 1px solid #344861; }
     #page-status { overflow-wrap: anywhere; font-size: 13px; color: #c7d5e5; }
     #device-summary, .help { margin: 0; font-size: 12px; color: #aabbd0; line-height: 1.6; }
     #resource-errors { padding: 10px; background: #182538; border: 1px solid #465a72; border-radius: 6px; font-size: 13px; }
@@ -48,17 +50,18 @@
         <p id="device-summary"></p>
         <button id="toggle-fullscreen" type="button" aria-pressed="false">进入 Web 全屏</button>
       </section>
-      <section class="control-section" aria-label="文件与确认">
+      <section id="file-actions" class="control-section" aria-label="文件与确认">
         <button id="open-sketch" type="button">打开 page-sketch.json</button>
         <button id="toggle-preview" type="button" disabled aria-pressed="false">预览正式效果</button>
         <button id="reset-sketch" type="button" disabled>重置初始布局</button>
         <button id="save-sketch" type="button" disabled>保存草图</button>
         <button id="confirm-sketch" type="button" disabled>确认草图</button>
+        <button id="save-confirm-sketch" type="button" disabled>保存并确认</button>
         <span id="page-status" role="status" aria-live="polite">请从游戏项目开发服务打开此页面并加载草图。</span>
       </section>
       <div id="layout-controls"></div>
       <div id="resource-errors" aria-live="polite"></div>
-      <p class="help">点击画面或节点树选择，在画面中拖动位置；右侧显示选中节点的实时坐标、尺寸和资源属性。全部节点均可移动。预览与正式场景共用 Phaser 和设计分辨率，设备选择只改变可见区域与显示缩放。保存后点击“确认草图”才能进入 V5。</p>
+      <p class="help">先按草图原始尺寸对照参考。Shift 点击节点树或编辑框可多选；对齐、等间距、恢复参考位置及撤销重做位于布局工具区。读数反映布局矩形，素材透明留白和字形仍需人工检查。未修改的已落盘草图可直接确认；修改后可保存并确认，一次完成。设备预览不改变冻结布局。</p>
     </aside>
   </main>
   <script type="module">

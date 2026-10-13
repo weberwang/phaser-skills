@@ -56,6 +56,34 @@ function restrictToOrientation(document, orientation) {
 function assertFailed(document, expected) { const result = validateContract(document); assert.equal(result.status, "failed"); assert(result.errors.some((item) => item.includes(expected)), JSON.stringify(result)); }
 
 test("普通布局合同通过且保留专项标记", () => { const result = validateContract(copy()); assert.equal(result.status, "passed", JSON.stringify(result)); assert(result.specialized_review.includes("primary-action:docked-overlay")); });
+
+test("关键矩形超出项目声明容差时，usability 与 exact 都拒绝手写通过", () => {
+  for (const mode of ["usability", "exact"]) {
+    const document = fidelityContract(); document.visual_validation = { mode };
+    document.critical_alignments[0].runtime_measurement.x += 6;
+    document.critical_alignments[0].delta.x = 6;
+    assertFailed(document, "runtime_measurement.x 超出声明容差");
+  }
+});
+
+test("声明的关键容差校验实测差值，不能用 delta=0 隐藏偏移", () => {
+  const document = fidelityContract(); document.visual_validation = { mode: "usability" };
+  document.critical_alignments[0].runtime_measurement.y += 12;
+  assertFailed(document, "delta.y 必须等于");
+  assertFailed(document, "runtime_measurement.y 超出声明容差");
+});
+
+test("usability 未声明精确几何容差时保留宽松策略，声明边界值时允许通过", () => {
+  const relaxed = fidelityContract(); relaxed.visual_validation = { mode: "usability" };
+  delete relaxed.critical_alignments[0].tolerance;
+  relaxed.critical_alignments[0].runtime_measurement.x += 12;
+  assert.equal(validateContract(relaxed).status, "passed");
+  const bounded = fidelityContract(); bounded.visual_validation = { mode: "usability" };
+  bounded.critical_alignments[0].runtime_measurement.x += 2; bounded.critical_alignments[0].delta.x = 2;
+  assert.equal(validateContract(bounded).status, "passed");
+  bounded.critical_alignments[0].tolerance.unit = "percent";
+  assertFailed(bounded, "tolerance.unit 必须是");
+});
 test("specified 冻结目标合同允许尚无运行测量和 parity", () => { const result = validateContract(fidelityContract("specified")); assert.equal(result.status, "passed", JSON.stringify(result)); });
 test("frozen-target 缺少 scene_reconstruction_binding 必须失败，普通布局无需绑定", () => { const frozen = fidelityContract("specified"); delete frozen.scene_reconstruction_binding; assertFailed(frozen, "scene_reconstruction_binding 缺失"); const ordinary = copy(); delete ordinary.scene_reconstruction_binding; assert.equal(validateContract(ordinary).status, "passed"); });
 test("actual_test_id 仅在 verified 必需", () => { const document = fidelityContract(); delete document.critical_alignments[0].actual_test_id; assertFailed(document, "actual_test_id 必须"); });

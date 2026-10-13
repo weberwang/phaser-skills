@@ -33,8 +33,8 @@ function declaredLayoutNodeIds(region) {
   return Array.isArray(region?.layout_node_ids) ? region.layout_node_ids : [];
 }
 
-/** 读取阶段 A 的元素清单；没有显式清单时按当前区域组件合同生成稳定投影。 */
-function decompositionElements(region) { return Array.isArray(region?.decomposition_elements) ? region.decomposition_elements : buildDecompositionElements([region]); }
+/** 生成区域当前权威拆解元素的规范化期望投影，包含由区域归属派生的确认上下文。 */
+function decompositionElements(region) { return buildDecompositionElements([region]); }
 /** 返回阶段 A 元素 ID，布局节点不得在此阶段提前声明。 */
 function decompositionElementIdList(region) { return decompositionElementIds(decompositionElements(region)); }
 

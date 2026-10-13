@@ -13,6 +13,8 @@ description: 为 Phaser 4 游戏规划、生产、登记、验证并集成 UI、
 
 ## 工作流
 
+涉及美术方向、效果图、正式资源或动态视觉时，先读取[游戏美术体验与质量契约](references/art-quality-contract.md)。生产输入必须携带适用的主题、受众、体验目标、视觉层级与常态/操作/峰值预算；全局三候选逐项人工评估，所选候选任一质量项失败或未验证都不得冻结。正式资源沿用现有 V3/V4/V5 验收，持续游玩片段由用户检查，不增设逐资产确认链。
+
 ### 场景还原合同（effect-image 强制）
 
 V2 拆解先遵守[功能语义分组约束](../phaser4-game-ui-layout/references/functional-semantic-grouping.md)：确认区域、功能组件、部件和独立元素的位置依赖、信息分组与理由；位置依赖方划为被依赖元素所对应布局容器的子元素，共同表达同一信息且彼此无位置依赖的元素列为同组同级项。布局不得按文字类型或几何包含重新分组，归属不明留在拆解确认，不自动生成可放行布局。
@@ -44,12 +46,14 @@ V3 将当前已确认生产范围内相互独立的静态 component × required 
 
 布局生成的标准交付除 PNG 外必须包含同一候选目录的 `layout-nodes.json`、`layout-decision.json`、自包含 `review.html` 和 `generation-result.json`。布局审阅页只用于可读的人工作业，不能替代拆解确认、独立布局确认或 PNG/F2 机器门；其模板、真实文件与业务绑定、候选状态和离线边界见 [`离线布局审阅产物`](../phaser4-game-ui-layout/references/layout-review-artifacts.md)。
 
+V2 拆解 UI 底板、按钮皮肤和框体时，必须按可观察固定角边与可伸展区域评估九宫格，记录适用/不适用原因及源图尺寸、四边切片值；采用九宫格时，选择随已有拆解确认冻结并贯穿 V3 小图生产与 V4/V5 共享渲染。具体合同读取[九宫格 UI](references/nine-slice-ui.md)，不能等到 V4 再手工试切片。
+
 ## 条件参考
 
 - 参考截图、录屏、运行项目或源码还原：读取 [视觉还原](references/visual-reconstruction.md)。
 - 装饰性屏幕空间满幅背景：读取 [满幅背景](references/full-bleed-background.md)；世界空间关卡、Tilemap 或玩法环境改读资产生产路线。
 - UI：同时读取 [`phaser4-game-ui-layout`](../phaser4-game-ui-layout/SKILL.md) 的布局合同、Phaser 适配器和证据矩阵；资源 origin、布局锚点与动画偏移按合同分离，资产接入不得重新发明布局规则。
-- QA 测量、动态 resize、完整 viewport 截图和只读 Hook：读取 [响应式视觉验证](../phaser4-game-qa-performance/references/responsive-visual-validation.md)，不得在资产文档复制其字段或阈值。
+- QA 测量、动态 resize、完整 viewport 截图和只读 Hook：读取 [响应式视觉验证](../phaser4-game-qa-performance/references/responsive-visual-validation.md)，不得在资产文档复制其字段或阈值；观看舒适和持续游玩验收使用共享美术契约。
 
 ## 审核与交付
 
@@ -58,3 +62,5 @@ V3 将当前已确认生产范围内相互独立的静态 component × required 
 ### 视觉确认边界
 
 同一场景 Work Item 的 V0→V5 链在 V2 依次完成拆解确认和布局确认，冻结还原方案。`visual-decomposition-confirmation/1.0` 绑定 annotation/proposal/decision SHA、target、V2 candidate、diff、baseline、全部编号和用户原文；已确认的目标或方案发生实质变化时重新确认受影响部分，普通运行态布局微调不重开 V2。V2 拆解图、技术 JSON、合同回对、coverage 和结构化机器检查必须齐全，布局确认另行绑定最终布局图与决策文件。V3 资源验收、V4 草图确认、V5 代表性完整画面和关键可用性证据绑定当前身份；overlay、diff 和完整逐区域精确 fidelity 仅在 exact 模式强制。根节点 PASS、布尔值、AI reviewer 字段或旧 `human_review` 均不能代替两次 V2 确认。
+
+F2 机器证据核对文件、结构、绑定和实际参数，不能单独给出美术通过结论。代理可提供截图、录屏和检查要点；未明确授权自动视觉验证时，不自动分析画面。用户对主题、完成度与舒适度的实际评价纳入现有选图、草图和运行验收材料，不能代填或用旧确认覆盖已变化的画面。

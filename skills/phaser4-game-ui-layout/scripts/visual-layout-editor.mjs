@@ -1,171 +1,35 @@
 import { createVisualLayoutProperties } from "./visual-layout-properties.mjs";
+import {
+  alignVisualLayoutNodes,
+  applyVisualLayoutDrag,
+  distributeVisualLayoutNodes,
+  getNodeOffset,
+  mapClientToLogical,
+  measureVisualLayoutNode,
+  measureVisualLayoutSelectionGaps,
+  normalizeBounds,
+  persistVisualLayoutDocument,
+  setVisualLayoutOffset,
+  snapshotLayoutNodes,
+  validateLayoutNodes,
+  validateSiblingSelection,
+  validateViewport,
+  validateVisualLayoutDocument,
+} from "./visual-layout-geometry.mjs";
+import { createVisualLayoutHistory } from "./visual-layout-history.mjs";
+import { createVisualLayoutTools } from "./visual-layout-tools.mjs";
+
+export {
+  applyVisualLayoutDrag,
+  mapClientToLogical,
+  mapLogicalToClient,
+  persistVisualLayoutDocument,
+  setVisualLayoutOffset,
+  validateVisualLayoutDocument,
+} from "./visual-layout-geometry.mjs";
 
 const LAYOUT_SCHEMA = "phaser-visual-layout/1.0";
-const ROOT_PARENTS = new Set(["viewport", "safe-area"]);
 const DEFAULT_SNAP_STEP = 8;
-
-/** 判断值是否为不含数组的普通对象。 */
-function isRecord(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-/** 校验逻辑视口，避免非法尺寸破坏客户端坐标换算。 */
-function validateViewport(viewport) {
-  if (!isRecord(viewport) || ![viewport.width, viewport.height].every((value) => Number.isFinite(value) && value > 0)) {
-    throw new TypeError("viewport.width 和 viewport.height 必须是正有限数");
-  }
-  return { width: viewport.width, height: viewport.height };
-}
-
-/** 校验节点矩形，并返回不引用输入对象的规范化副本。 */
-function normalizeBounds(bounds, label) {
-  if (!isRecord(bounds) || ![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite) || bounds.width <= 0 || bounds.height <= 0) {
-    throw new TypeError(`${label} 必须包含有限 x/y 和正数 width/height`);
-  }
-  return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
-}
-
-/** 读取布局偏移，避免特殊稳定 ID 命中对象原型上的同名属性。 */
-function getNodeOffset(layout, id) {
-  return Object.hasOwn(layout.offsets, id) ? layout.offsets[id] : { x: 0, y: 0 };
-}
-
-/** 校验 V2 节点身份与树结构；只读输入节点，不回写或补字段。 */
-function validateLayoutNodes(nodes) {
-  if (!Array.isArray(nodes) || nodes.length === 0) throw new TypeError("nodes 必须是非空 V2 layout_nodes 数组");
-  const byId = new Map();
-  for (const [index, node] of nodes.entries()) {
-    if (!isRecord(node) || typeof node.layout_node_id !== "string" || node.layout_node_id.trim() === "") {
-      throw new TypeError(`nodes[${index}].layout_node_id 必须是非空字符串`);
-    }
-    if (byId.has(node.layout_node_id)) throw new TypeError(`layout_node_id 重复：${node.layout_node_id}`);
-    if (typeof node.parent_layout_node_id !== "string" || node.parent_layout_node_id.trim() === "") {
-      throw new TypeError(`节点 ${node.layout_node_id} 缺少 parent_layout_node_id`);
-    }
-    normalizeBounds(node.target_bounds, `节点 ${node.layout_node_id}.target_bounds`);
-    byId.set(node.layout_node_id, node);
-  }
-
-  for (const node of nodes) {
-    const parentId = node.parent_layout_node_id;
-    if (!ROOT_PARENTS.has(parentId) && !byId.has(parentId)) throw new TypeError(`节点 ${node.layout_node_id} 的父节点不存在：${parentId}`);
-    const visited = new Set([node.layout_node_id]);
-    let current = node;
-    while (!ROOT_PARENTS.has(current.parent_layout_node_id)) {
-      const parentId = current.parent_layout_node_id;
-      if (visited.has(parentId)) throw new TypeError(`布局节点存在父子循环：${node.layout_node_id}`);
-      visited.add(parentId);
-      current = byId.get(parentId);
-    }
-  }
-  return byId;
-}
-
-/** 复制布局节点依赖的冻结字段，避免调用方后续改写父子关系或目标坐标。 */
-function snapshotLayoutNodes(nodes) {
-  validateLayoutNodes(nodes);
-  return nodes.map((node) => ({
-    layout_node_id: node.layout_node_id,
-    parent_layout_node_id: node.parent_layout_node_id,
-    ...(node.parent_target_bounds === undefined ? {} : {
-      parent_target_bounds: normalizeBounds(node.parent_target_bounds, `节点 ${node.layout_node_id}.parent_target_bounds`),
-    }),
-    target_bounds: normalizeBounds(node.target_bounds, `节点 ${node.layout_node_id}.target_bounds`),
-  }));
-}
-
-/** 校验并复制可持久化布局；V2 节点集合限制偏移键，防止写入未知 ID。 */
-export function validateVisualLayoutDocument(layout, nodes) {
-  const nodeMap = nodes === undefined ? null : validateLayoutNodes(nodes);
-  if (!isRecord(layout)) throw new TypeError("layout 必须是对象");
-  if (layout.schema !== LAYOUT_SCHEMA) throw new TypeError(`layout.schema 必须为 ${LAYOUT_SCHEMA}`);
-  for (const field of ["scene_id", "state_id"]) {
-    if (typeof layout[field] !== "string" || layout[field].trim() === "") throw new TypeError(`layout.${field} 必须是非空字符串`);
-  }
-  if (!isRecord(layout.offsets)) throw new TypeError("layout.offsets 必须是对象");
-
-  const offsetEntries = [];
-  for (const id of Object.keys(layout.offsets).sort()) {
-    if (nodeMap && !nodeMap.has(id)) throw new TypeError(`layout.offsets 引用了未知 layout_node_id：${id}`);
-    const offset = layout.offsets[id];
-    if (!isRecord(offset) || !Number.isFinite(offset.x) || !Number.isFinite(offset.y)) {
-      throw new TypeError(`layout.offsets.${id} 必须包含有限数值 x/y`);
-    }
-    offsetEntries.push([id, { x: offset.x, y: offset.y }]);
-  }
-  return {
-    schema: LAYOUT_SCHEMA,
-    target_sha256: layout.target_sha256,
-    scene_id: layout.scene_id,
-    state_id: layout.state_id,
-    offsets: Object.fromEntries(offsetEntries),
-  };
-}
-
-/** 把客户端坐标映射到逻辑视口，允许画布随容器宽高改变而缩放。 */
-export function mapClientToLogical({ clientX, clientY, rect, viewport }) {
-  const logicalViewport = validateViewport(viewport);
-  if (![clientX, clientY, rect?.left, rect?.top, rect?.width, rect?.height].every(Number.isFinite) || rect.width <= 0 || rect.height <= 0) {
-    throw new TypeError("客户端坐标和画布 client rect 必须是有限数且宽高为正数");
-  }
-  return {
-    x: ((clientX - rect.left) / rect.width) * logicalViewport.width,
-    y: ((clientY - rect.top) / rect.height) * logicalViewport.height,
-  };
-}
-
-/** 把逻辑坐标映射到当前客户端矩形，供渲染和尺寸变化复核使用。 */
-export function mapLogicalToClient({ x, y, rect, viewport }) {
-  const logicalViewport = validateViewport(viewport);
-  if (![x, y, rect?.left, rect?.top, rect?.width, rect?.height].every(Number.isFinite) || rect.width <= 0 || rect.height <= 0) {
-    throw new TypeError("逻辑坐标和画布 client rect 必须是有限数且宽高为正数");
-  }
-  return {
-    x: rect.left + (x / logicalViewport.width) * rect.width,
-    y: rect.top + (y / logicalViewport.height) * rect.height,
-  };
-}
-
-/** 按本次拖动增量生成新布局；只写选中节点的 offset，不移动 V2 子节点。 */
-export function applyVisualLayoutDrag(layout, nodes, layoutNodeId, delta, { snap = false, snapStep = DEFAULT_SNAP_STEP } = {}) {
-  const nodeMap = validateLayoutNodes(nodes);
-  if (!nodeMap.has(layoutNodeId)) throw new TypeError(`未知 layout_node_id：${layoutNodeId}`);
-  if (!isRecord(delta) || !Number.isFinite(delta.x) || !Number.isFinite(delta.y)) throw new TypeError("拖动增量必须包含有限数值 x/y");
-  if (typeof snap !== "boolean") throw new TypeError("snap 必须是布尔值");
-  if (!Number.isFinite(snapStep) || snapStep <= 0) throw new TypeError("snapStep 必须是正有限数");
-  const next = validateVisualLayoutDocument(layout, nodes);
-  const base = Object.hasOwn(next.offsets, layoutNodeId) ? next.offsets[layoutNodeId] : { x: 0, y: 0 };
-  // 吸附只量化当前手势增量，保留原有自由偏移，避免开关吸附时发生跳变。
-  const dx = snap ? Math.round(delta.x / snapStep) * snapStep : delta.x;
-  const dy = snap ? Math.round(delta.y / snapStep) * snapStep : delta.y;
-  next.offsets = { ...next.offsets, [layoutNodeId]: { x: base.x + dx, y: base.y + dy } };
-  return validateVisualLayoutDocument(next, nodes);
-}
-
-/** 设置节点相对冻结布局的增量偏移；最终坐标在编辑面板中换算。 */
-export function setVisualLayoutOffset(layout, nodes, layoutNodeId, offset) {
-  const nodeMap = validateLayoutNodes(nodes);
-  if (!nodeMap.has(layoutNodeId)) throw new TypeError(`未知 layout_node_id：${layoutNodeId}`);
-  if (!isRecord(offset) || !Number.isFinite(offset.x) || !Number.isFinite(offset.y)) throw new TypeError("坐标偏移必须包含有限数值 x/y");
-  const next = validateVisualLayoutDocument(layout, nodes);
-  next.offsets = { ...next.offsets, [layoutNodeId]: { x: offset.x, y: offset.y } };
-  return validateVisualLayoutDocument(next, nodes);
-}
-
-/** 保存布局的共享入口；失败时只发送 error 状态并继续向调用方抛出。 */
-export async function persistVisualLayoutDocument(layout, nodes, save, onStatus) {
-  if (typeof save !== "function") throw new TypeError("save 必须是实际持久化回调");
-  const snapshot = validateVisualLayoutDocument(layout, nodes);
-  onStatus?.("saving");
-  try {
-    await save(snapshot);
-    onStatus?.("saved");
-    return snapshot;
-  } catch (error) {
-    onStatus?.("error", error);
-    throw error;
-  }
-}
 
 /** 创建 HTML 元素并设置文本，所有用户数据均通过 textContent 写入。 */
 function makeElement(document, tag, className, text) {
@@ -188,7 +52,7 @@ function errorMessage(error) {
 }
 
 /** 以隔离的开发期 DOM 层挂载 Phaser 逻辑坐标布局编辑器；reflow 必须同步返回。 */
-export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, viewport, nodes: inputNodes, presentations = {}, backgroundNodeIds = [], layout, getBounds, getViewportRect, getClipRect, reflow, save, saveOnChange = true, showSaveButton = true, saveButtonLabel = "保存布局", onLayoutChange, onPreviewHealthChange }) {
+export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, viewport, nodes: inputNodes, presentations = {}, backgroundNodeIds = [], layout, getBounds, getLayoutDiagnostics, getViewportRect, getClipRect, reflow, save, saveOnChange = true, showSaveButton = true, saveButtonLabel = "保存布局", onLayoutChange, onPreviewHealthChange }) {
   const logicalViewport = validateViewport(viewport);
   const nodes = snapshotLayoutNodes(inputNodes);
   const nodeMap = validateLayoutNodes(nodes);
@@ -202,6 +66,7 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
   }
   if (typeof referenceUrl !== "string" || referenceUrl.trim() === "") throw new TypeError("referenceUrl 必须指向开发预览使用的冻结效果图");
   if (typeof getBounds !== "function") throw new TypeError("getBounds 必须是读取正式 Scene 逻辑 bounds 的回调");
+  if (getLayoutDiagnostics !== undefined && typeof getLayoutDiagnostics !== "function") throw new TypeError("getLayoutDiagnostics 必须是读取文字实测诊断的回调");
   if (getViewportRect !== undefined && typeof getViewportRect !== "function") throw new TypeError("getViewportRect 必须是读取目标 viewport CSS client rect 的回调");
   if (getClipRect !== undefined && typeof getClipRect !== "function") throw new TypeError("getClipRect 必须是读取实际可见 CSS 矩形的回调");
   if (typeof reflow !== "function") throw new TypeError("reflow 必须接入正式布局入口");
@@ -254,6 +119,17 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
   heading.style.margin = "0";
   const selectedLabel = makeElement(document, "div", "vle-current", "选择一个布局节点");
   const properties = createVisualLayoutProperties({ document, nodes: inputNodes, presentations, backgroundNodeIds });
+  const toolsPanel = createVisualLayoutTools({
+    document,
+    onAlign: alignSelectedNodes,
+    onDistribute: distributeSelectedNodes,
+    onRestoreReference: restoreSelectedReference,
+    onUndo: undo,
+    onRedo: redo,
+    onError: (error) => {
+      if (status.dataset.state !== "error") setStatus("error", `布局工具失败：${errorMessage(error)}`);
+    },
+  });
   const snapButton = makeElement(document, "button", "vle-button", "吸附：开（8px）");
   snapButton.type = "button";
   snapButton.setAttribute("aria-pressed", "true");
@@ -323,7 +199,7 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
   else saveRow.append(status);
   const tree = makeElement(document, "ul", "vle-tree");
   tree.setAttribute("aria-label", "布局节点树");
-  panel.append(heading, selectedLabel, snapButton, opacityRow, coordinateModeRow, relativePointRow, coordinateOriginLabel, coordinateRow, properties.element, saveRow, tree);
+  panel.append(heading, selectedLabel, snapButton, opacityRow, coordinateModeRow, relativePointRow, coordinateOriginLabel, coordinateRow, properties.element, toolsPanel.element, saveRow, tree);
   // 覆盖层只负责参考图和 SVG；控件进入宿主提供的独立栏，避免遮挡游戏预览。
   root.append(styles, image, svg);
   document.body.append(root);
@@ -332,15 +208,18 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
   // 每个节点拥有独立的坐标显示偏好，避免上一个节点的绝对模式或参照点影响下一节点。
   const coordinatePreferences = new Map();
   let selectedId = nodes[0].layout_node_id;
+  let selectedIds = [selectedId];
   let snapping = true;
   let destroyed = false;
   let drag = null;
   let previewMode = false;
+  let saveInFlight = false;
   let revision = 0;
   let saveTail = Promise.resolve();
   let resizeObserver = null;
   let reflowHealthy = false;
   let interactionEnabled = true;
+  const history = createVisualLayoutHistory();
 
   /** 返回当前容器 client rect 的复制值，映射始终跟随窗口尺寸和页面滚动更新。 */
   function getViewportClientRect() {
@@ -376,6 +255,16 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
   function setStatus(state, message) {
     status.dataset.state = state;
     status.textContent = message;
+  }
+
+  /** 统一判断布局编辑是否开放，覆盖保存中、宿主锁和正式预览状态。 */
+  function canEditLayout() {
+    return !destroyed && interactionEnabled && !previewMode && !saveInFlight;
+  }
+
+  /** 手势活动时只允许该手势自身更新 Scene，避免其他命令覆盖拖动基线。 */
+  function canUseLayoutTools() {
+    return canEditLayout() && !drag && reflowHealthy;
   }
 
   /** 返回父容器当前逻辑边界，供相对点推导及坐标换算共用。 */
@@ -427,14 +316,54 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     coordinateOriginLabel.textContent = coordinateModeInput.value === "absolute"
       ? "原点：视口左上角（逻辑像素）"
       : `原点：父容器 ${nodeMap.get(selectedId).parent_layout_node_id} ${relativePoints[relativePointInput.value].label}；测量节点左上角（逻辑像素）`;
-    relativePointInput.disabled = !interactionEnabled || previewMode || coordinateModeInput.value !== "relative";
-    xCoordinateInput.disabled = yCoordinateInput.disabled = !interactionEnabled || previewMode;
-    properties.update(selectedId, bounds, currentLayout.value);
+    relativePointInput.disabled = !canUseLayoutTools() || coordinateModeInput.value !== "relative";
+    xCoordinateInput.disabled = yCoordinateInput.disabled = !canUseLayoutTools();
+    updateProperties();
   }
 
   /** 返回节点在 Scene 中的即时 bounds；回调异常会被调用点明确呈现。 */
   function readCurrentBounds(id) {
     return normalizeBounds(getBounds(id), `getBounds(${id})`);
+  }
+
+  /** 返回冻结父容器边界；根 viewport 使用固定设计尺寸，其余根容器取 V2 父目标。 */
+  function targetParentBounds(id) {
+    const node = nodeMap.get(id);
+    const parentId = node.parent_layout_node_id;
+    if (nodeMap.has(parentId)) return normalizeBounds(nodeMap.get(parentId).target_bounds, `节点 ${parentId}.target_bounds`);
+    if (parentId === "viewport") return { x: 0, y: 0, width: logicalViewport.width, height: logicalViewport.height };
+    return normalizeBounds(node.parent_target_bounds, `节点 ${id}.parent_target_bounds`);
+  }
+
+  /** 同步所选布局矩形与冻结参考的位移、父边距和相邻间隙读数。 */
+  function updateProperties() {
+    const boundsById = new Map();
+    const metricsById = new Map();
+    const entries = [];
+    for (const id of selectedIds) {
+      const currentBounds = readCurrentBounds(id);
+      const currentParentBounds = coordinateParentBounds(id);
+      const referenceParentBounds = targetParentBounds(id);
+      const node = nodeMap.get(id);
+      boundsById.set(id, currentBounds);
+      metricsById.set(id, measureVisualLayoutNode({
+        currentBounds,
+        targetBounds: node.target_bounds,
+        currentParentBounds,
+        targetParentBounds: referenceParentBounds,
+      }));
+      entries.push({ id, currentBounds, targetBounds: node.target_bounds });
+    }
+    let gaps = { horizontal: [], vertical: [] };
+    if (selectedIds.length > 1) {
+      try {
+        validateSiblingSelection(nodes, selectedIds);
+        gaps = measureVisualLayoutSelectionGaps(entries);
+      } catch {
+        gaps = { horizontal: null, vertical: null };
+      }
+    }
+    properties.updateSelection(selectedIds, boundsById, currentLayout.value, metricsById, gaps, getLayoutDiagnostics?.() ?? {});
   }
 
   /** 将指定样式的矩形写入覆盖 SVG。 */
@@ -474,7 +403,7 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
       const hitOrder = [...nodes].sort((a, b) => (Number(a.layout_node_id === selectedId) - Number(b.layout_node_id === selectedId) || depthOf(a) - depthOf(b)));
       for (const node of hitOrder) {
         const bounds = readCurrentBounds(node.layout_node_id);
-        const isSelected = node.layout_node_id === selectedId;
+        const isSelected = selectedIds.includes(node.layout_node_id);
         const outsideViewport = bounds.x + bounds.width <= 0 || bounds.y + bounds.height <= 0 || bounds.x >= logicalViewport.width || bounds.y >= logicalViewport.height;
         // 整个节点出屏时在边缘提供代理拖动框，只改变命中几何，不钳制正式节点坐标。
         const handleSize = Math.min(logicalViewport.width, logicalViewport.height, 24 * logicalViewport.width / getViewportClientRect().width);
@@ -486,8 +415,9 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
         const frame = appendFrame(hitBounds, isSelected ? "vle-frame vle-frame-selected" : "vle-frame", node.layout_node_id);
         frame.setAttribute("role", "button");
         if (isSelected && outsideViewport) frame.setAttribute("data-offscreen-handle", "true");
-        frame.setAttribute("aria-label", `拖动布局节点 ${node.layout_node_id}`);
-        const canEdit = interactionEnabled && !previewMode;
+        frame.setAttribute("aria-label", `${isSelected ? "已选中，拖动布局节点" : "拖动布局节点"} ${node.layout_node_id}`);
+        frame.setAttribute("aria-pressed", String(isSelected));
+        const canEdit = canUseLayoutTools();
         frame.setAttribute("tabindex", canEdit ? "0" : "-1");
         frame.setAttribute("aria-disabled", String(!canEdit));
         // 框内部交给 Phaser 按真实显示层命中，避免选中背景或低层节点遮住上层对象。
@@ -500,7 +430,9 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
         svg.append(label);
       }
       syncCoordinateInputs();
-      selectedLabel.textContent = `当前节点：${selectedId}`;
+      selectedLabel.textContent = selectedIds.length > 1
+        ? `已选 ${selectedIds.length} 个节点；参照：${selectedId}`
+        : `当前节点：${selectedId}`;
       if (focusedNodeId) {
         for (const frame of svg.children) {
           if (frame.dataset.restoreFocus === "true") {
@@ -533,21 +465,30 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
       button.style.paddingLeft = `${6 + depth * 14}px`;
       button.dataset.layoutNodeId = node.layout_node_id;
       button.setAttribute("aria-current", String(node.layout_node_id === selectedId));
-      button.disabled = !interactionEnabled || previewMode;
-      button.addEventListener("click", () => selectNode(node.layout_node_id));
+      button.setAttribute("aria-selected", String(selectedIds.includes(node.layout_node_id)));
+      button.disabled = !canUseLayoutTools();
+      button.addEventListener("click", (event) => selectNode(node.layout_node_id, { toggle: event.shiftKey }));
       item.append(button);
       tree.append(item);
     }
   }
 
   /** 显示点击与树点击共用选择入口；选择只同步面板，不产生布局修改或保存。 */
-  function selectNode(id) {
-    if (destroyed || !interactionEnabled || previewMode) return false;
+  function selectNode(id, { toggle = false } = {}) {
+    if (!canUseLayoutTools()) return false;
     if (!nodeMap.has(id)) throw new TypeError(`未知 layout_node_id：${id}`);
-    selectedId = id;
+    if (toggle && selectedIds.includes(id)) {
+      if (selectedIds.length > 1) selectedIds = selectedIds.filter((selected) => selected !== id);
+    } else if (toggle) {
+      selectedIds = [...selectedIds, id];
+    } else {
+      selectedIds = [id];
+    }
+    selectedId = selectedIds[0];
     syncCoordinateInputs();
     renderTree();
     renderFrames();
+    updateInteractionControls();
     return true;
   }
 
@@ -578,18 +519,112 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     const operation = saveTail.catch(() => {}).then(async () => {
       // 排队期间若布局已改变或最近一次重排失败，旧快照不得再写入文件。
       if (snapshotRevision !== revision || !reflowHealthy) return false;
+      saveInFlight = true;
       setStatus("saving", "保存中…");
+      updateInteractionControls();
       try {
         await persistVisualLayoutDocument(snapshot, nodes, save);
         if (snapshotRevision === revision && reflowHealthy) setStatus("saved", "已保存");
       } catch (error) {
         if (snapshotRevision === revision) setStatus("error", `保存失败：${errorMessage(error)}`);
         throw error;
+      } finally {
+        saveInFlight = false;
+        updateInteractionControls();
       }
     });
     // 事件回调不能留下未处理拒绝；状态栏保留错误，显式保存按钮仍可重试。
     saveTail = operation.catch(() => {});
     return operation.catch(() => false);
+  }
+
+  /** 统一提交布局变更；重排失败时回滚偏移且不写历史或请求保存。 */
+  function commitLayoutChange(nextLayout, label, { recordHistory = true, afterCommit } = {}) {
+    if (drag) throw new Error("拖动期间不能执行其他布局操作");
+    if (!interactionEnabled || previewMode || saveInFlight || destroyed) {
+      throw new Error("操作锁定、保存或正式预览期间不能修改布局");
+    }
+    const next = validateVisualLayoutDocument(nextLayout, nodes);
+    if (JSON.stringify(next.offsets) === JSON.stringify(currentLayout.value.offsets)) return false;
+    const previous = currentLayout.value;
+    const snapshot = validateVisualLayoutDocument(next, nodes);
+    currentLayout.value = next;
+    try {
+      invokeReflow(next);
+      onLayoutChange?.(snapshot);
+    } catch (error) {
+      currentLayout.value = previous;
+      try {
+        invokeReflow(previous);
+      } catch {
+        reflowHealthy = false;
+      }
+      try { onLayoutChange?.(validateVisualLayoutDocument(previous, nodes)); } catch { /* 宿主回调失败时仍保留本地回滚结果。 */ }
+      setStatus("error", `${label}失败：${errorMessage(error)}`);
+      throw error;
+    }
+
+    revision += 1;
+    if (recordHistory) history.record(previous, next);
+    afterCommit?.(previous, next);
+    setStatus("dirty", `${label}完成，未保存`);
+    updateInteractionControls();
+    if (saveOnChange) void persistRevision(snapshot, revision).catch(() => {});
+    return snapshot;
+  }
+
+  /** 对当前多选节点执行一次原子布局变更，失败时由共享提交入口回滚。 */
+  function applySelectedBatch(label, buildNextLayout) {
+    if (!canUseLayoutTools()) throw new Error(drag ? "拖动期间不能执行批量布局操作" : "操作锁定、保存或正式预览期间不能修改布局");
+    try {
+      validateSiblingSelection(nodes, selectedIds);
+      const boundsById = new Map(selectedIds.map((id) => [id, readCurrentBounds(id)]));
+      const next = buildNextLayout(boundsById);
+      return commitLayoutChange(next, label);
+    } catch (error) {
+      if (!status.textContent.startsWith(`${label}失败：`)) setStatus("error", `${label}失败：${errorMessage(error)}`);
+      throw error;
+    }
+  }
+
+  /** 以首选节点为参照执行一次同级节点对齐。 */
+  function alignSelectedNodes(alignment) {
+    return applySelectedBatch("批量对齐", (boundsById) => alignVisualLayoutNodes(currentLayout.value, nodes, selectedIds, boundsById, alignment));
+  }
+
+  /** 显式按当前布局矩形边界执行水平或垂直等间距。 */
+  function distributeSelectedNodes(axis) {
+    return applySelectedBatch("批量等间距", (boundsById) => distributeVisualLayoutNodes(currentLayout.value, nodes, selectedIds, boundsById, axis));
+  }
+
+  /** 仅清除所选节点自己的偏移；仍保留并继承所有祖先偏移。 */
+  function restoreSelectedReference() {
+    if (!canUseLayoutTools()) throw new Error(drag ? "拖动期间不能恢复参考位置" : "操作锁定、保存或正式预览期间不能修改布局");
+    const next = validateVisualLayoutDocument(currentLayout.value, nodes);
+    const offsets = { ...next.offsets };
+    for (const id of selectedIds) delete offsets[id];
+    next.offsets = offsets;
+    const result = commitLayoutChange(next, "恢复所选参考位置");
+    if (!result) setStatus("saved", "所选节点自身已在参考位置；祖先位移仍会传递");
+    return result;
+  }
+
+  /** 先预览撤销快照，重排成功后才移动历史栈，失败时历史保持不变。 */
+  function undo() {
+    if (!canUseLayoutTools()) throw new Error(drag ? "拖动期间不能撤销" : "操作锁定、保存或正式预览期间不能撤销");
+    const previous = currentLayout.value;
+    const next = history.previewUndo(previous);
+    if (!next) return false;
+    return commitLayoutChange(next, "撤销", { recordHistory: false, afterCommit: () => history.undo(previous) });
+  }
+
+  /** 先预览重做快照，重排成功后才消费重做记录。 */
+  function redo() {
+    if (!canUseLayoutTools()) throw new Error(drag ? "拖动期间不能重做" : "操作锁定、保存或正式预览期间不能重做");
+    const previous = currentLayout.value;
+    const next = history.previewRedo(previous);
+    if (!next) return false;
+    return commitLayoutChange(next, "重做", { recordHistory: false, afterCommit: () => history.redo(previous) });
   }
 
   /** 按当前 host rect 将指针位置转换为逻辑坐标。 */
@@ -604,20 +639,27 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
 
   /** Phaser 内容点击与编辑框拖动共用手势基线，客户端坐标只逆映射一次。 */
   function beginNodeDrag(id, event) {
-    if (!interactionEnabled || previewMode) return;
+    if (!canEditLayout() || drag) return;
     if (!event) return selectNode(id);
     if (event.button !== undefined && event.button !== 0) return;
     if (!nodeMap.has(id)) return;
+    if (event.shiftKey) {
+      selectNode(id, { toggle: true });
+      event.preventDefault?.();
+      return;
+    }
     selectNode(id);
     const rect = getViewportClientRect();
     syncGeometry(rect);
     drag = { id, pointerId: event.pointerId, start: pointerPosition(event, rect), base: validateVisualLayoutDocument(currentLayout.value, nodes), changed: false, reflowFailed: false };
+    updateInteractionControls();
+    renderFrames();
     event.preventDefault?.();
   }
 
   /** 将拖动增量写到所选节点，并立即调用正式布局入口带动真实子孙节点。 */
   function onPointerMove(event) {
-    if (!interactionEnabled || previewMode || !drag || (drag.pointerId !== undefined && event.pointerId !== drag.pointerId)) return;
+    if (!canEditLayout() || !drag || (drag.pointerId !== undefined && event.pointerId !== drag.pointerId)) return;
     try {
       const rect = getViewportClientRect();
       syncGeometry(rect);
@@ -640,38 +682,70 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     }
   }
 
+  /** 以指定快照同步编辑器与正式 Scene；即使重排失败，也向宿主报告当前逻辑快照。 */
+  function restoreLayoutSnapshot(snapshot, label, { invalidateSaves = true } = {}) {
+    const restored = validateVisualLayoutDocument(snapshot, nodes);
+    currentLayout.value = restored;
+    if (invalidateSaves) revision += 1;
+    let failure = null;
+    try {
+      invokeReflow(restored);
+    } catch (error) {
+      failure = error;
+    }
+    try {
+      onLayoutChange?.(validateVisualLayoutDocument(restored, nodes));
+    } catch (error) {
+      failure ??= error;
+    }
+    updateInteractionControls();
+    if (failure) {
+      setStatus("error", `${label}恢复失败：${errorMessage(failure)}`);
+      return false;
+    }
+    return true;
+  }
+
+  /** 取消尚未完成的手势时回到基线，不创建历史记录或保存中间坐标。 */
+  function restoreDragBase(activeDrag, label, successMessage) {
+    if (drag === activeDrag) drag = null;
+    if (!activeDrag.changed) {
+      updateInteractionControls();
+      renderFrames();
+      return true;
+    }
+    if (!restoreLayoutSnapshot(activeDrag.base, label)) return false;
+    setStatus("dirty", successMessage);
+    return true;
+  }
+
   /** 结束拖动后等待对应快照完成持久化；失败状态由状态栏保留。 */
   async function onPointerUp(event) {
     if (!drag || (drag.pointerId !== undefined && event.pointerId !== drag.pointerId)) return;
     const finishedDrag = drag;
     drag = null;
-    if (saveOnChange && finishedDrag.changed && !finishedDrag.reflowFailed && reflowHealthy) {
-      await persistRevision(validateVisualLayoutDocument(currentLayout.value, nodes), revision);
+    updateInteractionControls();
+    renderFrames();
+    if (finishedDrag.reflowFailed) {
+      restoreDragBase(finishedDrag, "拖动失败后的布局", "拖动未能完成，已恢复手势开始位置");
+      return;
+    }
+    if (finishedDrag.changed && reflowHealthy) {
+      history.record(finishedDrag.base, currentLayout.value);
+      updateInteractionControls();
+      if (saveOnChange) await persistRevision(validateVisualLayoutDocument(currentLayout.value, nodes), revision);
     }
   }
 
   /** 取消拖动时恢复手势开始时的偏移，避免留下未提交的中间位置。 */
   function onPointerCancel(event) {
     if (!drag || (drag.pointerId !== undefined && event.pointerId !== drag.pointerId)) return;
-    if (!drag.changed) {
-      drag = null;
-      return;
-    }
-    currentLayout.value = drag.base;
-    drag = null;
-    revision += 1;
-    try {
-      invokeReflow(currentLayout.value);
-      onLayoutChange?.(validateVisualLayoutDocument(currentLayout.value, nodes));
-      setStatus("dirty", "已取消拖动");
-    } catch (error) {
-      setStatus("error", `取消拖动后的布局重排失败：${errorMessage(error)}`);
-    }
+    restoreDragBase(drag, "取消拖动后的布局", "已取消拖动");
   }
 
   /** 通过方向键按 1px 或 Shift+方向键按 8px 微调当前选中节点。 */
   function onFrameKeyDown(event) {
-    if (!interactionEnabled || previewMode) return;
+    if (!canUseLayoutTools()) return;
     const focusedId = event.currentTarget.getAttribute("data-layout-node-id");
     if (nodeMap.has(focusedId) && focusedId !== selectedId) selectNode(focusedId);
     const deltas = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
@@ -679,15 +753,8 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     if (!pair) return;
     const factor = event.shiftKey ? DEFAULT_SNAP_STEP : 1;
     try {
-      currentLayout.value = applyVisualLayoutDrag(currentLayout.value, nodes, selectedId, { x: pair[0] * factor, y: pair[1] * factor });
-      revision += 1;
-      const snapshot = validateVisualLayoutDocument(currentLayout.value, nodes);
-      const snapshotRevision = revision;
-      setStatus("dirty", "未保存");
-      syncCoordinateInputs();
-      onLayoutChange?.(snapshot);
-      invokeReflow(snapshot);
-      if (saveOnChange) persistRevision(snapshot, snapshotRevision);
+      const next = applyVisualLayoutDrag(currentLayout.value, nodes, selectedId, { x: pair[0] * factor, y: pair[1] * factor });
+      commitLayoutChange(next, "键盘微调");
       event.preventDefault();
     } catch (error) {
       setStatus("error", `键盘微调失败：${errorMessage(error)}`);
@@ -696,6 +763,10 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
 
   /** 显式保存当前快照，支持自动保存失败后的手动重试。 */
   async function onSaveClick() {
+    if (saveInFlight || drag) {
+      if (drag) setStatus("error", "拖动结束前不能保存中间布局");
+      return;
+    }
     if (!reflowHealthy) {
       setStatus("error", "布局尚未成功重排，不能保存");
       return;
@@ -705,7 +776,7 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
 
   /** 将绝对或父级相对的最终坐标换算为当前节点偏移，祖先及子节点的独立偏移不变。 */
   function onCoordinateChange() {
-    if (!interactionEnabled || previewMode) return;
+    if (!canUseLayoutTools()) return;
     const x = Number(xCoordinateInput.value);
     const y = Number(yCoordinateInput.value);
     try {
@@ -714,13 +785,8 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
       const bounds = readCurrentBounds(selectedId);
       const offset = getNodeOffset(currentLayout.value, selectedId);
       // 只写所选节点的增量，父级移动仍由正式 reflow 传播到全部子节点。
-      currentLayout.value = setVisualLayoutOffset(currentLayout.value, nodes, selectedId, { x: offset.x + x + origin.x - bounds.x, y: offset.y + y + origin.y - bounds.y });
-      revision += 1;
-      const snapshot = validateVisualLayoutDocument(currentLayout.value, nodes);
-      setStatus("dirty", "未保存");
-      onLayoutChange?.(snapshot);
-      invokeReflow(snapshot);
-      if (saveOnChange) void persistRevision(snapshot, revision).catch(() => {});
+      const next = setVisualLayoutOffset(currentLayout.value, nodes, selectedId, { x: offset.x + x + origin.x - bounds.x, y: offset.y + y + origin.y - bounds.y });
+      commitLayoutChange(next, "坐标调整");
     } catch (error) {
       setStatus("error", `坐标调整失败：${errorMessage(error)}`);
       syncCoordinateInputs();
@@ -732,38 +798,34 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     if (destroyed) return validateVisualLayoutDocument(currentLayout.value, nodes);
     if (!interactionEnabled) throw new Error("操作锁定期间不能重置布局");
     if (previewMode) throw new Error("正式效果预览期间不能重置布局");
+    if (saveInFlight) throw new Error("保存期间不能重置布局");
 
-    // 清除正在进行的手势，避免后续 pointerup 再保存旧拖动结果。
-    drag = null;
-    const previousLayout = currentLayout.value;
-    const resetLayout = validateVisualLayoutDocument({ ...previousLayout, offsets: {} }, nodes);
-    currentLayout.value = resetLayout;
-    revision += 1;
-    syncCoordinateInputs();
-    renderTree();
-
-    try {
-      invokeReflow(resetLayout);
-    } catch (error) {
-      currentLayout.value = previousLayout;
-      syncCoordinateInputs();
-      renderTree();
-      try {
-        // 重排入口可能在抛错前已改动部分节点，尽力恢复原布局并保留 reset 的原始错误。
-        invokeReflow(previousLayout);
-      } catch {
-        reflowHealthy = false;
+    // 先真实重排回手势基线；直接改内存快照会让初始空 offsets 触发 no-op 并遗留移动后的 Scene。
+    if (drag) {
+      const activeDrag = drag;
+      if (!restoreDragBase(activeDrag, "重置前恢复手势", "已取消未结束的拖动")) {
+        throw new Error(status.textContent || "重置前恢复拖动基线失败");
       }
-      renderFrames();
-      setStatus("error", `布局重置失败：${errorMessage(error)}`);
+    }
+    const resetLayout = validateVisualLayoutDocument({ ...currentLayout.value, offsets: {} }, nodes);
+    if (JSON.stringify(resetLayout.offsets) === JSON.stringify(currentLayout.value.offsets)) {
+      // 重复重置可修复此前失败的重排；无数据变化时不增加历史项或触发保存。
+      if (!reflowHealthy) {
+        if (!restoreLayoutSnapshot(resetLayout, "布局重置")) throw new Error(status.textContent || "布局重排失败");
+        setStatus("saved", "布局已重新同步；当前已是参考位置");
+      }
+      return validateVisualLayoutDocument(currentLayout.value, nodes);
+    }
+    try {
+      return commitLayoutChange(resetLayout, "布局重置");
+    } catch (error) {
+      // 重置失败后即使旧布局已回滚，也要求显式重试重置/重排后才能再次保存。
+      reflowHealthy = false;
+      try { onPreviewHealthChange?.(false, errorMessage(error)); } catch { /* 健康状态通知失败不能覆盖重置原错误。 */ }
+      updateInteractionControls();
+      setStatus("error", `布局重置失败，保存已禁用：${errorMessage(error)}`);
       throw error;
     }
-
-    const snapshot = validateVisualLayoutDocument(currentLayout.value, nodes);
-    onLayoutChange?.(snapshot);
-    setStatus("dirty", "已重置，未保存");
-    if (saveOnChange) void persistRevision(snapshot, revision).catch(() => {});
-    return snapshot;
   }
 
   /** 对称响应窗口事件、滚动事件和 ResizeObserver 回调参数。 */
@@ -781,31 +843,25 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     interactionEnabled = enabled;
     updateInteractionControls();
     if (!enabled && drag) {
-      currentLayout.value = drag.base;
-      drag = null;
-      revision += 1;
-      syncCoordinateInputs();
-      try {
-        invokeReflow(currentLayout.value);
-        onLayoutChange?.(validateVisualLayoutDocument(currentLayout.value, nodes));
-        setStatus("dirty", "已取消未结束的拖动");
-      } catch (error) { setStatus("error", `取消拖动失败：${errorMessage(error)}`); }
+      restoreDragBase(drag, "锁定时恢复手势", "已取消未结束的拖动");
     }
     renderFrames();
   }
 
   /** 按预览模式或文件操作锁更新控件可编辑性，树和坐标始终只改布局 offset。 */
   function updateInteractionControls() {
-    const canEdit = interactionEnabled && !previewMode;
+    const canEdit = canUseLayoutTools();
     opacityInput.disabled = !canEdit;
     snapButton.disabled = !canEdit;
     coordinateModeInput.disabled = !canEdit;
     relativePointInput.disabled = !canEdit || coordinateModeInput.value !== "relative";
     xCoordinateInput.disabled = !canEdit;
     yCoordinateInput.disabled = !canEdit;
+    saveButton.disabled = saveInFlight || Boolean(drag) || !reflowHealthy;
+    toolsPanel.update({ selectedCount: selectedIds.length, canEdit, canUndo: history.canUndo, canRedo: history.canRedo });
     // 浏览器 tree.children 是 HTMLCollection，先显式转数组再遍历其子按钮。
     for (const item of Array.from(tree.children)) {
-      for (const button of Array.from(item.children)) button.disabled = !interactionEnabled || previewMode;
+      for (const button of Array.from(item.children)) button.disabled = !canEdit;
     }
   }
 
@@ -829,6 +885,7 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
 
   /** 切换逻辑像素网格吸附，不改变当前偏移。 */
   function onSnapClick() {
+    if (!canUseLayoutTools()) return;
     snapping = !snapping;
     snapButton.textContent = snapping ? `吸附：开（${DEFAULT_SNAP_STEP}px）` : "吸附：关";
     snapButton.setAttribute("aria-pressed", String(snapping));
@@ -836,7 +893,7 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
 
   /** 模式或父容器参照点切换只换算读数，不触发布局变更或保存。 */
   function onCoordinateModeChange() {
-    if (destroyed || !interactionEnabled || previewMode) return;
+    if (!canUseLayoutTools()) return;
     coordinatePreferences.set(selectedId, { mode: coordinateModeInput.value, point: relativePointInput.value });
     syncCoordinateInputs();
   }
@@ -849,17 +906,24 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
   /** 在新加载的持久化布局上重放正式 Scene，用于刷新后核对。 */
   async function reload(reloadedLayout) {
     if (reloadedLayout === undefined) throw new TypeError("reload 需要传入重新读取的持久化 layout");
+    if (!canEditLayout()) throw new Error("操作锁定、保存或正式预览期间不能重新加载布局");
     const nextLayout = validateVisualLayoutDocument(reloadedLayout, nodes);
     const previousLayout = currentLayout.value;
     currentLayout.value = nextLayout;
     try {
       invokeReflow(nextLayout);
-      revision += 1;
-      setStatus("saved", "已重新加载");
+      onLayoutChange?.(validateVisualLayoutDocument(nextLayout, nodes));
     } catch (error) {
-      currentLayout.value = previousLayout;
+      restoreLayoutSnapshot(previousLayout, "重新加载失败后的布局", { invalidateSaves: false });
       throw error;
     }
+    // 只有完整重排和宿主通知都成功后，才终止手势并清理旧历史分支。
+    drag = null;
+    revision += 1;
+    history.clear();
+    setStatus("saved", "已重新加载");
+    updateInteractionControls();
+    renderFrames();
     return validateVisualLayoutDocument(currentLayout.value, nodes);
   }
 
@@ -899,10 +963,12 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
   }
   renderTree();
   syncCoordinateInputs();
+  updateInteractionControls();
   onViewportGeometryChange();
   // 编辑器加载时用当前正式布局配置同步一次运行场景，避免叠图状态过期。
   try {
     invokeReflow(currentLayout.value);
+    updateInteractionControls();
   } catch {
     // 初始化失败会显示在状态栏；编辑器仍可见以供检查，保存保持禁用语义。
   }
@@ -915,6 +981,12 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     reload,
     resetToInitial,
     selectNode,
+    getSelectedNodeIds: () => [...selectedIds],
+    alignSelectedNodes,
+    distributeSelectedNodes,
+    restoreSelectedReference,
+    undo,
+    redo,
     beginNodeDrag,
     // 对外暴露同一个选择状态，供预览显示节点与右侧树联动核验。
     getSelectedNodeId: () => selectedId,

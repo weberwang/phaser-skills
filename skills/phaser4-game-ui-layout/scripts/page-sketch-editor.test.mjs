@@ -65,7 +65,7 @@ function createPageDocument() {
   };
   for (const [id, tag] of [
     ["stage-frame", "section"], ["stage-surface", "div"], ["open-sketch", "button"], ["toggle-preview", "button"], ["save-sketch", "button"], ["reset-sketch", "button"],
-    ["confirm-sketch", "button"], ["page-status", "span"], ["resource-errors", "aside"],
+    ["confirm-sketch", "button"], ["save-confirm-sketch", "button"], ["page-status", "span"], ["resource-errors", "aside"],
     ["stage-device", "div"], ["layout-controls", "div"], ["preview-device", "select"], ["device-orientation", "select"],
     ["device-summary", "p"], ["toggle-fullscreen", "button"],
   ]) elements.set(id, document.createElement(tag));
@@ -357,4 +357,81 @@ test("设备外框适配工作台，内容共享设计几何并允许中心裁�
     }
   }
   assert.throws(() => calculateDevicePreviewGeometry({ width: 0, height: 10 }, { width: 10, height: 10 }, { width: 10, height: 10 }), /正有限数/);
+});
+
+/** 构造真实页面操作链的替身，观察保存、来源复核和确认的顺序与失败边界。 */
+async function confirmationFixture({ saveFails = false, unhealthyAfterSave = false } = {}) {
+  const { document, elements } = createPageDocument();
+  let disk = createSketch(); let layout = structuredClone(disk.layout); let healthy = true; let changeLayout;
+  const calls = [];
+  const store = {
+    /** 读取已经落盘的草图，避免用待保存的内存布局冒充持久化内容。 */
+    getDocument() { return structuredClone(disk); },
+    /** 模拟成功写回或存储失败，必要时令运行预览在写盘后失效。 */
+    async saveDraft(next) {
+      calls.push("save");
+      if (saveFails) throw new Error("存储不可写");
+      disk = { ...disk, layout: structuredClone(next), confirmation: null };
+      if (unhealthyAfterSave) healthy = false;
+      return structuredClone(disk);
+    },
+    /** 确认只能消费刚读回的同一布局和健康预览。 */
+    async confirm(input) {
+      assert.deepEqual(input.layout, disk.layout); assert.equal(input.previewReady, true);
+      calls.push("confirm"); disk.confirmation = { status: "accepted" };
+    },
+  };
+  await initializePageSketchApplication({ document, projectRootUrl: new URL("https://game.test/"), adapters: {
+    /** 返回已经打开的实际文件存储替身。 */
+    async pickStore() { return store; },
+    /** 提供无缺失项的来源，网络读取不属于这组交互测试。 */
+    async loadSources() { return { errors: [], referenceUrl: "blob:reference", assets: new Map(), revoke() {} }; },
+    /** 记录确认前复核，验证合并按钮也没有跳过这一步。 */
+    async verifySources() { calls.push("verify"); return { errors: [], healthy: true }; },
+    /** 注入可观察健康状态的预览，不判断任何视觉显示。 */
+    async mountPreview() { return { errors: [], isHealthy: () => healthy, reflow() {}, setViewport() {}, destroy() {} }; },
+    /** 模拟布局编辑通知，确认有效性继续由实际页面控制器维护。 */
+    mountEditor(options) {
+      changeLayout = (next) => { layout = structuredClone(next); options.onLayoutChange(layout); };
+      return { getLayout: () => structuredClone(layout), setInteractionEnabled() {}, refreshViewport() {}, destroy() {} };
+    },
+  } });
+  await elements.get("open-sketch").dispatch("click")[0];
+  return { elements, calls, changeLayout, getDisk: () => structuredClone(disk) };
+}
+
+test("已落盘且未修改的草图可直接确认，无需重复保存", async () => {
+  const fixture = await confirmationFixture();
+  assert.equal(fixture.elements.get("confirm-sketch").disabled, false);
+  fixture.elements.get("confirm-sketch").dispatch("click");
+  await new Promise(setImmediate);
+  assert.deepEqual(fixture.calls, ["verify", "confirm"]);
+  assert.equal(fixture.getDisk().confirmation.status, "accepted");
+});
+
+test("保存并确认写回修改后的布局，仍执行来源复核且只确认一次", async () => {
+  const fixture = await confirmationFixture();
+  const layout = { ...createSketch().layout, offsets: { "hud.root": { x: 8, y: -2 } } };
+  fixture.changeLayout(layout);
+  assert.equal(fixture.elements.get("confirm-sketch").disabled, true);
+  assert.equal(fixture.elements.get("save-confirm-sketch").disabled, false);
+  await fixture.elements.get("save-confirm-sketch").dispatch("click")[0];
+  assert.deepEqual(fixture.calls, ["save", "verify", "confirm"]);
+  assert.deepEqual(fixture.getDisk().layout, layout);
+  assert.equal(fixture.elements.get("save-confirm-sketch").disabled, true);
+});
+
+test("保存失败或保存后预览失效时，合并按钮不能继续确认", async () => {
+  for (const options of [{ saveFails: true }, { unhealthyAfterSave: true }]) {
+    const fixture = await confirmationFixture(options);
+    fixture.changeLayout({ ...createSketch().layout, offsets: { "hud.root": { x: 10, y: 0 } } });
+    await fixture.elements.get("save-confirm-sketch").dispatch("click")[0];
+    assert.deepEqual(fixture.calls, ["save"]);
+    assert.equal(fixture.getDisk().confirmation, null);
+    if (options.unhealthyAfterSave) {
+      assert.equal(fixture.elements.get("confirm-sketch").disabled, true);
+      assert.equal(fixture.elements.get("save-confirm-sketch").disabled, true);
+      assert.match(fixture.elements.get("page-status").textContent, /预览已失效/);
+    }
+  }
 });

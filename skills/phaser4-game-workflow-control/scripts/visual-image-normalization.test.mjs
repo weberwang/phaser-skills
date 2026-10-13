@@ -22,6 +22,27 @@ async function createPng(file, width, height, alpha = true, color = { r: 20, g: 
   await sharp({ create: { width, height, channels, background } }).png().toFile(file);
 }
 
+/** 九宫格只归一化完整源帧；显示框尺寸和普通比例裁切不能覆盖冻结的小图合同。 */
+test("九宫格归一化保持源帧比例并拒绝显示尺寸或裁框", async () => {
+  const root = await mkdtemp(join(tmpdir(), "nine-slice-normalization-"));
+  const sourceFile = join(root, "source.png");
+  const outputFile = join(root, "output.png");
+  const nineSlice = { mode: "stretch", reason: "角边固定的底板", source_size: { width: 96, height: 64 }, borders: { left: 12, right: 12, top: 10, bottom: 10 } };
+  try {
+    await createPng(sourceFile, 192, 128, false);
+    const result = await normalizeImageToContract({ sourceFile, outputFile, targetWidth: 96, targetHeight: 64, nine_slice: nineSlice });
+    assert.equal(result.operation, "resize-to-contract");
+    assert.equal(result.output_width, 96); assert.equal(result.output_height, 64);
+    await assert.rejects(normalizeImageToContract({ sourceFile, outputFile: join(root, "large.png"), targetWidth: 300, targetHeight: 180, nine_slice: nineSlice }), /小图 source_size/);
+    await createPng(join(root, "wrong-ratio.png"), 192, 192, false);
+    await assert.rejects(normalizeImageToContract({ sourceFile: join(root, "wrong-ratio.png"), outputFile: join(root, "cropped.png"), targetWidth: 96, targetHeight: 64, nine_slice: nineSlice }), /禁止裁切/);
+    const logs = [];
+    const exit = await runImageNormalizationCli(["--source", sourceFile, "--output", join(root, "cli.png"), "--width", "96", "--height", "64", "--nine-slice-json", JSON.stringify(nineSlice)], { log: (value) => logs.push(value), error: (value) => logs.push(value) });
+    assert.equal(exit, 0);
+    assert.equal(JSON.parse(logs[0]).output_width, 96);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 /** 建立带透明留白和半透明主体的固定 PNG，供裁切完整性测试复用。 */
 async function createPaddedAlphaPng(file, width, height, margin = 12) {
   const pixels = Buffer.alloc(width * height * 4);

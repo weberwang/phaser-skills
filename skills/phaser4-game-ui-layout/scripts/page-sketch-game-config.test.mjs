@@ -16,6 +16,14 @@ test("V4/V5 统一固定设计画布，不随小屏设备降低渲染分辨率",
   assert.throws(() => calculatePageSketchGameViewport({ width: 0, height: 640 }), /正有限数/);
 });
 
+/** 九宫格不能在 AUTO 的 Canvas 降级中无声消失，普通图片仍采用项目自动后端。 */
+test("九宫格草图明确要求 WebGL，缺少能力时停止创建", () => {
+  const sketch = { node_presentations: { panel: { kind: "image", object_fit: "nine-slice" } } };
+  const input = { viewport: { width: 360, height: 640 }, sketch };
+  assert.equal(createPageSketchGameConfig({ AUTO: 7, WEBGL: 9, Scale: { NONE: 0 } }, input).type, 9);
+  assert.throws(() => createPageSketchGameConfig({ AUTO: 7, Scale: { NONE: 0 } }, input), /WebGL NineSlice/);
+});
+
 /** 真正 client rect 已包含工作台 transform；修正后的输入比例不可使用缩放前 CSS 宽高。 */
 test("固定设计 Canvas 与 CSS 显示分离并按实际缩放修正 Phaser 输入", () => {
   const game = {

@@ -6,6 +6,7 @@ import {
   EFFECT_IMAGE_GLOBAL_VISUAL_CONSISTENCY_PROMPT,
   buildEffectImageAssetPrompt,
   buildEffectImageFullPrompt,
+  buildNineSliceProductionPrompt,
   validateEffectImagePromptContract,
 } from "./effect-image-prompt-contract.mjs";
 import { validateImageGenerationContract } from "./visual-production-contract.mjs";
@@ -16,6 +17,28 @@ const CANDIDATE_SHA = `sha256:${"c".repeat(64)}`;
 const BASELINE_SHA = `sha256:${"d".repeat(64)}`;
 const EFFECT_ASSET_ID = "sc-main-hero-idle";
 const GLOBAL_ANCHOR_FILE = "evidence/visual/global-anchor.png";
+
+/** 九宫格小图和边值必须进入实际发送的提示词，不能仅在本地 JSON 记录。 */
+test("九宫格生产提示词绑定小图和切片，普通图片不追加该段", () => {
+  const decision = { mode: "stretch", reason: "规则底板的角边保持固定", source_size: { width: 96, height: 64 }, borders: { left: 12, right: 12, top: 10, bottom: 10 } };
+  const prompt = buildEffectImageFullPrompt({ assetPrompt: "规则底板", expectedAsset: { nine_slice: decision } });
+  assert(prompt.includes(buildNineSliceProductionPrompt(decision)));
+  assert.match(prompt, /96×64px/);
+  assert.match(prompt, /left=12px/);
+  assert.equal(buildNineSliceProductionPrompt({ mode: "not-applicable", reason: "固定比例插画" }), "");
+  assert.throws(() => buildEffectImageFullPrompt({ assetPrompt: "底板", expectedAsset: { nine_slice: { ...decision, borders: { ...decision.borders, left: 96 } } } }), /非零中心/);
+});
+
+/** 记录门要求实际发送的小图切片段，事后声明参数不能替代生成输入。 */
+test("九宫格生成记录缺少实际切片提示词时阻断，追加冻结段后通过", () => {
+  const decision = { mode: "stretch", reason: "规则底板", source_size: { width: 96, height: 64 }, borders: { left: 12, right: 12, top: 10, bottom: 10 } };
+  const record = validEffectRecord();
+  const options = { expectedAsset: { nine_slice: decision }, referenceOriginalFile: TARGET_FILE, visual_baseline: GLOBAL_VISUAL_BASELINE };
+  const check = () => validateEffectImagePromptContract(validEffectAsset(), { applicability: "effect-image" }, record, { region: effectRegion() }, options);
+  assert(check().some((message) => message.includes("小图尺寸和切片生产段")));
+  record.full_prompt += `\n\n${buildNineSliceProductionPrompt(decision)}`;
+  assert.deepEqual(check(), []);
+});
 
 /** 提供当前 effect-image 回归所需的全局静态视觉基线。 */
 const GLOBAL_VISUAL_BASELINE = {

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
@@ -96,6 +96,35 @@ function subject(root, options = {}) {
 }
 function tempFixture(options = {}) { const root = mkdtempSync(join(tmpdir(), 'phaser-visual-stage-')); return { root, work: subject(root, options) }; }
 function errorCodes(result) { return result.errors.map((item) => item.errorCode); }
+
+/** 修改当前真实 V5 来源文件中的人工验收，并同步刷新阶段引用。 */
+function updateArtAcceptance(fixture, update) {
+  const reference = fixture.work.visualStageEvidenceRefs.V5;
+  const candidate = JSON.parse(readFileSync(join(fixture.root, reference.path), 'utf8'));
+  candidate.artExperienceAcceptance = update(structuredClone(candidate.artExperienceAcceptance));
+  fixture.work.visualStageEvidenceRefs.V5 = writeJson(fixture.root, reference.path, candidate);
+}
+
+/** 通过完整 V5 阶段门复核测试夹具中的美术体验证据。 */
+function validateArtAcceptanceFixture(fixture) {
+  return validateVisualStagePrerequisites(fixture.work, { projectRoot: fixture.root });
+}
+
+/** 构造携带真实 V2 场景/显示层身份的 V5 工作项并运行完整阶段门。 */
+function validateDisplayLayerAcceptanceFixture(fixture, { contexts, subjectSceneId, subjectHostSceneId, unitHostSceneId = 'main-scene' }) {
+  const v2Reference = fixture.work.visualStageEvidenceRefs.V2;
+  const v2 = JSON.parse(readFileSync(join(fixture.root, v2Reference.path), 'utf8'));
+  v2.displayLayerContexts = contexts;
+  fixture.work.visualStageEvidenceRefs.V2 = writeJson(fixture.root, v2Reference.path, v2);
+  fixture.work.displayLayerId = 'pause-overlay';
+  if (subjectSceneId !== undefined) fixture.work.sceneId = subjectSceneId;
+  if (subjectHostSceneId !== undefined) fixture.work.hostSceneId = subjectHostSceneId;
+  const implementationPackage = {
+    pageSketchFile: fixture.work.visualStageEvidenceRefs.V4.path,
+    executionUnits: [{ unitType: 'DISPLAY_LAYER', displayLayerId: 'pause-overlay', hostSceneId: unitHostSceneId }],
+  };
+  return validateVisualStagePrerequisites(fixture.work, { projectRoot: fixture.root, implementationPackage });
+}
 
 /** 创建真实 Git 基线，供 CLI 交接阶段验证候选 diff，而不是只测试纯函数。 */
 function makeCliFixture() {
@@ -239,6 +268,143 @@ test('标准 V2、accepted V3、人工确认 V4 与 V5 允许正式运行验收'
   assert.equal(result.stage, 'V5');
   assert.equal(JSON.parse(readFileSync(join(f.root, f.work.visualStageEvidenceRefs.V2.path), 'utf8')).schemaVersion, 'phaser4-scene-v2-reconstruction-plan/1.0');
   assert.equal(JSON.parse(readFileSync(join(f.root, f.work.visualStageEvidenceRefs.V5.path), 'utf8')).pageSketchSha256, f.work.visualStageEvidenceRefs.V4.sha256);
+});
+
+test('V5 COMPLETE 所需的持续游玩美术验收由真实候选证据完整闭合', () => {
+  const fixture = tempFixture();
+  const result = validateArtAcceptanceFixture(fixture);
+  assert.equal(result.ok, true);
+  const candidate = JSON.parse(readFileSync(join(fixture.root, fixture.work.visualStageEvidenceRefs.V5.path), 'utf8'));
+  assert.equal(candidate.artExperienceAcceptance.status, 'passed');
+  assert.equal(candidate.artExperienceAcceptance.scenarios.find((item) => item.kind === 'normal-play').applicability, 'required');
+  assert(candidate.artExperienceAcceptance.scenarios.filter((item) => item.applicability === 'not-applicable').length > 0);
+});
+
+test('V5 美术验收缺失、未通过、身份不符或缺少用户原文都会阻断完整阶段门', () => {
+  const variants = [
+    ['failed', (acceptance) => ({ ...acceptance, status: 'failed' })],
+    ['unverified', (acceptance) => ({ ...acceptance, status: 'unverified' })],
+    ['缺少用户原文', (acceptance) => ({ ...acceptance, userOriginalText: '   ' })],
+    ['错误 Work Item', (acceptance) => ({ ...acceptance, workItemId: 'WI-OTHER' })],
+    ['错误候选', (acceptance) => ({ ...acceptance, candidateId: 'V5-OTHER' })],
+    ['错误场景', (acceptance) => ({ ...acceptance, sceneId: 'other-scene' })],
+  ];
+  const missing = tempFixture();
+  const missingRef = missing.work.visualStageEvidenceRefs.V5;
+  const missingCandidate = JSON.parse(readFileSync(join(missing.root, missingRef.path), 'utf8'));
+  delete missingCandidate.artExperienceAcceptance;
+  missing.work.visualStageEvidenceRefs.V5 = writeJson(missing.root, missingRef.path, missingCandidate);
+  const missingResult = validateArtAcceptanceFixture(missing);
+  assert.equal(missingResult.ok, false);
+  assert(missingResult.missingEvidence.some((item) => item.startsWith('V5 art experience acceptance:')));
+
+  for (const [label, update] of variants) {
+    const fixture = tempFixture();
+    updateArtAcceptance(fixture, update);
+    const result = validateArtAcceptanceFixture(fixture);
+    assert.equal(result.ok, false, label);
+    assert(result.missingEvidence.some((item) => item.startsWith('V5 art experience acceptance:')), label);
+  }
+});
+
+test('V5 情境必须包含必需常态片段，且合法不适用事件不得伪造观看记录', () => {
+  const missingNormalPlay = tempFixture();
+  updateArtAcceptance(missingNormalPlay, (acceptance) => ({
+    ...acceptance,
+    scenarios: acceptance.scenarios.filter((item) => item.kind !== 'normal-play'),
+  }));
+  const missingResult = validateArtAcceptanceFixture(missingNormalPlay);
+  assert.equal(missingResult.ok, false);
+  assert(missingResult.missingEvidence.some((item) => item.includes('normal-play')));
+
+  const falseNotApplicable = tempFixture();
+  updateArtAcceptance(falseNotApplicable, (acceptance) => ({
+    ...acceptance,
+    scenarios: acceptance.scenarios.map((item) => item.kind === 'event-peak'
+      ? { ...item, reason: '', recordingFile: 'docs/art-experience-normal-play.test-recording', observation: '已查看' }
+      : item),
+  }));
+  const invalidResult = validateArtAcceptanceFixture(falseNotApplicable);
+  assert.equal(invalidResult.ok, false);
+  assert(invalidResult.missingEvidence.some((item) => item.startsWith('V5 art experience acceptance:')));
+});
+
+test('V5 必需片段拒绝缺失、越界或非普通文件录屏及非法时段和计数', () => {
+  const variants = [
+    ['缺失录屏', (scenario) => ({ ...scenario, recordingFile: 'docs/missing-recording.mp4' })],
+    ['越界录屏', (scenario) => ({ ...scenario, recordingFile: '../outside-recording.mp4' })],
+    ['非普通文件', (scenario) => ({ ...scenario, recordingFile: 'docs' })],
+    ['非法时段', (scenario) => ({ ...scenario, endSeconds: scenario.startSeconds })],
+    ['非法触发计数', (scenario) => ({ ...scenario, triggerCount: -1 })],
+    ['非法并发计数', (scenario) => ({ ...scenario, peakConcurrent: 1.5 })],
+  ];
+  for (const [label, update] of variants) {
+    const fixture = tempFixture();
+    updateArtAcceptance(fixture, (acceptance) => ({
+      ...acceptance,
+      scenarios: acceptance.scenarios.map((item) => item.kind === 'normal-play' ? update(item) : item),
+    }));
+    const result = validateArtAcceptanceFixture(fixture);
+    assert.equal(result.ok, false, label);
+    assert(result.missingEvidence.some((item) => item.startsWith('V5 art experience acceptance:')), label);
+  }
+});
+
+test('V5 不允许使用仓库外 symlink 录屏', (t) => {
+  const fixture = tempFixture();
+  const outsideRoot = mkdtempSync(join(tmpdir(), 'phaser-art-outside-'));
+  const outsideFile = join(outsideRoot, 'recording.mp4');
+  const linkFile = join(fixture.root, 'docs', 'external-recording.mp4');
+  writeFileSync(outsideFile, 'external recording fixture\n');
+  try { symlinkSync(outsideFile, linkFile, 'file'); }
+  catch (error) {
+    if (['EPERM', 'EACCES', 'UNKNOWN'].includes(error.code)) { t.skip('当前 Windows 环境不允许创建文件 symlink'); return; }
+    throw error;
+  }
+  updateArtAcceptance(fixture, (acceptance) => ({
+    ...acceptance,
+    scenarios: acceptance.scenarios.map((item) => item.kind === 'normal-play' ? { ...item, recordingFile: 'docs/external-recording.mp4' } : item),
+  }));
+  const result = validateArtAcceptanceFixture(fixture);
+  assert.equal(result.ok, false);
+  assert(result.missingEvidence.some((item) => item.includes('仓库内')));
+});
+
+test('DISPLAY_LAYER 的美术验收可沿唯一 V2 显示层上下文绑定宿主场景', () => {
+  const fixture = tempFixture();
+  const result = validateDisplayLayerAcceptanceFixture(fixture, {
+    contexts: [{ displayLayerId: 'pause-overlay', hostSceneId: 'main-scene' }],
+    subjectHostSceneId: 'main-scene',
+  });
+  assert.equal(result.ok, true);
+});
+
+test('DISPLAY_LAYER 缺失或重复的 V2 显示层上下文不能通过完整 V5 门', () => {
+  const context = { displayLayerId: 'pause-overlay', hostSceneId: 'main-scene' };
+  for (const [label, contexts] of [['缺失', []], ['重复', [context, { ...context }]]]) {
+    const fixture = tempFixture();
+    const result = validateDisplayLayerAcceptanceFixture(fixture, { contexts, subjectHostSceneId: 'main-scene' });
+    assert.equal(result.ok, false, label);
+    assert(result.missingEvidence.some((item) => item.startsWith('V5 art experience acceptance:')), label);
+  }
+});
+
+test('DISPLAY_LAYER 宿主必须与 V2.sceneId、V2 对应上下文及 Work Item 身份一致', () => {
+  const context = { displayLayerId: 'pause-overlay', hostSceneId: 'main-scene' };
+  const variants = [
+    ['上下文宿主与 V2 场景不符', { ...context, hostSceneId: 'other-scene' }, 'other-scene', 'other-scene'],
+    ['Work Item 宿主与对应上下文不符', context, 'other-scene', 'main-scene'],
+    ['Work Item 场景与 V2 场景不符', context, 'main-scene', 'main-scene', 'other-scene'],
+    ['实施单元宿主与 V2 上下文不符', context, 'main-scene', 'other-scene'],
+  ];
+  for (const [label, displayContext, subjectHostSceneId, unitHostSceneId, subjectSceneId] of variants) {
+    const fixture = tempFixture();
+    const result = validateDisplayLayerAcceptanceFixture(fixture, {
+      contexts: [displayContext], subjectHostSceneId, unitHostSceneId, subjectSceneId,
+    });
+    assert.equal(result.ok, false, label);
+    assert(result.missingEvidence.some((item) => item.startsWith('V5 art experience acceptance:')), label);
+  }
 });
 
 test('V2 只接受标准冻结方案，拒绝旧 evidenceType 别名和额外根字段', () => {

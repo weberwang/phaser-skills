@@ -1,7 +1,7 @@
 import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { validatePageSketchDocument } from '../../phaser4-game-ui-layout/scripts/page-sketch-contract.mjs';
-import { validatePageSketchResourceBindings } from '../../phaser4-game-ui-layout/scripts/page-sketch-resource-bindings.mjs';
+import { assertPageSketchSourceContracts } from '../../phaser4-game-ui-layout/scripts/page-sketch-source-contract.mjs';
 
 const V2_PLAN_SCHEMA = 'phaser4-scene-v2-reconstruction-plan/1.0';
 
@@ -66,22 +66,13 @@ function v2NodeBinding(work, plan, projectRoot) {
   try { nodesDocument = JSON.parse(nodesFile.bytes.toString('utf8')); } catch (error) { throw new Error(`当前 V2 layout_nodes 文件不是有效 JSON：${error.message}`); }
   const nodes = nodesDocument?.layout_nodes;
   if (!Array.isArray(nodes) || nodes.length === 0) throw new Error('当前 V2 layout_nodes 文件缺少非空 layout_nodes');
-  return { path: annotation.layout_nodes_file, nodes, contract };
+  return { path: annotation.layout_nodes_file, nodes, document: nodesDocument, contract };
 }
 
 /** 校验草图资源只展示当前页面 accepted 图片，并确认运行时模块来源文件存在。 */
 function validateV3AssetBindings(document, manifest, projectRoot) {
-  const mappings = validatePageSketchResourceBindings({
-    nodes: document.nodes,
-    sceneId: document.scene_id,
-    stateId: document.state_id,
-    assets: manifest.assets,
-    regions: manifest.coverage_audit?.regions,
-    mappings: document.v3_assets,
-    nodePresentations: document.node_presentations,
-  });
   const assetsById = new Map(manifest.assets.map((asset) => [asset.id, asset]));
-  for (const entry of mappings) {
+  for (const entry of document.v3_assets) {
     if (!assetsById.has(entry.asset_id)) throw new Error(`草图资源 ${entry.asset_id} 未出现在 V3 清单`);
     readProjectFile(projectRoot, entry.file, `V3 asset ${entry.asset_id}.file`);
   }
@@ -134,6 +125,8 @@ export function loadConfirmedPageSketch(work, projectRoot) {
   let manifest;
   try { manifest = JSON.parse(manifestLoaded.bytes.toString('utf8')); } catch (error) { throw new Error(`V3 visual manifest 不是有效 JSON：${error.message}`); }
   if (!isRecord(manifest) || manifest.schema_version !== '1.5' || manifest.workItemId !== work.workItemId || manifest.candidateVersion !== document.candidate_version || manifest.candidateVersion !== v3.value.candidateVersion) throw new Error('V3 visual manifest 未绑定当前 Work Item 与候选版本');
+  // 与生成、V4 打开及确认共享实际来源校验，避免同一草图在不同阶段使用不同准入口径。
+  assertPageSketchSourceContracts(document, { nodesDocument: v2Nodes.document, manifest, evidence: v3.value });
   const refFile = v2.value.sceneMaster?.file;
   const normalizedReference = document.reference_file.replaceAll('\\', '/');
   if (normalizedReference !== refFile?.replaceAll('\\', '/') || normalizedReference !== manifest.reference_target?.original_file?.replaceAll('\\', '/')) throw new Error('草图 reference_file 必须绑定 V2 冻结底图与 V3 manifest 目标图');

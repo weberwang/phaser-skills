@@ -22,7 +22,9 @@ effect-image 生成式位图的完整提示词与实际参考输入合同统一�
 
 全局基线、foundation-only 边界、场景阶段顺序和集成入口以[控制模型](../../phaser4-game-workflow-control/references/control-model.md)与[状态、阶段与停止门](../../phaser4-game-workflow-control/references/state-gates.md)为准。本管线只补充资源领域的 V0 分流、V2 生产合同、V3 资源验收、V4 草图确认和 V5 运行态证据；参考还原仍属于当前场景 Work Item。
 
-F2 必须由确定性机器验证执行，并绑定当前 baseline/diff 身份。V1/V2 只保留机器事实、拆解图和技术 JSON；V1/V2 使用 `AUTO` 或 `USER_DECISION` 记录，只覆盖所列对象且不写 Approval Ledger；F4 只处理外部写入、付费、真机、破坏性或外部删除、发布等带副作用的 A4-A6 操作。
+F2 的机器出口必须由确定性验证执行，并绑定当前 baseline/diff 身份；只说明文件、结构、实际参数和证据绑定的检查结果。美术质量与观看舒适依[游戏美术体验与质量契约](art-quality-contract.md)由用户人工检查，意见沿用现有选图、方向、草图与运行验收材料，不新增旧 `human_review` 字段。V1/V2 使用 `AUTO` 或 `USER_DECISION` 记录，只覆盖所列对象；方向决定不写操作审批账本。F4 只处理外部写入、付费、真机、破坏性或外部删除、发布等带副作用的 A4-A6 操作。
+
+美术 brief 必须包含主题、受众、核心循环、体验目标、观看情境、视觉层级和三层刺激预算，并进入实际生成输入。全局三候选逐项人工评估，所选候选任一失败或未验证都不能冻结；场景目标也在冻结前检查。正式生产遵守已通过的方向与目标，不能依靠拆件时暗改画面修复不合格参考。
 
 ## V1 玩法视觉契约与必要灰盒
 
@@ -47,6 +49,8 @@ F2 必须由确定性机器验证执行，并绑定当前 baseline/diff 身份�
 “修改后重提”产生新候选并重跑受影响 F0-F3；只有带副作用的 A4-A6 操作重跑 F4 批准门。拒绝按根因留 V1 或退制作契约/GDD；模块边界变化仅有实质取舍时进入 grilling。
 
 ## V2 拆解确认与生产方案
+
+UI 底板、按钮皮肤和框体在当前拆解里完成[九宫格适用决策](nine-slice-ui.md)。采用时把 `nine_slice` 的小图源尺寸与切片边宽保留到拆解元素、布局节点、对应组件/expected asset 及草图呈现配方；已有人工确认同时冻结这些事实。普通位图生产尺寸规则不用于把九宫格皮肤扩大到整块显示框。
 
 功能分组遵守[功能语义分组约束](../../phaser4-game-ui-layout/references/functional-semantic-grouping.md)。阶段 A 为每个元素明确 `parent_element_id` 和 `semantic_grouping.kind/rationale`：位置依赖决定父子层级，依赖方必须成为被依赖元素所对应布局容器的子元素；共同表达同一信息但互不依赖位置的元素进入同一个功能组件并保持同级。文字独立登记但归属对应信息组，不按元素类型集中归组。语义歧义留在拆解审阅，机器不根据距离或最小包含矩形补父级。阶段 B 只继承已确认归属；新增容器或修改归属、理由必须重新拆解确认，不能复用旧布局身份。
 
@@ -133,7 +137,7 @@ V3 以文件、性能、加载、响应式、`production_contract_audit` 和一�
 
 ### 拆解图确认（视觉硬门）
 
-V2 完成拆解图、技术 JSON、component×state、生产合同和合同回对后，通过 `visual-decomposition-confirmation/1.0` 冻结还原方案；随后完成独立布局确认。确认记录以 `confirmation_mode=manual`、`status=accepted` 记录实际 annotation/proposal/decision 文件、当前工作项/场景/版本、全部编号和用户原文；这些 V2 方案身份变化才需要重新确认。V3 的 fixed asset、component×state 与资源 F2 检查，以及 V5 的同屏组合、full viewport/overlay/diff、适用逐区域 fidelity 与运行 F2 检查，分别由绑定当前身份的确定性机器证据交叉推导，不重复 V1 方向确认；V4 草图仍须独立保存并人工确认。后续生产候选的正常演进不会单独触发人工决定，但任何机器证据缺失、过期或不一致仍不得通过。
+V2 完成拆解图、技术 JSON、component×state、生产合同和合同回对后，通过 `visual-decomposition-confirmation/1.0` 冻结还原方案；随后完成独立布局确认。确认记录以 `confirmation_mode=manual`、`status=accepted` 记录实际 annotation/proposal/decision 文件、当前工作项/场景/版本、全部编号和用户原文；这些 V2 方案身份变化才需要重新确认。V3 的 fixed asset、component×state 与资源 F2 检查，以及 V5 的同屏组合、适用逐区域 fidelity 与运行 F2 检查，由当前身份的机器证据核对可确定性事实；overlay/diff 仅在 exact 或明确需求时强制。机器不推导视觉舒适、质感或主题结论；V4 草图仍须独立保存并人工确认，V5 按观看情境交付持续游玩片段供用户检查。后续候选的正常演进不重开无关方向决定，但实际变化的画面仍按当前阶段复验，机器或人工证据缺失时不得宣称整体视觉通过。
 
 ### 原子视觉拆解补充
 

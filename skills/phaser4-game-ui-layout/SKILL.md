@@ -33,7 +33,13 @@ UI 设计与实现优先用符合全局视觉基线且含义清晰、熟悉的�
 
 布局验收默认使用 `visual_validation.mode=usability`：位置、尺寸、边距、换行和少量对齐差异只要保持清晰、可读、可操作且不越界、裁切或关键遮挡即可通过；effect-image 也不自动启用 `exact`。只有用户明确要求像素级还原或项目合同明确指定时才选择 `exact`，启用严格容差、逐项 delta 和全视口/全状态矩阵。V2 仍必须保留拆解顺序、父子归属、锚点语义和内部几何一致性。
 
+用户明确要求参考布局一致时，在已有关键项中声明适用视口和几何容差；已声明的关键矩形约束即使在 usability 模式也必须满足。这只收紧所声明的项目要求，不自动启用整屏像素差或全矩阵。实际可见主体、字形与布局矩形的差别按校准参考由用户检查。
+
+九宫格 UI 的源图生产尺寸、切片边宽和目标显示框分别声明，读取[拆解时确定九宫格](../phaser4-game-asset-integration/references/nine-slice-ui.md)。V2 节点、V3 expected asset 与 V4 配方必须使用同一合同，V5 不另写拉伸逻辑；文字默认禁止实际内容超出目标框，显式允许溢出时仍需人工检查邻项与留白。
+
 ## 核心流程
+
+V4 的轻量校准、批量对齐/间距、差值读数、撤销历史及关键几何验收读取[布局校准与参考还原](references/layout-calibration.md)。默认从冻结 V2 布局开始，无修改的已落盘草图可直接确认；修改后用明确的“保存并确认”操作，不要求逐节点重新排列。布局矩形与素材可见边界分别检查，不能用可用性通过代替参考还原。
 
 1. 读取项目的 GDD/TDD、当前候选、总控审核漏斗和适用视觉阶段；确定稳定 UI ID、坐标空间、参照物、状态与平台输入。
 2. 复制 schema 1.2.0 [合同模板](assets/ui-layout-contract-template.yaml)。普通布局使用 `not-applicable` 并保持 `layout_nodes: []`；冻结视觉目标先用 `frozen-target/specified`。同时冻结上述根级视口/DPR/Camera/Input/性能字段，禁止使用旧 `targets.scale` 字段绕过新门禁。V2 先按位置依赖建立父子、按共同信息建立同级分组，再生成拆解图、技术 JSON 和 `decomposition_elements`，人工修改并确认；屏幕 UI 同时确认 `ui_layout` 职责字段。确认后由智能视觉判断生成逐元素 `left/center/right × top/center/bottom` 决策，再由同一入口同步生成布局 PNG、`layout-nodes.json`、`layout-decision.json`、离线 `review.html` 和 `generation-result.json`。随后登记由确认元素和视觉决策共同推导的非空 `layout_nodes` 与关键对齐合同。
@@ -65,6 +71,7 @@ V2 的布局决策顺序固定为“自动生成拆解图/技术 JSON → 人工
 - 需要 V/F/G 门禁、退回和候选绑定规则时，读取 [references/workflow-gates.md](references/workflow-gates.md)。
 - 需要组合测试、等价类削减或冻结 Golden 条件时，读取 [references/evidence-matrix.md](references/evidence-matrix.md)。
 - 需要布局审阅页、同批产物、坐标映射、摘要追踪或离线安全边界时，读取 [references/layout-review-artifacts.md](references/layout-review-artifacts.md)。
+- 需要 V4 批量操作、保存确认简化、对齐/间距读数或判断还原偏差来源时，读取 [references/layout-calibration.md](references/layout-calibration.md)。
 - 合同验证器只接受 JSON-compatible YAML（合法 YAML 1.2 的 JSON 子集），详见合同参考；直接使用 Node.js `JSON.parse`。
 
 ## 所有权与输出

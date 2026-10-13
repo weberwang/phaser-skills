@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { validatePageSketchResourceBindings } from "./page-sketch-resource-bindings.mjs";
 
+const PANEL_NINE_SLICE = {
+  mode: "stretch",
+  reason: "按钮边框保留逻辑尺寸，中心区域补齐目标面板",
+  source_size: { width: 96, height: 64 },
+  borders: { left: 12, right: 12, top: 10, bottom: 10 },
+};
+
 /** 构造页面 state 与组件资源 state 不同的覆盖样例，检验按原子 placement 绑定。 */
 function createBindingFixture() {
   const nodes = [
@@ -46,6 +53,38 @@ test("共享绑定合同接受组件状态不同于 scene state 的精确映射"
   const fixture = createBindingFixture();
   const result = validatePageSketchResourceBindings({ ...fixture, sceneId: "HudScene", stateId: "default" });
   assert.deepEqual(result, fixture.mappings);
+});
+
+/** 九宫格资源必须沿 V2 决策、V3 组件和 expected asset 原样到达 V4。 */
+test("共享绑定合同保留冻结九宫格，且不从 region 默认扩散", () => {
+  const fixture = createBindingFixture();
+  const left = fixture.nodes.find((node) => node.layout_node_id === "hud.left");
+  left.target_bounds = { x: 20, y: 10, width: 300, height: 180 };
+  left.nine_slice = structuredClone(PANEL_NINE_SLICE);
+  fixture.regions[0].expected_assets[0].nine_slice = structuredClone(PANEL_NINE_SLICE);
+  fixture.regions[0].component_inventory.components[0].nine_slice = structuredClone(PANEL_NINE_SLICE);
+  fixture.regions[0].component_inventory.components[0].placements[0].bounds = { ...left.target_bounds };
+  fixture.assets[0].nine_slice = structuredClone(PANEL_NINE_SLICE);
+  fixture.nodePresentations["hud.left"] = { kind: "image", asset_ids: ["left-idle"], object_fit: "nine-slice", nine_slice: structuredClone(PANEL_NINE_SLICE) };
+  fixture.regions[0].nine_slice = { mode: "not-applicable", reason: "region 是多组件区域，不提供全局切片默认值" };
+  assert.deepEqual(validatePageSketchResourceBindings({ ...fixture, sceneId: "HudScene", stateId: "default" }), fixture.mappings);
+});
+
+/** 不允许 V4 临时新增九宫格或覆盖任一已冻结 V2/V3 字段。 */
+test("共享绑定合同拒绝临时九宫格及 V2/V3 冻结事实漂移", () => {
+  const temporary = createBindingFixture();
+  temporary.nodePresentations["hud.left"] = { kind: "image", asset_ids: ["left-idle"], object_fit: "nine-slice", nine_slice: structuredClone(PANEL_NINE_SLICE) };
+  assert.throws(() => validatePageSketchResourceBindings({ ...temporary, sceneId: "HudScene", stateId: "default" }), /不能在草图展示阶段临时增加九宫格/);
+
+  const mismatch = createBindingFixture();
+  const left = mismatch.nodes.find((node) => node.layout_node_id === "hud.left");
+  left.target_bounds = { x: 20, y: 10, width: 300, height: 180 };
+  left.nine_slice = structuredClone(PANEL_NINE_SLICE);
+  mismatch.regions[0].expected_assets[0].nine_slice = structuredClone(PANEL_NINE_SLICE);
+  mismatch.regions[0].component_inventory.components[0].nine_slice = { ...structuredClone(PANEL_NINE_SLICE), borders: { ...PANEL_NINE_SLICE.borders, left: 11 } };
+  mismatch.regions[0].component_inventory.components[0].placements[0].bounds = { ...left.target_bounds };
+  mismatch.nodePresentations["hud.left"] = { kind: "image", asset_ids: ["left-idle"], object_fit: "nine-slice", nine_slice: structuredClone(PANEL_NINE_SLICE) };
+  assert.throws(() => validatePageSketchResourceBindings({ ...mismatch, sceneId: "HudScene", stateId: "default" }), /nine_slice/);
 });
 
 /** 错误节点、漏映射和 presentation 替代都不能绕过正式 component placement。 */

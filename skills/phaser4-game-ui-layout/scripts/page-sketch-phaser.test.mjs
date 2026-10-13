@@ -12,19 +12,30 @@ import {
 import { createPageSketchRenderer } from "./page-sketch-phaser.mjs";
 import { hashPageSketchContent } from "./page-sketch-contract.mjs";
 import { loadPageSketchSources } from "./page-sketch-preview.mjs";
+import { createSourceDocuments } from "./page-sketch-source-test-helpers.mjs";
 
 const HASH_A = `sha256:${"a".repeat(64)}`;
 const HASH_B = `sha256:${"b".repeat(64)}`;
+const PANEL_NINE_SLICE = {
+  mode: "stretch",
+  reason: "面板角边保持逻辑尺寸，中心底色用于填充不同布局尺寸",
+  source_size: { width: 96, height: 64 },
+  borders: { left: 12, right: 12, top: 10, bottom: 10 },
+};
 
 /** 从真实 V3 coverage 清单加载背景，节点自身不携带背景标记。 */
 async function loadBackgroundSources(sketch) {
+  const { nodesDocument, manifest, evidence } = createSourceDocuments(sketch);
+  const imageRegion = manifest.coverage_audit.regions.find((region) => region.layout_node_ids.includes("image"));
+  imageRegion.layer = "background";
+  for (const asset of manifest.assets) asset.coverage_region_ids = [imageRegion.id];
+  manifest.coverage_audit.regions.push(
+    { id: "other-state-background", layer: "background", scene_id: sketch.scene_id, state_id: "other-state", layout_node_ids: ["label"] },
+  );
   const files = new Map([
-    [sketch.v2_nodes_file, new TextEncoder().encode(JSON.stringify({ nodes: sketch.nodes }))],
-    [sketch.v3_manifest_file, new TextEncoder().encode(JSON.stringify({ coverage_audit: { regions: [
-      { id: "background-region", layer: "background", scene_id: sketch.scene_id, state_id: sketch.state_id, layout_node_ids: ["image"] },
-      { id: "other-state-background", layer: "background", scene_id: sketch.scene_id, state_id: "other-state", layout_node_ids: ["label"] },
-    ] } }))],
-    [sketch.v3_evidence_file, new TextEncoder().encode("evidence")],
+    [sketch.v2_nodes_file, new TextEncoder().encode(JSON.stringify(nodesDocument))],
+    [sketch.v3_manifest_file, new TextEncoder().encode(JSON.stringify(manifest))],
+    [sketch.v3_evidence_file, new TextEncoder().encode(JSON.stringify(evidence))],
     [sketch.reference_file, new TextEncoder().encode("reference")],
     [sketch.v3_assets[0].file, new TextEncoder().encode("background image")],
   ]);
@@ -163,6 +174,23 @@ class FakeImage extends FakeDisplayObject {
   }
 }
 
+/** 模拟 Phaser NineSlice，记录切边源参数和所有幂等尺寸更新。 */
+class FakeNineSlice extends FakeImage {
+  /** 保存原生工厂参数，供测试确认不会缩放整张源图。 */
+  constructor(scene, textureKey, width, height, borders) {
+    super(scene, textureKey, width, height);
+    this.kind = "nine-slice";
+    this.borders = { ...borders };
+    this.setSizeCalls = [];
+  }
+
+  /** 更新九宫格目标尺寸，保留创建时冻结的角边切片。 */
+  setSize(width, height) {
+    this.setSizeCalls.push({ width, height });
+    return super.setSize(width, height);
+  }
+}
+
 /** 模拟 Phaser Text 测量、换行和真实公开样式设置入口。 */
 class FakeText extends FakeDisplayObject {
   /** 初始化选项和故意不同于 CSS 字号的 Phaser 字体度量。 */
@@ -231,9 +259,10 @@ class FakeGraphics extends FakeDisplayObject {
 class FakeTextures {
   /** 创建不会接管 Phaser 外部资源所有权的本地纹理映射。 */
   constructor() { this.values = new Map(); }
-  /** 注册具有指定源尺寸的未裁切基础帧。 */
-  add(key, width = 200, height = 100) {
-    this.values.set(key, { key, get: () => ({ realWidth: width, realHeight: height, trimmed: false }) });
+  /** 注册完整源帧及可选 scale9 元数据，供渲染门验证帧职责。 */
+  add(key, width = 200, height = 100, frameMetadata = {}) {
+    const frame = { realWidth: width, realHeight: height, trimmed: false, ...frameMetadata };
+    this.values.set(key, { key, get: () => frame });
   }
   /** 检查测试纹理 key 是否已就绪。 */
   exists(key) { return this.values.has(key); }
@@ -272,6 +301,13 @@ function createFakeScene({ width = 600, height = 400 } = {}) {
       if (!frame) throw new Error(`fake missing texture: ${textureKey}`);
       return record(new FakeImage(scene, textureKey, frame.realWidth, frame.realHeight));
     },
+    nineslice: (_x, _y, textureKey, frame, width, height, left, right, top, bottom) => {
+      const sourceFrame = textures.get(textureKey)?.get();
+      if (!sourceFrame || frame !== undefined) throw new Error(`fake invalid nine-slice source: ${textureKey}`);
+      const object = new FakeNineSlice(scene, textureKey, width, height, { left, right, top, bottom });
+      object.constructorArgs = { textureKey, frame, width, height, left, right, top, bottom };
+      return record(object);
+    },
     text: (_x, _y, text, options) => record(new FakeText(scene, text, options)),
     graphics: () => record(new FakeGraphics(scene)),
   };
@@ -289,6 +325,7 @@ function createSketch() {
     { layout_node_id: "image", parent_layout_node_id: "group", target_bounds: { x: 100, y: 100, width: 120, height: 90 } },
     { layout_node_id: "label", parent_layout_node_id: "group", target_bounds: { x: 150, y: 150, width: 60, height: 30 } },
   ];
+  nodes[2].region_id = "image-region";
   return {
     schema: "phaser-page-sketch/1.0",
     target_sha256: HASH_A,
@@ -318,7 +355,7 @@ function createSketch() {
       group: { kind: "container" },
       image: { kind: "image", asset_ids: ["asset-main"], object_fit: "cover", alignment: { x: 0.75, y: 0.25 }, origin: { x: 0.2, y: 0.8 } },
       label: {
-        kind: "text", text: "A wrapped label with several words", origin: { x: 0.3, y: 0.7 },
+        kind: "text", text: "A wrapped label with several words", origin: { x: 0.3, y: 0.7 }, overflow: "visible",
         style: {
           font_family: "sans-serif", font_size_px: 16, color: "#fff", font_weight: 700,
           text_align: "center", line_height: 1.4, word_wrap: true, stroke: "#1234", stroke_thickness: 1,
@@ -458,6 +495,11 @@ test("共享 Phaser renderer 处理裁切原点、换行、resize、wake、首�
   assert.equal(text.spacing, 1.25);
   assert.deepEqual(text.shadow, [2, 3, "#0008", 1, true, false]);
   assert.equal(text.lineSpacing, 16 * 1.4 - (19 + 1), "行高按 Phaser 实测基线高度补偿，字号测量故意不相同");
+  const textDiagnostic = renderer.getLayoutDiagnostics().label;
+  assert.equal(textDiagnostic.fits, false, "显式 visible 允许溢出，但布局诊断仍报告实测溢出");
+  assert.deepEqual(renderer.getRenderedBounds("label"), textDiagnostic.rendered_bounds);
+  assert.ok(textDiagnostic.rendered_bounds.height > renderer.getBounds("label").height);
+  assert.equal(textDiagnostic.rendered_bounds.y, renderer.getBounds("label").y, "实测文字与目标 bounds 使用相同逻辑画布坐标，不混入 viewport transform");
   assert.equal(renderer.isHealthy(), false, "GameObject 创建不能代替首次 Phaser 渲染周期");
   const initialWorld = renderer.getBounds("label");
   const root = scene.objects[0];
@@ -485,6 +527,95 @@ test("共享 Phaser renderer 处理裁切原点、换行、resize、wake、首�
   assert.equal(scene.game.events.listenerCountFor("postrender"), 0);
   assert.ok(scene.objects.every((object) => object.destroyed), "适配器创建的 GameObject/Container 均应释放");
   assert.equal(scene.textures.exists("texture-main"), true, "renderer 不销毁外部资源管理的共享纹理");
+});
+
+/** 用例：默认文字不得挤占目标留白，必须回上游调整或明确选择 visible。 */
+test("默认文字实际尺寸超出冻结 bounds 时阻断渲染", async () => {
+  const sketch = createSketch();
+  delete sketch.node_presentations.label.overflow;
+  const scene = createFakeScene();
+  scene.textures.add("texture-main");
+  await assert.rejects(createPageSketchRenderer({
+    scene, sketch, assets: new Map([["asset-main", "texture-main"]]), fonts: createFonts(),
+  }), /实测尺寸 .* 超出冻结 bounds/);
+  assert.ok(scene.objects.every((object) => object.destroyed), "文本不合格时清理已创建的共享渲染树");
+});
+
+/** 用例：九宫格按冻结源尺寸和四边参数创建，resize/wake 只更新目标尺寸。 */
+test("九宫格使用小源图原生切片并保持边角尺寸用于大面板", async () => {
+  const sketch = createSketch();
+  const imageNode = sketch.nodes.find((node) => node.layout_node_id === "image");
+  imageNode.parent_layout_node_id = "viewport";
+  imageNode.target_bounds = { x: 50, y: 40, width: 300, height: 180 };
+  imageNode.nine_slice = structuredClone(PANEL_NINE_SLICE);
+  sketch.layout.offsets.image = { x: 0, y: 0 };
+  sketch.node_presentations.image = {
+    ...sketch.node_presentations.image,
+    object_fit: "nine-slice",
+    origin: { x: 0.25, y: 0.75 },
+    nine_slice: structuredClone(PANEL_NINE_SLICE),
+  };
+  const scene = createFakeScene();
+  scene.textures.add("texture-main", 96, 64);
+  const renderer = await createPageSketchRenderer({ scene, sketch, assets: new Map([["asset-main", "texture-main"]]), fonts: createFonts() });
+  const panel = scene.objects.find((object) => object.kind === "nine-slice");
+  assert.deepEqual(panel.constructorArgs, {
+    textureKey: "texture-main", frame: undefined, width: 300, height: 180,
+    left: 12, right: 12, top: 10, bottom: 10,
+  });
+  assert.deepEqual(panel.borders, PANEL_NINE_SLICE.borders);
+  assert.deepEqual([panel.width, panel.height, panel.originX, panel.originY, panel.x, panel.y], [300, 180, 0.25, 0.75, 75, 135]);
+  assert.deepEqual(panel.setSizeCalls, [{ width: 300, height: 180 }]);
+  scene.scale.gameSize = { width: 1000, height: 700 };
+  scene.scale.emit("resize", scene.scale.gameSize);
+  scene.events.emit("wake");
+  assert.deepEqual(panel.setSizeCalls, [
+    { width: 300, height: 180 }, { width: 300, height: 180 }, { width: 300, height: 180 },
+  ], "resize/wake 都从冻结 bounds 重设尺寸，不累积缩放或漂移");
+  assert.deepEqual([panel.width, panel.height, panel.originX, panel.originY, panel.x, panel.y], [300, 180, 0.25, 0.75, 75, 135]);
+  renderer.destroy();
+});
+
+/** 用例：没有原生 NineSlice、源尺寸不匹配或目标没有中心空间时必须显式失败。 */
+test("九宫格缺原生工厂、源帧尺寸不符或目标过小时拒绝渲染", async () => {
+  const makeNineSliceSketch = () => {
+    const sketch = createSketch();
+    const imageNode = sketch.nodes.find((node) => node.layout_node_id === "image");
+    imageNode.parent_layout_node_id = "viewport";
+    imageNode.target_bounds = { x: 50, y: 40, width: 300, height: 180 };
+    imageNode.nine_slice = structuredClone(PANEL_NINE_SLICE);
+    sketch.layout.offsets.image = { x: 0, y: 0 };
+    sketch.node_presentations.image = { ...sketch.node_presentations.image, object_fit: "nine-slice", nine_slice: structuredClone(PANEL_NINE_SLICE) };
+    return sketch;
+  };
+  const noFactory = createFakeScene();
+  noFactory.textures.add("texture-main", 96, 64);
+  delete noFactory.add.nineslice;
+  await assert.rejects(createPageSketchRenderer({ scene: noFactory, sketch: makeNineSliceSketch(), assets: new Map([["asset-main", "texture-main"]]), fonts: createFonts() }), /scene.add.nineslice/);
+
+  const wrongSource = createFakeScene();
+  wrongSource.textures.add("texture-main", 95, 64);
+  await assert.rejects(createPageSketchRenderer({ scene: wrongSource, sketch: makeNineSliceSketch(), assets: new Map([["asset-main", "texture-main"]]), fonts: createFonts() }), /source_size 与实际完整 Phaser 源帧不一致/);
+
+  const undersized = makeNineSliceSketch();
+  undersized.nodes.find((node) => node.layout_node_id === "image").target_bounds.width = 24;
+  const validSource = createFakeScene();
+  validSource.textures.add("texture-main", 96, 64);
+  await assert.rejects(createPageSketchRenderer({ scene: validSource, sketch: undersized, assets: new Map([["asset-main", "texture-main"]]), fonts: createFonts() }), /大于九宫格左右\/上下边宽之和/);
+
+  for (const metadata of [{ scale9: true }, { scale9: true, is3Slice: true }, { is3Slice: true }]) {
+    const markedSource = createFakeScene();
+    markedSource.textures.add("texture-main", 96, 64, metadata);
+    await assert.rejects(createPageSketchRenderer({ scene: markedSource, sketch: makeNineSliceSketch(), assets: new Map([["asset-main", "texture-main"]]), fonts: createFonts() }), /scale9\/3-slice 元数据/);
+  }
+});
+
+test("普通图片不因无关的scale9帧元数据被拒绝", async () => {
+  const scene = createFakeScene();
+  scene.textures.add("texture-main", 200, 100, { scale9: true, is3Slice: true });
+  const renderer = await createPageSketchRenderer({ scene, sketch: createSketch(), assets: new Map([["asset-main", "texture-main"]]), fonts: createFonts() });
+  assert(scene.objects.some((object) => object.kind === "image"));
+  renderer.destroy();
 });
 
 /** 用例：透明容器也能选择，背景偏移在 resize/wake 后依旧从冻结布局重算。 */

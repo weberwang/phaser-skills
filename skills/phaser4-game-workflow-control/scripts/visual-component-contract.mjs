@@ -12,6 +12,7 @@ import { atomicImageRequirementsEqual, deriveAtomicImageRequirements, normalizeA
 import { collectImageGenerationRasterViolations } from "./visual-imagegen-format.mjs";
 import { validateFixedVisualProductionMethod } from "./visual-decomposition-confirmation.mjs";
 import { canonicalJson, isPlainObject as isObject, nonEmptyString, normalizeContractPath as normalizeProjectRelativePath } from "./visual-contract-core.mjs";
+import { equalNineSliceContracts, isNineSliceStretch, isNineSliceStretchTargetAllowed, validateNineSliceContract, validateNineSliceTargetBounds } from "../../phaser4-game-ui-layout/scripts/nine-slice-contract.mjs";
 
 export { atomicImageRequirementsEqual, deriveAtomicImageRequirements, normalizeAtomicComponents, normalizeAtomicImageRequirements };
 export { validateFixedVisualProductionMethod } from "./visual-decomposition-confirmation.mjs";
@@ -131,7 +132,11 @@ export function normalizeComponentInventory(value = {}) {
         placement_id: placement?.placement_id ?? placement?.placementId ?? "",
         bounds: isObject(placement?.bounds) ? { x: placement.bounds.x, y: placement.bounds.y, width: placement.bounds.width, height: placement.bounds.height } : null,
         interaction_required: placement?.interaction_required ?? placement?.interactionRequired,
+        ...(placement?.nine_slice !== undefined ? { nine_slice: validateNineSliceContract(placement.nine_slice, `placement ${placement?.placement_id ?? "?"}.nine_slice`) } : {}),
+        ...(Object.hasOwn(placement ?? {}, "nine_slice_decision_required") ? { nine_slice_decision_required: placement.nine_slice_decision_required } : {}),
       })) : null,
+      ...(component?.nine_slice !== undefined ? { nine_slice: validateNineSliceContract(component.nine_slice, `component ${component?.component_id ?? "?"}.nine_slice`) } : {}),
+      ...(Object.hasOwn(component ?? {}, "nine_slice_decision_required") ? { nine_slice_decision_required: component.nine_slice_decision_required } : {}),
     })),
   };
 }
@@ -172,6 +177,7 @@ export function normalizeComponentExpectedAsset(value) {
     source_file: normalizeProjectRelativePath(sourceFile) ?? sourceFile,
     runtime_file: normalizeProjectRelativePath(runtimeFile) ?? runtimeFile,
     atlas_slice: normalizeAtlasSlice(value.atlas_slice ?? value.atlasSlice),
+    ...(value.nine_slice !== undefined ? { nine_slice: validateNineSliceContract(value.nine_slice, "expected_assets.nine_slice") } : {}),
   };
 }
 
@@ -293,7 +299,7 @@ function rectangleContains(parent, child) {
 }
 
 /** 校验唯一原子部件、可见实例 placement、数量和图集开关。 */
-function validateInventory(region, context, errors, options = {}) {
+function validateInventory(region, context, errors, options = {}, canonicalRegion = normalizeVisualRegionDefinition(region)) {
   const nested = region.production_contract ?? region.productionContract;
   const raw = region.component_inventory ?? region.componentInventory ?? nested?.component_inventory ?? nested?.componentInventory;
   const inventory = normalizeComponentInventory(raw ?? {});
@@ -329,6 +335,13 @@ function validateInventory(region, context, errors, options = {}) {
     seenAtomicKeys.add(component.atomic_visual_key);
     if (!nonEmptyString(component.role)) componentFail("缺少 role", { missing: `component_inventory.components[${index}].role` });
     if (typeof component.reusable !== "boolean") componentFail("reusable 必须显式为布尔值", { missing: `component_inventory.components[${index}].reusable` });
+    if (component.nine_slice !== undefined && isNineSliceStretch(component.nine_slice)) {
+      // 使用规范化区域的权威视觉路线，保证 V2/V3/V4 判定一致，不按 background 名称子串推断职责。
+      const routeAnalysis = canonicalRegion.visual_route_analysis;
+      const routeElementType = routeAnalysis?.element_type ?? routeAnalysis?.elementType;
+      if (!isNineSliceStretchTargetAllowed({ element_type: "component", role: component.role, region_layer: region.layer, visual_route_element_type: routeElementType })) componentFail("九宫格 stretch 只能用于非背景的叶子图片皮肤，不能用于结构容器");
+      if (region.owner_type !== undefined && region.owner_type !== "fixed-production-visual") componentFail("九宫格 stretch 只能用于 fixed-production-visual 图片资产");
+    }
     const rawComponent = Array.isArray(raw.components) ? raw.components[index] : null;
     if (isObject(rawComponent) && (Object.hasOwn(rawComponent, "interaction_required") || Object.hasOwn(rawComponent, "interactionRequired"))) componentFail("禁止旧的 component-level interaction_required，必须改为 placement.interaction_required");
     if (!Array.isArray(component.state_coverage) || component.state_coverage.length === 0) componentFail("state_coverage 必须显式覆盖区域全部状态", { missing: `component_inventory.components[${index}].state_coverage` });
@@ -343,6 +356,12 @@ function validateInventory(region, context, errors, options = {}) {
       if (!validRectangle(placement.bounds)) placementFail("bounds 必须是合法非负矩形");
       else if (!rectangleContains(regionBounds, placement.bounds)) placementFail("bounds 必须位于 region.bounds 内");
       else if (canvas && !rectangleContains({ x: 0, y: 0, width: canvas.width, height: canvas.height }, placement.bounds)) placementFail("bounds 必须位于画布内");
+      if (placement.nine_slice !== undefined && !equalNineSliceContracts(component.nine_slice, placement.nine_slice)) placementFail("nine_slice 决策必须与同一原子 component 完全一致");
+      const placementNineSlice = placement.nine_slice ?? component.nine_slice;
+      if (isNineSliceStretch(placementNineSlice)) {
+        try { validateNineSliceTargetBounds(placementNineSlice, placement.bounds, `component ${component.component_id}.placements[${placementIndex}].bounds`); }
+        catch (error) { placementFail(`九宫格显示尺寸无效：${error.message}`); }
+      }
       if (typeof placement.interaction_required !== "boolean") placementFail("interaction_required 必须显式为布尔值");
     }
   }
@@ -396,6 +415,7 @@ function validateAssetMappings(region, context, errors, stateInfo, inventoryInfo
     if (!nonEmptyString(componentId) || !componentIds.has(componentId)) assetFail("component_id 必须映射 component_inventory", { missing: `expected_assets[${index}].component_id` });
     if (!stateId || !requirementFor.has(stateId)) assetFail("state_id 必须映射 state_analysis", { missing: `expected_assets[${index}].state_id` });
     const component = inventoryInfo.componentById?.get(componentId);
+    if (component && !equalNineSliceContracts(component.nine_slice, asset.nine_slice)) assetFail("nine_slice 必须与 component_inventory 的冻结决策完全一致");
     if (asset.asset_scope !== "atomic-component") assetFail("asset_scope 必须为 atomic-component，禁止 region-composite/group/composite 输出", { missing: `expected_assets[${index}].asset_scope` });
     if (!nonEmptyString(asset.atomic_visual_key)) assetFail("缺少 atomic_visual_key", { missing: `expected_assets[${index}].atomic_visual_key` });
     else if (component && asset.atomic_visual_key !== component.atomic_visual_key) assetFail("atomic_visual_key 必须匹配唯一 component", { missing: component.atomic_visual_key });
@@ -580,7 +600,7 @@ export function validateVisualComponentContract(region, context = {}, options = 
   // 固定视觉区域必须交付真实图片；程序绘制只负责热区、碰撞和布局等非图片逻辑。
   for (const conflict of getVisualRegionDefinitionAliasConflicts(region)) errors.push(componentError(context, `区域合同别名取值冲突：${conflict.field}`, { missing: conflict.sources.join("/") }));
   const stateInfo = validateStateAnalysis(canonical, context, errors, options);
-  const inventoryInfo = validateInventory(region, context, errors, options);
+  const inventoryInfo = validateInventory(region, context, errors, options, canonical);
   const analysisCompletedAt = Date.parse(stateInfo.analysis.completed_at);
   const inventoryCreatedAt = Date.parse(inventoryInfo.inventory.created_at);
   // 时间顺序是机器门：状态分析完成后才能建立部件清单，避免事后补写分析掩盖拆解粒度错误。

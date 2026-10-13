@@ -1,4 +1,5 @@
 import { assertPageSketchBackgroundLayout } from "./page-sketch-contract.mjs";
+import { equalNineSliceContracts, isNineSliceStretch, validateNineSliceContract, validateNineSliceTargetBounds } from "./nine-slice-contract.mjs";
 /** 收集区域技术合同中声明的 asset_id，覆盖 expected_assets 与原子映射两种合同形态。 */
 function collectRegionAssetIds(region) {
   const ids = new Set();
@@ -231,6 +232,11 @@ export function validatePageSketchResourceBindings({ nodes, sceneId, stateId, as
       || (asset.state_id !== undefined && canonicalStateId(asset.state_id) !== canonicalStateId(expected.state_id))) {
       throw new TypeError(`${label} 必须精确匹配 expected_assets 的 component/state/runtime_file`);
     }
+    if (!equalNineSliceContracts(node.nine_slice, component.nine_slice)
+      || !equalNineSliceContracts(node.nine_slice, expected.nine_slice)
+      || (asset.nine_slice !== undefined && !equalNineSliceContracts(node.nine_slice, asset.nine_slice))) {
+      throw new TypeError(`${label} 的 V2 node、V3 component、expected asset 与实际 asset nine_slice 必须一致`);
+    }
     const stateRequirement = componentStateRequirements(component, region).get(canonicalStateId(expected.state_id));
     if (stateRequirement !== "required") throw new TypeError(`${label} 只能选择 component ${componentId} 的 required 状态资源 ${expected.state_id}`);
 
@@ -259,6 +265,18 @@ export function validatePageSketchResourceBindings({ nodes, sceneId, stateId, as
   for (const [nodeId, node] of nodeById) {
     const presentation = nodePresentations[nodeId];
     if (!presentation || typeof presentation.kind !== "string") throw new TypeError(`V2 节点 ${nodeId} 缺少有效 presentation`);
+    const nineSlice = node.nine_slice === undefined ? undefined : validateNineSliceContract(node.nine_slice, `V2 节点 ${nodeId}.nine_slice`);
+    if (isNineSliceStretch(nineSlice)) {
+      validateNineSliceTargetBounds(nineSlice, node.target_bounds, `V2 节点 ${nodeId}.target_bounds`);
+      if (presentation.kind !== "image" || presentation.object_fit !== "nine-slice"
+        || !equalNineSliceContracts(presentation.nine_slice, nineSlice)) {
+        throw new TypeError(`V2 节点 ${nodeId} 的九宫格展示必须与 V2 冻结决策及 V3 资源精确绑定`);
+      }
+    } else if (presentation.object_fit === "nine-slice" || isNineSliceStretch(presentation.nine_slice)) {
+      throw new TypeError(`V2 节点 ${nodeId} 不能在草图展示阶段临时增加九宫格`);
+    } else if (presentation.nine_slice !== undefined && !equalNineSliceContracts(presentation.nine_slice, nineSlice)) {
+      throw new TypeError(`V2 节点 ${nodeId} presentation.nine_slice 与冻结决策不一致`);
+    }
     const mapped = mappedByNode.get(nodeId) ?? [];
     if (presentation.kind === "image") {
       if (!Array.isArray(presentation.asset_ids) || presentation.asset_ids.length !== mapped.length

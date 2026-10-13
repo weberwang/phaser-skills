@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { PAGE_SKETCH_RESOURCE_MAP_SCHEMA, PAGE_SKETCH_SCHEMA, validatePageSketchDocument, validateProjectRelativePath } from "./page-sketch-contract.mjs";
 import { validatePageSketchResourceBindings } from "./page-sketch-resource-bindings.mjs";
 import { validateVisualLayoutDocument } from "./visual-layout-editor.mjs";
+import { assertPageSketchSourceContracts } from "./page-sketch-source-contract.mjs";
 
 const ACCEPTED_STATES = new Set(["accepted", "pass", "passed", "complete", "completed", "valid"]);
 
@@ -147,7 +148,10 @@ export async function buildPageSketchDocument({ projectRoot, nodesDocument, node
     layout,
     confirmation: null,
   };
-  return validatePageSketchDocument(document);
+  const validated = validatePageSketchDocument(document);
+  // 生成时即执行与打开、确认和 V5 相同的来源门，错误视口或旧节点不进入人工校准。
+  assertPageSketchSourceContracts(validated, { nodesDocument, manifest: v3Manifest, evidence: v3Evidence });
+  return validated;
 }
 
 /** 只解析显式命名参数，拒绝忽略拼错的输入以免生成不完整证据。 */

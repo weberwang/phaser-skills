@@ -28,7 +28,7 @@ function freezeBaseline(projectRoot) {
   return execFileSync("git", ["-C", projectRoot, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 }
 
-/** 构造最小但可定位的 bitmap-decomposition 原子区域。 */
+/** 构造已在拆解时明确不采用九宫格的固定比例按钮，测试继续聚焦确认身份。 */
 function decompositionRegion(overrides = {}) {
   const region = {
     id: "region-buttons",
@@ -49,6 +49,7 @@ function decompositionRegion(overrides = {}) {
     atomic_image_requirements: [{ requirement_id: "req-button-1", component_id: "button-1", state_id: "default" }],
     ...overrides,
   };
+  region.decomposition_elements[0].nine_slice = { mode: "not-applicable", reason: "测试按钮图案保持固定比例" };
   return region;
 }
 

@@ -1,8 +1,9 @@
 import { calculateFixedDesignPreview, calculateFixedDesignViewport } from "./fixed-design-viewport.mjs";
 import { validateVisualLayoutDocument } from "./visual-layout-editor.mjs";
+import { isNineSliceStretch, validateNineSliceContract, validateNineSliceTargetBounds } from "./nine-slice-contract.mjs";
 
 const PRESENTATION_FIELDS = Object.freeze({
-  image: new Set(["kind", "asset_ids", "object_fit", "alignment", "origin", "z_index", "overflow"]),
+  image: new Set(["kind", "asset_ids", "object_fit", "alignment", "origin", "z_index", "overflow", "nine_slice"]),
   text: new Set(["kind", "text", "style", "origin", "z_index", "overflow"]),
   container: new Set(["kind", "style", "z_index", "overflow"]),
   "runtime-program": new Set(["kind", "module_file", "module_sha256", "export_name", "z_index", "overflow"]),
@@ -14,6 +15,7 @@ const TEXT_STYLE_FIELDS = new Set([
 const CONTAINER_STYLE_FIELDS = new Set(["fill", "stroke", "stroke_thickness", "radius_px"]);
 const ROOT_PARENTS = new Set(["viewport", "safe-area"]);
 const FIT_MODES = new Set(["fill", "contain", "cover", "none", "scale-down"]);
+const PRESENTATION_FIT_MODES = new Set([...FIT_MODES, "nine-slice"]);
 
 /** 判断非数组普通对象。 */
 function isRecord(value) {
@@ -110,7 +112,17 @@ export function validatePageSketchPresentation(presentation) {
     if (!Array.isArray(presentation.asset_ids) || presentation.asset_ids.length === 0 || presentation.asset_ids.some((id) => typeof id !== "string" || id.trim() === "")) {
       throw new TypeError("image presentation.asset_ids 必须是非空字符串数组");
     }
-    if (!FIT_MODES.has(presentation.object_fit)) throw new TypeError("image presentation.object_fit 必须为 fill/contain/cover/none/scale-down");
+    if (!PRESENTATION_FIT_MODES.has(presentation.object_fit)) throw new TypeError("image presentation.object_fit 必须为 fill/contain/cover/none/scale-down/nine-slice");
+    if (presentation.object_fit === "nine-slice") {
+      const nineSlice = validateNineSliceContract(presentation.nine_slice, "image presentation.nine_slice");
+      if (!isNineSliceStretch(nineSlice)) throw new TypeError("object_fit=nine-slice 只能使用 nine_slice.mode=stretch");
+      if (presentation.asset_ids.length !== 1) throw new TypeError("九宫格 image presentation 必须只绑定一张完整源纹理");
+      result.nine_slice = nineSlice;
+    } else if (presentation.nine_slice !== undefined) {
+      const nineSlice = validateNineSliceContract(presentation.nine_slice, "image presentation.nine_slice");
+      if (isNineSliceStretch(nineSlice)) throw new TypeError("nine_slice.mode=stretch 必须使用 object_fit=nine-slice，避免落回整图缩放");
+      result.nine_slice = nineSlice;
+    }
     if (presentation.alignment !== undefined) {
       result.alignment = validatePoint(presentation.alignment, "presentation.alignment");
     } else result.alignment = { x: 0.5, y: 0.5 };
@@ -225,6 +237,7 @@ export function calculatePageSketchLayout(sketch, layout, viewport = sketch?.vie
     const bounds = backgrounds.has(node.layout_node_id)
       ? { ...visibleSourceBounds, x: visibleSourceBounds.x + computedBounds.x - node.target_bounds.x, y: visibleSourceBounds.y + computedBounds.y - node.target_bounds.y }
       : computedBounds;
+    if (node.nine_slice !== undefined) validateNineSliceTargetBounds(node.nine_slice, bounds, `节点 ${node.layout_node_id}.target_bounds`);
     boundsById.set(node.layout_node_id, bounds);
   }
 

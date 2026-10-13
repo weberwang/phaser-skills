@@ -6,6 +6,8 @@
 
 视觉领域规则只能收紧 [`phaser4-game-workflow-control`](../../phaser4-game-workflow-control/SKILL.md)。V0-V5 是 `stageId`；全局状态、审批与 F0-F4 语义不得改写。
 
+涉及方向、效果图、正式资源与动态视觉时应用[游戏美术体验与质量契约](../../phaser4-game-asset-integration/references/art-quality-contract.md)：全局 brief 说明主题、受众、体验目标与刺激预算，所选候选五项人工质量结果均通过后才能冻结。场景目标在冻结前复核，V4 检查同屏组合，V5 检查约定游玩情境下的重复、叠加与收尾。机器只核对结构、参数、实际文件和人工结果绑定，代理不得在未明确授权时自动分析截图/视频或宣称美术通过。复用现有确认节点，不增设审批流程。
+
 场景视觉与功能生命周期沿用当前场景 Work Item 的 V0→V5 阶段；本领域只补充视觉质量事实。V2 依次完成拆解确认和布局确认，V3 完成正式资源验收，V4 完成页面草图确认，V5 完成运行态视觉接入和功能/视觉联合复验。全局基线、基础工程和集成入口以控制面文档为准。
 
 正式可见视觉集成的 `visualStage`、`visualStageState`、阶段依赖和不可变证据由[控制模型](../../phaser4-game-workflow-control/references/control-model.md)、[状态、阶段与停止门](../../phaser4-game-workflow-control/references/state-gates.md)及 Schema 统一校验；领域文档不复制完成状态枚举。

@@ -4,6 +4,7 @@ import { mountPageSketchPreview, loadPageSketchSources, verifyPageSketchSources 
 import { calculatePageSketchGameViewport } from "./page-sketch-game-config.mjs";
 import { FakeElement } from "./visual-layout-editor-test-helpers.mjs";
 import { createFormalPageSketchGameConfig } from "../assets/visual-layout-game-adapter.mjs";
+import { createSourceDocuments } from "./page-sketch-source-test-helpers.mjs";
 
 const SHA = `sha256:${"d".repeat(64)}`;
 
@@ -27,7 +28,7 @@ function createSketch({ rootPresentation, imageAssets = ["hero", "badge"] } = {}
     v3_assets: imageAssets.map((asset_id) => ({ asset_id, file: `public/${asset_id}.png`, sha256: SHA, layout_node_id: "hud.hero" })),
     nodes: [
       { layout_node_id: "hud.root", parent_layout_node_id: "viewport", target_bounds: { x: 0, y: 0, width: 200, height: 100 } },
-      { layout_node_id: "hud.hero", parent_layout_node_id: "hud.root", target_bounds: { x: 20, y: 10, width: 48, height: 48 } },
+      { layout_node_id: "hud.hero", parent_layout_node_id: "hud.root", region_id: "hero-region", target_bounds: { x: 20, y: 10, width: 48, height: 48 } },
     ],
     node_presentations: {
       "hud.root": rootPresentation ?? { kind: "container" },
@@ -177,11 +178,15 @@ test('预览启动超时及初始视口失败都回收资源', async () => {
 });
 test("项目子路径与百分号文件名保持在配置资源根下，控制字符路径被拒绝", async () => {
   const referenceBytes = new TextEncoder().encode("reference bytes");
+  const sketch = createSketch();
+  sketch.nodes.find((node) => node.layout_node_id === "hud.hero").parent_layout_node_id = "viewport";
+  const sourceDocuments = createSourceDocuments(sketch);
+  sourceDocuments.manifest.coverage_audit.regions[0].layer = "background";
   const hashes = new Map([
-    ["/game/evidence/nodes.json", new TextEncoder().encode("nodes")],
+    ["/game/evidence/nodes.json", new TextEncoder().encode(JSON.stringify(sourceDocuments.nodesDocument))],
     // 使用正式 V3 清单的 coverage_audit 路径，避免错误的顶层 regions 掩盖背景漏识别。
-    ["/game/evidence/manifest.json", new TextEncoder().encode(JSON.stringify({ coverage_audit: { regions: [{ id: "backdrop", layer: "background", scene_id: "HudScene", state_id: "default", layout_node_ids: ["hud.hero"] }] } }))],
-    ["/game/evidence/v3-pass.json", new TextEncoder().encode("evidence")],
+    ["/game/evidence/manifest.json", new TextEncoder().encode(JSON.stringify(sourceDocuments.manifest))],
+    ["/game/evidence/v3-pass.json", new TextEncoder().encode(JSON.stringify(sourceDocuments.evidence))],
     ["/game/refs/%252e%252e/reference.png", referenceBytes],
     ["/game/public/hero.png", new TextEncoder().encode("hero")],
     ["/game/public/badge.png", new TextEncoder().encode("badge")],
@@ -190,8 +195,6 @@ test("项目子路径与百分号文件名保持在配置资源根下，控制�
     const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
     return `sha256:${[...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
   };
-  const sketch = createSketch();
-  sketch.nodes.find((node) => node.layout_node_id === "hud.hero").parent_layout_node_id = "viewport";
   sketch.target_sha256 = await sha(referenceBytes);
   sketch.layout.target_sha256 = sketch.target_sha256;
   sketch.v2_nodes_sha256 = await sha(hashes.get("/game/evidence/nodes.json"));

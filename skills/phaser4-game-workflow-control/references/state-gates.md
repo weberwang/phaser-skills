@@ -59,6 +59,8 @@ V3→V4 不要求先完成正式 Scene 代码。V4 保存不产生完成态；�
 
 ## 全局视觉冻结与实施顺序
 
+全局选择的 brief/质量门按[Schema](schemas.md#视觉阶段-schema)和[游戏美术体验与质量契约](../../phaser4-game-asset-integration/references/art-quality-contract.md)执行：结构化 brief 必须绑定生产者并定义三层刺激预算，所选候选的主题、受众、可读性、静态舒适和完成度人工结果全部通过，且根与实际决定文件一致，才可冻结。全不合格或缺少实际人工评价时不得放行。静态基线通过不推导持续游玩通过；V5 实际运行候选内的 `artExperienceAcceptance` 必须绑定当前身份、真实动态片段与通过的实际用户结果，缺失、失败或未验证都阻断完成门。该材料属于既有运行验收，不新增审批阶段。
+
 任务范围和工程基线完成后，纯工程 foundation-only 包可先完成 `SHARED` 最小项目骨架和 `MODULE` 场景无关基础模块；只有具有视觉合同或资产生产依赖的基础包才需先建立全局基线 brief，生成恰好三张同条件候选效果图并同屏交给人工，人工选择确认一张后以 `globalVisualBaselineSelectionRef` 正式冻结 `visual_baseline`。基础实施完成后按各场景 Work Item 进入 V1；每个 V1 内生成或接收并冻结当前场景的 scene master/reference target、必需 transient display-layer 宿主上下文图、`scene_reconstruction_contract` 和初步还原草案，集合按 scene/state 分项而非一张合并图；随后该场景才在 V2 完成拆解图确认与生产方案。
 
 具有视觉依赖的 foundation-only 包必须同时通过 `globalVisualBaselineSelectionRef` 的三候选/唯一人工确认/实际文件门和 `globalStaticBaselineState=global-static-baseline-frozen`，缺失任一项时 fail closed；纯工程包只需当前任务范围、工程基线、冻结实施包和工程证据，不等待全局选图；一旦基础包声明正式入口或可见资源消费等视觉行为，即回到正式 V2/V3 门。混入 SCENE/DISPLAY_LAYER/INTEGRATION 的包仍以 V2 `v2-production-planning-complete` 为规划边界，并以 V4 草图确认作为正式执行边界。全局选择是独立硬门，不能替代逐场景 V2。参考模式的 `effect-image` 仍在同一 Work Item 内完成 V1→V5。

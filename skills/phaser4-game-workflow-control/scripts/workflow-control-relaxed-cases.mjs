@@ -81,10 +81,11 @@ export function registerRelaxedWorkflowTests({
   makeParallelBatch,
   makeDelegation,
 }) {
-  test('摘要字段：十三份 schema 无摘要硬门，非摘要业务结构仍保持校验', () => {
+  test('摘要字段：全部 schema 无摘要硬门，非摘要业务结构仍保持校验', () => {
     const schemaDirectory = new URL('../references/', import.meta.url);
     const schemaFiles = readdirSync(schemaDirectory).filter((file) => file.endsWith('.schema.json'));
-    assert.equal(schemaFiles.length, 13, '工作流控制 schema 数量应与覆盖范围一致');
+    // 按实际文件全量检查；新增领域合同不应因固定数量断言被误判为回归。
+    assert.ok(schemaFiles.includes('work-item.schema.json') && schemaFiles.includes('implementation-package.schema.json'), '关键控制合同必须参与覆盖');
     for (const file of schemaFiles) assertDigestConstraintsRemoved(JSON.parse(readFileSync(new URL(file, schemaDirectory), 'utf8')), assert, file);
 
     const schema = JSON.parse(readFileSync(new URL('../references/implementation-package.schema.json', import.meta.url), 'utf8'));

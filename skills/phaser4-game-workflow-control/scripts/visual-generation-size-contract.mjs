@@ -8,6 +8,7 @@
  * 由设备动态解析，不能反向改变生产尺寸合同。
  */
 import { normalizeComponentInventory } from "./visual-component-contract.mjs";
+import { isNineSliceStretch, equalNineSliceContracts, validateNineSliceContract, validateNineSliceTargetBounds } from "../../phaser4-game-ui-layout/scripts/nine-slice-contract.mjs";
 import { resolveOutputMetadata } from "./visual-raster-contract.mjs";
 import { IMAGE_PRODUCTION_DPR, imageProductionDprError, isImageProductionDpr } from "./workflow-dpr-contract.mjs";
 
@@ -71,7 +72,15 @@ function validPlacementBounds(bounds) {
 function resolveInventory(region, options = {}) {
   const raw = region?.component_inventory ?? region?.componentInventory
     ?? options.region?.component_inventory ?? options.region?.componentInventory;
-  return normalizeComponentInventory(raw ?? {});
+  const normalized = normalizeComponentInventory(raw ?? {});
+  const rawComponents = Array.isArray(raw?.components) ? raw.components : [];
+  return {
+    ...normalized,
+    components: normalized.components.map((component) => {
+      const source = rawComponents.find((item) => (item?.component_id ?? item?.componentId) === component.component_id);
+      return source?.nine_slice === undefined ? component : { ...component, nine_slice: source.nine_slice };
+    }),
+  };
 }
 
 /** 计算组件所有 placements 的最大逻辑显示宽高。 */
@@ -133,12 +142,47 @@ export function validateImageGenerationSizeContract(asset, contract, context = {
   errors.push(...display.errors);
   if (!display.displaySize || !isObject(scale) || !positiveNumber(scale.max) || !isImageProductionDpr(maxDpr)) return errors;
 
+  const component = display.inventory.components.find((item) => item.component_id === componentId);
+  let nineSlice;
+  try {
+    nineSlice = expectedAsset.nine_slice === undefined ? undefined : validateNineSliceContract(expectedAsset.nine_slice, "expected_assets.nine_slice");
+  } catch (error) {
+    errors.push(sizeError(local, `expected_assets.nine_slice 无效：${error.message}`, { missing: "expected_assets.nine_slice" }));
+  }
+  let componentNineSlice;
+  try {
+    componentNineSlice = component?.nine_slice === undefined ? undefined : validateNineSliceContract(component.nine_slice, `component ${componentId}.nine_slice`);
+  } catch (error) {
+    errors.push(sizeError(local, `component_inventory.nine_slice 无效：${error.message}`, { component_id: componentId }));
+  }
+  if (!equalNineSliceContracts(componentNineSlice, nineSlice)) {
+    errors.push(sizeError(local, "component_inventory 与 expected_assets 的 nine_slice 决策必须完全一致"));
+  }
+  if (isNineSliceStretch(nineSlice)) {
+    for (const [index, placement] of (component?.placements ?? []).entries()) {
+      try {
+        validateNineSliceTargetBounds(nineSlice, placement.bounds, `component ${componentId}.placements[${index}].bounds`);
+      } catch (error) {
+        errors.push(sizeError(local, `九宫格 placement[${index}] 尺寸无效：${error.message}`, { component_id: componentId }));
+      }
+    }
+    // 裁切会改变冻结的角边内容；尺寸相同也不能把裁角结果当作完整九宫格源帧。
+    for (const [label, candidate] of [["asset", asset], ["actual_assets", options.actualAsset]]) {
+      if (candidate?.normalization_record?.operation === "crop-and-resize-to-contract") {
+        errors.push(sizeError(local, `${label} normalization_record.operation 不得为 crop-and-resize-to-contract；九宫格必须保留完整源帧`, { component_id: componentId }));
+      }
+    }
+  }
+
   const singleComponent = display.inventory.components.length === 1;
   if (singleComponent && isObject(displaySizeValue) && (displaySizeValue.width !== display.displaySize.width || displaySizeValue.height !== display.displaySize.height)) {
     errors.push(sizeError(local, "单组件场景 target_display_size 必须与 placement 最大逻辑尺寸一致", { expected: display.displaySize, actual: displaySizeValue }));
   }
   // 生产位图以 1:1 覆盖最大约定显示尺寸，只计业务缩放，不再叠加设备 DPR 的倍率。
-  const minimum = { width: Math.ceil(display.displaySize.width * scale.max * IMAGE_PRODUCTION_DPR), height: Math.ceil(display.displaySize.height * scale.max * IMAGE_PRODUCTION_DPR) };
+  // 九宫格源图就是逻辑像素切片基线；仅中心区域伸缩，边角保持本地尺寸，不叠加最大业务缩放。
+  const minimum = isNineSliceStretch(nineSlice)
+    ? { ...nineSlice.source_size }
+    : { width: Math.ceil(display.displaySize.width * scale.max * IMAGE_PRODUCTION_DPR), height: Math.ceil(display.displaySize.height * scale.max * IMAGE_PRODUCTION_DPR) };
   const expectedSize = { width: expectedAsset.width, height: expectedAsset.height };
   if (expectedAsset.width !== minimum.width || expectedAsset.height !== minimum.height) {
     errors.push(sizeError(local, `expected_assets 必须精确使用机器计算的最小尺寸（按逻辑像素×最大缩放×图片生产基线 ${IMAGE_PRODUCTION_DPR} 向上取整）`, { expected: minimum, actual: expectedSize }));

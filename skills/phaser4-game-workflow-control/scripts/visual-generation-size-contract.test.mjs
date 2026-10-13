@@ -8,6 +8,12 @@ const BASE_USAGE = {
   max_dpr: 1,
   padding_policy: "none",
 };
+const NINE_SLICE = {
+  mode: "stretch",
+  reason: "保留按钮底板角边，拉伸中心区域",
+  source_size: { width: 96, height: 64 },
+  borders: { left: 12, right: 12, top: 10, bottom: 10 },
+};
 
 /** 构造单个 图像生成 原子部件的最小场景合同。 */
 function region(overrides = {}) {
@@ -121,6 +127,31 @@ test("actual output 尺寸漂移被尺寸门拒绝", () => {
   assert.deepEqual(errors, []);
   const drift = validateImageGenerationSizeContract(null, current, { stage: "V4", annotation_number: 7, region_id: current.id, component_id: "hero", state_id: "default", asset_id: "hero-default" }, { expectedAsset: current.expected_assets[0], region: current, actualAsset: { width: 91, height: 60 } });
   assert(drift.some((item) => item.includes("实际输出尺寸漂移")));
+});
+
+/** 用例：九宫格只按冻结源图尺寸生产，禁止通过裁切伪造正确尺寸。 */
+test("九宫格使用冻结源尺寸且裁切归一化记录会被拒绝", () => {
+  const current = region();
+  current.component_inventory.components[0].nine_slice = structuredClone(NINE_SLICE);
+  current.component_inventory.components[0].placements = [
+    { placement_id: "hero-panel", bounds: { x: 0, y: 0, width: 300, height: 180 }, interaction_required: false },
+  ];
+  current.scene_asset_usage.target_display_size = { width: 300, height: 180 };
+  current.expected_assets[0] = { ...current.expected_assets[0], width: 96, height: 64, nine_slice: structuredClone(NINE_SLICE) };
+  assert.deepEqual(check(current, output(96, 64)), []);
+
+  const actualWithCrop = validateImageGenerationSizeContract(output(96, 64), current, { stage: "V3", region_id: current.id, component_id: "hero", asset_id: "hero-default" }, {
+    expectedAsset: current.expected_assets[0], region: current, actualAsset: { ...output(96, 64), normalization_record: { operation: "crop-and-resize-to-contract" } },
+  });
+  assert(actualWithCrop.some((item) => item.includes("actual_assets normalization_record.operation") && item.includes("必须保留完整源帧")));
+
+  const outputWithCrop = check(current, { ...output(96, 64), normalization_record: { operation: "crop-and-resize-to-contract" } });
+  assert(outputWithCrop.some((item) => item.includes("asset normalization_record.operation") && item.includes("必须保留完整源帧")));
+
+  const tooSmall = structuredClone(current);
+  tooSmall.component_inventory.components[0].placements[0].bounds.width = 24;
+  tooSmall.scene_asset_usage.target_display_size.width = 24;
+  assert(check(tooSmall, output(96, 64)).some((item) => item.includes("九宫格 placement[0] 尺寸无效")));
 });
 
 test("manifest 尺寸门核对 V4 actual_assets，且不依赖 human_review", () => {

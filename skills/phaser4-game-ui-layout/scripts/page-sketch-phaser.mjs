@@ -5,6 +5,7 @@ import {
 } from "./page-sketch-layout.mjs";
 import { validateVisualLayoutDocument } from "./visual-layout-editor.mjs";
 import { calculateFixedDesignPreview } from "./fixed-design-viewport.mjs";
+import { isNineSliceStretch } from "./nine-slice-contract.mjs";
 
 /** 校验正有限视口尺寸，避免 resize 将无效几何传播到整个渲染树。 */
 function validateViewport(size) {
@@ -27,7 +28,7 @@ function readTextureInfo(scene, textureKey, assetId) {
   const width = frame.realWidth ?? frame.cutWidth ?? frame.width;
   const height = frame.realHeight ?? frame.cutHeight ?? frame.height;
   if (![width, height].every((value) => Number.isFinite(value) && value > 0)) throw new Error(`正式资源 ${assetId} 的 Phaser 帧尺寸无效`);
-  return { width, height };
+  return { width, height, scale9: Boolean(frame.scale9), is3Slice: frame.is3Slice === true };
 }
 
 /** 生成 Phaser 和 FontFaceSet 共用的 CSS 字体描述。 */
@@ -138,6 +139,9 @@ export async function createPageSketchRenderer(input = {}) {
   const normalizedPresentations = new Map();
   for (const node of sketch.nodes) {
     const presentation = validatePageSketchPresentation(sketch.node_presentations[node.layout_node_id]);
+    if (presentation.object_fit === "nine-slice" && typeof scene.add.nineslice !== "function") {
+      throw new TypeError(`节点 ${node.layout_node_id} 需要 Phaser scene.add.nineslice；不支持退化为普通图片拉伸`);
+    }
     normalizedPresentations.set(node.layout_node_id, presentation);
   }
   let currentLayout = validateVisualLayoutDocument(sketch.layout, sketch.nodes);
@@ -154,6 +158,18 @@ export async function createPageSketchRenderer(input = {}) {
       if (textureInfoByAssetId.has(assetId)) continue;
       textureInfoByAssetId.set(assetId, readTextureInfo(scene, assets.get(assetId), assetId));
     }
+  }
+  for (const node of sketch.nodes) {
+    const presentation = normalizedPresentations.get(node.layout_node_id);
+    if (presentation.object_fit !== "nine-slice") continue;
+    const assetId = presentation.asset_ids[0];
+    const sourceSize = textureInfoByAssetId.get(assetId);
+    // Phaser 会优先读取 TexturePacker scale9 元数据并覆写切片模式，九宫格只接受未标记的完整独立图片。
+    if (sourceSize.scale9 || sourceSize.is3Slice) throw new Error(`正式资源 ${assetId} 的 Phaser 源帧包含 scale9/3-slice 元数据，不能保证使用冻结的九宫格边界`);
+    if (sourceSize.width !== presentation.nine_slice.source_size.width || sourceSize.height !== presentation.nine_slice.source_size.height) {
+      throw new Error(`节点 ${node.layout_node_id} 九宫格 source_size 与实际完整 Phaser 源帧不一致：合同 ${presentation.nine_slice.source_size.width}×${presentation.nine_slice.source_size.height}，实际 ${sourceSize.width}×${sourceSize.height}`);
+    }
+    if (resolvedBackgroundNodeIds.has(node.layout_node_id)) throw new TypeError(`节点 ${node.layout_node_id} 的九宫格不能用于 full-bleed 背景`);
   }
   // 字体请求可能跨 Scene shutdown；取消令牌确保 Scene 结束后不再创建 Phaser 对象。
   const fontWaitSubscriptions = [];
@@ -186,6 +202,7 @@ export async function createPageSketchRenderer(input = {}) {
   const errors = [];
   const nodeContainers = new Map();
   const nodeRenderers = new Map();
+  const renderedBoundsByNode = new Map();
   const runtimeInstances = new Map();
   const renderObjects = new Set();
   const interactiveNodes = new Set();
@@ -253,13 +270,23 @@ export async function createPageSketchRenderer(input = {}) {
     runtimeInstances.clear();
     nodeContainers.clear();
     nodeRenderers.clear();
+    renderedBoundsByNode.clear();
     interactiveNodes.clear();
     renderObjects.clear();
   }
 
-  /** 在节点容器内重设一张图片的位置、显示尺寸与明确纹理裁切。 */
+  /** 在节点容器内重设普通图片或九宫格图片；九宫格只改局部尺寸，不缩放整张源图。 */
   function updateImage(image, presentation, assetId, bounds, isBackground) {
     const naturalSize = textureInfoByAssetId.get(assetId);
+    if (presentation.object_fit === "nine-slice") {
+      if (!isNineSliceStretch(presentation.nine_slice)) throw new TypeError("九宫格渲染缺少冻结的 stretch 决策");
+      if (typeof image.setSize !== "function") throw new TypeError("Phaser NineSlice 缺少 setSize，无法按冻结目标 bounds 重排");
+      const origin = presentation.origin;
+      image.setOrigin(origin.x, origin.y);
+      image.setSize(bounds.width, bounds.height);
+      image.setPosition(bounds.width * origin.x, bounds.height * origin.y);
+      return;
+    }
     const objectFit = isBackground ? "cover" : presentation.object_fit;
     const fit = calculatePageSketchImageFit({
       sourceWidth: naturalSize.width,
@@ -314,6 +341,30 @@ export async function createPageSketchRenderer(input = {}) {
     const alignOffset = alignment === "center" ? freeWidth / 2 : alignment === "right" ? freeWidth : 0;
     text.setOrigin(origin.x, origin.y);
     text.setPosition(alignOffset + width * origin.x, height * origin.y);
+    return { x: alignOffset, y: 0, width, height };
+  }
+
+  /** 用 Phaser Text 的实测画布尺寸检测溢出，并映射到游戏逻辑视口供布局诊断查看。 */
+  function updateRenderedTextBounds(nodeId, text, bounds, presentation, layoutNode) {
+    const wraps = presentation.style.word_wrap !== false;
+    const localBounds = positionText(text, bounds, presentation.origin, presentation.style.text_align ?? "left", wraps);
+    const target = layoutNode.bounds;
+    const rendered = {
+      x: target.x + localBounds.x,
+      y: target.y + localBounds.y,
+      width: localBounds.width,
+      height: localBounds.height,
+    };
+    const diagnostic = {
+      target_bounds: { ...target },
+      rendered_bounds: rendered,
+      fits: text.width <= bounds.width && text.height <= bounds.height,
+      overflow_policy: presentation.overflow ?? "reject",
+    };
+    renderedBoundsByNode.set(nodeId, diagnostic);
+    if (!diagnostic.fits && presentation.overflow !== "visible") {
+      throw new RangeError(`文字节点 ${nodeId} 实测尺寸 ${text.width}×${text.height} 超出冻结 bounds ${bounds.width}×${bounds.height}；请回 V2/V3 调整文字呈现，或显式声明 overflow=visible`);
+    }
   }
 
   /** 构造 Phaser Text 并将所有已支持的文字属性显式映射到 Text API。 */
@@ -477,7 +528,21 @@ export async function createPageSketchRenderer(input = {}) {
       const renderers = [];
       if (presentation.kind === "image") {
         for (const assetId of presentation.asset_ids) {
-          const image = scene.add.image(0, 0, assets.get(assetId));
+          const image = presentation.object_fit === "nine-slice"
+            ? scene.add.nineslice(
+              0,
+              0,
+              assets.get(assetId),
+              undefined,
+              nodeLayout.bounds.width,
+              nodeLayout.bounds.height,
+              presentation.nine_slice.borders.left,
+              presentation.nine_slice.borders.right,
+              presentation.nine_slice.borders.top,
+              presentation.nine_slice.borders.bottom,
+            )
+            : scene.add.image(0, 0, assets.get(assetId));
+          if (!image) throw new Error(`节点 ${nodeId} 的 Phaser ${presentation.object_fit === "nine-slice" ? "NineSlice" : "Image"} 工厂未返回显示对象`);
           renderObjects.add(image);
           nodeContainer.add(image);
           renderers.push((bounds) => updateImage(image, presentation, assetId, bounds, resolvedBackgroundNodeIds.has(nodeId)));
@@ -486,14 +551,14 @@ export async function createPageSketchRenderer(input = {}) {
         const text = createText(nodeContainer, presentation, nodeLayout.bounds);
         renderObjects.add(text);
         nodeContainer.add(text);
-        renderers.push((bounds) => {
+        renderers.push((bounds, computedNode) => {
           text.setResolution(Math.max(1, computedLayout.viewTransform.scale));
           const wraps = presentation.style.word_wrap !== false;
           text.setFixedSize(wraps ? bounds.width : 0, 0);
           text.setWordWrapWidth(wraps ? bounds.width : null, true);
           if (typeof text.setAlign !== "function") throw new TypeError("Phaser Text 不支持 text_align；已拒绝静默忽略");
           text.setAlign(presentation.style.text_align ?? "left");
-          positionText(text, bounds, presentation.origin, presentation.style.text_align ?? "left", wraps);
+          updateRenderedTextBounds(nodeId, text, bounds, presentation, computedNode);
         });
       } else if (presentation.kind === "container" && presentation.style) {
         const graphics = scene.add.graphics();
@@ -571,6 +636,16 @@ export async function createPageSketchRenderer(input = {}) {
       const nodeLayout = computedLayout?.nodes.get(layoutNodeId);
       if (!nodeLayout) throw new TypeError(`未知 layout_node_id：${layoutNodeId}`);
       return { ...nodeLayout.bounds };
+    },
+    /** 返回文字对象按实际 Phaser 测量值绘制出的逻辑视口矩形。 */
+    getRenderedBounds(layoutNodeId) {
+      const diagnostic = renderedBoundsByNode.get(layoutNodeId);
+      if (!diagnostic) throw new TypeError(`节点 ${layoutNodeId} 没有可用的文字渲染测量值`);
+      return { ...diagnostic.rendered_bounds };
+    },
+    /** 返回文字目标框与实测绘制框，显式 visible 溢出也可被调用方发现。 */
+    getLayoutDiagnostics() {
+      return Object.fromEntries([...renderedBoundsByNode].map(([nodeId, diagnostic]) => [nodeId, structuredClone(diagnostic)]));
     },
     /** 只有首个 Phaser postrender 到达且没有生命周期或布局错误才可确认健康。 */
     isHealthy: () => frameReady && !destroyed && errors.length === 0,

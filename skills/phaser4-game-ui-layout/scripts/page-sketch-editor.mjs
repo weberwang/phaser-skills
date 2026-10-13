@@ -54,6 +54,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
   const saveButton = document.getElementById("save-sketch");
   const resetButton = document.getElementById("reset-sketch");
   const confirmButton = document.getElementById("confirm-sketch");
+  const saveConfirmButton = document.getElementById("save-confirm-sketch");
   const status = document.getElementById("page-status");
   const errorsPanel = document.getElementById("resource-errors");
   let fileStore = null;
@@ -93,6 +94,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
     saveButton.disabled = !editor || operationInFlight;
     resetButton.disabled = !editor || operationInFlight || previewMode;
     confirmButton.disabled = !editor || operationInFlight || !draftSaved || !previewHealthy || Boolean(sources?.errors.length) || hasConfirmation;
+    saveConfirmButton.disabled = !editor || operationInFlight || !previewHealthy || Boolean(sources?.errors.length) || (hasConfirmation && draftSaved);
     openButton.disabled = operationInFlight;
   }
 
@@ -225,7 +227,8 @@ export async function initializePageSketchApplication({ document, projectRootUrl
       }
 
       const hasAcceptedConfirmation = sketch.confirmation?.status === "accepted";
-      draftSaved = hasAcceptedConfirmation;
+      // 打开的文件已经实际落盘；未修改的组合可直接由用户确认，不要求重复保存同一内容。
+      draftSaved = true;
       previewHealthy = preview.isHealthy() && sources.errors.length === 0;
       editor = mountEditor({
         host: surface,
@@ -237,6 +240,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
         nodes: sketch.nodes,
         layout: sketch.layout,
         getBounds: preview.getBounds,
+        getLayoutDiagnostics: preview.getLayoutDiagnostics,
         getViewportRect: preview.getViewportRect,
         // 设备框限制可见与可点击区域，完整 surface rect 保留用于坐标逆变换。
         getClipRect: () => deviceFrame.getBoundingClientRect(),
@@ -248,7 +252,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
           draftSaved = false;
           const savedConfirmation = fileStore.getDocument().confirmation;
           if (savedConfirmation) status.textContent = "草图已修改；保存后旧确认会失效。";
-          else status.textContent = "草图有未保存修改；请先保存，再点击确认草图。";
+          else status.textContent = "草图有未保存修改；可点击保存并确认，或先单独保存草稿。";
           updateButtons();
         },
         onPreviewHealthChange(healthy, message) {
@@ -260,7 +264,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
       resizeSurface();
       if (hasAcceptedConfirmation) status.textContent = "V4 草图已人工确认。";
       else if (sources.errors.length || preview.errors.length) status.textContent = "草图已载入，但存在阻断项；修复全部资源后才能确认。";
-      else status.textContent = "页面草图已载入；点击显示节点或右侧节点树选择，调整坐标后先保存草图再确认。";
+      else status.textContent = "草图已载入；组合无误可直接确认，调整后可点击保存并确认。";
       renderErrors([...sources.errors, ...preview.errors]);
       updateButtons();
     } catch (error) {
@@ -293,9 +297,10 @@ export async function initializePageSketchApplication({ document, projectRootUrl
 
   /** 将当前 V2 布局偏移写入完整 page-sketch 文件并清空旧确认。 */
   async function onSaveDraft() {
-    if (!editor || operationInFlight) return;
+    if (!editor || operationInFlight) return false;
     operationInFlight = true;
     const lockedEditor = editor;
+    let savedSuccessfully = false;
     updateButtons();
     try {
       // 写盘期间禁止布局继续变化，确保读回确认的是当前画布显示的同一快照。
@@ -303,16 +308,32 @@ export async function initializePageSketchApplication({ document, projectRootUrl
       const saved = await fileStore.saveDraft(lockedEditor.getLayout());
       if (saved.confirmation !== null) throw new Error("草图修改后 confirmation 必须已清除");
       draftSaved = true;
+      savedSuccessfully = true;
       status.textContent = "草图已保存并读回复核；点击确认草图后才可进入 V5。";
     } catch (error) {
       draftSaved = false;
       status.textContent = `保存草图失败：${error.message}`;
     } finally {
       try { lockedEditor.setInteractionEnabled(true); }
-      catch (error) { draftSaved = false; status.textContent = `保存后无法恢复编辑器：${error.message}`; }
+      catch (error) { draftSaved = false; savedSuccessfully = false; status.textContent = `保存后无法恢复编辑器：${error.message}`; }
       operationInFlight = false;
       updateButtons();
     }
+    return savedSuccessfully;
+  }
+
+  /** 用户一次明确操作完成保存和确认；写盘失败或渲染失效时保留失败状态，不继续签收。 */
+  async function onSaveAndConfirm() {
+    if (!editor || operationInFlight || !previewHealthy || sources?.errors.length || !preview.isHealthy()) return;
+    if (!draftSaved && !await onSaveDraft()) return;
+    // 保存是异步操作，Scene 可能在此期间失效；同步按钮与错误反馈，避免保留可点击的旧健康状态。
+    if (!preview.isHealthy()) {
+      previewHealthy = false;
+      status.textContent = "草图已保存，但正式预览已失效，不能确认。";
+      updateButtons();
+      return;
+    }
+    await onConfirmSketch();
   }
 
   /** 在全部输入路径可读且实际画面预览通过后写入人工 accepted 确认。 */
@@ -374,6 +395,7 @@ export async function initializePageSketchApplication({ document, projectRootUrl
   saveButton.addEventListener("click", () => { void onSaveDraft(); });
   resetButton.addEventListener("click", onResetSketch);
   confirmButton.addEventListener("click", () => { void onConfirmSketch(); });
+  saveConfirmButton.addEventListener("click", onSaveAndConfirm);
   window.addEventListener("resize", resizeSurface, { passive: true });
   window.addEventListener("pagehide", () => {
     resizeObserver?.disconnect();

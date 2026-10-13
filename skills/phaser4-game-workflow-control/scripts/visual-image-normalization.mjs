@@ -11,6 +11,7 @@ import { copyFile, mkdir, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
+import { isNineSliceStretch, validateNineSliceContract } from "../../phaser4-game-ui-layout/scripts/nine-slice-contract.mjs";
 import { decodePngRgba } from "../../phaser4-game-asset-integration/scripts/effect_image_raster.mjs";
 import { assertTransparencyPreviewPathsAvailable, inspectTransparencyPixels, writeTransparencyPreviews } from "../../phaser4-game-asset-integration/scripts/transparent-raster.mjs";
 import {
@@ -266,7 +267,12 @@ export async function normalizeImageToContract(options = {}) {
   const targetWidth = options.targetWidth ?? options.target_width;
   const targetHeight = options.targetHeight ?? options.target_height;
   const requireAlpha = options.requireAlpha ?? options.require_alpha ?? false;
+  const nineSlice = options.nineSlice ?? options.nine_slice;
+  const nineSliceContract = nineSlice === undefined ? null : validateNineSliceContract(nineSlice);
   validateTargetSize(targetWidth, targetHeight);
+  if (isNineSliceStretch(nineSliceContract) && (targetWidth !== nineSliceContract.source_size.width || targetHeight !== nineSliceContract.source_size.height)) {
+    throw new ImageNormalizationError("九宫格归一化目标必须是已冻结的小图 source_size，不能使用场景显示尺寸");
+  }
   const paths = resolveDistinctPaths(sourceFile, outputFile);
   const format = outputFormat(paths.outputAbsolute);
   const sourceMetadata = await readSourceMetadata(paths.sourceAbsolute);
@@ -278,6 +284,8 @@ export async function normalizeImageToContract(options = {}) {
   if (requireAlpha && !hasTransparentSourcePixels) throw new ImageNormalizationError("透明素材源图解码后没有 alpha<255 的像素；扩展名或 Alpha 通道声明不能替代真实透明像素");
   if (transparentRoute && format !== "png") throw new ImageNormalizationError("含透明像素的素材只能归一化为 PNG，JPEG 会丢失 Alpha");
   const sourceMatchesTargetRatio = sameImageAspectRatio(sourceMetadata.width, sourceMetadata.height, targetWidth, targetHeight);
+  // 普通图片的受控裁切会改变九宫格角边；比例不符时应重新生产，不能拿正确输出尺寸掩盖裁框。
+  if (isNineSliceStretch(nineSliceContract) && !sourceMatchesTargetRatio) throw new ImageNormalizationError("九宫格源图比例不符，必须重新生成；禁止裁切、补边或改变冻结切片结构");
   let aspectRatioCorrection;
   if (!sourceMatchesTargetRatio) {
     const hasCorrectionInput = options.aspectRatioCorrection !== undefined || options.aspect_ratio_correction !== undefined
@@ -383,7 +391,9 @@ export async function runImageNormalizationCli(args = process.argv.slice(2), out
     ? { attempts: allAttempts, focus: { x: Number(focusXValue), y: Number(focusYValue) } }
     : undefined;
   try {
-    const record = await normalizeImageToContract({ sourceFile, outputFile, targetWidth, targetHeight, requireAlpha, previewDirectory, aspect_ratio_correction: aspectRatioCorrection });
+    const nineSliceJson = readFlag(args, "--nine-slice-json");
+    const nineSlice = nineSliceJson === undefined ? undefined : JSON.parse(nineSliceJson);
+    const record = await normalizeImageToContract({ sourceFile, outputFile, targetWidth, targetHeight, requireAlpha, previewDirectory, aspect_ratio_correction: aspectRatioCorrection, nine_slice: nineSlice });
     output.log(JSON.stringify(record, null, 2));
     return 0;
   } catch (error) {

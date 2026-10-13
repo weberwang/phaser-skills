@@ -17,6 +17,28 @@ function writeArtifact(repo, file, value) {
   return { path: file, sha256: hashBytes(bytes) };
 }
 
+/** 创建通过 V5 持续游玩门的合成验收记录，供流程测试复用。 */
+function fixtureArtExperienceAcceptance(repo, workItemId, candidateId, sceneId) {
+  const recordingFile = 'docs/art-experience-normal-play.test-recording';
+  // 仅为自动化夹具提供可读普通文件；生产门不会读取、解码或判断录屏内容。
+  writeFileSync(resolve(repo, recordingFile), 'synthetic recording fixture\n');
+  return {
+    schemaVersion: 'phaser4-art-experience-acceptance/1.0',
+    workItemId,
+    candidateId,
+    sceneId,
+    status: 'passed',
+    confirmedAt: '2026-10-01T00:00:00.000Z',
+    userOriginalText: '自动化夹具中的人工验收示例',
+    viewingContext: '固定视口下的连续关卡游玩情境',
+    checks: Object.fromEntries(['themeFit', 'audienceFit', 'readability', 'comfort', 'craft'].map((dimension) => [dimension, { status: 'passed', reason: '夹具用例已覆盖此项' }])),
+    scenarios: [
+      { kind: 'normal-play', applicability: 'required', reason: '常态游玩始终适用', recordingFile, startSeconds: 0, endSeconds: 20, triggerCount: 20, peakConcurrent: 1, observation: '连续游玩片段可持续辨认核心对象，视觉表现稳定。' },
+      ...['repeated-feedback', 'event-peak', 'overlap-peak'].map((kind) => ({ kind, applicability: 'not-applicable', reason: '此夹具候选不包含该类玩法事件', recordingFile: null, startSeconds: null, endSeconds: null, triggerCount: null, peakConcurrent: null, observation: null })),
+    ],
+  };
+}
+
 /**
  * 在已有 V2 场景夹具上追加 V3 资源、V4 确认草图和 V5 运行回执。
  * 直接更新 work/pkg，正式包换写时也能复用同一草图引用，不绕过生产校验器。
@@ -58,7 +80,14 @@ export function bindConfirmedSketchFixture({ repo, work, pkg }) {
   };
   sketch.confirmation = { status: 'accepted', confirmed_at: '2026-10-01T00:00:00.000Z', content_sha256: hashBytes(canonicalPageSketchContent(sketch)) };
   const v4Ref = writeArtifact(repo, 'docs/page-sketch.json', sketch);
-  const v5Ref = writeArtifact(repo, 'docs/v5-runtime-candidate.json', { ...common, evidenceType: 'v5-runtime-integration-candidate', candidateId: 'V5-TEST', pageSketchSha256: v4Ref.sha256 });
+  const candidateId = 'V5-TEST';
+  const v5Ref = writeArtifact(repo, 'docs/v5-runtime-candidate.json', {
+    ...common,
+    evidenceType: 'v5-runtime-integration-candidate',
+    candidateId,
+    pageSketchSha256: v4Ref.sha256,
+    artExperienceAcceptance: fixtureArtExperienceAcceptance(repo, work.workItemId, candidateId, sceneId),
+  });
   work.visualStageEvidenceRefs = { V2: v2Ref, V3: v3Ref, V4: v4Ref, V5: v5Ref };
   // 基础工程工作项没有视觉草图依赖，不给基础包增加正式视觉字段。
   if (work.visualStage === 'V5') pkg.pageSketchFile = v4Ref.path;

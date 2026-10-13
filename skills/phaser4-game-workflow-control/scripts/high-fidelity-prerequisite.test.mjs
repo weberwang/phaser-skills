@@ -31,17 +31,34 @@ function writeEvidenceFile(fixture, changes = {}) {
 function writeGlobalBaselineSelectionEvidence(fixture, overrides = {}) {
   const producerWorkItemId = overrides.producerWorkItemId ?? 'WI-1';
   const baselineFiles = {
-    brief: join(fixture.repo, 'docs', 'global-baseline-brief.md'),
+    brief: join(fixture.repo, 'docs', 'global-baseline-brief.json'),
     candidates: [join(fixture.repo, 'docs', 'global-baseline-a.png'), join(fixture.repo, 'docs', 'global-baseline-b.png'), join(fixture.repo, 'docs', 'global-baseline-c.png')],
     generationRecords: [join(fixture.repo, 'docs', 'global-baseline-a-generation.json'), join(fixture.repo, 'docs', 'global-baseline-b-generation.json'), join(fixture.repo, 'docs', 'global-baseline-c-generation.json')],
     decision: join(fixture.repo, 'docs', 'global-baseline-human-decision.json'),
     document: join(fixture.repo, 'docs', 'visual-baseline.md'),
     selection: join(fixture.repo, 'docs', 'global-baseline-selection.json'),
   };
-  writeFileSync(baselineFiles.brief, '同一视觉 brief：移动端目标视口、全局风格和三候选比较条件。\n', 'utf8');
+  const briefContent = {
+    schemaVersion: 'phaser4-game-art-brief/1.0',
+    workItemId: producerWorkItemId,
+    briefId: 'GLOBAL-BRIEF-1',
+    theme: '舒缓的纸感花园解谜主题',
+    audience: '偏好轻松休闲解谜并主要使用触屏游玩的玩家',
+    coreLoop: '观察棋盘、选择相邻元素并完成局部目标',
+    experienceGoals: ['轻松专注', '反馈清楚', '长时间观看保持舒适'],
+    viewingContext: '移动端竖屏，单局中会反复查看棋盘并连续操作',
+    visualHierarchy: '棋盘与目标优先，其次是操作反馈，装饰保持安静',
+    stimulusBudget: {
+      baseline: { brightnessContrast: '背景与面板维持柔和对比，避免大片纯白高光', screenCoverage: '装饰局限在棋盘周边留白', duration: '常驻但不动画', triggerFrequency: '持续可见', maxConcurrent: 0, recovery: '静态基线无需恢复动画', blendPolicy: '不与交互反馈叠加发光' },
+      interaction: { brightnessContrast: '仅突出当前操作目标，保持文字和棋盘优先', screenCoverage: '限制在被操作元素附近', duration: '操作结束后及时淡出', triggerFrequency: '可随玩家连续操作触发', maxConcurrent: 1, recovery: '每次反馈后恢复常态层级', blendPolicy: '同一元素上的重复反馈合并' },
+      peak: { brightnessContrast: '奖励时可短暂强化对比，但不覆盖主要信息', screenCoverage: '集中在奖励来源附近', duration: '短暂出现并明确收尾', triggerFrequency: '仅关卡完成等低频事件', maxConcurrent: 1, recovery: '事件结束后回到常态视觉层级', blendPolicy: '避免与其他峰值动画同时播放' },
+      measurementMethod: '在目标移动端视口中人工观察常态游玩、连续操作和关卡完成片段，并记录遮挡、抢眼与恢复情况。',
+    },
+  };
+  writeFileSync(baselineFiles.brief, `${JSON.stringify(briefContent, null, 2)}\n`, 'utf8');
   baselineFiles.candidates.forEach((path) => writeFileSync(path, MINIMAL_PNG));
   writeFileSync(baselineFiles.document, '# Frozen global visual baseline\n', 'utf8');
-  const brief = { briefId: 'GLOBAL-BRIEF-1', path: 'docs/global-baseline-brief.md', sha256: hashFile(baselineFiles.brief) };
+  const brief = { briefId: 'GLOBAL-BRIEF-1', path: 'docs/global-baseline-brief.json', sha256: hashFile(baselineFiles.brief) };
   const generationBatchId = 'GLOBAL-BATCH-1';
   const conditionsFingerprint = `sha256:${'c'.repeat(64)}`;
   const candidates = baselineFiles.candidates.map((path, index) => {
@@ -57,16 +74,25 @@ function writeGlobalBaselineSelectionEvidence(fixture, overrides = {}) {
   });
   const selectedCandidateId = overrides.selectedCandidateId ?? candidates[0].candidateId;
   const presentedCandidateIds = candidates.map((candidate) => candidate.candidateId);
+  const candidateAssessments = candidates.map((candidate, index) => {
+    // 这些仅是测试夹具中的模拟人工记录，用于验证机器只校验结构和身份绑定。
+    const status = index === 0 ? 'passed' : index === 1 ? 'failed' : 'unverified';
+    const checks = Object.fromEntries(['themeFit', 'audienceFit', 'readability', 'comfort', 'craft'].map((dimension) => [dimension, {
+      status: dimension === 'comfort' && index === 1 ? 'failed' : status,
+      reason: `测试夹具：${candidate.candidateId} 的 ${dimension} 模拟评估理由`,
+    }]));
+    return { candidateId: candidate.candidateId, checks };
+  });
   const humanSelection = {
     reviewMode: overrides.reviewMode ?? 'SINGLE_HUMAN', status: overrides.status ?? 'CONFIRMED', selectedCandidateId,
-    presentedCandidateIds, decisionFile: 'docs/global-baseline-human-decision.json', decisionSha256: '',
+    presentedCandidateIds, candidateAssessments, decisionFile: 'docs/global-baseline-human-decision.json', decisionSha256: '',
     confirmedAt: '2026-08-29T00:01:00.000Z', userOriginalText: '我选择候选 A 作为全局视觉基线。',
   };
   const decision = {
-    schemaVersion: 'phaser4-global-visual-baseline-selection-decision/1.0', selectionId: 'GLOBAL-SELECTION-1', workItemId: producerWorkItemId,
+    schemaVersion: 'phaser4-global-visual-baseline-selection-decision/1.1', selectionId: 'GLOBAL-SELECTION-1', workItemId: producerWorkItemId,
     briefId: brief.briefId, briefSha256: brief.sha256, generationBatchId, conditionsFingerprint, presentedCandidateIds,
     reviewMode: humanSelection.reviewMode, status: humanSelection.status, selectedCandidateId: humanSelection.selectedCandidateId,
-    confirmedAt: humanSelection.confirmedAt, userOriginalText: humanSelection.userOriginalText,
+    candidateAssessments, confirmedAt: humanSelection.confirmedAt, userOriginalText: humanSelection.userOriginalText,
   };
   writeFileSync(baselineFiles.decision, `${JSON.stringify(decision, null, 2)}\n`, 'utf8');
   humanSelection.decisionSha256 = hashFile(baselineFiles.decision);
@@ -78,7 +104,7 @@ function writeGlobalBaselineSelectionEvidence(fixture, overrides = {}) {
     primaryAnchor: selected.image, selectedCandidateId, selectedCandidate: selected.image,
   };
   const selection = {
-    schemaVersion: 'phaser4-global-visual-baseline-selection/1.0', workItemId: producerWorkItemId, selectionId: 'GLOBAL-SELECTION-1',
+    schemaVersion: 'phaser4-global-visual-baseline-selection/1.1', workItemId: producerWorkItemId, selectionId: 'GLOBAL-SELECTION-1',
     brief, generationBatchId, conditionsFingerprint, candidates, humanSelection, baseline, frozenAt: '2026-08-29T00:02:00.000Z',
   };
   writeFileSync(baselineFiles.selection, `${JSON.stringify(selection, null, 2)}\n`, 'utf8');
@@ -107,6 +133,13 @@ function makeVisualFoundationPackage(overrides = {}) {
 function refreshGlobalBaselineSelectionReference(fixture, selection) {
   writeFileSync(join(fixture.repo, 'docs', 'global-baseline-selection.json'), `${JSON.stringify(selection, null, 2)}\n`, 'utf8');
   fixture.work.globalVisualBaselineSelectionRef.sha256 = hashFile(join(fixture.repo, 'docs', 'global-baseline-selection.json'));
+}
+
+/** 同步写入测试中的决定文件评估副本，避免把根与决定的不一致误当作合法更新。 */
+function writeGlobalBaselineDecisionAssessments(files, assessments) {
+  const decision = JSON.parse(readFileSync(files.decision, 'utf8'));
+  decision.candidateAssessments = assessments;
+  writeFileSync(files.decision, `${JSON.stringify(decision, null, 2)}\n`, 'utf8');
 }
 
 /** 创建场景或独立弹窗 Work Item 及其完整 V2 结果夹具。 */
@@ -341,6 +374,131 @@ test('全局基线所选候选不在三张候选图中时拒绝', () => {
   refreshGlobalBaselineSelectionReference(fixture, files.selection);
   assert.throws(() => assertFormalImplementationAfterV2(fixture.work, makeVisualFoundationPackage({ executionUnits: [{ unitType: 'SHARED' }] }), fixture.repo, fixture.io), /selectedCandidateId|三张候选图|人工确认/);
   rmSync(fixture.repo, { recursive: true, force: true });
+});
+
+test('缺字段、身份不符或非 JSON 的游戏美术 brief 阻断冻结', () => {
+  const cases = [
+    ['missing field', (path) => {
+      const brief = JSON.parse(readFileSync(path, 'utf8'));
+      delete brief.viewingContext;
+      writeFileSync(path, `${JSON.stringify(brief, null, 2)}\n`, 'utf8');
+    }, /brief\.content 字段不严格/],
+    ['wrong identity', (path) => {
+      const brief = JSON.parse(readFileSync(path, 'utf8'));
+      brief.workItemId = 'WI-OTHER';
+      writeFileSync(path, `${JSON.stringify(brief, null, 2)}\n`, 'utf8');
+    }, /brief\.content\.workItemId/],
+    ['wrong brief ID', (path) => {
+      const brief = JSON.parse(readFileSync(path, 'utf8'));
+      brief.briefId = 'GLOBAL-BRIEF-OTHER';
+      writeFileSync(path, `${JSON.stringify(brief, null, 2)}\n`, 'utf8');
+    }, /brief\.content\.briefId/],
+    ['non JSON', (path) => writeFileSync(path, '这是普通文本 brief\n', 'utf8'), /不是有效 JSON/],
+  ];
+  for (const [, corruptBrief, expectedError] of cases) {
+    const fixture = makeFixture();
+    const files = writeGlobalBaselineSelectionEvidence(fixture);
+    corruptBrief(files.brief);
+    assert.throws(() => assertGlobalVisualBaselineSelection(fixture.work, fixture.repo, fixture.io), expectedError);
+    rmSync(fixture.repo, { recursive: true, force: true });
+  }
+});
+
+test('刺激预算缺层或 maxConcurrent 不是非负整数时拒绝冻结', () => {
+  const cases = [
+    ['missing layer', (brief) => { delete brief.stimulusBudget.interaction; }, /stimulusBudget 字段不严格|stimulusBudget\.interaction 必须为对象/],
+    ['negative concurrency', (brief) => { brief.stimulusBudget.baseline.maxConcurrent = -1; }, /maxConcurrent 必须为非负整数/],
+    ['fractional concurrency', (brief) => { brief.stimulusBudget.peak.maxConcurrent = 0.5; }, /maxConcurrent 必须为非负整数/],
+  ];
+  for (const [, corruptBrief, expectedError] of cases) {
+    const fixture = makeFixture();
+    const files = writeGlobalBaselineSelectionEvidence(fixture);
+    const brief = JSON.parse(readFileSync(files.brief, 'utf8'));
+    corruptBrief(brief);
+    writeFileSync(files.brief, `${JSON.stringify(brief, null, 2)}\n`, 'utf8');
+    assert.throws(() => assertGlobalVisualBaselineSelection(fixture.work, fixture.repo, fixture.io), expectedError);
+    rmSync(fixture.repo, { recursive: true, force: true });
+  }
+});
+
+test('候选评估维度、ID、状态和理由不完整时拒绝冻结', () => {
+  const cases = [
+    ['missing dimension', (assessments) => { delete assessments[0].checks.comfort; }, /checks 字段不严格/],
+    ['duplicate candidate ID', (assessments) => { assessments[2].candidateId = assessments[1].candidateId; }, /candidateId 不得重复|缺少候选/],
+    ['unknown status', (assessments) => { assessments[1].checks.themeFit.status = 'excellent'; }, /status 必须为 passed、failed 或 unverified/],
+    ['empty reason', (assessments) => { assessments[1].checks.themeFit.reason = '  '; }, /reason 必须为非空人工理由/],
+  ];
+  for (const [, corruptAssessments, expectedError] of cases) {
+    const fixture = makeFixture();
+    const files = writeGlobalBaselineSelectionEvidence(fixture);
+    const assessments = files.selection.humanSelection.candidateAssessments;
+    corruptAssessments(assessments);
+    writeGlobalBaselineDecisionAssessments(files, assessments);
+    refreshGlobalBaselineSelectionReference(fixture, files.selection);
+    assert.throws(() => assertGlobalVisualBaselineSelection(fixture.work, fixture.repo, fixture.io), expectedError);
+    rmSync(fixture.repo, { recursive: true, force: true });
+  }
+});
+
+test('所选候选任一项失败、未验证或三张均无合格项时拒绝冻结', () => {
+  const fixtureCases = [
+    ['selected failed', (assessments) => { assessments[0].checks.comfort.status = 'failed'; }],
+    ['selected unverified', (assessments) => { assessments[0].checks.craft.status = 'unverified'; }],
+    ['all candidates unqualified', (assessments) => {
+      for (const assessment of assessments) for (const check of Object.values(assessment.checks)) check.status = 'unverified';
+    }],
+  ];
+  for (const [, corruptAssessments] of fixtureCases) {
+    const fixture = makeFixture();
+    const files = writeGlobalBaselineSelectionEvidence(fixture);
+    const assessments = files.selection.humanSelection.candidateAssessments;
+    corruptAssessments(assessments);
+    writeGlobalBaselineDecisionAssessments(files, assessments);
+    refreshGlobalBaselineSelectionReference(fixture, files.selection);
+    assert.throws(() => assertGlobalVisualBaselineSelection(fixture.work, fixture.repo, fixture.io), /全部维度必须为 passed|不能冻结/);
+    rmSync(fixture.repo, { recursive: true, force: true });
+  }
+});
+
+test('非所选候选不通过不阻断，评估键顺序和候选数组顺序不影响决定绑定', () => {
+  const fixture = makeFixture();
+  const files = writeGlobalBaselineSelectionEvidence(fixture);
+  const decision = JSON.parse(readFileSync(files.decision, 'utf8'));
+  decision.candidateAssessments.reverse();
+  decision.candidateAssessments = decision.candidateAssessments.map(({ candidateId, checks }) => ({
+    checks: Object.fromEntries(Object.entries(checks).reverse().map(([dimension, check]) => [
+      dimension,
+      Object.fromEntries(Object.entries(check).reverse()),
+    ])),
+    candidateId,
+  }));
+  writeFileSync(files.decision, `${JSON.stringify(decision, null, 2)}\n`, 'utf8');
+  assert.doesNotThrow(() => assertGlobalVisualBaselineSelection(fixture.work, fixture.repo, fixture.io));
+  rmSync(fixture.repo, { recursive: true, force: true });
+});
+
+test('决定文件评估与根选择不一致或使用旧 schema 时拒绝冻结', () => {
+  const mismatchFixture = makeFixture();
+  const mismatchFiles = writeGlobalBaselineSelectionEvidence(mismatchFixture);
+  mismatchFiles.selection.humanSelection.candidateAssessments[0].checks.themeFit.reason = '测试夹具：根决定内容已漂移';
+  refreshGlobalBaselineSelectionReference(mismatchFixture, mismatchFiles.selection);
+  assert.throws(() => assertGlobalVisualBaselineSelection(mismatchFixture.work, mismatchFixture.repo, mismatchFixture.io), /评估语义一致/);
+  rmSync(mismatchFixture.repo, { recursive: true, force: true });
+
+  const oldRootFixture = makeFixture();
+  const oldRootFiles = writeGlobalBaselineSelectionEvidence(oldRootFixture);
+  oldRootFiles.selection.schemaVersion = 'phaser4-global-visual-baseline-selection/1.0';
+  refreshGlobalBaselineSelectionReference(oldRootFixture, oldRootFiles.selection);
+  assert.throws(() => assertGlobalVisualBaselineSelection(oldRootFixture.work, oldRootFixture.repo, oldRootFixture.io), /schemaVersion 必须为 phaser4-global-visual-baseline-selection\/1\.1/);
+  rmSync(oldRootFixture.repo, { recursive: true, force: true });
+
+  const oldDecisionFixture = makeFixture();
+  const oldDecisionFiles = writeGlobalBaselineSelectionEvidence(oldDecisionFixture);
+  const oldDecision = JSON.parse(readFileSync(oldDecisionFiles.decision, 'utf8'));
+  oldDecision.schemaVersion = 'phaser4-global-visual-baseline-selection-decision/1.0';
+  writeFileSync(oldDecisionFiles.decision, `${JSON.stringify(oldDecision, null, 2)}\n`, 'utf8');
+  assert.throws(() => assertGlobalVisualBaselineSelection(oldDecisionFixture.work, oldDecisionFixture.repo, oldDecisionFixture.io), /schemaVersion 未绑定唯一人工确认/);
+  rmSync(oldDecisionFixture.repo, { recursive: true, force: true });
 });
 
 test('全局基线摘要陈旧不阻断仍可读取的候选、决定和冻结正文', () => {

@@ -1,5 +1,6 @@
 import { validateVisualLayoutDocument } from "./visual-layout-editor.mjs";
 import { validatePageSketchPresentation } from "./page-sketch-layout.mjs";
+import { equalNineSliceContracts, isNineSliceStretch, isNineSliceStretchTargetAllowed, validateNineSliceContract, validateNineSliceTargetBounds } from "./nine-slice-contract.mjs";
 
 export const PAGE_SKETCH_SCHEMA = "phaser-page-sketch/1.0";
 export const PAGE_SKETCH_RESOURCE_MAP_SCHEMA = "phaser-page-sketch-resources/1.0";
@@ -81,17 +82,28 @@ export async function hashPageSketchContent(document) {
 }
 
 /** 校验节点展示配方；图像只引用正式资源 ID，运行时节点绑定项目内程序路径。 */
-function validatePresentation(layoutNodeId, presentation, assetsById) {
+function validatePresentation(layoutNodeId, presentation, assetsById, node) {
   if (!isRecord(presentation) || !PRESENTATION_KINDS.has(presentation.kind)) {
     throw new TypeError(`node_presentations.${layoutNodeId}.kind 必须为 image/text/container/runtime-program`);
   }
   if (presentation.kind === "image") {
     if (!Array.isArray(presentation.asset_ids) || presentation.asset_ids.length === 0) throw new TypeError(`图像节点 ${layoutNodeId} 必须引用正式 asset_ids`);
-    if (!["fill", "contain", "cover", "none", "scale-down"].includes(presentation.object_fit)) throw new TypeError(`图像节点 ${layoutNodeId} 必须声明正式 object_fit`);
+    if (!["fill", "contain", "cover", "none", "scale-down", "nine-slice"].includes(presentation.object_fit)) throw new TypeError(`图像节点 ${layoutNodeId} 必须声明正式 object_fit`);
     for (const assetId of presentation.asset_ids) {
       requireText(assetId, `node_presentations.${layoutNodeId}.asset_ids[]`);
       if (!assetsById.get(assetId)?.some((asset) => asset.layout_node_id === layoutNodeId)) throw new TypeError(`图像节点 ${layoutNodeId} 引用了未绑定的正式资源：${assetId}`);
     }
+  }
+  const frozenNineSlice = node.nine_slice === undefined ? undefined : validateNineSliceContract(node.nine_slice, `nodes.${layoutNodeId}.nine_slice`);
+  if (isNineSliceStretch(frozenNineSlice)) {
+    if (presentation.kind !== "image" || presentation.object_fit !== "nine-slice"
+      || !equalNineSliceContracts(presentation.nine_slice, frozenNineSlice)) {
+      throw new TypeError(`节点 ${layoutNodeId} 的 nine-slice presentation 必须与 V2 冻结 nine_slice 完全一致`);
+    }
+  } else if (presentation.object_fit === "nine-slice" || isNineSliceStretch(presentation.nine_slice)) {
+    throw new TypeError(`节点 ${layoutNodeId} 不能在 V4 presentation 临时增加未由 V2 冻结的九宫格`);
+  } else if (presentation.nine_slice !== undefined && !equalNineSliceContracts(presentation.nine_slice, frozenNineSlice)) {
+    throw new TypeError(`节点 ${layoutNodeId} presentation.nine_slice 与 V2 冻结决策不一致`);
   }
   if (presentation.kind === "text") {
     if (typeof presentation.text !== "string") throw new TypeError(`文本节点 ${layoutNodeId} 必须提供正式 text 字符串`);
@@ -126,6 +138,18 @@ export function validatePageSketchDocument(document, { expectedIdentity } = {}) 
   for (const [index, node] of document.nodes.entries()) {
     if (!isRecord(node) || typeof node.layout_node_id !== "string" || node.layout_node_id.trim() === "") throw new TypeError(`nodes[${index}] 缺少 layout_node_id`);
     if (nodeById.has(node.layout_node_id)) throw new TypeError(`nodes 存在重复节点 ${node.layout_node_id}`);
+    if (node.nine_slice !== undefined) {
+      const nineSlice = validateNineSliceTargetBounds(node.nine_slice, node.target_bounds, `nodes[${index}].target_bounds`);
+      if (isNineSliceStretch(nineSlice) && !isNineSliceStretchTargetAllowed({
+        element_type: node.element_type,
+        is_container: node.is_container === true || node.empty_container === true,
+        role: node.layout_role ?? node.role,
+        region_layer: node.region_layer ?? node.layer,
+        visual_route_element_type: node.visual_route_element_type,
+      })) {
+        throw new TypeError(`节点 ${node.layout_node_id} 的九宫格 stretch 不能用于背景或结构容器，只能用于叶子图片 component`);
+      }
+    }
     nodeById.set(node.layout_node_id, node);
   }
   const layout = validateVisualLayoutDocument(document.layout, document.nodes);
@@ -161,7 +185,7 @@ export function validatePageSketchDocument(document, { expectedIdentity } = {}) 
     const presentationAssets = presentation.kind === "image" && Array.isArray(presentation.asset_ids) ? [...presentation.asset_ids].sort() : [];
     if (mappedAssets.length > 0 && presentation.kind !== "image") throw new TypeError(`节点 ${layoutNodeId} 的 V3 图片资源不能由 ${presentation.kind} presentation 替代`);
     if (mappedAssets.join("\u0000") !== presentationAssets.join("\u0000")) throw new TypeError(`节点 ${layoutNodeId} 的 presentation 必须展示全部且仅展示映射的 V3 正式资源`);
-    validatePresentation(layoutNodeId, presentation, assetsById);
+    validatePresentation(layoutNodeId, presentation, assetsById, nodeById.get(layoutNodeId));
   }
   for (const nodeId of nodeById.keys()) {
     if (!Object.hasOwn(document.node_presentations, nodeId)) throw new TypeError(`节点 ${nodeId} 缺少 presentation，不能在草图页准确预览`);

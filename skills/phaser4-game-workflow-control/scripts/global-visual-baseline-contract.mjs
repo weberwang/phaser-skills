@@ -1,12 +1,17 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
+import {
+  areGlobalVisualCandidateAssessmentsEquivalent,
+  validateGameArtBrief,
+  validateGlobalVisualCandidateAssessments,
+} from './global-visual-art-quality-contract.mjs';
 
 /** 全局视觉基线选择证据的严格版本；该证据在冻结后只允许通过新版本替换。 */
-export const GLOBAL_VISUAL_BASELINE_SELECTION_SCHEMA = 'phaser4-global-visual-baseline-selection/1.0';
+export const GLOBAL_VISUAL_BASELINE_SELECTION_SCHEMA = 'phaser4-global-visual-baseline-selection/1.1';
 /** 候选生成记录的严格版本，记录冻结前的同条件生成事实。 */
 export const GLOBAL_VISUAL_BASELINE_CANDIDATE_SCHEMA = 'phaser4-global-visual-baseline-candidate-generation/1.0';
 /** 人工选择记录的严格版本，禁止 AUTO 或 pending 记录进入冻结证据。 */
-export const GLOBAL_VISUAL_BASELINE_DECISION_SCHEMA = 'phaser4-global-visual-baseline-selection-decision/1.0';
+export const GLOBAL_VISUAL_BASELINE_DECISION_SCHEMA = 'phaser4-global-visual-baseline-selection-decision/1.1';
 /** 全局静态基线唯一允许的冻结状态。 */
 export const GLOBAL_VISUAL_BASELINE_FROZEN_STATE = 'global-static-baseline-frozen';
 /** 冻结正文的固定仓库路径，用于复核人工选择后的基线来源。 */
@@ -41,12 +46,12 @@ const GENERATION_RECORD_FIELDS = Object.freeze([
 ]);
 const HUMAN_SELECTION_FIELDS = Object.freeze([
   'reviewMode', 'status', 'selectedCandidateId', 'presentedCandidateIds',
-  'decisionFile', 'confirmedAt', 'userOriginalText',
+  'candidateAssessments', 'decisionFile', 'confirmedAt', 'userOriginalText',
 ]);
 const DECISION_FIELDS = Object.freeze([
   'schemaVersion', 'selectionId', 'workItemId', 'briefId',
   'generationBatchId', 'presentedCandidateIds',
-  'reviewMode', 'status', 'selectedCandidateId', 'confirmedAt', 'userOriginalText',
+  'reviewMode', 'status', 'selectedCandidateId', 'candidateAssessments', 'confirmedAt', 'userOriginalText',
 ]);
 const BASELINE_FIELDS = Object.freeze([
   'id', 'version', 'status', 'document',
@@ -163,6 +168,7 @@ export function validateGlobalVisualBaselineSelection(value, options = {}) {
   if (briefValid) {
     if (!isNonEmptyString(brief.briefId)) errors.push(`${label}.brief.briefId 必须为非空字符串`);
     if (!isRepositoryRelativePath(brief.path)) errors.push(`${label}.brief.path 必须为仓库内相对路径`);
+    if (isNonEmptyString(brief.path) && !/\.json$/i.test(brief.path)) errors.push(`${label}.brief.path 必须指向游戏美术 brief JSON 文件`);
   }
 
   const candidates = value.candidates;
@@ -199,6 +205,13 @@ export function validateGlobalVisualBaselineSelection(value, options = {}) {
     if (!isDateTime(human.confirmedAt)) errors.push(`${label}.humanSelection.confirmedAt 必须为有效确认时间`);
     if (!isNonEmptyString(human.userOriginalText)) errors.push(`${label}.humanSelection.userOriginalText 必须保留人工原文`);
     if (candidateIds.length && !candidateIds.includes(human.selectedCandidateId)) errors.push(`${label}.humanSelection.selectedCandidateId 必须属于三张候选图`);
+    // 机器只核对人工传入的五维结论和候选绑定，不读取或推断图像审美质量。
+    errors.push(...validateGlobalVisualCandidateAssessments(
+      human.candidateAssessments,
+      candidateIds,
+      human.selectedCandidateId,
+      `${label}.humanSelection.candidateAssessments`,
+    ));
     if (isDateTime(human.confirmedAt) && isDateTime(value.frozenAt) && Date.parse(human.confirmedAt) > Date.parse(value.frozenAt)) errors.push(`${label}.frozenAt 不得早于人工确认时间`);
   }
 
@@ -361,6 +374,17 @@ function validateHumanDecisionFile(root, repo, io, errors) {
     userOriginalText: human?.userOriginalText,
   };
   for (const [field, value] of Object.entries(expected)) if (JSON.stringify(record[field]) !== JSON.stringify(value)) errors.push(`全局视觉基线选择证据.humanSelection.decisionFile.content.${field} 未绑定唯一人工确认`);
+  const candidateIds = Array.isArray(root.candidates) ? root.candidates.map((candidate) => candidate?.candidateId) : [];
+  // 决定文件重复记录评估结果，语义比较按 candidateId 完成，允许 JSON 键序与评估数组次序变化。
+  errors.push(...validateGlobalVisualCandidateAssessments(
+    record.candidateAssessments,
+    candidateIds,
+    record.selectedCandidateId,
+    '全局视觉基线选择证据.humanSelection.decisionFile.content.candidateAssessments',
+  ));
+  if (!areGlobalVisualCandidateAssessmentsEquivalent(record.candidateAssessments, human?.candidateAssessments)) {
+    errors.push('全局视觉基线选择证据.humanSelection.decisionFile.content.candidateAssessments 必须与根证据人工评估语义一致');
+  }
 }
 
 /** 复核 brief、三张候选图、人工决定与冻结正文的来源内容。 */
@@ -372,7 +396,16 @@ function validateGlobalVisualBaselineSelectionFiles(root, options) {
     return errors;
   }
   const io = resolveIo(options);
-  validateSourceFile(root.brief, repo, io, '全局视觉基线选择证据.brief', errors);
+  // brief 是冻结前的项目定义来源，必须读取并校验真实 JSON 内容和生产者身份。
+  const briefTarget = validateSourceFile(root.brief, repo, io, '全局视觉基线选择证据.brief', errors);
+  if (briefTarget) {
+    const brief = readJsonFile(briefTarget, io, '全局视觉基线选择证据.brief', errors);
+    errors.push(...validateGameArtBrief(brief, {
+      workItemId: root.workItemId,
+      briefId: root.brief?.briefId,
+      label: '全局视觉基线选择证据.brief.content',
+    }));
+  }
   if (Array.isArray(root.candidates)) root.candidates.forEach((candidate, index) => validateCandidateGenerationRecord(candidate, root, index, repo, io, errors));
   validateHumanDecisionFile(root, repo, io, errors);
   const baseline = root.baseline;

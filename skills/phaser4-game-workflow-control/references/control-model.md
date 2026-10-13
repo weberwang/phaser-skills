@@ -88,6 +88,8 @@ Work Item 保存用户原始请求、目标、当前范围、实施计划、路�
 
 视觉阶段是唯一的机器枚举 `V0`、`V1`、`V2`、`V3`、`V4`、`V5`，且必须同时声明有语义的 `visualStageState`。V0/V1 必须先建立全局基线 brief、生成恰好三张同条件候选效果图、同屏交给人工并确认其中一张；`globalVisualBaselineSelectionRef` 通过后才可写入 `global-static-baseline-frozen`。该引用通过不可变 `path` 跨 Work Item 复用，根证据顶层 `workItemId` 始终是生产者身份，不是当前消费者；该状态只冻结颜色、字体、栅格等静态规则；它不等于 `v2-production-planning-complete`，三候选人工选择也不能替代逐场景 V2 拆解图确认。V2 方案冻结必须由拆解图、技术 JSON、coverage、生产计划和拆解确认证据派生。
 
+全局 brief 使用结构化项目美术 JSON，明确主题、受众、核心循环、体验目标、观看情境、视觉层级与三层刺激预算。选择根/决定合同为 1.1，三候选各记录五项实际人工质量结果，所选候选全部通过才可冻结；三张均失败时保持待定并返工，不以“相对最好”放行。字段与文件门见[Schema](schemas.md#视觉阶段-schema)。场景目标、资源组合和持续游玩沿用[游戏美术体验与质量契约](../../phaser4-game-asset-integration/references/art-quality-contract.md)与现有确认节点；V5 运行候选内的 `artExperienceAcceptance` 缺失或非通过时不得完成，机器事实出口不能替代用户视觉验收。
+
 ```text
 建立全局视觉基线 brief
   → 生成三张同条件候选效果图并同屏交给人工

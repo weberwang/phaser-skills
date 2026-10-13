@@ -2,6 +2,10 @@
 
 本参考定义 Phaser 运行时边界。先审计现有 Scale、Camera 和 Scene 结构，再把填满 CSS 视口的实现写入合同。
 
+V2→V5 的来源复核和校准口径见[布局校准](layout-calibration.md)。图片九宫格必须消费 V2/V3 同一切片合同，以 `object_fit="nine-slice"` 使用原生 NineSlice；共享 GameConfig 在含九宫格时明确选择 WebGL，内部重排只用 `setSize`。源图小尺寸和场景显示框分别校验，具体规则见[九宫格 UI](../../phaser4-game-asset-integration/references/nine-slice-ui.md)。
+
+默认文字以 Phaser 实际 Text 宽高检查是否超出布局框，换行不能悄悄扩大高度、挤占留白；显式 `overflow="visible"` 可允许溢出，但 `getLayoutDiagnostics()` 保留 `fits=false` 及实测框，V4 属性区提示人工检查。`getBounds()` 保持冻结草图逻辑框语义，文字 `getRenderedBounds()` 与其使用相同源逻辑坐标，设备/CSS/设计变换另行换算。这些测量不是字形墨迹或图片不透明轮廓，不能由参数通过推导视觉通过。
+
 ## 统一高分屏边界
 
 适配器必须消费布局合同的 `logicalViewportSpace`、`designResolutionPolicy`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr` 和 `scaleMode`。CSS client rect 是唯一的运行视口输入；Canvas backing 由 `ceil(CSS 宽高 × effectiveDPR)` 得到，物理 backing 像素不可直接参与 UI 布局或输入命中。Canvas 必须铺满 CSS 视口；使用 `RESIZE` 或具备同等行为的 `custom`，并在 `cameraViewportPolicy` 与 `inputCoordinatePolicy` 中证明坐标关系。

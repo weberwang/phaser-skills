@@ -3,6 +3,12 @@ import assert from "node:assert/strict";
 import { assertPageSketchBackgroundLayout, canonicalPageSketchContent, hashPageSketchContent, validatePageSketchDocument, validateProjectRelativePath } from "./page-sketch-contract.mjs";
 
 const SHA = `sha256:${"a".repeat(64)}`;
+const PANEL_NINE_SLICE = {
+  mode: "stretch",
+  reason: "面板角边保持逻辑尺寸，中心底色按 bounds 扩展",
+  source_size: { width: 96, height: 64 },
+  borders: { left: 12, right: 12, top: 10, bottom: 10 },
+};
 
 /** 建立含共享资源多 placement 的 V4 页面草图合同样例。 */
 function createSketch() {
@@ -69,6 +75,56 @@ test("V2/V3图片节点不能被文本容器展示声明覆盖", () => {
   const sketch = createSketch();
   sketch.node_presentations["image-a"] = { kind: "text", text: "伪占位", style: { font_family: "sans-serif", font_size_px: 12, color: "#fff" } };
   assert.throws(() => validatePageSketchDocument(sketch), /图片资源不能由 text presentation 替代/);
+});
+
+/** V2 九宫格正反选择必须被 V4 presentation 原样保留，不能临场新增或改边。 */
+test("页面草图只接受与 V2 冻结决策完全一致的九宫格 presentation", () => {
+  const sketch = createSketch();
+  const node = sketch.nodes.find((item) => item.layout_node_id === "image-a");
+  node.element_type = "component";
+  node.layout_role = "background-frame";
+  node.region_layer = "hud";
+  node.ui_layout = { safe_area_policy: "FULL_BLEED" };
+  node.target_bounds = { x: 10, y: 10, width: 40, height: 30 };
+  node.nine_slice = structuredClone(PANEL_NINE_SLICE);
+  sketch.node_presentations["image-a"] = {
+    ...sketch.node_presentations["image-a"], object_fit: "nine-slice", nine_slice: structuredClone(PANEL_NINE_SLICE),
+  };
+  assert.deepEqual(validatePageSketchDocument(sketch).nodes.find((item) => item.layout_node_id === "image-a").nine_slice, PANEL_NINE_SLICE);
+
+  const drift = structuredClone(sketch);
+  drift.node_presentations["image-a"].nine_slice.borders.left += 1;
+  assert.throws(() => validatePageSketchDocument(drift), /V2 冻结 nine_slice 完全一致/);
+
+  const temporary = structuredClone(sketch);
+  delete temporary.nodes.find((item) => item.layout_node_id === "image-a").nine_slice;
+  assert.throws(() => validatePageSketchDocument(temporary), /临时增加未由 V2 冻结的九宫格/);
+
+  const negative = structuredClone(sketch);
+  const notApplicable = { mode: "not-applicable", reason: "图标尺寸固定，不需要拉伸" };
+  negative.nodes.find((item) => item.layout_node_id === "image-b").nine_slice = notApplicable;
+  negative.node_presentations["image-b"].nine_slice = notApplicable;
+  assert.deepEqual(validatePageSketchDocument(negative).nodes.find((item) => item.layout_node_id === "image-b").nine_slice, notApplicable);
+
+  const background = structuredClone(sketch);
+  const backgroundNode = background.nodes.find((item) => item.layout_node_id === "image-a");
+  backgroundNode.layer = "background";
+  backgroundNode.region_layer = "background";
+  backgroundNode.visual_route_element_type = "panel";
+  backgroundNode.parent_layout_node_id = "viewport";
+  assert.throws(() => validatePageSketchDocument(background), /九宫格 stretch/);
+
+  const routeOverride = structuredClone(sketch);
+  const routeNode = routeOverride.nodes.find((item) => item.layout_node_id === "image-a");
+  routeNode.layout_role = "background";
+  routeNode.visual_route_element_type = "panel";
+  routeNode.parent_layout_node_id = "viewport";
+  assert.deepEqual(validatePageSketchDocument(routeOverride).nodes.find((item) => item.layout_node_id === "image-a").nine_slice, PANEL_NINE_SLICE);
+
+  const container = structuredClone(sketch);
+  const containerNode = container.nodes.find((item) => item.layout_node_id === "image-a");
+  containerNode.is_container = true;
+  assert.throws(() => validatePageSketchDocument(container), /九宫格 stretch/);
 });
 
 test("canonical内容排除confirmation且递归稳定排序", async () => {

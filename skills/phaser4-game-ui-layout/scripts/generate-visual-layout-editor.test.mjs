@@ -10,7 +10,7 @@ test("在游戏项目新目录生成完整编辑器模板且不覆盖已有目�
   const root = await mkdtemp(join(tmpdir(), "visual-layout-template-"));
   try {
     const files = await generateVisualLayoutEditor(root, "editor");
-    assert.equal(files.length, 13);
+    assert.equal(files.length, 19);
     // 加载实际生成模块，验证扁平复制后的依赖能解析且仍使用统一缩放真源。
     const generated = await import(pathToFileURL(join(root, "editor", "page-sketch-editor.mjs")).href);
     const geometry = generated.calculateDevicePreviewGeometry({ width: 1920, height: 1080 }, { width: 2560, height: 1080 }, { width: 800, height: 600 });
@@ -24,6 +24,17 @@ test("在游戏项目新目录生成完整编辑器模板且不覆盖已有目�
     assert.equal(typeof formal.createFormalPageSketchScene, "function");
     assert.equal(typeof formal.createFormalPageSketchGameConfig, "function");
     assert.equal(typeof formal.setPageSketchGameViewport, "function");
+    const geometryModule = await import(pathToFileURL(join(root, "editor", "visual-layout-geometry.mjs")).href);
+    assert.equal(typeof geometryModule.alignVisualLayoutNodes, "function");
+    assert.equal(typeof geometryModule.measureVisualLayoutNode, "function");
+    const historyModule = await import(pathToFileURL(join(root, "editor", "visual-layout-history.mjs")).href);
+    assert.equal(typeof historyModule.createVisualLayoutHistory, "function");
+    const toolsModule = await import(pathToFileURL(join(root, "editor", "visual-layout-tools.mjs")).href);
+    assert.equal(typeof toolsModule.createVisualLayoutTools, "function");
+    const sourcesModule = await import(pathToFileURL(join(root, "editor", "page-sketch-source-contract.mjs")).href);
+    assert.equal(typeof sourcesModule.assertPageSketchSourceContracts, "function");
+    const nineSliceModule = await import(pathToFileURL(join(root, "editor", "nine-slice-contract.mjs")).href);
+    assert.equal(typeof nineSliceModule.validateNineSliceContract, "function");
     assert.match(html, /page-sketch-project-root/);
     assert.match(html, /id="stage-device"><div id="stage-surface"/);
     assert.match(html, /#stage-surface[^}]*overflow: visible/);
@@ -36,7 +47,7 @@ test("在游戏项目新目录生成完整编辑器模板且不覆盖已有目�
     assert.doesNotMatch(html, /confirmed-by|确认人/);
     assert.doesNotMatch(html, /grid-template-columns: 1fr;/);
     assert.doesNotMatch(html, /visual-layout-game-adapter/);
-    for (const file of ["visual-layout-editor.mjs", "page-sketch-contract.mjs", "page-sketch-file-store.mjs", "page-sketch-preview.mjs", "page-sketch-editor.mjs", "page-sketch-layout.mjs", "page-sketch-phaser.mjs", "visual-layout-game-adapter.mjs"]) {
+    for (const file of ["visual-layout-editor.mjs", "visual-layout-geometry.mjs", "visual-layout-history.mjs", "visual-layout-tools.mjs", "visual-layout-properties.mjs", "page-sketch-contract.mjs", "page-sketch-file-store.mjs", "page-sketch-preview.mjs", "page-sketch-editor.mjs", "page-sketch-layout.mjs", "page-sketch-phaser.mjs", "visual-layout-game-adapter.mjs"]) {
       assert.equal(await readFile(join(root, "editor", file), "utf8").then(Boolean), true);
     }
     await assert.rejects(generateVisualLayoutEditor(root, "editor"), { code: "EEXIST" });

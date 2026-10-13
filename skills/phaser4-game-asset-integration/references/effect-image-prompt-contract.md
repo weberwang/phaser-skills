@@ -4,6 +4,8 @@
 
 本提示词只适用于 V2 已冻结为 `selected_route=image-asset` 且 `image_generation_required=true` 的区域；它负责生成合同，不负责选择生产路线。文本、纯色框体和基础几何等区域不能因为静态或“像 UI 资产”而自动进入图片提示词。已冻结 `image_generation_required=true` 的合同也不能被提示词生成器改成 Phaser 原生实现；生产方式变化须有明确接受的 Change Request。
 
+效果图成为正式目标前按[游戏美术体验与质量契约](art-quality-contract.md)检查主题、受众、可读性、静态舒适与完成度。以下忠实还原模板会继承目标的高光与材质，不能修复目标自身的美术问题；若目标与质量要求冲突，先调整受影响上游目标并重新确认，再生产部件。负向段中的风格改变词限制未经确认的迁移，不代表所有项目禁止卡通、扁平或霓虹风格。
+
 ## 全局提示词
 
 `global_prompt_prefix` 必须逐字使用下面的 canonical 内容：
@@ -64,6 +66,10 @@
 字段允许使用 scene contract 的 snake_case/camelCase 别名或 `visual_facts`/`fidelity_facts` 容器，但必须保留原始值。region 缺少事实时，生成器不得用资产名补全；校验器先输出 `repair` 并阻断当前门，只有冻结方案事实真实失效时才建议 `return`。
 
 ## 结构化生成记录
+
+已在 V2 确认的九宫格皮肤按[九宫格合同](nine-slice-ui.md)生产：调用 `buildEffectImageFullPrompt` 时传入完整 `expectedAsset`，构建器把最终小图 `source_size`、四边切片值与固定角边要求加入实际提示词。保留完整参考图作为视觉输入；皮肤源图的切片生产比例与最终显示框比例分别记录，最终外形由冻结显示框和九宫格规则还原。生成记录缺少实际切片段会阻断，不能生成整块大底板后再在 V4 临时改九宫格。
+
+九宫格尺寸归一化传入已冻结的 `nine_slice`；CLI 使用 `--nine-slice-json` 传递同一 JSON，`--width/--height` 使用 `source_size`。只允许保持源帧比例的整图尺寸归一化，不适用普通图片两次比例失败后的受控裁切；比例仍不符时报告源图问题，不能裁掉角边或补边后用正确尺寸冒充合格皮肤。
 
 仅对 `effect-image` 的生成式位图强制：
 

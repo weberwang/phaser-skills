@@ -7,7 +7,7 @@ export { setPageSketchGameViewport } from "../scripts/page-sketch-game-config.mj
 /** 正式游戏使用与 V4 同一画布配置；viewport 是宿主 CSS 尺寸，渲染尺寸由设计空间统一计算。 */
 export function createFormalPageSketchGameConfig(Phaser, { parent, viewport, ...input }) {
   const scene = createFormalPageSketchScene(Phaser, input);
-  return createPageSketchGameConfig(Phaser, { parent, viewport, scene,
+  return createPageSketchGameConfig(Phaser, { parent, viewport, scene, sketch: input.sketch,
     callbacks: {
       /** 引擎启动后应用相同 CSS/设计映射；后续宿主 resize 继续调用共享尺寸入口。 */
       postBoot(game) { setPageSketchGameViewport(game, viewport); },

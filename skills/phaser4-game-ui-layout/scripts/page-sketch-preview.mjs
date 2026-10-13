@@ -2,6 +2,7 @@ import { assertPageSketchBackgroundLayout, validatePageSketchDocument, validateP
 import { createPageSketchRenderer } from "./page-sketch-phaser.mjs";
 import { calculateFixedDesignPreview } from "./fixed-design-viewport.mjs";
 import { createPageSketchGameConfig, setPageSketchGameViewport, syncPageSketchGameInput } from "./page-sketch-game-config.mjs";
+import { assertPageSketchSourceContracts } from "./page-sketch-source-contract.mjs";
 
 /** 将相对资源路径绑定到当前游戏开发服务根目录，并限制同源读取。 */
 function projectResourceUrl(projectRootUrl, relativePath, pageOrigin = globalThis.location?.origin) {
@@ -40,6 +41,20 @@ async function decodeImage(blob, objectUrl, imageDecoder) {
   await image.decode();
 }
 
+/** 解析当前实际来源文件并复核草图快照，HTTP 成功不能代替来源内容一致。 */
+function checkSourceContracts(sketch, files, errors) {
+  try {
+    const documents = files.map((file, index) => {
+      if (!file) throw new Error(`V${index === 0 ? "2" : "3"} 来源文件缺失，无法复核草图`);
+      return JSON.parse(new TextDecoder().decode(file.bytes));
+    });
+    return assertPageSketchSourceContracts(sketch, { nodesDocument: documents[0], manifest: documents[1], evidence: documents[2] });
+  } catch (error) {
+    errors.push(`V2/V3 草图来源不一致：${error.message}`);
+    return null;
+  }
+}
+
 /** 预加载草图的 V2/V3 来源、冻结底图、正式图片与程序节点预览模块。 */
 export async function loadPageSketchSources(sketchInput, { projectRootUrl, fetcher = globalThis.fetch, urlApi = globalThis.URL, BlobCtor = globalThis.Blob, imageDecoder, pageOrigin = globalThis.location?.origin } = {}) {
   const sketch = validatePageSketchDocument(sketchInput);
@@ -61,12 +76,13 @@ export async function loadPageSketchSources(sketchInput, { projectRootUrl, fetch
     [sketch.v3_evidence_file, "V3 验收证据"],
   ];
   const sourceFiles = await Promise.all(sources.map(([file, label]) => loadFile(file, label)));
+  const checkedSources = checkSourceContracts(sketch, sourceFiles, errors);
   let backgroundNodeIds = [];
   let backgroundLayoutError = null;
   try {
     const manifest = sourceFiles[1] ? JSON.parse(new TextDecoder().decode(sourceFiles[1].bytes)) : {};
     // 正式区域在 coverage_audit 中；读错路径会漏掉背景身份，使 V4/V5 按普通图片 fit 还原。
-    backgroundNodeIds = assertPageSketchBackgroundLayout({ nodes: sketch.nodes, regions: manifest.coverage_audit?.regions ?? [], sceneId: sketch.scene_id, stateId: sketch.state_id, nodePresentations: sketch.node_presentations });
+    backgroundNodeIds = checkedSources?.backgroundNodeIds ?? assertPageSketchBackgroundLayout({ nodes: sketch.nodes, regions: manifest.coverage_audit?.regions ?? [], sceneId: sketch.scene_id, stateId: sketch.state_id, nodePresentations: sketch.node_presentations });
   } catch (error) {
     backgroundLayoutError = error.message;
     errors.push(`背景布局关系无效：${error.message}`);
@@ -149,10 +165,11 @@ export async function verifyPageSketchSources(sketchInput, { projectRootUrl, fet
   for (const [nodeId, presentation] of Object.entries(sketch.node_presentations)) {
     if (presentation.kind === "runtime-program") files.push([presentation.module_file, `运行时节点 ${nodeId} 预览程序`]);
   }
-  await Promise.all(files.map(async ([file, label]) => {
-    try { await fetchProjectFile(file, { projectRootUrl, fetcher, pageOrigin }); }
-    catch (error) { errors.push(`${label}：${error.message}`); }
+  const loaded = await Promise.all(files.map(async ([file, label]) => {
+    try { return await fetchProjectFile(file, { projectRootUrl, fetcher, pageOrigin }); }
+    catch (error) { errors.push(`${label}：${error.message}`); return null; }
   }));
+  checkSourceContracts(sketch, loaded.slice(0, 3), errors);
   return { errors, healthy: errors.length === 0 };
 }
 
@@ -224,7 +241,7 @@ export async function mountPageSketchPreview({ host, sketch: sketchInput, source
   host.style.width = sketch.viewport.width + 'px';
   host.style.height = sketch.viewport.height + 'px';
   try {
-    game = new Phaser.Game(createPageSketchGameConfig(Phaser, { parent: host, viewport: sketch.viewport, scene: PreviewScene,
+    game = new Phaser.Game(createPageSketchGameConfig(Phaser, { parent: host, viewport: sketch.viewport, scene: PreviewScene, sketch,
       callbacks: { postBoot(booted) { booted.events.once('destroy', () => rejectReady(new Error('Phaser 预览提前终止'))); } } }));
     await ready;
   } catch (error) {
@@ -250,6 +267,8 @@ export async function mountPageSketchPreview({ host, sketch: sketchInput, source
     get errors() { return [...errors, ...(renderer.errors ?? [])]; },
     reflow: (layout) => renderer.reflow(layout),
     getBounds: (id) => renderer.getBounds(id),
+    /** 与布局框同坐标口径暴露实测文字诊断，明确 visible 溢出也不能在工作台中隐藏。 */
+    getLayoutDiagnostics: () => renderer.getLayoutDiagnostics?.() ?? {},
     getViewportRect: () => host.getBoundingClientRect(),
     isHealthy: () => !destroyed && errors.length === 0 && renderer.isHealthy(),
     setViewport,

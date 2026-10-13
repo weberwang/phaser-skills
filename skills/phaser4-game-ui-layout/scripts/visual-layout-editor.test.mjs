@@ -78,13 +78,13 @@ test("保存失败不报告成功", async () => {
   assert(!states.includes("saved"));
 });
 
-/** 异步重排即使按相反顺序完成也会被拒绝，失败结果不触发文件写入。 */
+/** 异步重排即使按相反顺序完成也会被拒绝；失败手势会额外尝试恢复且不写文件。 */
 test("异步乱序重排被拒绝且失败布局不保存", async () => {
   const environment = createMountedEditor();
   const pending = [];
   environment.setReflowOverride(() => new Promise((resolve, reject) => pending.push({ resolve, reject })));
   dragNode(environment, "hud.group", [[126, 70], [142, 70]]);
-  assert.equal(pending.length, 2);
+  assert.equal(pending.length, 3);
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(environment.saved.length, 0);
   assert.equal(findStatus(environment.document).dataset.state, "error");
@@ -269,7 +269,7 @@ test("重置取消拖动并遵守锁定预览与销毁状态", async () => {
   assert.equal(environment.saved.length, 1);
 });
 
-/** reset 重排失败时恢复此前运行布局、保留原错误且不会自动保存。 */
+/** reset 重排失败时恢复此前运行布局并禁用保存，避免确认状态不明时持久化。 */
 test("重置重排失败不保存且恢复原运行布局", async () => {
   const environment = createMountedEditor();
   const initial = environment.editor.getLayout();
@@ -292,10 +292,10 @@ test("重置重排失败不保存且恢复原运行布局", async () => {
   assert.deepEqual(receivedOffsets[0], {});
   assert.deepEqual(receivedOffsets.at(-1), initial.offsets);
   assert.deepEqual(environment.editor.getLayout(), initial);
-  assert.equal(environment.editor.isPreviewHealthy(), true);
+  assert.equal(environment.editor.isPreviewHealthy(), false);
   assert.equal(environment.runtimeBounds.get("hud.group").x, 104);
   assert.equal(environment.saved.length, 0);
-  assert.match(findStatus(environment.document).textContent, /布局重置失败：reset scene failed/);
+  assert.match(findStatus(environment.document).textContent, /布局重置失败，保存已禁用：reset scene failed/);
   environment.editor.destroy();
 });
 
@@ -437,8 +437,8 @@ test("子节点离开父容器仍能从真实节点框再次开始拖动", () =>
   const environment = createMountedEditor({ layout: fixture.layout, editorOptions: { saveOnChange: false } });
   findElements(environment.controlsHost, (node) => node.dataset.layoutNodeId === "hud.button")[0].dispatch("click");
   const frame = findElements(environment.document.body, (node) => node.getAttribute("data-layout-node-id") === "hud.button")[0];
-  assert.equal(frame.getAttribute("x"), "20");
-  assert.equal(frame.getAttribute("y"), "30");
+  assert.equal(frame.getAttribute("x"), "24");
+  assert.equal(frame.getAttribute("y"), "36");
   assert.equal(frame.getAttribute("data-offscreen-handle"), null);
   frame.dispatch("pointerdown", { button: 0, pointerId: 22, clientX: 130, clientY: 80 });
   environment.window.dispatch("pointermove", { pointerId: 22, clientX: 162, clientY: 88 });
@@ -636,6 +636,7 @@ test("预览框与节点树选择互相同步且不改变草图", () => {
   const frame = findElements(environment.document.body, (node) => node.getAttribute("data-layout-node-id") === "hud.button")[0];
   frame.dispatch("pointerdown", { button: 0, pointerId: 7, clientX: 180, clientY: 150 });
   assert.equal(environment.editor.getSelectedNodeId(), "hud.button");
+  environment.window.dispatch("pointerup", { pointerId: 7 });
   const button = findElements(environment.controlsHost, (node) => node.dataset.layoutNodeId === "hud.button")[0];
   assert.equal(button.getAttribute("aria-current"), "true");
   findElements(environment.controlsHost, (node) => node.dataset.layoutNodeId === "hud.group")[0].dispatch("click");

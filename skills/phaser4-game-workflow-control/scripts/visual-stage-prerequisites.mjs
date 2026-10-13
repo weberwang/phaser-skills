@@ -9,6 +9,7 @@
  */
 import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
+import { validateArtExperienceAcceptance } from './art-experience-acceptance-contract.mjs';
 import { validateGlobalVisualBaselineSelectionReferenceShape } from './global-visual-baseline-contract.mjs';
 import { assertConfirmedPageSketch } from './page-sketch-prerequisite.mjs';
 import { V2_PLAN_FIELDS } from './v2-reconstruction-plan-contract.mjs';
@@ -174,6 +175,30 @@ function textStatus(value) {
 function firstObject(...values) { return values.find(isObject) ?? null; }
 /** 取得候选列表中的首个已声明值。 */
 function firstValue(...values) { return values.find((value) => value !== undefined && value !== null && value !== '') ?? null; }
+
+/** 从冻结 V2 场景及当前工作包的显示层上下文确定验收场景身份。 */
+function artAcceptanceSceneId(subject, v2, options) {
+  const sceneId = nonEmpty(v2?.sceneId) ? v2.sceneId : null;
+  if (!sceneId) return null;
+  const declaredScene = firstValue(subject.sceneId, subject.scene_id);
+  const declaredHost = firstValue(subject.hostSceneId, subject.host_scene_id);
+  if ((declaredScene && declaredScene !== sceneId) || (declaredHost && declaredHost !== sceneId)) return null;
+
+  const contexts = Array.isArray(v2.displayLayerContexts) ? v2.displayLayerContexts : [];
+  const layerId = firstValue(subject.displayLayerId, subject.display_layer_id);
+  if (layerId) {
+    const matches = contexts.filter((context) => context?.displayLayerId === layerId);
+    if (matches.length !== 1 || matches[0].hostSceneId !== sceneId || (declaredHost && declaredHost !== matches[0].hostSceneId)) return null;
+  }
+  // DISPLAY_LAYER 的身份只能沿 V2 中唯一的 layer→host 关系归一到实际宿主场景。
+  const displayUnits = (options.implementationPackage?.executionUnits ?? []).filter((unit) => unit?.unitType === 'DISPLAY_LAYER');
+  for (const unit of displayUnits) {
+    const matches = contexts.filter((context) => context?.displayLayerId === unit.displayLayerId);
+    if (!nonEmpty(unit.displayLayerId) || matches.length !== 1
+      || matches[0].hostSceneId !== sceneId || unit.hostSceneId !== matches[0].hostSceneId) return null;
+  }
+  return sceneId;
+}
 
 /** 读取视觉阶段 JSON 来源文件，并用其中的工作项和结果 ID 核对引用归属。 */
 export function loadImmutableVisualStageReference(reference, label, options = {}) {
@@ -572,6 +597,12 @@ export function validateVisualStagePrerequisites(subject = {}, options = {}) {
       if (!nonEmpty(v5.candidateId) || v5.workItemId !== subject.workItemId) missingEvidence.push('V5 candidate/work item identity');
       validateEvidenceFiles(v5, 'V5 runtime candidate', options, missingEvidence);
       validateCandidateIdentity(v5, 'V5 runtime candidate', missingEvidence, true);
+      const acceptanceErrors = validateArtExperienceAcceptance(v5.artExperienceAcceptance, {
+        workItemId: subject.workItemId,
+        candidateId: v5.candidateId,
+        sceneId: artAcceptanceSceneId(subject, v2, options),
+      }, options);
+      if (acceptanceErrors.length) missingEvidence.push(...acceptanceErrors.map((item) => `V5 art experience acceptance: ${item}`));
       const pageSketchFile = firstValue(v5.pageSketchFile, v5.page_sketch_file);
       if (nonEmpty(pageSketchFile) && pageSketchFile !== refs.V4?.path) missingEvidence.push('V5 pageSketchFile must bind current V4 page sketch');
     }
