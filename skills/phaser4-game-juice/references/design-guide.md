@@ -580,4 +580,4 @@ Camera Shake 的 intensity 是相对强度，不是固定像素；实际偏移�
 - [玩法视觉契约](../../phaser4-game-asset-integration/references/gameplay-visual-contract.md)：状态、动态可读性与证据。
 - [美术体验契约](../../phaser4-game-asset-integration/references/art-quality-contract.md)：主题、受众、刺激预算与人工体验。
 - [UI 布局契约](../../phaser4-game-ui-layout/references/layout-contract.md)：唯一布局、坐标与适配。
-- [帧动画动作时间轴](../../phaser4-frame-animation/references/action-timing.md)：动作与事件点，不用示例时长替代确认设计。
+- [帧动画动作时间轴](../../phaser4-frame-animation/references/action-timing.md)：动作与事件点按实际玩法内部推导，直接用真实素材确认表现，不用示例时长覆盖玩法约束。

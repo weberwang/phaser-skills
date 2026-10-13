@@ -27,6 +27,8 @@ description: Phaser 4 游戏领域编排角色；在全局控制面已建立 Wor
 
 ## 视觉与场景
 
+图片交付按[图片优先的确认方式](../phaser4-game-workflow-control/references/simplified-workflow.md#图片优先的确认方式)执行：领域代理内部整理记录并直接产图或真实预览，主代理展示候选及少量检查点，不以文字提案确认作为常规制作前置；已确认目标内返修直接提交前后对照。真实图片与素材依赖仍按对应阶段确认。
+
 效果图还原和正式 Scene 接入属于当前场景 Work Item；常驻 HUD 随场景闭环。modal/popup 等弹窗按[独立工作项规则](../phaser4-game-workflow-control/references/control-model.md#弹窗工作项与场景解耦)另建 DISPLAY_LAYER Work Item，独立提交宿主上下文、组件/状态、布局合同和运行态证据，不影响大厅或其他宿主场景验收。
 
 场景 V2 的布局交付必须同时提供标准布局 PNG、`layout-nodes.json`、`layout-decision.json`、自包含 `review.html` 和 `generation-result.json`，并在独立布局确认及场景根计划中关联同批参考、拆解、决策、节点、PNG 和实际审阅页。屏幕 UI 还按[Phaser UI 节点组织](../phaser4-game-ui-layout/references/layout-hierarchy.md)在 V1 定义根层级，在 V2 确认父级职责与 `ui_layout` 字段，在 V4 草图中检查职责、输入和裁切边界，在 V5 验证视口变化下的运行结果。编排只引用[离线布局审阅产物](../phaser4-game-ui-layout/references/layout-review-artifacts.md)的通用规则，不为场景手写审阅页；页面候选状态不等于人工确认。

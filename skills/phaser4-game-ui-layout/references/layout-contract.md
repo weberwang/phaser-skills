@@ -30,13 +30,13 @@ Camera 合同必须说明逻辑 viewport 如何映射到物理 backing，zoom �
 
 拆解先按[功能语义分组约束](functional-semantic-grouping.md)确认区域、功能组件、部件和独立元素。最终元素必须包含显式 `parent_element_id` 与 `semantic_grouping.kind/rationale`；位置依赖方必须成为被依赖元素所对应布局容器的子元素，共同表达同一信息且互不依赖位置的元素必须列入同一个功能组件并保持同级。布局父级严格继承该归属，不按几何包含自动挑父容器。文字保持独立节点并归属对应信息组，不按类型集中归组。新增容器或归属变化必须回到拆解确认。
 
-冻结目标进入 V2 后，机器门固定执行两个串行阶段：阶段 A 先从冻结原图、区域与组件事实生成拆解标注图及技术 JSON，并产出有序 `decomposition_elements`；人工可以修改这两项，修改后必须重新生成最终产物，并以 `visual-decomposition-confirmation/1.0` 确认。阶段 B 只有在阶段 A 的最终确认通过后才能启动，布局入口必须按原顺序消费该确认绑定的 `proposal.decomposition_elements`，再推导后置布局节点，不得从预存 `layout_nodes`、未确认清单草案或原图自行识别元素。
+冻结目标进入 V2 后，机器门固定执行两个串行阶段：阶段 A 先从冻结原图、区域与组件事实生成拆解标注图及技术 JSON，并产出有序 `decomposition_elements`；代理内部维护完整技术事实，用户只看拆解 PNG，可按图号提出修改，修改后重新生成 PNG，再以 `visual-decomposition-confirmation/1.0` 确认。阶段 B 只有在阶段 A 的最终图像确认通过后才能启动，布局入口必须按原顺序消费该确认绑定的 `proposal.decomposition_elements`，再推导后置布局节点，不得从预存 `layout_nodes`、未确认清单草案或原图自行识别元素。
 
 阶段 B 生成独立 `layout-annotation/png/1` PNG：原图作为左侧底图，所有已确认父容器、子组件和空容器均需框出；相同层级使用相同确定性颜色，不同层级使用不同确定性颜色。PNG 元数据绑定 `layout_node_id`/`element_id`、`parent_layout_node_id`、`depth`、`color`、`bounds`、`empty_container`、`relative_position` 四边距离、显式 `axis_alignment`、锚点、布局决策文件身份及上游拆解确认身份。
 
 图上每个框与右栏说明必须使用同一个唯一短编号，并显式列出父编号；编号按确认元素原序分配，合成根使用独立编号，不能为展示重排元素或改变 bounds。技术 ID 仅作为追溯信息，不能代替图上可见编号。密集小框的编号需避让，必要时用引线明确指向所属框。右栏为每个节点提供一份完整自身说明：类型、父级、水平左/中/右与垂直上/中/下停靠、自身/父级锚点及双轴偏移；父容器和空容器同样必须说明相对其上级的停靠方案，不能只列子组件或四边距离。根明确“无上级”，不伪造停靠关系。长说明按实际文字宽度换行并扩展画布高度，不得截断；机器校验同时检查编号映射、父子关系、方案内容与可见区域，元数据自报完整不能代替实际可读内容。
 
-布局图也允许人工修改；修改后必须重新生成最终布局图，并以独立 `layout-annotation-confirmation/1.0` 确认。该确认同时绑定实际布局图文件、尺寸、schema/layout、metadata identity、`visual-decomposition-confirmation` 的 ID、proposal 文件、scene/state/target、用户原文和 receipt。任一图、元数据、布局关系或上游拆解身份变化都使旧确认失效；V2 最终完成门必须同时看到两次人工确认。
+布局图也允许按图上反馈人工修改；修改后必须重新生成最终布局图，并以独立 `layout-annotation-confirmation/1.0` 确认。用户直接检查布局 PNG 与 `review.html`，不需要先确认文字对齐方案或阅读技术决策。该确认同时绑定实际布局图文件、尺寸、schema/layout、metadata identity、`visual-decomposition-confirmation` 的 ID、proposal 文件、scene/state/target、用户原文和 receipt。任一图、元数据、布局关系或上游拆解身份变化都使旧确认失效；V2 最终完成门必须同时看到拆解图和布局图的两次人工确认。
 
 布局 PNG 生成时必须在 `--output` 所在的同一候选目录同步产出 `layout-nodes.json`、`layout-decision.json`、自包含 `review.html` 和 `generation-result.json`。审阅页直接消费本批冻结参考图与节点数据，不能建立第二套坐标或关系规则；详细的两栏模板、离线约束、名称回退、下载字节、SHA 身份和错误门见[离线布局审阅产物](layout-review-artifacts.md)。
 

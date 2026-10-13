@@ -9,7 +9,7 @@ description: 为 Phaser 4 游戏建立可验证的 UI 布局合同、坐标空�
 
 UI 布局参照按[场景与弹窗尺寸参照](references/layout-hierarchy.md#场景与弹窗尺寸参照)统一确定：全屏 UI 的父级是场景，按场景逻辑尺寸相对布局；弹窗有底板时，内容按底板对应功能容器的宽高相对布局；弹窗没有底板时，按宿主场景逻辑尺寸相对布局。弹窗底板容器本身相对场景定位，底板位图与内容一起归属该容器；全屏装饰背景仍是独立显示层。安全区约束关键内容的可见范围，不替换这三种尺寸参照。
 
-效果图 V2 拆解与布局遵守[功能语义分组约束](references/functional-semantic-grouping.md)和[Phaser UI 节点组织](references/layout-hierarchy.md)：先人工确认位置依赖与信息分组，再生成停靠方案；位置依赖方必须成为被依赖元素所对应布局容器的子元素，共同表达同一信息且彼此无位置依赖的元素列为同组同级项。父容器职责、布局所有者、尺寸、溢出、安全区和输入归属须另行记录；禁止按文字类型或几何最小包含关系自动归父级。
+效果图 V2 拆解与布局遵守[功能语义分组约束](references/functional-semantic-grouping.md)和[Phaser UI 节点组织](references/layout-hierarchy.md)：先在编号拆解图上确认位置依赖与信息分组，再由代理自动整理停靠方案并展示布局图/预览确认；不先发文字方案要求确认。位置依赖方必须成为被依赖元素所对应布局容器的子元素，共同表达同一信息且彼此无位置依赖的元素列为同组同级项。父容器职责、布局所有者、尺寸、溢出、安全区和输入归属仍在技术合同中维护；禁止按文字类型或几何最小包含关系自动归父级。
 
 ## 全局控制接入
 
@@ -42,7 +42,7 @@ UI 设计与实现优先用符合全局视觉基线且含义清晰、熟悉的�
 V4 的轻量校准、批量对齐/间距、差值读数、撤销历史及关键几何验收读取[布局校准与参考还原](references/layout-calibration.md)。默认从冻结 V2 布局开始，无修改的已落盘草图可直接确认；修改后用明确的“保存并确认”操作，不要求逐节点重新排列。布局矩形与素材可见边界分别检查，不能用可用性通过代替参考还原。
 
 1. 读取项目的 GDD/TDD、当前候选、总控审核漏斗和适用视觉阶段；确定稳定 UI ID、坐标空间、参照物、状态与平台输入。
-2. 复制 schema 1.2.0 [合同模板](assets/ui-layout-contract-template.yaml)。普通布局使用 `not-applicable` 并保持 `layout_nodes: []`；冻结视觉目标先用 `frozen-target/specified`。同时冻结上述根级视口/DPR/Camera/Input/性能字段，禁止使用旧 `targets.scale` 字段绕过新门禁。V2 先按位置依赖建立父子、按共同信息建立同级分组，再生成拆解图、技术 JSON 和 `decomposition_elements`，人工修改并确认；屏幕 UI 同时确认 `ui_layout` 职责字段。确认后由智能视觉判断生成逐元素 `left/center/right × top/center/bottom` 决策，再由同一入口同步生成布局 PNG、`layout-nodes.json`、`layout-decision.json`、离线 `review.html` 和 `generation-result.json`。随后登记由确认元素和视觉决策共同推导的非空 `layout_nodes` 与关键对齐合同。
+2. 复制 schema 1.2.0 [合同模板](assets/ui-layout-contract-template.yaml)。普通布局使用 `not-applicable` 并保持 `layout_nodes: []`；冻结视觉目标先用 `frozen-target/specified`。同时冻结上述根级视口/DPR/Camera/Input/性能字段，禁止使用旧 `targets.scale` 字段绕过新门禁。V2 先按位置依赖建立父子、按共同信息建立同级分组，代理内部维护完整技术 JSON 和 `decomposition_elements`，直接展示编号拆解图供人工确认；屏幕 UI 的 `ui_layout` 职责字段也保留在技术合同中。拆解图确认后由智能视觉判断生成逐元素 `left/center/right × top/center/bottom` 决策，再由同一入口同步生成布局 PNG、`layout-nodes.json`、`layout-decision.json`、离线 `review.html` 和 `generation-result.json`，用户直接检查最终布局图/审阅页并独立确认。无需先后确认文字提案或技术记录。随后登记由已确认元素和视觉决策共同推导的非空 `layout_nodes` 与关键对齐合同。
 3. V3 资源验收后在独立 V4 阶段执行[页面还原草图](../phaser4-game-asset-integration/references/visual-alignment-authoring.md)：生成草图数据，DOM 工作台保留控制面板、显示树、保存和确认；正式组合画面在 Phaser Canvas 中预览，参考底图和编辑框留在隔离的编辑辅助层。父节点移动带动子孙，保存后经用户确认才进入 V5。V5 用 [Phaser 适配器](references/phaser-adapter.md) 消费同一确认草图，复用幂等布局入口并绑定 `pageSketchSha256`；V2 目标节点保持只读。
 4. specified 阶段运行结构检查 `node scripts/validate_ui_layout_contract.mjs <contract>`；verified 正式验收必须运行 `node scripts/validate_ui_layout_contract.mjs <contract> --check-files --project-root .`，读取冻结原图并检查目标/运行/parity 证据文件。
 5. 按 [证据矩阵](references/evidence-matrix.md) 生成 `orientationPolicy.allowed` 对应的代表性视口、关键状态和窄/宽尺寸证据；只支持单一方向时不验证另一方向，但仍覆盖同方向尺寸、DPR 和同页连续 resize。关键 UI/HUD 记录稳定 element/reference ID、双轴关系、目标/运行测量、实际测试 ID/状态、视觉证据和项目定义容差。V5 还必须记录 CSS/backing 尺寸、raw/effective DPR、Camera、输入命中、同页 resize 和独立 DISPLAY_LAYER 轨迹。`exact` 或明确的全覆盖需求才扩展到完整矩阵和严格 delta，方向轴仅覆盖项目支持方向。
@@ -56,7 +56,7 @@ V4 与 V5 必须共用 `scripts/page-sketch-layout.mjs` 的纯布局结果和 `s
 
 当 Work Item 的 `effect_image_reconstruction.applicability=effect-image` 时，布局合同必须携带 `scene_reconstruction_binding`：记录冻结目标文件、scene/state、visual baseline、reconstruction contract 版本、`layout_decomposition_version` 和目标 viewport。`layout_nodes` 中每个节点必须同时绑定一个 `regions`/`scope.ui_ids` 区域和已声明坐标空间，记录参照、双轴锚点、目标 bounds、尺寸策略、层级、裁切、响应式规则与计划测试 ID；同一 coverage region 可以承载多个 layout nodes，但节点间必须使用唯一 `layout_node_id`，多节点区域不能用 region ID 作为有歧义的参照；关键对齐通过 `layout_node_id` 复用这些几何事实。该绑定描述正式 Scene 的目标关系，不能用旧通用布局合同、整屏截图、隐藏覆盖层或绝对叠图代替；只有实际目标内容、父子归属、构图关系或响应式不变量真实变化时，V2→V3 才退回 V1/PROPOSAL。其他 viewport 默认验证合同声明的不变量和可用性；只有 `visual_validation.mode=exact` 或明确精确需求时才要求目标 viewport 的严格还原。
 
-V2 的布局决策顺序固定为“自动生成拆解图/技术 JSON → 人工修改并确认最终拆解 → 智能视觉判断生成显式双轴对齐决策 → 由确认元素与决策生成独立布局标注图 → 人工修改并独立确认 → 冻结 V2”。布局生成入口拒绝未确认拆解、缺失决策、元素漏绑或未绑定当前 scene/state/target 的输入；布局确认同时绑定上游拆解、视觉决策文件和最终布局图身份。
+V2 的布局决策顺序固定为“代理内部生成拆解事实和技术 JSON → 展示编号拆解图并人工确认 → 代理自动生成双轴对齐决策及独立布局图/审阅页 → 展示布局图并独立确认 → 冻结 V2”。用户可直接按图号指出拆解或布局需要调整，代理更新技术事实并重出相应图片；不另行等待文字方案确认。布局生成入口仍拒绝未确认拆解、缺失决策、元素漏绑或未绑定当前 scene/state/target 的输入；两次图像确认分别绑定上游拆解、视觉决策文件和最终布局图身份。
 
 效果图节点还必须声明 `parent_layout_node_id`、`parent_target_bounds`、`relative_position` 和 `axis_alignment`。拆解确认后，智能布局结合原图构图、视觉重心和元素语义，为每个元素显式判断水平 `left/center/right` 与垂直 `top/center/bottom`；该判断不能由四边距离自动反推。`relative_position` 仍由父子 bounds 测量，用于复核包含关系和几何漂移；`offset`、`self_anchor`、`reference_anchor` 则按已选 `axis_alignment` 计算。`reference_id` 必须等于父 ID，父级仅可为具体节点或 `viewport`/`safe-area`，不得循环。视觉决策文件及其 ID 会进入布局图和确认记录，缺失决策必须阻断布局生成。
 
