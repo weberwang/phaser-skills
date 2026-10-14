@@ -10,6 +10,7 @@ const SKILL_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const FILES = [
   ["assets/visual-layout-editor-template.html", "index.html"],
   ["scripts/visual-layout-editor.mjs", "visual-layout-editor.mjs"],
+  ["scripts/visual-layout-editor-styles.mjs", "visual-layout-editor-styles.mjs"],
   ["scripts/visual-layout-geometry.mjs", "visual-layout-geometry.mjs"],
   ["scripts/visual-layout-history.mjs", "visual-layout-history.mjs"],
   ["scripts/visual-layout-tools.mjs", "visual-layout-tools.mjs"],

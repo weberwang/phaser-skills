@@ -224,7 +224,7 @@ export function calculatePageSketchLayout(sketch, layout, viewport = sketch?.vie
   const nodeById = indexNodes(sketch.nodes);
   if (!(backgroundNodeIds instanceof Set) && !Array.isArray(backgroundNodeIds)) throw new TypeError("backgroundNodeIds 必须是数组或 Set");
   const backgrounds = new Set(backgroundNodeIds);
-  // 背景身份仅决定 cover 几何；节点自身和祖先 offset 仍可移动背景。
+  // 背景始终取可见视口边界，不读取自身 offsets，避免平移后露边。
   for (const node of sketch.nodes) if (node.layout_role === "background" || node.layer === "background") backgrounds.add(node.layout_node_id);
   for (const id of backgrounds) if (!nodeById.has(id)) throw new TypeError(`backgroundNodeIds 引用了未知 layout_node_id：${id}`);
   const transform = calculateFixedDesignPreview(sketch.viewport, targetViewport);
@@ -235,7 +235,7 @@ export function calculatePageSketchLayout(sketch, layout, viewport = sketch?.vie
   for (const node of sketch.nodes) {
     const computedBounds = calculateBoundsFromIndex(normalizedLayout, nodeById, node.layout_node_id);
     const bounds = backgrounds.has(node.layout_node_id)
-      ? { ...visibleSourceBounds, x: visibleSourceBounds.x + computedBounds.x - node.target_bounds.x, y: visibleSourceBounds.y + computedBounds.y - node.target_bounds.y }
+      ? { ...visibleSourceBounds }
       : computedBounds;
     if (node.nine_slice !== undefined) validateNineSliceTargetBounds(node.nine_slice, bounds, `节点 ${node.layout_node_id}.target_bounds`);
     boundsById.set(node.layout_node_id, bounds);

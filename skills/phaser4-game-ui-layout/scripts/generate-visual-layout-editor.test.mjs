@@ -10,7 +10,7 @@ test("在游戏项目新目录生成完整编辑器模板且不覆盖已有目�
   const root = await mkdtemp(join(tmpdir(), "visual-layout-template-"));
   try {
     const files = await generateVisualLayoutEditor(root, "editor");
-    assert.equal(files.length, 19);
+    assert.equal(files.length, 20);
     // 加载实际生成模块，验证扁平复制后的依赖能解析且仍使用统一缩放真源。
     const generated = await import(pathToFileURL(join(root, "editor", "page-sketch-editor.mjs")).href);
     const geometry = generated.calculateDevicePreviewGeometry({ width: 1920, height: 1080 }, { width: 2560, height: 1080 }, { width: 800, height: 600 });

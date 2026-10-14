@@ -36,6 +36,8 @@ V5 宿主通过 `createFormalPageSketchGameConfig(Phaser, {parent, viewport, ske
 
 草图 SHA 仅作可选追踪，不参与 V4/V5 验收。V5 还要确认实际 Scene 已加载同一资源/字体并且共享渲染器健康，再采集运行画面与几何参数；身份一致不等于 V4/V5 画面一致。
 
+背景必须完全铺满当前场景的实际可见区域，包含安全区之外的装饰区域。共享草图布局将背景 bounds 固定为可见视口逆映射到草图坐标后的完整矩形，不应用背景的 `layout.offsets`；V4 只允许选择背景并查看属性，不能用拖动、方向键或坐标输入改变背景位置。图片始终等比 cover；构图对齐只决定源纹理裁切位置，不移动铺底矩形。创建、唤醒、resize 和方向变化后均保持四边覆盖，不能仅覆盖冻结设计画布或安全区。
+
 运行时 DPR 每次 resize、横竖屏变化和显示密度变化都从设备重新读取：非法值回退 1，正有限值封顶 2。适配器应同时更新 CSS/display 尺寸和 backing 尺寸，并记录 raw/effective DPR；监听器必须在 Scene 销毁、休眠和重新进入时清理。图片生产 1:1 基线只属于 `assetResolutionPolicy`，不能作为运行时 DPR 或降级理由。
 
 ## 坐标空间

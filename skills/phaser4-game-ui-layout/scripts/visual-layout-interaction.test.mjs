@@ -43,10 +43,9 @@ test("Phaser 点击拖动在缩放预览中同步右栏属性且不改冻结输�
   environment.editor.destroy();
 });
 
-/** 背景、透明容器和普通节点都可操作；SVG 内部交给真实 Phaser 层级命中。 */
-test("全部节点支持拖动键盘坐标输入且框内部不遮挡 Phaser", () => {
+/** 普通容器和节点继续可移动；SVG 内部交给真实 Phaser 层级命中。 */
+test("普通节点支持拖动键盘坐标输入且框内部不遮挡 Phaser", () => {
   const fixture = createFixture();
-  fixture.nodes[0].layer = "background";
   const environment = createMountedEditor({ nodes: fixture.nodes, editorOptions: { saveOnChange: false } });
   for (const id of ["hud.group", "hud.button"]) {
     environment.editor.selectNode(id);
@@ -342,4 +341,91 @@ test("预览和宿主锁禁用工具并阻止通过公开批量 API 修改布局
   assert.throws(() => environment.editor.restoreSelectedReference(), /正式预览/);
   assert.deepEqual(environment.editor.getLayout(), before);
   environment.editor.destroy();
+});
+
+/** 所有背景身份来源都保留选择和属性查看，同时拒绝拖动、按键和坐标写入。 */
+test("背景可选择查看但拖动键盘和坐标输入均不修改布局", async () => {
+  const backgroundCases = [
+    { source: "backgroundNodeIds", options: { backgroundNodeIds: ["hud.group"] } },
+    { source: "layer", nodes: (nodes) => { nodes[0].layer = "background"; } },
+    { source: "layout_role", nodes: (nodes) => { nodes[0].layout_role = "background"; } },
+  ];
+
+  for (const backgroundCase of backgroundCases) {
+    const fixture = createFixture();
+    backgroundCase.nodes?.(fixture.nodes);
+    const sourceNodes = structuredClone(fixture.nodes);
+    const environment = createMountedEditor({
+      nodes: fixture.nodes,
+      editorOptions: backgroundCase.options,
+    });
+    const before = environment.editor.getLayout();
+    let frame = findElements(environment.document.body, (element) => element.getAttribute("data-layout-node-id") === "hud.group")[0];
+    assert.match(frame.getAttribute("aria-label"), /固定铺满场景背景/, backgroundCase.source);
+    const pointerDown = frame.dispatch("pointerdown", { button: 0, pointerId: 12, clientX: 110, clientY: 70 });
+    assert.equal(pointerDown.defaultPrevented, true, backgroundCase.source);
+    assert.equal(environment.editor.getSelectedNodeId(), "hud.group", backgroundCase.source);
+    assert.equal(findElements(environment.controlsHost, (element) => element.dataset.layoutNodeId === "hud.group")[0].getAttribute("aria-current"), "true");
+    assert.equal(property(environment, "布局约束"), "固定铺满场景");
+    assert.equal(property(environment, "自身偏移"), "不适用（固定铺满场景）");
+
+    environment.window.dispatch("pointermove", { pointerId: 12, clientX: 142, clientY: 94 });
+    environment.window.dispatch("pointerup", { pointerId: 12 });
+    frame = findElements(environment.document.body, (element) => element.getAttribute("data-layout-node-id") === "hud.group")[0];
+    const keyEvent = frame.dispatch("keydown", { key: "ArrowRight" });
+    assert.equal(keyEvent.defaultPrevented, true, backgroundCase.source);
+
+    const mode = findElements(environment.controlsHost, (element) => element.getAttribute("aria-label") === "坐标模式")[0];
+    const point = findElements(environment.controlsHost, (element) => element.getAttribute("aria-label") === "父容器参照点")[0];
+    const x = findElements(environment.controlsHost, (element) => element.getAttribute("aria-label") === "节点 X 坐标")[0];
+    const y = findElements(environment.controlsHost, (element) => element.getAttribute("aria-label") === "节点 Y 坐标")[0];
+    assert.equal(Boolean(mode.disabled), false, backgroundCase.source);
+    assert.equal(Boolean(point.disabled), false, backgroundCase.source);
+    assert.equal(x.disabled, true, backgroundCase.source);
+    assert.equal(y.disabled, true, backgroundCase.source);
+    mode.value = "absolute";
+    mode.dispatch("change");
+    point.value = "bottom-right";
+    point.dispatch("change");
+    x.value = "999";
+    x.dispatch("change");
+    y.value = "999";
+    y.dispatch("change");
+
+    mode.value = "relative";
+    mode.dispatch("change");
+    environment.editor.setInteractionEnabled(false);
+    environment.editor.setInteractionEnabled(true);
+    assert.equal(mode.disabled, false, backgroundCase.source);
+    assert.equal(point.disabled, false, backgroundCase.source);
+    assert.equal(x.disabled, true, backgroundCase.source);
+    assert.equal(y.disabled, true, backgroundCase.source);
+
+    assert.deepEqual(environment.editor.getLayout(), before, backgroundCase.source);
+    assert.deepEqual(fixture.nodes, sourceNodes, backgroundCase.source);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(environment.saved.length, 0, backgroundCase.source);
+    environment.editor.destroy();
+  }
+});
+
+/** 远端新增的多选工具不能绕过背景固定约束，也不能生成无效的保存与历史记录。 */
+test("含背景的多选拒绝批量对齐和等间距且保留前景布局", async () => {
+  for (const primaryIsBackground of [true, false]) {
+    const fixture = createSiblingFixture();
+    fixture.nodes[0].layer = "background";
+    const environment = createMountedEditor({ nodes: fixture.nodes, layout: fixture.layout });
+    const before = environment.editor.getLayout();
+    const ids = primaryIsBackground ? ["a", "b", "c"] : ["b", "a", "c"];
+    environment.editor.selectNode(ids[0]);
+    for (const id of ids.slice(1)) environment.editor.selectNode(id, { toggle: true });
+    assert.deepEqual(environment.editor.getSelectedNodeIds(), ids);
+    assert.throws(() => environment.editor.alignSelectedNodes("left"), /背景不能参与批量布局/);
+    assert.throws(() => environment.editor.distributeSelectedNodes("horizontal"), /背景不能参与批量布局/);
+    assert.deepEqual(environment.editor.getLayout(), before);
+    assert.equal(environment.editor.undo(), false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(environment.saved.length, 0);
+    environment.editor.destroy();
+  }
 });

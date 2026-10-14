@@ -44,7 +44,14 @@ export function createVisualLayoutProperties({ document, nodes, presentations = 
     appendProperty("类型", recipe.kind ?? node.node_type ?? "布局节点");
     appendProperty("视口位置", { x: bounds.x, y: bounds.y });
     appendProperty("尺寸", { width: bounds.width, height: bounds.height });
-    appendProperty("自身偏移", Object.hasOwn(layout.offsets, id) ? layout.offsets[id] : { x: 0, y: 0 });
+    const isBackground = backgrounds.has(id);
+    if (isBackground) {
+      appendProperty("布局约束", "固定铺满场景");
+      // 背景偏移不参与运行时几何，不把草图中的偏移显示成已生效的布局参数。
+      appendProperty("自身偏移", "不适用（固定铺满场景）");
+    } else {
+      appendProperty("自身偏移", Object.hasOwn(layout.offsets, id) ? layout.offsets[id] : { x: 0, y: 0 });
+    }
     appendProperty("冻结目标", node.target_bounds);
     appendProperty("文字实测框", diagnostic?.rendered_bounds);
     appendProperty("文字范围检查", diagnostic ? diagnostic.fits ? "实际文字在目标框内" : "已显式允许溢出；需检查相邻内容与留白" : undefined);

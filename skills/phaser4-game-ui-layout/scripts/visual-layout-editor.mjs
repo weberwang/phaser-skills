@@ -1,3 +1,4 @@
+import { VISUAL_LAYOUT_EDITOR_STYLES } from "./visual-layout-editor-styles.mjs";
 import { createVisualLayoutProperties } from "./visual-layout-properties.mjs";
 import {
   alignVisualLayoutNodes,
@@ -54,6 +55,11 @@ function errorMessage(error) {
 /** 以隔离的开发期 DOM 层挂载 Phaser 逻辑坐标布局编辑器；reflow 必须同步返回。 */
 export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, viewport, nodes: inputNodes, presentations = {}, backgroundNodeIds = [], layout, getBounds, getLayoutDiagnostics, getViewportRect, getClipRect, reflow, save, saveOnChange = true, showSaveButton = true, saveButtonLabel = "保存布局", onLayoutChange, onPreviewHealthChange }) {
   const logicalViewport = validateViewport(viewport);
+  // 几何快照会剥离业务元数据，背景身份需从原始节点和显式列表冻结下来。
+  const backgroundIds = new Set(backgroundNodeIds);
+  for (const node of inputNodes) {
+    if (node.layer === "background" || node.layout_role === "background") backgroundIds.add(node.layout_node_id);
+  }
   const nodes = snapshotLayoutNodes(inputNodes);
   const nodeMap = validateLayoutNodes(nodes);
   const currentLayout = { value: validateVisualLayoutDocument(layout, nodes) };
@@ -85,29 +91,7 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
   root.setAttribute("data-phaser-visual-layout-editor", LAYOUT_SCHEMA);
   root.setAttribute("aria-label", "开发阶段布局对齐编辑器");
   const styles = makeElement(document, "style");
-  styles.textContent = `
-    /* 只裁剪开发显示和命中区域；草图中的合法越界逻辑坐标保持原值。 */
-    .vle-root{position:fixed;left:0;top:0;z-index:2147483000;overflow:hidden;pointer-events:none;font:13px/1.4 system-ui,sans-serif;color:#ecf4ff}
-    .vle-reference,.vle-svg{position:absolute;left:0;top:0;width:100%;height:100%}
-    .vle-reference{object-fit:fill;pointer-events:none;user-select:none}
-    /* SVG 的越界节点框不能越过 viewport 截获右侧操作栏输入。 */
-    .vle-svg{overflow:hidden;pointer-events:none}
-    .vle-frame{fill:rgba(76,190,255,.04);stroke:#67b6d8;stroke-width:2;vector-effect:non-scaling-stroke;pointer-events:all;cursor:grab}
-    .vle-frame:hover{fill:rgba(76,190,255,.14);stroke:#a3e4ff}
-    .vle-frame-selected{fill:rgba(66,198,255,.12);stroke:#5be2ff;stroke-width:3;cursor:grabbing}
-    .vle-frame-parent{fill:rgba(186,129,255,.04);stroke:#c39aff;stroke-width:2;stroke-dasharray:7 5;vector-effect:non-scaling-stroke;pointer-events:none}
-    .vle-frame-target{fill:rgba(255,198,69,.04);stroke:#ffd166;stroke-width:2;stroke-dasharray:3 5;vector-effect:non-scaling-stroke;pointer-events:none}
-    .vle-label{font:12px system-ui,sans-serif;fill:#fff;stroke:#142133;stroke-width:3;paint-order:stroke;pointer-events:none}
-    .vle-panel{position:static;width:100%;display:flex;flex-direction:column;gap:9px;box-sizing:border-box;padding:12px;background:rgba(12,20,34,.94);border:1px solid #506783;border-radius:8px;box-shadow:0 6px 28px #0008;pointer-events:auto}
-    .vle-title{margin:0;font-size:14px;font-weight:700}.vle-current{color:#aac4dc;overflow-wrap:anywhere}
-    .vle-properties h3{margin:0 0 6px;font-size:13px}.vle-properties dl{display:grid;grid-template-columns:80px minmax(0,1fr);gap:4px 8px;margin:0;font-size:12px}.vle-properties dt{color:#aac4dc}.vle-properties dd{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}
-    .vle-row{display:flex;align-items:center;gap:8px}.vle-row label{flex:1}.vle-row input[type=range]{width:104px}
-    .vle-coordinates{display:grid;grid-template-columns:1fr 1fr;gap:8px}.vle-coordinate{display:flex;align-items:center;gap:5px;color:#aac4dc}.vle-coordinate input{width:72px;min-width:0;padding:4px;color:#fff;background:#101827;border:1px solid #58728e;border-radius:4px}
-    .vle-button{padding:5px 9px;color:inherit;background:#21354d;border:1px solid #58728e;border-radius:5px;cursor:pointer}.vle-button[aria-pressed=true]{background:#245465;border-color:#53cee7}
-    .vle-tree{overflow:auto;min-height:40px;max-height:42vh;padding:0;margin:0;list-style:none;border-top:1px solid #40536b}
-    .vle-tree button{width:100%;padding:5px 6px;text-align:left;color:inherit;background:transparent;border:0;border-bottom:1px solid #26394f;cursor:pointer;overflow-wrap:anywhere}
-    .vle-tree button[aria-current=true]{background:#28536a;color:#fff}.vle-status{min-height:18px;color:#b9c8d8}.vle-status[data-state=error]{color:#ff9c92}.vle-status[data-state=saved]{color:#86e0b3}
-  `;
+  styles.textContent = VISUAL_LAYOUT_EDITOR_STYLES;
   const image = makeElement(document, "img", "vle-reference");
   image.alt = "冻结效果图对齐参照";
   image.draggable = false;
@@ -317,7 +301,7 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
       ? "原点：视口左上角（逻辑像素）"
       : `原点：父容器 ${nodeMap.get(selectedId).parent_layout_node_id} ${relativePoints[relativePointInput.value].label}；测量节点左上角（逻辑像素）`;
     relativePointInput.disabled = !canUseLayoutTools() || coordinateModeInput.value !== "relative";
-    xCoordinateInput.disabled = yCoordinateInput.disabled = !canUseLayoutTools();
+    xCoordinateInput.disabled = yCoordinateInput.disabled = !canUseLayoutTools() || backgroundIds.has(selectedId);
     updateProperties();
   }
 
@@ -413,10 +397,12 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
           width: handleSize, height: handleSize,
         } : bounds;
         const frame = appendFrame(hitBounds, isSelected ? "vle-frame vle-frame-selected" : "vle-frame", node.layout_node_id);
+        const isBackground = backgroundIds.has(node.layout_node_id);
         frame.setAttribute("role", "button");
         if (isSelected && outsideViewport) frame.setAttribute("data-offscreen-handle", "true");
-        frame.setAttribute("aria-label", `${isSelected ? "已选中，拖动布局节点" : "拖动布局节点"} ${node.layout_node_id}`);
+        frame.setAttribute("aria-label", isBackground ? `选择固定铺满场景背景 ${node.layout_node_id}` : `${isSelected ? "已选中，拖动布局节点" : "拖动布局节点"} ${node.layout_node_id}`);
         frame.setAttribute("aria-pressed", String(isSelected));
+        if (isBackground) frame.style.cursor = "pointer";
         const canEdit = canUseLayoutTools();
         frame.setAttribute("tabindex", canEdit ? "0" : "-1");
         frame.setAttribute("aria-disabled", String(!canEdit));
@@ -577,6 +563,8 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
   function applySelectedBatch(label, buildNextLayout) {
     if (!canUseLayoutTools()) throw new Error(drag ? "拖动期间不能执行批量布局操作" : "操作锁定、保存或正式预览期间不能修改布局");
     try {
+      // 新增的批量工具也必须遵守背景固定约束，不能绕过单节点编辑保护。
+      if (selectedIds.some((id) => backgroundIds.has(id))) throw new Error("固定铺满场景背景不能参与批量布局操作");
       validateSiblingSelection(nodes, selectedIds);
       const boundsById = new Map(selectedIds.map((id) => [id, readCurrentBounds(id)]));
       const next = buildNextLayout(boundsById);
@@ -649,6 +637,11 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
       return;
     }
     selectNode(id);
+    if (backgroundIds.has(id)) {
+      // 背景仍可被选中查看，但它的场景铺满尺寸不能通过拖动生成位置偏移。
+      event.preventDefault?.();
+      return;
+    }
     const rect = getViewportClientRect();
     syncGeometry(rect);
     drag = { id, pointerId: event.pointerId, start: pointerPosition(event, rect), base: validateVisualLayoutDocument(currentLayout.value, nodes), changed: false, reflowFailed: false };
@@ -751,6 +744,11 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     const deltas = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     const pair = deltas[event.key];
     if (!pair) return;
+    if (backgroundIds.has(focusedId)) {
+      // 固定背景仍响应方向键以阻止页面滚动，但不进入布局变更和保存链路。
+      event.preventDefault();
+      return;
+    }
     const factor = event.shiftKey ? DEFAULT_SNAP_STEP : 1;
     try {
       const next = applyVisualLayoutDrag(currentLayout.value, nodes, selectedId, { x: pair[0] * factor, y: pair[1] * factor });
@@ -777,6 +775,10 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
   /** 将绝对或父级相对的最终坐标换算为当前节点偏移，祖先及子节点的独立偏移不变。 */
   function onCoordinateChange() {
     if (!canUseLayoutTools()) return;
+    if (backgroundIds.has(selectedId)) {
+      syncCoordinateInputs();
+      return;
+    }
     const x = Number(xCoordinateInput.value);
     const y = Number(yCoordinateInput.value);
     try {
@@ -855,8 +857,8 @@ export function mountVisualLayoutEditor({ host, controlsHost, referenceUrl, view
     snapButton.disabled = !canEdit;
     coordinateModeInput.disabled = !canEdit;
     relativePointInput.disabled = !canEdit || coordinateModeInput.value !== "relative";
-    xCoordinateInput.disabled = !canEdit;
-    yCoordinateInput.disabled = !canEdit;
+    xCoordinateInput.disabled = !canEdit || backgroundIds.has(selectedId);
+    yCoordinateInput.disabled = !canEdit || backgroundIds.has(selectedId);
     saveButton.disabled = saveInFlight || Boolean(drag) || !reflowHealthy;
     toolsPanel.update({ selectedCount: selectedIds.length, canEdit, canUndo: history.canUndo, canRedo: history.canRedo });
     // 浏览器 tree.children 是 HTMLCollection，先显式转数组再遍历其子按钮。

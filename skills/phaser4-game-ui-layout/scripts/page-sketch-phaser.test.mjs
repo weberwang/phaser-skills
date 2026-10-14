@@ -426,15 +426,17 @@ test("纯布局只累加祖先偏移一次，并以父局部坐标映射嵌套�
   assert.deepEqual(result.nodes.get("label").localBounds, { x: 92, y: 77, width: 60, height: 30 });
 });
 
-/** 用例：背景 cover 保持视口可见范围，同时把背景自身布局偏移加回几何。 */
-test("纯布局应用背景自身偏移而且不缩放背景 viewport cover bounds", () => {
+/** 用例：铺底必须覆盖整个场景，背景的坐标偏移不能移动可见区域边界。 */
+test("纯布局固定背景为完整可见场景，不应用背景偏移", () => {
   const sketch = createSketch();
   sketch.nodes.push({ layout_node_id: "backdrop", parent_layout_node_id: "viewport", target_bounds: { x: 0, y: 0, width: 400, height: 300 } });
   const baseline = calculatePageSketchLayout(sketch, sketch.layout, { width: 600, height: 400 }, ["backdrop"]).nodes.get("backdrop").bounds;
-  const movedLayout = structuredClone(sketch.layout);
-  movedLayout.offsets.backdrop = { x: 13, y: -7 };
-  const moved = calculatePageSketchLayout(sketch, movedLayout, { width: 600, height: 400 }, ["backdrop"]).nodes.get("backdrop").bounds;
-  assert.deepEqual(moved, { ...baseline, x: baseline.x + 13, y: baseline.y - 7 });
+  for (const offset of [{ x: 13, y: -7 }, { x: -5000, y: 8000 }]) {
+    const movedLayout = structuredClone(sketch.layout);
+    movedLayout.offsets.backdrop = offset;
+    const moved = calculatePageSketchLayout(sketch, movedLayout, { width: 600, height: 400 }, ["backdrop"]).nodes.get("backdrop").bounds;
+    assert.deepEqual(moved, baseline);
+  }
 });
 
 /** 用例：验证稳定节点 ID 不会命中对象原型上的同名方法。 */
@@ -618,8 +620,8 @@ test("普通图片不因无关的scale9帧元数据被拒绝", async () => {
   renderer.destroy();
 });
 
-/** 用例：透明容器也能选择，背景偏移在 resize/wake 后依旧从冻结布局重算。 */
-test("Phaser renderer 为透明容器启用节点选择并保持背景偏移幂等", async () => {
+/** 用例：透明容器可选择，背景在非零偏移和 resize/wake 后仍固定覆盖视口。 */
+test("Phaser renderer 为透明容器启用节点选择且背景不被偏移移出场景", async () => {
   const sketch = createSketch();
   sketch.nodes.push({ layout_node_id: "backdrop", parent_layout_node_id: "viewport", target_bounds: { x: 0, y: 0, width: 400, height: 300 } });
   sketch.node_presentations.backdrop = { kind: "image", asset_ids: ["asset-main"], object_fit: "contain" };
@@ -645,14 +647,14 @@ test("Phaser renderer 为透明容器启用节点选择并保持背景偏移幂�
   const movedLayout = structuredClone(sketch.layout);
   movedLayout.offsets.backdrop = { x: 17, y: -9 };
   renderer.reflow(movedLayout);
-  const expected = calculatePageSketchLayout(sketch, movedLayout, scene.scale.gameSize, ["backdrop"]).nodes.get("backdrop").bounds;
-  assert.deepEqual(renderer.getBounds("backdrop"), expected);
+  const expected = calculatePageSketchLayout(sketch, sketch.layout, scene.scale.gameSize, ["backdrop"]).nodes.get("backdrop").bounds;
+  assert.deepEqual(renderer.getBounds("backdrop"), expected, "非零背景偏移不改变可见视口边界");
   scene.scale.gameSize = { width: 900, height: 600 };
   scene.scale.emit("resize", scene.scale.gameSize);
-  const resized = calculatePageSketchLayout(sketch, movedLayout, scene.scale.gameSize, ["backdrop"]).nodes.get("backdrop").bounds;
-  assert.deepEqual(renderer.getBounds("backdrop"), resized);
+  const resized = calculatePageSketchLayout(sketch, sketch.layout, scene.scale.gameSize, ["backdrop"]).nodes.get("backdrop").bounds;
+  assert.deepEqual(renderer.getBounds("backdrop"), resized, "resize 后背景继续覆盖可见视口");
   scene.events.emit("wake");
-  assert.deepEqual(renderer.getBounds("backdrop"), resized, "resize/wake 重算不得把背景 offset 累加到上次结果");
+  assert.deepEqual(renderer.getBounds("backdrop"), resized, "resize/wake 重算后背景必须仍覆盖完整场景");
   renderer.destroy();
   assert.ok(nodeContainers.every((container) => container.events.listenerCount("pointerdown") === 0), "销毁 renderer 后节点选择监听必须移除");
 });
@@ -776,7 +778,8 @@ test("V3 coverage 背景在 V4/V5 按实际视口等比 cover，resize 不退回
   background.parent_layout_node_id = "viewport";
   background.target_bounds = { x: 0, y: 0, width: 400, height: 300 };
   sketch.node_presentations.image = { kind: "image", asset_ids: ["asset-main"], object_fit: "contain" };
-  sketch.layout.offsets = {};
+  // 即便来源草图带有非零背景偏移，V4/V5 的场景边界也不能被它移动。
+  sketch.layout.offsets = { image: { x: 900, y: -700 } };
   const sources = await loadBackgroundSources(sketch);
   assert.deepEqual(sources.errors, []);
   assert.deepEqual(sources.backgroundNodeIds, ["image"], "只识别当前 scene/state 的 coverage 背景");
@@ -794,10 +797,18 @@ test("V3 coverage 背景在 V4/V5 按实际视口等比 cover，resize 不退回
     await waitForRenderer(v5Scene);
     v5Scene.game.events.emit("postrender");
     await createPromise;
+    assertBackgroundCover(v4Scene, v4Scene.scale.gameSize);
+    assertBackgroundCover(v5Scene, v5Scene.scale.gameSize);
+    const adjusted = structuredClone(sketch.layout);
+    adjusted.offsets.image = { x: -5000, y: 8000 };
+    v4.reflow(adjusted);
+    v5Scene.pageSketchRenderer.reflow(adjusted);
     for (const viewport of [{ width: 600, height: 400 }, { width: 400, height: 800 }, { width: 1000, height: 400 }, { width: 600, height: 400 }]) {
       for (const scene of [v4Scene, v5Scene]) {
         scene.scale.gameSize = viewport;
         scene.scale.emit("resize", viewport);
+        assertBackgroundCover(scene, viewport);
+        scene.events.emit("wake");
         assertBackgroundCover(scene, viewport);
       }
       assert.equal(v4.isHealthy(), true);
