@@ -487,7 +487,7 @@ function validateRepresentativeViewports(viewports, coverage, errors) {
   if (!hasCap) errors.push(`representativeViewports 必须包含 rawDpr>${RUNTIME_MAX_DPR} 且 effectiveDpr=${RUNTIME_MAX_DPR} 的封顶证据`);
 }
 
-/** 验证 V4 真实运行证据字段、resize 轨迹和独立 DISPLAY_LAYER 轨迹。 */
+/** 验证正式场景运行证据字段、resize 轨迹和独立 DISPLAY_LAYER 轨迹。 */
 function validateRequiredRuntimeEvidence(evidence, errors) {
   if (!requireObjectFields(evidence, "requiredRuntimeEvidence", ["mode", "requiredFields", "dprAssertions", "resizeAssertions", "displayLayerTrajectory", "evidenceBinding", "missingMeasurement"], errors)) return;
   if (!["usability", "exact"].includes(evidence.mode)) errors.push("requiredRuntimeEvidence.mode 必须为 usability 或 exact");

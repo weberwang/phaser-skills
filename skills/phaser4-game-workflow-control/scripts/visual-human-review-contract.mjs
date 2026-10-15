@@ -56,7 +56,7 @@ const VISUAL_APPROVAL_REVIEWER_FIELDS = Object.freeze([
 /**
  * V2 拆解确认后不再创建任何新的视觉复核身份或复核工件。
  *
- * 这些字段曾被 V3/F2/V4 当成第二套人工/AI 审阅入口；现在它们会掩盖
+ * 这些字段曾被 V3/F2 当成第二套人工/AI 审阅入口；现在它们会掩盖
  * 已冻结的 V2 拆解方案并造成重复确认，因此由共享门统一 fail closed。机器
  * 验证只能写入明确的确定性事实，例如文件 SHA、运行消费和 fidelity case。
  */
@@ -74,7 +74,7 @@ export const VISUAL_POST_APPROVAL_REVIEW_FIELDS = Object.freeze([
   "humanReview",
 ]);
 
-/** V3-V4 禁止重复生成的视觉复核工件名称。 */
+/** V3/V4 禁止重复生成的视觉复核工件名称。 */
 export const VISUAL_POST_APPROVAL_REVIEW_ARTIFACTS = Object.freeze([
   "f2_review",
   "f2_reviews",
@@ -93,7 +93,7 @@ export function earliestVisualReturnStage(stage, fallback = "V1/PROPOSAL") {
   const normalized = String(stage ?? "V1").toUpperCase();
   if (normalized === "V1" || normalized === "V2") return "V1/PROPOSAL";
   if (normalized === "V3") return "V2/V3";
-  if (normalized === "V4" || normalized === "F2") return "V3/F2";
+  if (normalized === "F2") return "V3/F2";
   return fallback;
 }
 
@@ -186,7 +186,7 @@ export function validateHumanReviewIdentity(review, identity = {}, context = {},
  */
 export function validateVisualPostApprovalReviewFields(value, options = {}) {
   const errors = [];
-  const stage = options.stage ?? "V3/V5";
+  const stage = options.stage ?? "V3/V4";
   const contextFor = (path) => ({ stage, region_id: path || "*" });
   const walk = (current, path = "") => {
     if (Array.isArray(current)) {

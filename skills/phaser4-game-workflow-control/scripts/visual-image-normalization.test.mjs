@@ -462,7 +462,7 @@ test("视觉生产契约门接线后拒绝失败或错误归一化记录", () =>
   const fixture = normalizedFixture();
   for (const normalization of [normalizationRecord({ status: "failed" }), normalizationRecord({ output_file: "public/wrong.png" })]) {
     const asset = { ...fixture.asset, generation_record: { ...fixture.generation, normalization_record: normalization } };
-    const errors = validateImageGenerationContract(asset, fixture.contract, { stage: "V4", annotation_number: 1, region_id: "hero" }, { expectedAsset: fixture.expectedAsset, checkFiles: false });
+    const errors = validateImageGenerationContract(asset, fixture.contract, { stage: "V3", annotation_number: 1, region_id: "hero" }, { expectedAsset: fixture.expectedAsset, checkFiles: false });
     assert(errors.some((item) => item.includes("normalization_record")), errors.join("\n"));
   }
 });

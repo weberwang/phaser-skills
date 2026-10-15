@@ -1,6 +1,6 @@
 # 九宫格 UI：拆解时确定，按小图生产
 
-九宫格是图片皮肤的呈现方式，仍属于图片资产路线。V2 拆解时逐个评估 UI 底板、按钮皮肤和框体，把采用或不适用的原因写进对应 `decomposition_elements[].nine_slice`，随已有拆解及布局确认冻结；不增加一次人工审批，也不等到 V4 才试切片。
+九宫格是图片皮肤的呈现方式，仍属于图片资产路线。V2 拆解时逐个评估 UI 底板、按钮皮肤和框体，把采用或不适用的原因写进对应 `decomposition_elements[].nine_slice`，随已有拆解及布局确认冻结；不增加一次人工审批，V3 生产按冻结参数执行。
 
 ## 适用判断
 
@@ -32,17 +32,17 @@
 明确分类为固定图片 UI 皮肤的部件必须有上述正反决策，不能把字段缺失当作“不适用”。机器依据声明的 role/视觉路线类型判断，不根据名称或图片像素猜测。V2 可派生 `nine_slice_decision_required=true` 并保留到布局节点，防止后续投影丢失必评估要求；该标记不是手填豁免开关。
 
 - `source_size` 是最终未裁切纹理的生产尺寸，不是场景显示框。例如源图 `96×64`，显示框可为 `300×180`。
-- 四边值是最终源帧像素，图片生产 DPR 为 1，对应草图逻辑单位；尺寸和边值均为整数。源图及每个显示框都须为中心留下正宽高，不能通过整体缩放挤进过小框。
+- 四边值是最终源帧像素，图片生产 DPR 为 1，对应布局合同中的逻辑单位；尺寸和边值均为整数。源图及每个显示框都须为中心留下正宽高，不能通过整体缩放挤进过小框。
 - 当前实现为真正的九块拉伸，`top+bottom>0`；不接受隐式三切片或重复平铺。原生三切片的固定高度语义需要独立合同，不能套用本合同。
 - 内部文字/图标的安全边距继续在 V2 节点目标框、父子关系和布局不变量中冻结。切片边宽不自动等于内容 padding，不自动把空白填满。
 
-## V2 到 V5 传递
+## V2 到 V4 传递
 
 1. **V2**：在拆解元素中记录决策，布局生成必须保留到对应节点。根据最小显示框检查边宽与中心；同一小图用于多个 placement 时，每个框都要满足限制。切片线应在当前拆解审阅材料中说明，用户确认与其它拆解事实一起生效。
 2. **V3**：把同一合同复制到对应组件/`expected_assets[].nine_slice`，按 `source_size` 写 `width/height` 并生产小图。普通图片仍按原尺寸合同；多组件区域不能用一个区域级九宫格声明覆盖全部资产。真实生成提示词包含小图尺寸、切片边宽、固定角边和独立文字/装饰要求。保持整幅源纹理，禁止 trim、裁角、额外 padding 或按大显示框生产整块皮肤；尺寸归一化只能保持已确认的源帧比例与切片结构。
-3. **V4**：图片配方为 `object_fit="nine-slice"`，`nine_slice` 与 V2/V3 完全一致，一个节点只引用一张皮肤纹理。源图实际尺寸不符、参数未冻结、目标过小均阻断，不能临时手填新的切片值。初始位置仍直接来自 V2，偏移默认空。
-4. **V5**：消费同一草图和共享 Phaser NineSlice 渲染器。内部尺寸变化用 `setSize`，局部对象保持 scale=1；不能用整图 `setDisplaySize` 拉伸角边。设计空间到设备的整体变换仍走共享视口入口。resize/wake 重放同一合同，不另写底板尺寸补丁。
+3. **V4**：正式场景按 V2/V3 已冻结的 `object_fit="nine-slice"` 与 `nine_slice` 实现，一个节点只引用一张皮肤纹理。源图实际尺寸不符、参数未冻结、目标过小均阻断，不能临时手填新的切片值。初始位置仍直接来自 V2，偏移默认空。
+4. **V4**：在正式场景按同一合同创建 Phaser NineSlice 对象。内部尺寸变化用 `setSize`，局部对象保持 scale=1；不能用整图 `setDisplaySize` 拉伸角边。设计空间到设备的整体变换仍走共享视口入口。resize/wake 重放同一合同，不另写底板尺寸补丁。
 
-原生 NineSlice 依赖 WebGL，工作流对含九宫格的草图明确选择 WebGL；项目构建缺少 NineSlice 或 WebGL 时报告实际能力缺口，不能静默改成普通图片拉伸。依据 [Phaser NineSlice API](https://docs.phaser.io/api-documentation/class/gameobjects-nineslice/) 和 [创建器能力说明](https://docs.phaser.io/api-documentation/class/gameobjects-gameobjectcreator#nineslice)，项目实际锁定的 Phaser 4 版本仍需具备对应能力。
+原生 NineSlice 依赖 WebGL，含九宫格资源的正式场景需使用 WebGL；项目构建缺少 NineSlice 或 WebGL 时报告实际能力缺口，不能静默改成普通图片拉伸。依据 [Phaser NineSlice API](https://docs.phaser.io/api-documentation/class/gameobjects-nineslice/) 和 [创建器能力说明](https://docs.phaser.io/api-documentation/class/gameobjects-gameobjectcreator#nineslice)，项目实际锁定的 Phaser 4 版本仍需具备对应能力。
 
 机器验证合同传递、实际纹理尺寸、切片范围、局部几何和两阶段同路；角部画质、接缝、拉伸后的材质与留白由用户人工检查。九宫格参数合法不能代替视觉验收。

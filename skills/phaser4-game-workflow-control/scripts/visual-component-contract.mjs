@@ -5,7 +5,7 @@
  *
  * annotation_number 只标识效果图上的审阅区域，不能直接当作资产数量。
  * 该模块把“区域 → 部件 → 状态 → 资产/图集切片”收敛成可验证的映射，
- * 供 V2、V3、Implementation Package、V5 和 F2 共用。
+ * 供 V2、V3、Implementation Package、V4 和 F2 共用。
  */
 import { getVisualRegionDefinitionAliasConflicts, normalizeVisualRegionDefinition } from "../../phaser4-game-asset-integration/scripts/effect_image_annotation_core.mjs";
 import { atomicImageRequirementsEqual, deriveAtomicImageRequirements, normalizeAtomicComponents, normalizeAtomicImageRequirements } from "./visual-atomic-contract.mjs";
@@ -654,7 +654,7 @@ function resolveAtlasAssetSize(asset) {
   return { width: asset?.width ?? output.width, height: asset?.height ?? output.height };
 }
 
-/** 校验 V5 实际输出是否逐 component×state 覆盖 V3 合同。 */
+/** 校验 V4 实际输出是否逐 component×state 覆盖 V3 合同。 */
 export function validateComponentAuditEvidence(region, auditUnit, context = {}, options = {}) {
   const errors = [];
   const canonical = normalizeVisualRegionDefinition(region);
@@ -720,10 +720,10 @@ export function validateComponentAuditEvidence(region, auditUnit, context = {}, 
     if (observed !== 1) errors.push(componentError(context, "V3 actual_assets 必须逐 component×state 一一对应", { componentId: pair.componentId, stateId: pair.stateId, expectedCount: 1, observedCount: observed, missing: observed === 0 ? "actual_assets" : undefined }));
   }
   if (actual.length !== required.length) errors.push(componentError(context, "V3 actual_assets 总数量必须等于所有 required component×state", { expectedCount: required.length, observedCount: actual.length }));
-  // V3 确认资源和组件产物；逐部件 runtime_consumption 只证明 V5 正式 Scene 接入。
-  if (context.stage === "V5") {
+  // V3 确认资源和组件产物；逐部件 runtime_consumption 只证明 V4 正式 Scene 接入。
+  if (context.stage === "V4") {
   const usages = auditUnit?.runtime_consumption?.component_usages ?? auditUnit?.runtime_consumption?.componentUsages;
-  if (!Array.isArray(usages)) errors.push(componentError(context, "V5 runtime_consumption 必须逐部件登记 component_usages", { missing: "runtime_consumption.component_usages" }));
+  if (!Array.isArray(usages)) errors.push(componentError(context, "V4 runtime_consumption 必须逐部件登记 component_usages", { missing: "runtime_consumption.component_usages" }));
   else {
     const usagePairs = new Map();
     usages.forEach((usage, index) => {

@@ -34,7 +34,7 @@
 
 生成记录按实际路线记录 `generator`/`generator_version`、工具参数、输入/输出路径及 SHA、`edge_profile`、`edge_evidence` 和后处理；未暴露的版本、参数或种子记录 `not-provided`，不得编造。背景去除路线必须限定 `hard-edge`，显式记录 `source_background_mode=opaque`、`source_background_color`、`color_separation_verified=true` 及真实 `background_removal_attempts`，并复用 `remove-background-local.mjs`；每次尝试按实际情况记录状态、源/输出路径、Alpha、背景颜色、时间、失败原因和证据。不得为半透明、辉光、柔和阴影、毛发、玻璃或混合边缘使用颜色阈值去背。
 
-直接 Alpha 路线只有在当前工具对声明的 `edge_profile` 有可核对能力证据时才可使用。generation record 顶层记录 `generator/generator_version`，嵌套 `capability.tool/tool_version` 必须与其一致；同时记录真实透明输出格式和能力证据，原始输出 SHA 仅作可选追踪。V3/V5 必须解码 PNG 的像素证明存在真实透明值，不能只依据扩展名、提示词或工具参数声明。遮罩合成路线记录原始输入、独立 mask、合成输出各自路径、mask 处理工具/版本、参数与证据。工具无法可靠保留所需的半透明、辉光、柔和阴影、毛发、玻璃或混合边缘时，报告能力缺口，改用已验证的直接 Alpha、独立遮罩/人工创作、重新生成或有明确合同的 Phaser 特效；不得提高容差、硬抠轮廓、删除光效或伪造透明结果。已有真实透明图按资源复用合同接入，不伪造生成或去背记录。
+直接 Alpha 路线只有在当前工具对声明的 `edge_profile` 有可核对能力证据时才可使用。generation record 顶层记录 `generator/generator_version`，嵌套 `capability.tool/tool_version` 必须与其一致；同时记录真实透明输出格式和能力证据，原始输出 SHA 仅作可选追踪。V3/V4 必须解码 PNG 的像素证明存在真实透明值，不能只依据扩展名、提示词或工具参数声明。遮罩合成路线记录原始输入、独立 mask、合成输出各自路径、mask 处理工具/版本、参数与证据。工具无法可靠保留所需的半透明、辉光、柔和阴影、毛发、玻璃或混合边缘时，报告能力缺口，改用已验证的直接 Alpha、独立遮罩/人工创作、重新生成或有明确合同的 Phaser 特效；不得提高容差、硬抠轮廓、删除光效或伪造透明结果。已有真实透明图按资源复用合同接入，不伪造生成或去背记录。
 
 `transparency_strategy` 只允许 `background-removal`、`direct-alpha`、`mask-composition`。只有背景移除路线允许记录背景颜色和 `background_removal_attempts`；直接 Alpha 与遮罩路线不得伪造去背记录。`postprocess` 必须是字符串数组。
 
@@ -69,7 +69,7 @@
 
 ## 结构化生成记录
 
-已在 V2 确认的九宫格皮肤按[九宫格合同](nine-slice-ui.md)生产：调用 `buildEffectImageFullPrompt` 时传入完整 `expectedAsset`，构建器把最终小图 `source_size`、四边切片值与固定角边要求加入实际提示词。保留完整参考图作为视觉输入；皮肤源图的切片生产比例与最终显示框比例分别记录，最终外形由冻结显示框和九宫格规则还原。生成记录缺少实际切片段会阻断，不能生成整块大底板后再在 V4 临时改九宫格。
+已在 V2 确认的九宫格皮肤按[九宫格合同](nine-slice-ui.md)生产：调用 `buildEffectImageFullPrompt` 时传入完整 `expectedAsset`，构建器把最终小图 `source_size`、四边切片值与固定角边要求加入实际提示词。保留完整参考图作为视觉输入；皮肤源图的切片生产比例与最终显示框比例分别记录，最终外形由冻结显示框和九宫格规则还原。生成记录缺少实际切片段会阻断；正式场景实现须消费冻结参数，不临时改写九宫格。
 
 九宫格尺寸归一化传入已冻结的 `nine_slice`；CLI 使用 `--nine-slice-json` 传递同一 JSON，`--width/--height` 使用 `source_size`。只允许保持源帧比例的整图尺寸归一化，不适用普通图片两次比例失败后的受控裁切；比例仍不符时报告源图问题，不能裁掉角边或补边后用正确尺寸冒充合格皮肤。
 
@@ -95,7 +95,7 @@
 
 透明单图按冻结的 `transparency_strategy` 生成或合成，再执行 Sharp 尺寸归一化、V3/final/runtime。归一化记录绑定处理输入；`source_file` 指向最终归一化 PNG，摘要可选且不参与验收，实际输出、`runtime_file` 与 `normalization_record.output_file` 身份一致。归一化须保持 Alpha、比例和主体边界，不得把棋盘格烘焙背景当作透明。生成失败或路线处理失败时保留实际失败记录；能力不足就报告缺口，不以更高容差、硬抠边缘或删除光效重试。
 
-每条透明路线为同一候选制作浅底（`#F2E9DF`）和深底（`#16202E`）预览，记录实际候选、归一化 PNG 和两张预览路径，SHA 仅作可选追踪。V3 可记录 `inspection.status=pending`；V5 必须人工检查主体缺损、残留背景、色边和半透明区域，状态改为 `passed` 并附证据。机器格式或 Alpha 检查不能替代视觉检查。
+每条透明路线为同一候选制作浅底（`#F2E9DF`）和深底（`#16202E`）预览，记录实际候选、归一化 PNG 和两张预览路径，SHA 仅作可选追踪。V3 可记录 `inspection.status=pending`；V4 必须人工检查主体缺损、残留背景、色边和半透明区域，状态改为 `passed` 并附证据。机器格式或 Alpha 检查不能替代视觉检查。
 
 所有生成式位图首次输出比例不符时最多重生一次；第二次仍不符时，若冻结裁切焦点和安全事实允许，使用 `crop-and-resize-to-contract`，记录 `aspect_ratio_correction` 中两次真实原始生成 attempt、SHA、尺寸、focus 和最大目标比例 `crop_rect`；若裁切会损伤主体、文字、透明轮廓或关键构图，则报告能力缺口或重新制定路线，不得把棋盘格烘焙背景当作真实透明。`padding_policy=none`，禁止非等比拉伸、padding、contain、复制边缘或裁切冻结 `reference_target`；透明目标归一化前后都必须保留真实 Alpha。
 
@@ -105,6 +105,6 @@ effect-image 生成必须在生成前绑定已完成三候选人工选择且由 
 
 实际生成记录至少包含 `origin=generated`、四个基线身份字段、`global_visual_consistency_prompt`、`style_drift_policy=forbid`、实际发送的 `full_prompt`、`consistency_status=passed` 与实际文件路径的 `consistency_evidence`；`target_sha256`、`output_sha256` 及证据 SHA 仅作可选追踪。`full_prompt` 必须同时含本文件既有的忠实重建 canonical 段、全局一致性段、asset/state/negative 段；缺少实际发送证明、漏传/多传锚点、允许风格迁移或身份漂移均失败。用户/外部提供图使用 `origin=provided`，不得补写伪生成记录。共享常量和合同位于 `global-visual-consistency-contract.mjs`。
 
-## V5 同屏组合
+## V4 同屏组合
 
-V5 不得只凭文件存在、MIME、尺寸、Alpha、component×state 齐全、运行时登记或 `missing=0` 判定视觉通过。`combination_preacceptance` 必须声明当前正式资产与正式布局结构，并以机器可复核事实确认轮廓、比例、姿态、图标语义和整屏构图未偏离冻结目标；还必须记录无未经批准的重新设计。提示词合同/实际 generation record 的绑定必须同时覆盖当前目标文件、region ID 和候选标识。提示词合同失败属于执行问题，先在 V3/V5 原地修复或重验当前门并阻止进入 V5；只有冻结 target/方向/候选身份真实变化时才进入必要回退。
+V4 不得只凭文件存在、MIME、尺寸、Alpha、component×state 齐全、运行时登记或 `missing=0` 判定视觉通过。`combination_preacceptance` 必须绑定 V4 正式运行画面所使用的当前资产与布局结构，并以机器可复核事实检查轮廓、比例、姿态、图标语义和整屏构图与冻结目标的关系；还必须记录无未经批准的重新设计。提示词合同/实际 generation record 的绑定必须同时覆盖当前目标文件、region ID 和候选标识。提示词合同失败属于执行问题，先在 V3/V4 原地修复或重验当前门；只有冻结 target/方向/候选身份真实变化时才进入必要回退。

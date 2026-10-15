@@ -455,7 +455,7 @@ export function validateSceneVisualRouteAnalysis(region, contract = {}, options 
 /** 把场景 route 与 coverage_audit/Implementation Package 的既有字段做单向一致性校验。 */
 function validateBoundProductionFields(region, analysis, bound, sourceLabel, contract, stage, errors) {
   if (!isObject(bound)) return;
-  const returnStage = sourceLabel.includes("visualProductionUnit") ? "V3/V5" : "V1/PROPOSAL";
+  const returnStage = sourceLabel.includes("visualProductionUnit") ? "V3/V4" : "V1/PROPOSAL";
   const rootCause = sourceLabel.includes("visualProductionUnit") ? "执行问题" : "方案缺失";
   if (analysis.selected_route === SCENE_VISUAL_ROUTES.PHASER_NATIVE && (bound.production_method ?? bound.production_contract?.production_method) !== undefined) {
     // 参数进入既有 runtime_implementation 确认哈希，不能在行为装配阶段悄悄改变外观。
@@ -485,7 +485,7 @@ export function validateSceneVisualRouteContract(contract, manifest = null, opti
     const analysis = region?.visual_route_analysis;
     if (!isObject(analysis)) continue;
     if (analysis.selected_route === SCENE_VISUAL_ROUTES.PHASER_NATIVE) {
-      for (const message of validateNativeRuntimeEvidence(region, contract, manifest, { ...options, stage })) errors.push(routeError(stage, contract, region, message, { returnStage: "V3/V5", rootCause: "执行问题" }));
+      for (const message of validateNativeRuntimeEvidence(region, contract, manifest, { ...options, stage })) errors.push(routeError(stage, contract, region, message, { returnStage: "V3/V4", rootCause: "执行问题" }));
     }
     const regionId = region.region_id;
     validateBoundProductionFields(region, analysis, manifestRegions.get(regionId), "coverage_audit region", contract, stage, errors);

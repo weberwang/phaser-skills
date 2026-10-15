@@ -63,14 +63,14 @@ export function createRecordValidators({
     if (!EVIDENCE_VERDICTS.includes(evidence.verdict)) fail('Evidence.verdict 无效');
     requireFields(evidence.gateResults, gates.slice(0, 4), 'Evidence.gateResults');
     const evidenceStage = String(evidence.currentStage ?? evidence.current_stage ?? '').toUpperCase();
-    if (evidenceStage === 'V5' || evidence.responsiveEvidence !== undefined || evidence.responsiveRuntimeEvidence !== undefined) {
+    if (evidenceStage === 'V4' || evidence.responsiveEvidence !== undefined || evidence.responsiveRuntimeEvidence !== undefined) {
       const contract = evidence.responsiveViewportContract ?? evidence.responsiveContract;
-      const options = { stage: evidenceStage || 'V5' };
+      const options = { stage: evidenceStage || 'V4' };
       const records = evidence.responsiveEvidence ?? evidence.responsiveRuntimeEvidence;
       // 独立清单结构校验尚无项目方向上下文；方向矩阵由后续绑定 Work Item/实施包的门复核。
       const responsiveErrors = contract
         ? validateResponsiveEvidenceManifest(evidence, contract, options)
-        : !Array.isArray(records) || records.length === 0 ? ['V5 缺少真实响应式运行证据数组']
+        : !Array.isArray(records) || records.length === 0 ? ['V4 缺少真实响应式运行证据数组']
           : records.flatMap((record) => validateResponsiveEvidenceRecord(record, null, options));
       if (responsiveErrors.length) fail(responsiveErrors[0]);
     }

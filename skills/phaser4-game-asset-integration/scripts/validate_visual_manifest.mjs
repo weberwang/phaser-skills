@@ -12,8 +12,8 @@ import { productionFileGateError } from "../../phaser4-game-workflow-control/scr
 import { buildVisualConfirmationAuthorityByRegion, validateVisualDecompositionConfirmations } from "../../phaser4-game-workflow-control/scripts/visual-decomposition-confirmation.mjs";
 import { validateReuseProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-confirmation-reuse-gates.mjs";
 import { validateFormalAnnotationPng } from "./visual-annotation-evidence.mjs";
-import { auditProductionContractByGroups, confirmationAuthorityBase, validateConfirmationGroups, validateImplementationPlan as validateImplementationPlanContract, validateManualConfirmationEvidence, validateReusePlanRelation, validateV5ProductionGateByGroups } from "./visual-manifest-confirmation.mjs";
-import { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateEvidenceIdentity, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateTransparentBackgroundContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
+import { auditProductionContractByGroups, confirmationAuthorityBase, validateConfirmationGroups, validateImplementationPlan as validateImplementationPlanContract, validateManualConfirmationEvidence, validateReusePlanRelation, validateV4ProductionGateByGroups } from "./visual-manifest-confirmation.mjs";
+import { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateEvidenceIdentity, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateTransparentBackgroundContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV4ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
 import { validateVisualPostApprovalReviewFields } from "../../phaser4-game-workflow-control/scripts/visual-human-review-contract.mjs";
 import { validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "../../phaser4-game-workflow-control/scripts/scene-reconstruction-contract.mjs";
 import { resolveVisualValidationMode, validateVisualValidationPolicy, validateVisualManifestFidelityCases } from "../../phaser4-game-workflow-control/scripts/visual-validation-policy.mjs";
@@ -22,10 +22,10 @@ import { checkManifestFileEvidence, collectManifestFileEvidenceEntries } from ".
 import { validateImageGenerationSizeManifest } from "../../phaser4-game-workflow-control/scripts/visual-generation-size-contract.mjs";
 import { isWorkflowDpr, workflowDprError } from "../../phaser4-game-workflow-control/scripts/workflow-dpr-contract.mjs";
 import { VISUAL_STAGE_IDS, VISUAL_STAGE_STATES } from "../../phaser4-game-workflow-control/scripts/visual-stage-prerequisites.mjs";
-import { validateEffectImageLayoutBindings, validatePngLayoutMetadata, validateTechnicalLayoutNodeIds, validateTechnicalRegionLayout, validateV5LayoutMeasurements } from "./validate_visual_layout_mapping.mjs";
+import { validateEffectImageLayoutBindings, validatePngLayoutMetadata, validateTechnicalLayoutNodeIds, validateTechnicalRegionLayout, validateV4LayoutMeasurements } from "./validate_visual_layout_mapping.mjs";
 import { checkFrameAnimationWorkflowFiles, validateFrameAnimationWorkflowContract } from "./frame-animation-workflow-contract.mjs";
 export { computeRegionDefinitionSha256 } from "./effect_image_annotation_core.mjs";
-export { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateEvidenceIdentity, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV5ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
+export { atomicImageRequirementsEqual, auditProductionContract, deriveAtomicImageRequirements, manifestEvidenceIdentity, normalizeComponentExpectedAsset, normalizeProjectRelativePath, resolveOutputMetadata, resolveProductionContract, validateEvidenceIdentity, validateImageGenerationContract, validateProductionAuditShape, validateProductionMethodChangeRequest, validateProductionContract, validateVisualComponentContract, validateVisualProductionCoverage, validateV4ProductionGate } from "../../phaser4-game-workflow-control/scripts/visual-production-contract.mjs";
 export { validateSceneReconstructionGate, validateSceneReconstructionContract, validateStructuredFidelityCases } from "../../phaser4-game-workflow-control/scripts/scene-reconstruction-contract.mjs";
 export { calculateComponentDisplaySize, validateImageGenerationSizeContract, validateImageGenerationSizeManifest } from "../../phaser4-game-workflow-control/scripts/visual-generation-size-contract.mjs";
 
@@ -230,7 +230,7 @@ function validateReconstructionLifecycle(data, errors) {
     return reconstruction;
   }
   if (reconstruction.applicability !== "effect-image") { errors.push("effect_image_reconstruction.applicability 必须为 not-applicable 或 effect-image"); return reconstruction; }
-  if (!["v2-ready", "v5-complete"].includes(reconstruction.lifecycle)) errors.push("effect-image lifecycle 必须为 v2-ready 或 v5-complete");
+  if (!["v2-ready", "v4-complete"].includes(reconstruction.lifecycle)) errors.push("effect-image lifecycle 必须为 v2-ready 或 v4-complete");
   return reconstruction;
 }
 
@@ -255,20 +255,20 @@ function validateVisualBaseline(baseline, errors) {
   return baseline;
 }
 
-/** 校验资源 manifest 的显式阶段；V4 草图使用独立数据文件，不能把页面编辑状态塞进资源清单。 */
+/** 校验资源清单的显式阶段，正式运行直接消费 V2/V3 合同。 */
 function validateVisualStageMetadata(data, requestedStage, errors) {
   const stage = data.visualStage ?? data.visual_stage; const state = data.visualStageState ?? data.visual_stage_state; const stageId = String(stage ?? "").toUpperCase();
   const isVisualManifest = data.effect_image_reconstruction?.applicability === "effect-image"; const stageState = String(state ?? "");
   if (!isVisualManifest && stage === undefined && state === undefined) return;
-  if (!VISUAL_STAGE_IDS.includes(stageId)) errors.push("visualStage 必须显式使用已知的 V0→V5 阶段，不能从 stageId/文本推断");
-  if (!VISUAL_STAGE_STATES.includes(stageState)) errors.push("visualStageState 必须使用有语义的 V0→V5 状态，裸 frozen 或未知状态均失败");
-  if (isVisualManifest && !["V2", "V3", "V5"].includes(stageId)) errors.push("effect-image manifest 阶段只能为 V2、V3 或 V5；V4 草图由独立页面数据承载");
+  if (!VISUAL_STAGE_IDS.includes(stageId)) errors.push("visualStage 必须显式使用已知的 V0→V4 阶段，不能从 stageId/文本推断");
+  if (!VISUAL_STAGE_STATES.includes(stageState)) errors.push("visualStageState 必须使用有语义的 V0→V4 状态，裸 frozen 或未知状态均失败");
+  if (isVisualManifest && !["V2", "V3", "V4"].includes(stageId)) errors.push("effect-image manifest 阶段只能为 V2、V3 或 V4");
   if (stage && requestedStage && stageId !== String(requestedStage).toUpperCase()) errors.push(`visualStage=${stage} 与 --stage=${requestedStage} 冲突`);
   if (stageState === "global-static-baseline-frozen" && stageId === "V2") errors.push("global-static-baseline-frozen 只表示静态基线冻结，不能冒充 v2-production-planning-complete");
   if (isVisualManifest && (!stage || !state)) errors.push("effect-image 清单必须同时提供 visualStage 与 visualStageState，缺失时不允许继续生产");
   if (stageId === "V2" && stageState !== "v2-production-planning-complete") errors.push("V2 必须声明 v2-production-planning-complete，静态基线或笼统 frozen 不足");
   if (stageId === "V3" && stageState !== "v3-formal-acceptance-complete") errors.push("V3 必须声明 v3-formal-acceptance-complete");
-  if (stageId === "V5" && stageState !== "v5-runtime-integration-candidate") errors.push("V5 必须声明 v5-runtime-integration-candidate");
+  if (stageId === "V4" && stageState !== "v4-runtime-integration-candidate") errors.push("V4 必须声明 v4-runtime-integration-candidate");
 }
 
 /** 验证生产中及已验收资源绑定当前根基线。 */
@@ -342,7 +342,7 @@ export function validateManifest(data, options = {}) {
   const visualValidationMode = resolveVisualValidationMode(data, data.scene_reconstruction_contract);
   validateVisualValidationPolicy(errors, "visual_validation", data, data.scene_reconstruction_contract);
   const requestedStage = options.stage === undefined ? null : String(options.stage).toUpperCase();
-  if (requestedStage && !["V2", "V3", "V5"].includes(requestedStage)) errors.push("--stage 只能是 V2、V3 或 V5；V4 使用独立草图文件");
+  if (requestedStage && !["V2", "V3", "V4"].includes(requestedStage)) errors.push("--stage 只能是 V2、V3 或 V4");
   if (data.schema_version !== SCHEMA_VERSION) errors.push(`schema_version 必须为 ${SCHEMA_VERSION}`);
   const baseline = validateVisualBaseline(data.visual_baseline, errors);
   validateVisualStageMetadata(data, requestedStage, errors);
@@ -374,28 +374,28 @@ export function validateManifest(data, options = {}) {
   const bitmapAssetIds = new Set(coverageRegions.filter((region) => isObject(region) && region.owner_type === "fixed-production-visual" && region.production_origin === "bitmap-decomposition").flatMap(fixedRegionAssetIds));
   const independentAssetIds = new Set(coverageRegions.filter((region) => isObject(region) && region.owner_type === "fixed-production-visual" && region.production_origin === "independent-production").flatMap(fixedRegionAssetIds));
   if (reconstruction?.applicability === "effect-image" && data.fidelity_cases != null && !Array.isArray(data.fidelity_cases)) errors.push("fidelity_cases 必须是数组");
-  if (reconstruction?.lifecycle === "v5-complete") {
+  if (reconstruction?.lifecycle === "v4-complete") {
     validateVisualManifestFidelityCases(data.fidelity_cases, target, candidate, baseline, errors, { requireCompleteCoverage: true, mode: visualValidationMode });
-    if (Array.isArray(data.fidelity_cases) && data.fidelity_cases.some((item) => item?.conclusion !== "passed")) errors.push("V5 complete 的 fidelity_cases 必须全部 passed");
+    if (Array.isArray(data.fidelity_cases) && data.fidelity_cases.some((item) => item?.conclusion !== "passed")) errors.push("V4 complete 的 fidelity_cases 必须全部 passed");
   } else if (Array.isArray(data.fidelity_cases) && data.fidelity_cases.length > 0) validateVisualManifestFidelityCases(data.fidelity_cases, target, candidate, baseline, errors, { mode: visualValidationMode });
   const strictProductionContract = reconstruction?.applicability === "effect-image";
   if (strictProductionContract) {
-    const stage = requestedStage ?? (reconstruction.lifecycle === "v5-complete" ? "V5" : "V2");
+    const stage = requestedStage ?? (reconstruction.lifecycle === "v4-complete" ? "V4" : "V2");
     // V2 拆解图确认之后，清单上的所有后续证据都只能是确定性机器验证；旧复核字段 fail closed。
     errors.push(...validateVisualPostApprovalReviewFields(data, { stage }));
-    // V3 只验收资源生产结果；正式 Scene、同屏组合和运行时消费统一留到 V5。
-    if (stage !== "V3") errors.push(...validateSceneReconstructionGate(data, { stage, displayLayerScope, requireFinalLayout: stage === "V5" || reconstruction.lifecycle === "v5-complete" || (stage === "V2" && [data.visualStageState, data.visual_stage_state].includes("v2-production-planning-complete")), visual_validation: { mode: visualValidationMode } }));
+    // V3 只验收资源生产结果；正式 Scene、同屏组合和运行时消费统一留到 V4。
+    if (stage !== "V3") errors.push(...validateSceneReconstructionGate(data, { stage, displayLayerScope, requireFinalLayout: stage === "V4" || reconstruction.lifecycle === "v4-complete" || (stage === "V2" && [data.visualStageState, data.visual_stage_state].includes("v2-production-planning-complete")), visual_validation: { mode: visualValidationMode } }));
     const fileGateError = productionFileGateError(data, options, stage);
     if (fileGateError) errors.push(fileGateError);
     errors.push(...validateVisualProductionCoverage(fixedVisualAuditManifest(data), { stage: "V2", requireManualConfirmation: false }));
     errors.push(...validateImageGenerationSizeManifest(data, { stage }));
-    const requireAudit = stage === "V3" || stage === "V5" || reconstruction.lifecycle === "v5-complete";
-    const requireV5 = stage === "V5" || reconstruction.lifecycle === "v5-complete";
-    if (requireV5) { validateV5LayoutMeasurements(data, layoutBindings, errors, { visual_validation: { mode: visualValidationMode } });
-      // 显式传入 V5，让生产审计同时校验每个区域的运行时消费身份。
-      errors.push(...validateProductionAuditShape(fixedVisualAuditManifest(data), { ...options, stage: "V5", projectRoot: options.projectRoot, checkFiles: options.checkFiles }));
+    const requireAudit = stage === "V3" || stage === "V4" || reconstruction.lifecycle === "v4-complete";
+    const requireV4 = stage === "V4" || reconstruction.lifecycle === "v4-complete";
+    if (requireV4) { validateV4LayoutMeasurements(data, layoutBindings, errors, { visual_validation: { mode: visualValidationMode } });
+      // 显式传入 V4，让生产审计同时校验每个区域的运行时消费身份。
+      errors.push(...validateProductionAuditShape(fixedVisualAuditManifest(data), { ...options, stage: "V4", projectRoot: options.projectRoot, checkFiles: options.checkFiles }));
       const structuralGate = { ...data, coverage_audit: isObject(data.coverage_audit) ? { ...data.coverage_audit, regions: [] } : data.coverage_audit };
-      errors.push(...validateV5ProductionGate(structuralGate, { requireEvidenceIdentity: true, requireSceneReconstruction: true, displayLayerScope }));
+      errors.push(...validateV4ProductionGate(structuralGate, { requireEvidenceIdentity: true, requireSceneReconstruction: true, displayLayerScope }));
     } else if (requireAudit) {
       errors.push(...validateProductionAuditShape(fixedVisualAuditManifest(data), { ...options, projectRoot: options.projectRoot, checkFiles: options.checkFiles }));
     } else if (isObject(data.production_contract_audit)) errors.push(...validateProductionAuditShape(data));
@@ -786,10 +786,10 @@ async function checkBitmapEvidenceFiles(projectRoot, label, region, confirmation
 /** 检查全局基线与已验收资源声明的本地文件是否存在。 */
 export async function checkManifestFiles(data, projectRoot, options = {}) {
   const errors = [];
-  const requestedStage = options.stage === undefined ? null : String(options.stage).toUpperCase(); if (requestedStage && !["V2", "V3", "V5"].includes(requestedStage)) errors.push("--stage 只能是 V2、V3 或 V5；V4 使用独立草图文件"); const lifecycle = data.effect_image_reconstruction?.lifecycle; const stage = requestedStage ?? (lifecycle === "v5-complete" ? "V5" : "V2");
+  const requestedStage = options.stage === undefined ? null : String(options.stage).toUpperCase(); if (requestedStage && !["V2", "V3", "V4"].includes(requestedStage)) errors.push("--stage 只能是 V2、V3 或 V4"); const lifecycle = data.effect_image_reconstruction?.lifecycle; const stage = requestedStage ?? (lifecycle === "v4-complete" ? "V4" : "V2");
   const isEffectImage = data.effect_image_reconstruction?.applicability === "effect-image";
-  const requireAudit = isEffectImage && (["V3", "V5"].includes(stage) || lifecycle === "v5-complete"); const requireV5 = isEffectImage && (stage === "V5" || lifecycle === "v5-complete");
-  // V2/V3/V5 文件门读取资源清单，V4 草图在独立页面文件中完成。
+  const requireAudit = isEffectImage && (["V3", "V4"].includes(stage) || lifecycle === "v4-complete"); const requireV4 = isEffectImage && (stage === "V4" || lifecycle === "v4-complete");
+  // V2/V3/V4 文件门直接读取资源清单，不依赖额外草图文件。
   if (isEffectImage) errors.push(...validateVisualPostApprovalReviewFields(data, { stage }));
   const baseline = data.visual_baseline; const target = data.reference_target;
   let referenceTargetFile = null;
@@ -809,10 +809,10 @@ export async function checkManifestFiles(data, projectRoot, options = {}) {
   const supplementalPaths = collectManifestFileEvidenceEntries(data);
   // 文件门把清单根身份传给共享确认器；逐组校验时再注入该组 authorityByRegion。
   const confirmationAuthority = confirmationAuthorityBase(data, projectRoot, options);
-  if (requireV5) {
-    errors.push(...validateVisualPostApprovalReviewFields(data, { stage: "V5" }));
+  if (requireV4) {
+    errors.push(...validateVisualPostApprovalReviewFields(data, { stage: "V4" }));
     errors.push(...validateProductionAuditShape(data, { ...options, ...confirmationAuthority, projectRoot, checkFiles: true }));
-    errors.push(...validateV5ProductionGateByGroups(data, { ...options, ...confirmationAuthority, projectRoot, checkFiles: true, requireEvidenceIdentity: true, identity: manifestEvidenceIdentity(data) }));
+    errors.push(...validateV4ProductionGateByGroups(data, { ...options, ...confirmationAuthority, projectRoot, checkFiles: true, requireEvidenceIdentity: true, identity: manifestEvidenceIdentity(data) }));
   } else if (requireAudit) {
     errors.push(...validateProductionAuditShape(data, { ...options, ...confirmationAuthority, projectRoot, checkFiles: true }));
   }

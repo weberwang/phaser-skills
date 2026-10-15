@@ -260,7 +260,7 @@ async function readOutputMetadata(outputFile, targetWidth, targetHeight, format)
   return metadata;
 }
 
-/** 生成结构化尺寸归一化记录，供 V4 合同和运行时共同消费。 */
+/** 生成结构化尺寸归一化记录，供 V3 合同和运行时共同消费。 */
 export async function normalizeImageToContract(options = {}) {
   const sourceFile = options.sourceFile ?? options.source_file;
   const outputFile = options.outputFile ?? options.output_file;

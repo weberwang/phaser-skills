@@ -102,12 +102,12 @@ function validManifest() {
     schema_version: "1.5",
     visual_validation: { mode: "exact" },
     visual_contract_version: "1.0",
-    visualStage: "V5",
-    visualStageState: "v5-runtime-integration-candidate",
+    visualStage: "V4",
+    visualStageState: "v4-runtime-integration-candidate",
     workItemId: "work-item-1",
     candidateVersion: "candidate-1",
     baseline_sha256: EMPTY_DOCUMENT_FINGERPRINT,
-    effect_image_reconstruction: { applicability: "effect-image", lifecycle: "v5-complete" },
+    effect_image_reconstruction: { applicability: "effect-image", lifecycle: "v4-complete" },
     visual_baseline: { id: "fox-world", version: "1.0.0", style_fingerprint: EMPTY_DOCUMENT_FINGERPRINT, document: "docs/visual-baseline.md", status: "global-static-baseline-frozen", anchor_evidence: [{ path: "evidence/visual/main-anchor.png", sha256: EMPTY_DOCUMENT_FINGERPRINT }] },
     reference_target: { candidate_id: "mockup-a", original_file: "evidence/visual/mockup.png", target_sha256: targetSha, frozen_at: "2026-08-15T00:00:00Z", status: "reference-target-frozen", scene_ids: ["main-gameplay"], state_ids: ["default"], origin: "provided" },
     candidate_identity: { kind: "git", sha256: candidateSha, diff_fingerprint: "diff-1" },
@@ -128,7 +128,7 @@ function validManifest() {
   const heroExpected = heroRegion.expected_assets[0];
   manifest.production_contract_audit = { status: "passed", candidate_version: manifest.candidateVersion, target_sha256: targetSha, audited_at: "2026-08-15T00:30:00Z", units: [{ annotation_number: 2, region_id: "region-hero", observed_method: "authored-raster", observed_delivery_kind: "raster-image", status: "passed", expected_assets: [{ ...heroExpected }], atomic_image_requirements: heroRegion.atomic_image_requirements, actual_assets: [{ asset_id: "hero-idle", file: "public/assets/hero.png", component_id: "hero-component", state_id: "default", asset_scope: "atomic-component", atomic_visual_key: heroExpected.atomic_visual_key, mime_type: "image/png", width: 64, height: 96, alpha: true, sha256: heroPngSha }], runtime_consumption: { status: "passed", evidence: "evidence/runtime/hero.json", ...evidenceIdentity, component_usages: componentUsage } }] };
   // V2 人工确认后，F2 只记录可重算的机器验证事实，不再嵌套任何 reviewer 或二次复核工件。
-  manifest.visual_production_gate = { status: "passed", v2_status: "passed", v3_status: "passed", implementation_package_status: "passed", v5_status: "passed", f2_status: "passed", f2_machine_validation: { status: "passed", validationMode: "MACHINE", evidence: "evidence/f2/machine.json", baselineHash: EMPTY_DOCUMENT_FINGERPRINT, diffFingerprint: "diff-1" }, f3_status: "passed", runtime_replay: { status: "passed", evidence: "evidence/f3/replay.json", ...evidenceIdentity }, fidelity_cases: [{ candidate_sha256: candidateSha, created_at: "2026-08-15T00:31:00Z", freshness_bound: true, evidence: "evidence/fidelity/main.json", ...evidenceIdentity }], candidate_sha256: candidateSha, target_sha256: targetSha, runtime_consumption: { status: "passed", evidence: "evidence/runtime/hero.json", ...evidenceIdentity, component_usages: componentUsage }, unapproved_substitution: false };
+  manifest.visual_production_gate = { status: "passed", v2_status: "passed", v3_status: "passed", implementation_package_status: "passed", v4_status: "passed", f2_status: "passed", f2_machine_validation: { status: "passed", validationMode: "MACHINE", evidence: "evidence/f2/machine.json", baselineHash: EMPTY_DOCUMENT_FINGERPRINT, diffFingerprint: "diff-1" }, f3_status: "passed", runtime_replay: { status: "passed", evidence: "evidence/f3/replay.json", ...evidenceIdentity }, fidelity_cases: [{ candidate_sha256: candidateSha, created_at: "2026-08-15T00:31:00Z", freshness_bound: true, evidence: "evidence/fidelity/main.json", ...evidenceIdentity }], candidate_sha256: candidateSha, target_sha256: targetSha, runtime_consumption: { status: "passed", evidence: "evidence/runtime/hero.json", ...evidenceIdentity, component_usages: componentUsage }, unapproved_substitution: false };
   manifest.coverage_audit.regions.forEach((region, index) => { region.annotation_number = index + 1; region.ownership_evidence = `evidence/coverage/${region.id}.md`; region.implementation_plan = region.owner_type === "fixed-production-visual" ? { mode: "generate-now", summary: `生成区域 ${region.id}` } : { mode: "runtime-program", summary: `程序实现区域 ${region.id}` }; if (region.owner_type !== "fixed-production-visual") region.runtime_implementation = { kind: "runtime-program", integration_files: [`src/${region.id}.mjs`], layout_node_ids: region.layout_node_ids }; });
   addManualConfirmationRecords(manifest);
   manifest.coverage_audit.regions[1].confirmation.region_definition_sha256 = computeRegionDefinitionSha256(manifest.coverage_audit.regions[1]);
@@ -700,27 +700,27 @@ test("独立清单入口显式区分场景与弹窗工作项", async () => {
   const originalError = console.error;
   console.error = (...args) => messages.push(args.join(" "));
   try {
-    // 夹具仍带 V5 阶段身份，CLI 会因阶段冲突失败；这里专门确认它不再误报场景作用域。
+    // 夹具仍带 V4 阶段身份，CLI 会因阶段冲突失败；这里专门确认它不再误报场景作用域。
     assert.equal(await main([path, "--stage", "V2", "--work-item-type", "DISPLAY_LAYER"]), 1);
   } finally {
     console.error = originalError;
   }
   assert(!messages.join("\n").includes("瞬态显示层不属于场景工作项"), messages.join("\n"));
 });
-test("V5 stage 对 v2-ready 清单强制 production_contract_audit", async () => { const root = await mkdtemp(join(tmpdir(), "visual-v5-stage-")); const path = join(root, "visual-assets.json"); const manifest = validManifest(); manifest.effect_image_reconstruction.lifecycle = "v2-ready"; delete manifest.production_contract_audit; await writeFile(path, JSON.stringify(manifest)); assert(validateManifest(manifest, { stage: "V5" }).some((item) => item.includes("production_contract_audit 缺失"))); assert.equal(await main([path, "--stage", "V5", "--check-files", "--project-root", root]), 1); });
-test("V3/V5 效果图 API 和 CLI 缺少文件门必须拒绝，显式文件门才可继续结构校验", async () => {
+test("V4 stage 对 v2-ready 清单强制 production_contract_audit", async () => { const root = await mkdtemp(join(tmpdir(), "visual-v4-stage-")); const path = join(root, "visual-assets.json"); const manifest = validManifest(); manifest.effect_image_reconstruction.lifecycle = "v2-ready"; delete manifest.production_contract_audit; await writeFile(path, JSON.stringify(manifest)); assert(validateManifest(manifest, { stage: "V4" }).some((item) => item.includes("production_contract_audit 缺失"))); assert.equal(await main([path, "--stage", "V4", "--check-files", "--project-root", root]), 1); });
+test("V3/V4 效果图 API 和 CLI 缺少文件门必须拒绝，显式文件门才可继续结构校验", async () => {
   const v2Ready = validManifest(); v2Ready.effect_image_reconstruction.lifecycle = "v2-ready";
-  assert(validateManifest(v2Ready, { stage: "V5" }).some((item) => item.includes("checkFiles=true") && item.includes("projectRoot")));
-  const v5 = validManifest();
-  assert(validateManifest(v5, { stage: "V5" }).some((item) => item.includes("checkFiles=true") && item.includes("projectRoot")));
+  assert(validateManifest(v2Ready, { stage: "V4" }).some((item) => item.includes("checkFiles=true") && item.includes("projectRoot")));
+  const v4 = validManifest();
+  assert(validateManifest(v4, { stage: "V4" }).some((item) => item.includes("checkFiles=true") && item.includes("projectRoot")));
   const imagegen = validAiManifest(); imagegen.effect_image_reconstruction.lifecycle = "v2-ready";
-  const generatedV5 = validAiManifest(); const generatedRoot = await mkdtemp(join(tmpdir(), "visual-manifest-alpha-")); await createFixtureFiles(generatedRoot, true, generatedV5); assert.deepEqual(validateManifest(generatedV5, { stage: "V5", ...STRUCTURAL_FILE_GATE_OPTIONS, projectRoot: generatedRoot }), []); assert(validateManifest(imagegen, { stage: "V5" }).some((item) => item.includes("checkFiles=true") && item.includes("projectRoot")));
-  assert.deepEqual(validateManifest(v5, STRUCTURAL_FILE_GATE_OPTIONS), []);
+  const generatedV4 = validAiManifest(); const generatedRoot = await mkdtemp(join(tmpdir(), "visual-manifest-alpha-")); await createFixtureFiles(generatedRoot, true, generatedV4); assert.deepEqual(validateManifest(generatedV4, { stage: "V4", ...STRUCTURAL_FILE_GATE_OPTIONS, projectRoot: generatedRoot }), []); assert(validateManifest(imagegen, { stage: "V4" }).some((item) => item.includes("checkFiles=true") && item.includes("projectRoot")));
+  assert.deepEqual(validateManifest(v4, STRUCTURAL_FILE_GATE_OPTIONS), []);
   assert.deepEqual(validateManifest(imagegen, STRUCTURAL_FILE_GATE_OPTIONS), []);
-  const root = await mkdtemp(join(tmpdir(), "visual-file-gate-cli-")); const path = join(root, "visual-assets.json"); await writeFile(path, JSON.stringify(v5));
-  assert.equal(await main([path, "--stage", "V5"]), 1); assert(validateManifest(v5, { stage: "V4" }).some((item) => item.includes("只能是 V2、V3 或 V5"))); assert((await checkManifestFiles(v5, "fixture-project", { stage: "V4" })).some((item) => item.includes("只能是 V2、V3 或 V5")));
+  const root = await mkdtemp(join(tmpdir(), "visual-file-gate-cli-")); const path = join(root, "visual-assets.json"); await writeFile(path, JSON.stringify(v4));
+  assert.equal(await main([path, "--stage", "V4"]), 1); assert(validateManifest(v4, { stage: "V5" }).some((item) => item.includes("只能是 V2、V3 或 V4"))); assert((await checkManifestFiles(v4, "fixture-project", { stage: "V5" })).some((item) => item.includes("只能是 V2、V3 或 V4")));
 });
-test("effect-image 根工作项和候选版本必须使用单一 camelCase 并绑定 V5 audit", () => {
+test("effect-image 根工作项和候选版本必须使用单一 camelCase 并绑定 V4 audit", () => {
   const missingWorkItem = validManifest(); delete missingWorkItem.workItemId; missingWorkItem.work_item_id = "work-item-1";
   const workErrors = validateManifest(missingWorkItem);
   assert(workErrors.some((item) => item.includes("workItemId")));
@@ -730,28 +730,28 @@ test("effect-image 根工作项和候选版本必须使用单一 camelCase 并�
   assert(candidateErrors.some((item) => item.includes("candidateVersion")));
   assert(candidateErrors.some((item) => item.includes("candidate_version")));
   const staleCandidate = validManifest(); staleCandidate.effect_image_reconstruction.lifecycle = "v2-ready"; staleCandidate.candidateVersion = "candidate-stale";
-  assert(validateManifest(staleCandidate, { stage: "V5" }).some((item) => item.includes("candidateVersion")));
+  assert(validateManifest(staleCandidate, { stage: "V4" }).some((item) => item.includes("candidateVersion")));
 });
-test("V5 主入口拒绝错误 Work Item 或过期 candidateVersion 的 Change Request", () => {
+test("V4 主入口拒绝错误 Work Item 或过期 candidateVersion 的 Change Request", () => {
   const base = validManifest();
   const request = { status: "ACCEPTED", changeRequestId: "CR-METHOD", workItemId: "wrong-work-item", candidateVersion: base.candidateVersion, candidate_sha256: base.candidate_identity.sha256, target_sha256: base.reference_target.target_sha256, baseline_sha256: base.visual_baseline.style_fingerprint, diff_fingerprint: base.candidate_identity.diff_fingerprint, user_original_text: "用户批准变更生产方式", accepted_at: "2026-08-15T00:40:00Z", production_method_changes: [{ annotation_number: 2, region_id: "region-hero", previous_method: "authored-raster", proposed_method: "reuse" }] };
   base.change_requests = [request];
-  assert(validateManifest(base, { stage: "V5" }).some((item) => item.includes("workItemId") && item.includes("不一致")));
+  assert(validateManifest(base, { stage: "V4" }).some((item) => item.includes("workItemId") && item.includes("不一致")));
   const stale = structuredClone(base); stale.change_requests[0].workItemId = stale.workItemId; stale.change_requests[0].candidateVersion = "candidate-old";
-  assert(validateManifest(stale, { stage: "V5" }).some((item) => item.includes("candidateVersion") && item.includes("不一致")));
+  assert(validateManifest(stale, { stage: "V4" }).some((item) => item.includes("candidateVersion") && item.includes("不一致")));
 });
-test("V5 complete 必须有全部通过的 fidelity case", () => { const missing = validManifest(); missing.fidelity_cases = []; assert(validateManifest(missing).some((item) => item.includes("fidelity_cases 必须是非空数组"))); const failed = validManifest(); failed.fidelity_cases[0].conclusion = "failed"; assert(validateManifest(failed).some((item) => item.includes("必须全部 passed"))); });
-test("V5 F2 摘要缺失、陈旧或格式异常都不阻断验收", () => { for (const [field, value] of [["baselineHash", { stale: true }], ["diffFingerprint", 17]]) { const manifest = validManifest(); manifest.visual_production_gate.f2_machine_validation[field] = value; assert(!validateManifest(manifest).some((item) => item.includes("F2") && item.includes("未绑定当前")), field); } const missing = validManifest(); delete missing.visual_production_gate.f2_machine_validation.baselineHash; assert(!validateManifest(missing).some((item) => item.includes("baselineHash"))); });
-test("V5 complete 缺少 V5、F2 或 V5 对象时不得绕过总门", () => {
-  for (const [field, marker] of [["production_contract_audit", "production_contract_audit"], ["f2_machine_validation", "F2"], ["visual_production_gate", "V5 production gate"]]) {
+test("V4 complete 必须有全部通过的 fidelity case", () => { const missing = validManifest(); missing.fidelity_cases = []; assert(validateManifest(missing).some((item) => item.includes("fidelity_cases 必须是非空数组"))); const failed = validManifest(); failed.fidelity_cases[0].conclusion = "failed"; assert(validateManifest(failed).some((item) => item.includes("必须全部 passed"))); });
+test("V4 F2 摘要缺失、陈旧或格式异常都不阻断验收", () => { for (const [field, value] of [["baselineHash", { stale: true }], ["diffFingerprint", 17]]) { const manifest = validManifest(); manifest.visual_production_gate.f2_machine_validation[field] = value; assert(!validateManifest(manifest).some((item) => item.includes("F2") && item.includes("未绑定当前")), field); } const missing = validManifest(); delete missing.visual_production_gate.f2_machine_validation.baselineHash; assert(!validateManifest(missing).some((item) => item.includes("baselineHash"))); });
+test("V4 complete 缺少 V4、F2 或 V4 对象时不得绕过总门", () => {
+  for (const [field, marker] of [["production_contract_audit", "production_contract_audit"], ["f2_machine_validation", "F2"], ["visual_production_gate", "V4 production gate"]]) {
     const manifest = validManifest();
     if (field === "f2_machine_validation") delete manifest.visual_production_gate.f2_machine_validation;
     else delete manifest[field];
     assert(validateManifest(manifest).some((item) => item.includes(marker)), field);
   }
 });
-test("V5 fidelity 必须逐冻结 scene/state 组合覆盖", () => { const manifest = validManifest(); manifest.reference_target.state_ids.push("paused"); manifest.coverage_audit.canvases.push({ scene_id: "main-gameplay", state_id: "paused", width: 390, height: 844 }); manifest.coverage_audit.summaries.push({ scene_id: "main-gameplay", state_id: "paused", coverage_ratio: 1, uncovered: [], status: "passed", evidence: "evidence/coverage/paused-summary.md" }); manifest.coverage_audit.regions.push({ ...structuredClone(manifest.coverage_audit.regions[0]), id: "region-paused", state_id: "paused" }); assert(validateManifest(manifest).some((item) => item.includes("main-gameplay/paused"))); });
-test("项目模板默认生成非效果图 1.5 资源清单", () => { assert(CORE_TEMPLATES["GDD.md"].includes("完整场景与功能清单")); assert(CORE_TEMPLATES["TDD.md"].includes("functional_status")); assert(CORE_TEMPLATES["visual-baseline.md"].includes("不追加 V2/V3/V4/V5 证据")); assert(CORE_TEMPLATES["visual-design.md"].includes("可追加的视觉方向")); assert(CORE_TEMPLATES["visual-design.md"].includes("本文件追加 V2/V3/V4/V5 留痕不会改变基线哈希")); assert(!OPTIONAL_TEMPLATES.assets["asset-license-register.md"].includes("对 `docs/visual-design.md` 计算")); const template = JSON.parse(OPTIONAL_TEMPLATES.assets["visual-assets.json"]); assert.equal(template.schema_version, "1.5"); assert.equal(template.visual_contract_version, "1.0"); assert.equal(template.workItemId, null); assert.equal(template.candidateVersion, null); assert.equal(template.visual_baseline.document, "docs/visual-baseline.md"); assert.deepEqual(template.effect_image_reconstruction, { applicability: "not-applicable", lifecycle: "not-applicable" }); assert(!("reference_target" in template)); });
+test("V4 fidelity 必须逐冻结 scene/state 组合覆盖", () => { const manifest = validManifest(); manifest.reference_target.state_ids.push("paused"); manifest.coverage_audit.canvases.push({ scene_id: "main-gameplay", state_id: "paused", width: 390, height: 844 }); manifest.coverage_audit.summaries.push({ scene_id: "main-gameplay", state_id: "paused", coverage_ratio: 1, uncovered: [], status: "passed", evidence: "evidence/coverage/paused-summary.md" }); manifest.coverage_audit.regions.push({ ...structuredClone(manifest.coverage_audit.regions[0]), id: "region-paused", state_id: "paused" }); assert(validateManifest(manifest).some((item) => item.includes("main-gameplay/paused"))); });
+test("项目模板默认生成非效果图 1.5 资源清单", () => { assert(CORE_TEMPLATES["GDD.md"].includes("完整场景与功能清单")); assert(CORE_TEMPLATES["TDD.md"].includes("functional_status")); assert(CORE_TEMPLATES["visual-baseline.md"].includes("不追加 V2/V3/V4 证据")); assert(CORE_TEMPLATES["visual-design.md"].includes("可追加的视觉方向")); assert(CORE_TEMPLATES["visual-design.md"].includes("本文件追加 V2/V3/V4 留痕不会改变基线哈希")); assert(!OPTIONAL_TEMPLATES.assets["asset-license-register.md"].includes("对 `docs/visual-design.md` 计算")); const template = JSON.parse(OPTIONAL_TEMPLATES.assets["visual-assets.json"]); assert.equal(template.schema_version, "1.5"); assert.equal(template.visual_contract_version, "1.0"); assert.equal(template.workItemId, null); assert.equal(template.candidateVersion, null); assert.equal(template.visual_baseline.document, "docs/visual-baseline.md"); assert.deepEqual(template.effect_image_reconstruction, { applicability: "not-applicable", lifecycle: "not-applicable" }); assert(!("reference_target" in template)); });
 test("合同回对门仍检查领域结论，但候选摘要漂移不阻断", () => { const missing = validManifest(); missing.contract_reconciliation.checks.pop(); assert(validateManifest(missing).some((item) => item.includes("缺少已通过领域"))); const failed = validManifest(); failed.contract_reconciliation.status = "failed"; assert(validateManifest(failed).some((item) => item.includes("必须为 passed"))); const drifted = validManifest(); drifted.contract_reconciliation.candidate_sha256 = { stale: true }; assert(!validateManifest(drifted).some((item) => item.includes("SHA") || item.includes("sha256"))); });
 test("ownership 覆盖规则拒绝运行内容位图化", () => { const manifest = validManifest(); manifest.coverage_audit.regions[2].asset_id = "hero-idle"; assert(validateManifest(manifest).some((item) => item.includes("禁止映射生产位图"))); });
 test("覆盖区域要求几何和人工确认文件证据", () => { const bounds = validManifest(); delete bounds.coverage_audit.regions[0].bounds; assert(validateManifest(bounds).some((item) => item.includes("bounds 必须"))); const evidence = validManifest(); delete evidence.coverage_audit.regions[0].confirmation.proposal_file; assert(validateManifest(evidence).some((item) => item.includes("proposal_file"))); });
@@ -800,7 +800,7 @@ test("全局锚点和一致性证据的摘要漂移不阻断，但路径仍须�
   const missingConsistency = structuredClone(manifest); missingConsistency.assets[0].generation_record.consistency_evidence = { path: "evidence/visual/missing-consistency.json", sha256: { stale: true } };
   const consistencyErrors = await checkManifestFiles(missingConsistency, root); assert(consistencyErrors.some((item) => item.includes("consistency_evidence") && item.includes("文件不存在")), consistencyErrors.join("\n"));
 });
-test("V5 check-files 不因旧 F2 baseline 或旧 diff 摘要拒绝", async () => {
+test("V4 check-files 不因旧 F2 baseline 或旧 diff 摘要拒绝", async () => {
   const root = await mkdtemp(join(tmpdir(), "visual-f2-identity-"));
   await createFixtureFiles(root, true);
   const manifestPath = join(root, "visual-assets.json");
@@ -808,18 +808,18 @@ test("V5 check-files 不因旧 F2 baseline 或旧 diff 摘要拒绝", async () =
     const manifest = validManifest();
     manifest.visual_production_gate.f2_machine_validation[field] = value;
     await writeConfirmationFixtureFiles(root, manifest);
-    assert(!((await checkManifestFiles(manifest, root, { stage: "V5" })).some((item) => item.includes("baselineHash") || item.includes("diffFingerprint"))), `check-files ${field}`);
+    assert(!((await checkManifestFiles(manifest, root, { stage: "V4" })).some((item) => item.includes("baselineHash") || item.includes("diffFingerprint"))), `check-files ${field}`);
     await writeFile(manifestPath, JSON.stringify(manifest));
     assert(!validateManifest(JSON.parse(await readFile(manifestPath, "utf8"))).some((item) => item.includes(field)), `CLI 输入 ${field}`);
   }
 });
-test("V5 文件审计拒绝扩展名伪装的 mjs raster", async () => { const root = await mkdtemp(join(tmpdir(), "visual-fake-raster-")); const manifest = validManifest(); await createFixtureFiles(root); const fake = join(root, "public/assets/fake.mjs"); await mkdir(dirname(fake), { recursive: true }); await writeFile(fake, "export default 1;"); manifest.assets[0].runtime_outputs = ["public/assets/fake.mjs"]; manifest.production_contract_audit.units[0].actual_assets[0].file = "public/assets/fake.mjs"; manifest.production_contract_audit.units[0].actual_assets[0].sha256 = sha256Bytes(Buffer.from("export default 1;")); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("不是可解码 PNG/JPEG/WebP"))); });
-test("V5 check-files 不得因缺少 production_contract_audit 而静默放行", async () => { const root = await mkdtemp(join(tmpdir(), "visual-v5-audit-")); const manifest = validManifest(); delete manifest.production_contract_audit; await createFixtureFiles(root); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("production_contract_audit 缺失"))); });
+test("V4 文件审计拒绝扩展名伪装的 mjs raster", async () => { const root = await mkdtemp(join(tmpdir(), "visual-fake-raster-")); const manifest = validManifest(); await createFixtureFiles(root); const fake = join(root, "public/assets/fake.mjs"); await mkdir(dirname(fake), { recursive: true }); await writeFile(fake, "export default 1;"); manifest.assets[0].runtime_outputs = ["public/assets/fake.mjs"]; manifest.production_contract_audit.units[0].actual_assets[0].file = "public/assets/fake.mjs"; manifest.production_contract_audit.units[0].actual_assets[0].sha256 = sha256Bytes(Buffer.from("export default 1;")); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("不是可解码 PNG/JPEG/WebP"))); });
+test("V4 check-files 不得因缺少 production_contract_audit 而静默放行", async () => { const root = await mkdtemp(join(tmpdir(), "visual-v4-audit-")); const manifest = validManifest(); delete manifest.production_contract_audit; await createFixtureFiles(root); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("production_contract_audit 缺失"))); });
 test("编号图文件缺失或格式无效时文件检查失败，摘要缺失或陈旧不阻断", async () => { const root = await mkdtemp(join(tmpdir(), "visual-numbered-")); const manifest = validManifest(); manifest.coverage_audit.regions[0].confirmation = { mode: "USER_DECISION", reasons: ["ambiguous-boundary"], numbered_image_file: "evidence/coverage/numbered.png", numbered_image_version: "1", decision_id: "decision-1" }; await createFixtureFiles(root); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("numbered_image_file 文件不存在"))); const path = join(root, "evidence/coverage/numbered.png"); await mkdir(dirname(path), { recursive: true }); await writeFile(path, "changed"); const errors = await checkManifestFiles(manifest, root); assert(errors.some((item) => item.includes("numbered_image_file 必须是") || item.includes("PNG"))); assert(!errors.some((item) => item.includes("numbered_image_sha256"))); });
 test("拆解提案、决定记录和标注 PNG 仍验证文件结构与逐项内容，不比较文件摘要", async () => { const root = await mkdtemp(join(tmpdir(), "visual-decomposition-")); const manifest = bitmapManifest(); await createFixtureFiles(root, true, manifest); const region = manifest.coverage_audit.regions[1]; const pairRegions = manifest.coverage_audit.regions.filter((item) => item.scene_id === region.scene_id && item.state_id === region.state_id); const numberedBytes = renderEffectImageAnnotation(minimalPng(390, 844), manifest.reference_target.original_file, manifest.coverage_audit.canvases[0], pairRegions); await writeConfirmationFixtureFiles(root, manifest, numberedBytes); const numberedPath = join(root, region.confirmation.annotation_file); assert.deepEqual(await checkManifestFiles(manifest, root), []); const hidden = Buffer.from(numberedBytes); hidden[hidden.length - 1] ^= 1; await writeFile(numberedPath, hidden); region.confirmation.annotation_sha256 = "malformed-stale"; assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("正式 PNG 标注") || item.includes("CRC"))); await writeConfirmationFixtureFiles(root, manifest, numberedBytes); await writeFile(join(root, region.confirmation.proposal_file), ""); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("proposal_file 必须是可解析 JSON"))); const invalid = bitmapManifest(); await createFixtureFiles(root, true); await writeConfirmationFixtureFiles(root, invalid, minimalPng()); assert((await checkManifestFiles(invalid, root)).some((item) => item.includes("尺寸") || item.includes("标准 PNG") || item.includes("区域标注"))); });
 test("文件检查拒绝路径逃逸", async () => { const root = await mkdtemp(join(tmpdir(), "visual-manifest-")); const manifest = validManifest(); manifest.visual_baseline.document = "../outside.md"; assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("路径逃逸"))); });
 test("文件检查拒绝 symlink 真实位置逃逸", async (t) => { const root = await mkdtemp(join(tmpdir(), "visual-symlink-")); const outsideRoot = await mkdtemp(join(tmpdir(), "visual-symlink-outside-")); const outside = join(outsideRoot, "outside.png"); await writeFile(outside, "outside"); const link = join(root, "evidence/visual/escaped.png"); await mkdir(dirname(link), { recursive: true }); try { await symlink(outside, link, "file"); } catch { t.skip("当前 Windows 环境不允许创建 symlink"); return; } const manifest = validManifest(); manifest.visual_baseline.anchor_evidence.push("evidence/visual/escaped.png"); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("真实位置逃逸"))); });
-test("错误 assets 容器不得绕过 V3/V5 文件检查", async () => { const root = await mkdtemp(join(tmpdir(), "visual-manifest-")); const manifest = validManifest(); manifest.assets = 42; await createFixtureFiles(root); assert(validateManifest(manifest).includes("assets 必须是数组")); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("V5") || item.includes("V5"))); });
+test("错误 assets 容器不得绕过 V3/V4 文件检查", async () => { const root = await mkdtemp(join(tmpdir(), "visual-manifest-")); const manifest = validManifest(); manifest.assets = 42; await createFixtureFiles(root); assert(validateManifest(manifest).includes("assets 必须是数组")); assert((await checkManifestFiles(manifest, root)).some((item) => item.includes("V4") || item.includes("V4"))); });
 test("CLI 对结构错误返回非零", async () => { const root = await mkdtemp(join(tmpdir(), "visual-manifest-")); const path = join(root, "visual-assets.json"); const manifest = validManifest(); manifest.assets = 42; await writeFile(path, JSON.stringify(manifest)); assert.equal(await main([path, "--check-files", "--project-root", root]), 1); });
 test("CLI 对 bitmap-decomposition 强制文件证据门", async () => { const root = await mkdtemp(join(tmpdir(), "visual-bitmap-gate-")); const path = join(root, "visual-assets.json"); await writeFile(path, JSON.stringify(bitmapManifest())); assert.equal(await main([path]), 2); });
 test("独立生产文件不要求与冻结目标字节不同，但不得复用目标路径", async () => { const root = await mkdtemp(join(tmpdir(), "visual-independent-source-")); const manifest = validManifest(); await createFixtureFiles(root); await writeFile(join(root, manifest.assets[0].source_file), minimalPng(390, 844)); assert(!((await checkManifestFiles(manifest, root)).some((item) => item.includes("同 SHA") || item.includes("SHA 相同")))); const samePath = structuredClone(manifest); samePath.assets[0].source_file = samePath.reference_target.original_file; assert((await checkManifestFiles(samePath, root)).some((item) => item.includes("不得直接引用冻结效果图"))); });
@@ -1036,7 +1036,7 @@ test("布局拆解绑定 scene、state 和版本，不依赖冻结目标摘要",
   }
 });
 
-test("V5 必须记录全部布局节点的逐节点几何差异和证据", () => {
+test("V4 必须记录全部布局节点的逐节点几何差异和证据", () => {
   const missing = validManifest();
   delete missing.fidelity_cases[0].layout_node_results;
   assert(validateManifest(missing).some((item) => item.includes("layout_node_results 必须是非空逐节点几何差异数组")), "缺逐节点布局证据必须失败");

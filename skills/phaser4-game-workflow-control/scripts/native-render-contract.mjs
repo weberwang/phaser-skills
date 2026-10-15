@@ -30,18 +30,18 @@ export function validateNativeRenderContract(value, region = {}) {
   return errors;
 }
 
-/** V5 核对实际原生输出和消费证据；规划参数本身不能充当运行验收结果。 */
+/** V4 核对实际原生输出和消费证据；规划参数本身不能充当运行验收结果。 */
 export function validateNativeRuntimeEvidence(region, contract, manifest, options = {}) {
-  if (String(options.stage).toUpperCase() !== "V5") return [];
+  if (String(options.stage).toUpperCase() !== "V4") return [];
   const analysis = region.visual_route_analysis;
   const evidence = region.native_runtime_evidence;
-  if (!isPlainObject(evidence)) return ["V5 原生路线缺少 native_runtime_evidence 实际输出与运行消费证据"];
+  if (!isPlainObject(evidence)) return ["V4 原生路线缺少 native_runtime_evidence 实际输出与运行消费证据"];
   const errors = [];
   if (evidence.status !== "passed") errors.push("native_runtime_evidence.status 必须为 passed");
   if (evidence.observed_method !== analysis.production_method || evidence.observed_delivery_kind !== analysis.delivery_kind) errors.push("native_runtime_evidence 实际生产方式/交付类型与冻结路线不一致");
   if (!isDeepStrictEqual(evidence.render_contract, analysis.native_suitability?.render_contract)) errors.push("native_runtime_evidence.render_contract 与冻结原生参数不一致");
   const identity = manifestEvidenceIdentity(manifest);
-  errors.push(...validateEvidenceIdentity(evidence, { stage: "V5", region_id: region.region_id, annotation_number: region.annotation_number, expectedMethod: analysis.production_method, observedMethod: evidence.observed_method }, identity, options));
+  errors.push(...validateEvidenceIdentity(evidence, { stage: "V4", region_id: region.region_id, annotation_number: region.annotation_number, expectedMethod: analysis.production_method, observedMethod: evidence.observed_method }, identity, options));
   if (options.projectRoot) {
     const path = safeProjectPath(options.projectRoot, evidence.evidence);
     if (path && existsSync(path) && statSync(path).isFile()) {

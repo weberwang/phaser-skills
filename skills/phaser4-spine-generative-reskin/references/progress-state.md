@@ -7,7 +7,7 @@
 - `target_runtime`、`skeleton_audit`、`source_audit`、`skeleton_upgrade`：版本、结构统计、attachment path 映射、Mesh 指纹、升级候选与未知变更。
 - `asset_input`、`control_binding`：原版目录/独立导出或 Cocos 容器来源，以及 Work Item、production contract、适用 V2 方案证据的实际路径；SHA 仅作可选追踪。
 - `visual_contract`：角色、方向、六项统一色板、材质语言、光向、`strict_alpha` 和冻结时间。
-- `batches[]`：精确 Region 顺序、mode、alpha lock、revision、审阅板哈希、候选 fingerprint、V4 `spine_batch_acceptance` 和 `ACCEPTED+locked` 状态。
+- `batches[]`：精确 Region 顺序、mode、alpha lock、revision、审阅板哈希、候选 fingerprint、V3 正式资源生产中的 `spine_batch_acceptance` 和 `ACCEPTED+locked` 状态。
 - `style_references[]`：`{path, sha256}`；不存在或漂移会阻止重建。
 - `cells[]`：稳定 `id/name/page_index/xy/size/orig/offset/rotate/index`，以及 attachment 类型、Mesh 哈希、`batch_id`、`alpha_lock`、`mode`、生成图哈希、源结构参考哈希、审阅证据、状态历史和重试次数。
 - `packing`：`padding/extrusion`；`build`：重建 Atlas/Page 路径、哈希和阶段；`runtime_evidence[]`：运行态证据路径与哈希。

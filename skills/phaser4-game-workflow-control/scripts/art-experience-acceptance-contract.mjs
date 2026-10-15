@@ -3,7 +3,7 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import { GLOBAL_VISUAL_CANDIDATE_CHECKS } from './global-visual-art-quality-contract.mjs';
 import { isPlainObject, nonEmptyString } from './visual-contract-core.mjs';
 
-/** V5 持续游玩美术体验验收合同版本。 */
+/** V4 持续游玩美术体验验收合同版本。 */
 export const ART_EXPERIENCE_ACCEPTANCE_SCHEMA = 'phaser4-art-experience-acceptance/1.0';
 
 /** 完整运行体验验收必须覆盖的四类情境。 */
@@ -134,7 +134,7 @@ function validateScenario(scenario, index, projectRoot, errors) {
   if (!nonEmptyString(scenario.observation)) errors.push(`${label}.observation 必须记录实际人工观看意见`);
 }
 
-/** 校验完整人工验收对象与当前 V5 运行候选身份及项目录屏资源。 */
+/** 校验完整人工验收对象与当前 V4 运行候选身份及项目录屏资源。 */
 export function validateArtExperienceAcceptance(acceptance, expected, options = {}) {
   const errors = [];
   if (!hasExactFields(acceptance, ACCEPTANCE_FIELDS)) {
@@ -143,10 +143,10 @@ export function validateArtExperienceAcceptance(acceptance, expected, options = 
   }
   if (acceptance.schemaVersion !== ART_EXPERIENCE_ACCEPTANCE_SCHEMA) errors.push(`schemaVersion 必须为 ${ART_EXPERIENCE_ACCEPTANCE_SCHEMA}`);
   for (const field of ['workItemId', 'candidateId', 'sceneId']) {
-    if (!nonEmptyString(expected[field]) || acceptance[field] !== expected[field]) errors.push(`${field} 未绑定当前 V5 候选/场景`);
+    if (!nonEmptyString(expected[field]) || acceptance[field] !== expected[field]) errors.push(`${field} 未绑定当前 V4 候选/场景`);
   }
   if (!['passed', 'failed', 'unverified'].includes(acceptance.status)) errors.push('status 必须为 passed、failed 或 unverified');
-  else if (acceptance.status !== 'passed') errors.push(`status=${acceptance.status}，V5 人工验收未通过`);
+  else if (acceptance.status !== 'passed') errors.push(`status=${acceptance.status}，V4 人工验收未通过`);
   if (!isValidTimestamp(acceptance.confirmedAt)) errors.push('confirmedAt 必须是有效且带时区的 RFC 3339 时间');
   if (!nonEmptyString(acceptance.userOriginalText)) errors.push('userOriginalText 必须保留用户原始验收意见');
   if (!nonEmptyString(acceptance.viewingContext)) errors.push('viewingContext 必须记录实际项目游玩情境');

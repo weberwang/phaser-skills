@@ -32,7 +32,7 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 需求与范围 → 全局基线 → 基础工程 → 逐场景生产 → 全局集成验证 → 发布
 ```
 
-单场景视觉任务在“逐场景生产”内按“场景定义 → 拆解确认 → 正式资源验收 → 页面还原草图 → 正式还原与运行验收”推进。该视图只简化展示；全局状态、G0-G3、V0-V5、A0-A6、F0-F4 和证据硬门继续由控制面维护，详见[控制模型](skills/phaser4-game-workflow-control/references/control-model.md)与[状态、阶段与停止门](skills/phaser4-game-workflow-control/references/state-gates.md)。
+单场景视觉任务在“逐场景生产”内按“场景定义 → 拆解与布局确认 → 正式资源验收 → 正式场景实现、校准与运行验收”推进。V4 直接读取 V2 的结构和目标布局、V3 验收通过的正式资源，在实际场景中迭代还原效果。该视图只简化展示；全局状态、G0-G3、V0/V1/V2/V3/V4、A0-A6、F0-F4 和证据硬门继续由控制面维护，详见[控制模型](skills/phaser4-game-workflow-control/references/control-model.md)与[状态、阶段与停止门](skills/phaser4-game-workflow-control/references/state-gates.md)。
 
 通用帧动画按普通、角色动作、特效或 UI 选择制作规则，默认视频抽帧，图片递归补帧仅在用户明确选用时启用。内部完成动作分析、时间轴、尺寸与批次方案后，在已有授权内直接制作真实视频或关键帧，不等待文字设计确认；只有玩法事件、时长或行为边界有决定性歧义时才询问。真实视频人工验收后才能抽帧；图片首尾、关键帧和递归父图逐张确认后继续制作，最终真实序列仍由用户验收。分辨率、条数、预算、来源证据和 Phaser 接入见[通用帧动画技能](skills/phaser4-frame-animation/SKILL.md)与[区域规划](skills/phaser4-frame-animation/references/region-planning.md)。
 
@@ -52,7 +52,7 @@ node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs
 node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs status --repo . --work-item <work-item> [--input <file> ...]
 ```
 
-`run` 只读取、校验、推导路线，并连续推进已满足条件的安全控制面状态，进入实施或遇到缺证据、用户决定时停止；它不运行业务代码、测试、服务、外部动作或发布，也不会自动选择 `RETURN`。`check` 完全只读。三个入口可重复传入 `--input <file>` 绑定显式关键输入，默认文本优先显示六阶段/五步视图；JSON 仍输出稳定的 `status/stage/changed/blocking/next/metadata`，并在 `metadata.workflowView` 提供展示映射、`metadata.planFingerprint` 返回不含时间戳的确定性计划指纹。
+`run` 只读取、校验、推导路线，并连续推进已满足条件的安全控制面状态，进入实施或遇到缺证据、用户决定时停止；它不运行业务代码、测试、服务、外部动作或发布，也不会自动选择 `RETURN`。`check` 完全只读。三个入口可重复传入 `--input <file>` 绑定显式关键输入，默认文本优先显示六阶段/四步视图；JSON 仍输出稳定的 `status/stage/changed/blocking/next/metadata`，并在 `metadata.workflowView` 提供展示映射、`metadata.planFingerprint` 返回不含时间戳的确定性计划指纹。
 
 图片与动画任务遵循[图片优先的确认方式](skills/phaser4-game-workflow-control/references/simplified-workflow.md#图片优先的确认方式)：技术记录、拆解分析、布局决策和提示词由代理内部维护，直接展示真实图片或预览供用户确认；同目标返修直接展示前后对照。
 
@@ -60,13 +60,13 @@ node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs
 
 - `$phaser4-game-workflow-control` 独占全局状态、风险门、任务范围、状态迁移和证据一致性。普通 A0-A3 工作直接依据当前用户任务，不创建独立授权记录，也不设置 F0 授权有效硬门。
 - 任务内可以调整实现方案、文件路径、资源清单和测试范围；同步更新 Work Item/实施包并重验受影响部分即可。无外部副作用的本地 A4 集成可按任务执行；涉及外部写入、付费、真机、破坏性或外部删除、发布的 A4-A6 操作仍必须逐对象建立 pending 并获得显式批准。控制面只校验和记录，不代执行这些动作。
-- V0→V1→V2→V3→V4→V5 的视觉硬门、全局静态基线、场景拆解与布局确认、高保真前置继续使用带真实路径和任务归属的证据；缺失或失效时 fail closed。阶段与字段以控制面文档和 Schema 为准。
+- V0→V1→V2→V3→V4 的视觉硬门、全局静态基线、场景拆解与布局确认、高保真前置继续使用带真实路径和任务归属的证据；V4 直接消费当前 V2/V3 产物并对正式场景调整验收。缺失或失效时 fail closed。阶段与字段以控制面文档和 Schema 为准。
 - 共享工作区不自动回滚、不覆盖他人修改；启动本地验证服务前先查找同项目健康实例并复用。
 - 阶段任务验收完成后，执行代理自动按需维护 `.gitignore`，只提交本次任务涉及的文件并报告提交哈希；使用当前分支，不自动推送。具体规则见[阶段收尾与 Git 提交](skills/phaser4-game-workflow-control/SKILL.md#阶段收尾与-git-提交)。
 
 视觉几何与测试默认以可用性为准：位置、尺寸、边距、换行允许合理偏差，越界、裁切、关键遮挡、不可读和交互失效必须修复。像素级容差、全视口/全状态矩阵只在任务明确要求或项目合同明确指定时启用；V2 拆解确认、布局确认、独立资源产物和关键功能证据仍然保留。
 
-美术质量另按[游戏美术体验与质量契约](skills/phaser4-game-asset-integration/references/art-quality-contract.md)验收：结构化 brief 关联主题、受众、核心循环与观看情境；常态、操作反馈和关键事件分别限制视觉刺激。全局三候选逐项记录实际人工质量结果，所选候选任一失败或未验证都不能冻结，三张都不合格时返工。V5 提交正常游玩、重复反馈、叠加与收尾的适用动态片段，由用户检查持续观看效果；机器 PASS 只说明结构、参数和证据有效，不能代替美术验收。该要求复用既有阶段与确认，不增加审批流程或自动真机验收。
+美术质量另按[游戏美术体验与质量契约](skills/phaser4-game-asset-integration/references/art-quality-contract.md)验收：结构化 brief 关联主题、受众、核心循环与观看情境；常态、操作反馈和关键事件分别限制视觉刺激。全局三候选逐项记录实际人工质量结果，所选候选任一失败或未验证都不能冻结，三张都不合格时返工。V4 提交正常游玩、重复反馈、叠加与收尾的适用动态片段，由用户检查持续观看效果；机器 PASS 只说明结构、参数和证据有效，不能代替美术验收。该要求复用既有阶段与确认，不增加审批流程或自动真机验收。
 
 所有任务和阶段都逐一以当前用户明确要求和[实际完成情况](skills/phaser4-game-workflow-control/references/control-model.md#按实际完成情况验收)判断验收，覆盖设计、工程、玩法、场景、UI、资源、动画、音频、数值、测试、性能、集成与发布。任何任务已按要求完成时，不因中途方案或内部实现调整而回改历史合同；记录实际结果并更新受影响证据即可。只有真实改变后续依赖的范围、公开接口或硬约束时才更新对应契约，不能通过修订合同降低未满足要求的验收标准。
 
@@ -105,7 +105,7 @@ UI 响应式验证按合同的 `orientationPolicy.allowed` 选择视口方向：
 npm run remove:background -- --source art/raw.png --output art/transparent.png --background-color '#00FF00' --tolerance 24 --require-solid-background --edge-profile hard-edge --color-separation-verified --record art/removal.json --preview-dir art/previews
 ```
 
-该脚本只适用于 hard-edge 且颜色分离已确认的输入。背景与主体应有明显颜色差异；校验失败时修正输入或换路线，不提高容差吞掉棋盘格、硬抠复杂轮廓或删除光效。脚本输出处理记录与深浅底预览，不能替代 V5 对主体缺损、背景残留、色边和半透明区域的视觉检查。
+该脚本只适用于 hard-edge 且颜色分离已确认的输入。背景与主体应有明显颜色差异；校验失败时修正输入或换路线，不提高容差吞掉棋盘格、硬抠复杂轮廓或删除光效。脚本输出处理记录与深浅底预览，不能替代 V4 对主体缺损、背景残留、色边和半透明区域的视觉检查。
 
 ## 高级诊断
 

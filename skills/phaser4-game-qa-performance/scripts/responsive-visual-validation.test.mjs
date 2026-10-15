@@ -384,14 +384,12 @@ test("响应式合同声明允许动态有效值并拒绝非法有效声明", ()
 
 test("报告必须带合法不可变证据身份", () => { const missing = summarizeReport([], { resize: { required: false }, viewports: [] }); assert.equal(missing.responsivePass, false); assert(missing.identityErrors.length > 0); const report = summarizeReport([], { ...contract(), resize: { required: false }, viewports: [] }, { ...identity, target_sha256: `sha256:${"b".repeat(64)}` }); assert.deepEqual(report.identityErrors, []); });
 
-test("V5 响应式证据不要求草图摘要，错误摘要只作记录", () => {
+test("V4 响应式证据直接绑定正式候选身份", () => {
   const evidenceContract = { ...contract(), resize: { required: false }, viewports: [] };
   const { candidate_sha256, ...requiredIdentity } = identity;
-  // 当前实际任务归属有效时，缺失和格式错误的摘要都不阻断报告验收。
-  for (const pageSketchSha256 of [undefined, "sha256:bad", 123]) {
-    const report = summarizeReport([], evidenceContract, { ...requiredIdentity, currentStage: "V5", pageSketchSha256, target_sha256: "stale" });
-    assert.deepEqual(report.identityErrors, []);
-  }
+  // 正式证据由任务与运行候选定位，不再为独立预览携带额外身份。
+  const report = summarizeReport([], evidenceContract, { ...requiredIdentity, currentStage: "V4", target_sha256: "stale" });
+  assert.deepEqual(report.identityErrors, []);
 });
 
 test("效果图还原报告不比较目标摘要，仍复核实际布局合同", () => {

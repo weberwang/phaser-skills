@@ -125,7 +125,7 @@ test("actual output 尺寸漂移被尺寸门拒绝", () => {
   const current = region();
   const errors = check(current, output(45, 30), current);
   assert.deepEqual(errors, []);
-  const drift = validateImageGenerationSizeContract(null, current, { stage: "V4", annotation_number: 7, region_id: current.id, component_id: "hero", state_id: "default", asset_id: "hero-default" }, { expectedAsset: current.expected_assets[0], region: current, actualAsset: { width: 91, height: 60 } });
+  const drift = validateImageGenerationSizeContract(null, current, { stage: "V3", annotation_number: 7, region_id: current.id, component_id: "hero", state_id: "default", asset_id: "hero-default" }, { expectedAsset: current.expected_assets[0], region: current, actualAsset: { width: 91, height: 60 } });
   assert(drift.some((item) => item.includes("实际输出尺寸漂移")));
 });
 
@@ -154,15 +154,15 @@ test("九宫格使用冻结源尺寸且裁切归一化记录会被拒绝", () =>
   assert(check(tooSmall, output(96, 64)).some((item) => item.includes("九宫格 placement[0] 尺寸无效")));
 });
 
-test("manifest 尺寸门核对 V4 actual_assets，且不依赖 human_review", () => {
+test("manifest 尺寸门核对 V3 actual_assets，且不依赖 human_review", () => {
   const current = region();
   const manifest = {
     coverage_audit: { regions: [current] },
     assets: [{ id: "hero-default", width: 45, height: 30 }],
     production_contract_audit: { units: [{ annotation_number: 7, region_id: "region-hero", actual_assets: [{ asset_id: "hero-default", width: 91, height: 60 }] }] },
   };
-  const errors = validateImageGenerationSizeManifest(manifest, { stage: "V4" });
-  assert(errors.some((item) => item.includes("V4 actual_assets 实际输出尺寸漂移")));
+  const errors = validateImageGenerationSizeManifest(manifest, { stage: "V3" });
+  assert(errors.some((item) => item.includes("V3 actual_assets 实际输出尺寸漂移")));
 });
 
 test("组件显示尺寸计算返回各轴最大值", () => {

@@ -548,7 +548,6 @@ export function summarizeReport(measurements, contract = {}, identity = null) {
     sceneId: identity?.scene_id ?? null,
     stateId: identity?.state_id ?? null,
     candidateSha256: identity?.candidate_sha256 ?? null,
-    pageSketchSha256: identity?.pageSketchSha256 ?? null,
     layoutContractVersion: identity?.layout_contract_version ?? null,
     visualBaselineVersion: identity?.visual_baseline_version ?? null,
     resize: resize.records,

@@ -29,7 +29,7 @@ node <skill-dir>/scripts/spine_reskin_progress.mjs --help
 2. `init` 建立 schema v3 清单，读取真实源文件，SHA-256 仅作可选追踪。低于目标 Runtime 时只接受外部官方工具生成的候选，使用 `upgrade-check` 比较结构投影；未通过目标 Runtime 解析证据前，任何批次命令都会阻断。
 3. `freeze-contract` 冻结角色名、目标 Runtime、暗黑视觉方向、六项色板、材质语言、光向和默认 `strict_alpha=true`。首批前不得使用临时色板。
 4. `plan-batches` 导入精确 Region 顺序、mode、alpha lock 和可选连续特效序列，机器校验全集覆盖、无重复/遗漏、Mesh 使用 `mesh-safe` 且锁 Alpha。
-5. 按 `batch prepare → mark generated → batch review → 停止 → batch accept` 执行。`batch accept` 核对当前批次 revision、实际候选、审阅图和人工确认，不要求提供或比较 SHA/fingerprint；在刚展示且由 `--batch` 明确指定的审阅上下文中，简短“确认”即可通过，也可使用当前批次对应的完整确认句（初始批次“确认第N批”、返工“确认重启版第N批”）。空白、无关或否定文本仍拒绝。回执是 V4 局部 `spine_batch_acceptance`，不是全局第二次视觉审批。返工使用 `batch reopen` 增加 revision，只影响当前批。
+5. 按 `batch prepare → mark generated → batch review → 停止 → batch accept` 执行。`batch accept` 核对当前批次 revision、实际候选、审阅图和人工确认，不要求提供或比较 SHA/fingerprint；在刚展示且由 `--batch` 明确指定的审阅上下文中，简短“确认”即可通过，也可使用当前批次对应的完整确认句（初始批次“确认第N批”、返工“确认重启版第N批”）。空白、无关或否定文本仍拒绝。回执是 V3 正式资源生产中的局部 `spine_batch_acceptance`，不是全局第二次视觉审批。返工使用 `batch reopen` 增加 revision，只影响当前批。
 6. 所有批次 `ACCEPTED+locked` 后执行 `pack`。默认且正式固定 `padding=0`、`extrusion=0`，Page 名必须保持原名并且实际为 PNG；Atlas Page/Region 间空行格式由序列化器固定。
 7. 使用 `runtime-validate` 提交结构化 Phaser SpineGameObject 报告，覆盖目标 Runtime 解析、动态动画全集、Idle 循环、纹理/锚点/Mesh/闪烁/裁剪检查、摘要、URL、桌面和约 390px 移动截图；SHA 仅作可选追踪。通过后才能 `finalize`，最后用 `report` 生成 11 项最终交付报告。
 
@@ -45,4 +45,4 @@ pending → generating → generated → validating → packing → packed → r
 
 ## 全局视觉与批次确认边界
 
-全局视觉阶段、状态和确认规则以 `phaser4-game-workflow-control` 的[控制模型](../phaser4-game-workflow-control/references/control-model.md)、[状态与门](../phaser4-game-workflow-control/references/state-gates.md)及 Schema 为准。Spine 换皮中的方案提议、审查或审阅、批次锁定都必须在当前用户任务的既有 Work Item 范围内完成；本 Skill 只修改自身候选工件，不自行扩展任务范围或创建全局审批。任务内范围、方案或路径变化同步更新计划并重验受影响部分；需要改变产品方向、视觉方向或接入主游戏时，回到控制面重新审查。Spine 批次确认属于 V4 局部生产锁定回执，不进入 Approval Ledger，也不改变场景 V2 的拆解与布局确认。
+全局视觉阶段、状态和确认规则以 `phaser4-game-workflow-control` 的[控制模型](../phaser4-game-workflow-control/references/control-model.md)、[状态与门](../phaser4-game-workflow-control/references/state-gates.md)及 Schema 为准。Spine 换皮中的方案提议、审查或审阅、批次锁定都必须在当前用户任务的既有 Work Item 范围内完成；本 Skill 只修改自身候选工件，不自行扩展任务范围或创建全局审批。任务内范围、方案或路径变化同步更新计划并重验受影响部分；需要改变产品方向、视觉方向或接入主游戏时，回到控制面重新审查。Spine 批次确认属于 V3 正式资源生产中的局部锁定回执，不进入 Approval Ledger，也不改变场景 V2 的拆解与布局确认。

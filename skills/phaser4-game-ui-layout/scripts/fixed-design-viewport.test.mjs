@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { calculateFixedDesignBackground, calculateFixedDesignViewport, calculateFixedDesignPreview, designPointToCss, cssPointToDesign } from "./fixed-design-viewport.mjs";
+import { calculateFixedDesignBackground, calculateFixedDesignViewport, designPointToCss, cssPointToDesign } from "./fixed-design-viewport.mjs";
 
 test("竖屏按 1080 宽度适配并展开可见高度", () => {
   const viewport = calculateFixedDesignViewport({ width: 390, height: 844 });
@@ -64,18 +64,6 @@ test("同方向窄视口、输入往返、DPR 隔离和重复重排", () => {
     }
     for (const dpr of [1, 1.5, 2, 3]) assert.deepEqual(calculateFixedDesignViewport({ ...dimensions, dpr }), viewport);
     for (let index = 0; index < 10; index++) assert.deepEqual(calculateFixedDesignViewport(dimensions), viewport);
-  }
-});
-
-test("草图经共享设计空间映射到目标视口，与正式几何相同", () => {
-  for (const targetSize of [{ width: 2560, height: 1080 }, { width: 1440, height: 1080 }]) {
-    const result = calculateFixedDesignPreview({ width: 1280, height: 720 }, targetSize);
-    const point = { x: 400, y: 300 };
-    const sourcePoint = designPointToCss(point, result.source);
-    const targetPoint = designPointToCss(point, result.target);
-    near(sourcePoint.x * result.scale + result.x, targetPoint.x);
-    near(sourcePoint.y * result.scale + result.y, targetPoint.y);
-    assert.deepEqual(result.target, calculateFixedDesignViewport(targetSize));
   }
 });
 

@@ -99,7 +99,7 @@ export function deriveVisibleAnnotationRows(regions = [], metadata = {}) {
     for (const [index, element] of elements.entries()) {
       if (element.nine_slice === undefined) continue;
       const decision = validateNineSliceContract(element.nine_slice, "拆解部件 nine_slice");
-      // 直接把适用决策放入阶段 A 人工确认图，不能只藏在技术 JSON 中留到 V4 再试切片。
+      // 直接把适用决策放入阶段 A 人工确认图，不能只藏在技术 JSON 中留到 V4 实现时再试切片。
       const description = decision.mode === "stretch"
         ? `九宫格 源图${decision.source_size.width}×${decision.source_size.height} 边宽 左${decision.borders.left} 右${decision.borders.right} 上${decision.borders.top} 下${decision.borders.bottom}`
         : "九宫格不适用";

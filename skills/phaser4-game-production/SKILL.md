@@ -23,7 +23,7 @@ description: Phaser 4 移动端 2D 游戏制作与策划角色；将游戏构想
 - 本领域可以提议和审查需求，也可以在当前任务路径内修改规格；A3 实施包由控制面冻结后再交给 implementer。
 - 所有任务逐一按[实际完成情况](../phaser4-game-workflow-control/references/control-model.md#按实际完成情况验收)验收；满足当前要求的任务不因中途实现调整而回改 GDD 或合同。未满足的要求应修复实际交付，不能修订合同降低验收标准。
 - 无副作用本地 A4 集成可按当前任务执行；外部写入、付费、真机、发布、破坏性或外部删除等 A4-A6 操作只能由控制面建立精确 pending 并等待显式批准，本 Skill 不执行这些动作。
-- 效果图或参考图只有在当前场景被指定为正式运行视觉目标时才进入视觉合同；适用时按同一场景 Work Item 的 V1→V5 证据链推进，不创建第二条生命周期。阶段与硬门以[控制模型](../phaser4-game-workflow-control/references/control-model.md)和[状态、阶段与停止门](../phaser4-game-workflow-control/references/state-gates.md)为准。
+- 效果图或参考图只有在当前场景被指定为正式运行视觉目标时才进入视觉合同；适用时按同一场景 Work Item 的 V1→V2→V3→V4 证据链推进，不创建第二条生命周期。阶段与硬门以[控制模型](../phaser4-game-workflow-control/references/control-model.md)和[状态、阶段与停止门](../phaser4-game-workflow-control/references/state-gates.md)为准。
 - 全局静态基线、场景方向和高保真证据由控制面统一校验；本领域只提供体验意图、功能事实和范围，不用文字或根摘要替代机器证据。
 
 ## 交接与收敛

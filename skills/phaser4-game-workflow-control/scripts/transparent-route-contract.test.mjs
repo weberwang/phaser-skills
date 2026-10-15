@@ -46,7 +46,7 @@ for (const edge of ["hard-edge", "semi-transparent", "glow"]) {
     try {
       assert.deepEqual(validateTransparencyRoute(item.generation, item.expected, item.options), []);
       assert.deepEqual(validateTransparencyPreview(item.generation, item.expected, item.options), []);
-      assert(validateTransparencyPreview(item.generation, item.expected, { ...item.options, stage: "V5" }).some((error) => error.includes("视觉验收")));
+      assert(validateTransparencyPreview(item.generation, item.expected, { ...item.options, stage: "V4" }).some((error) => error.includes("视觉验收")));
     } finally { await rm(item.root, { recursive: true, force: true }); }
   });
 }

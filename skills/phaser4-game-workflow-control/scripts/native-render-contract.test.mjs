@@ -98,10 +98,10 @@ test("人工确认哈希冻结原生参数，实际装配合同必须精确镜�
   assert(validateSceneVisualRouteContract({ coverage_regions: [region] }, { coverage_audit: { regions: [nested] } }).some((error) => error.includes("精确镜像冻结原生参数")));
 });
 
-test("V5 原生实际输出和消费须匹配冻结尺寸、颜色、线宽与路线", () => {
+test("V4 原生实际输出和消费须匹配冻结尺寸、颜色、线宽与路线", () => {
   const region = nativeRegion();
   const contract = { target_conditions: { target_sha256: SHA }, candidate_identity: { sha256: SHA } };
-  const options = { stage: "V5" };
+  const options = { stage: "V4" };
   assert(validateNativeRuntimeEvidence(region, contract, null, options).some((error) => error.includes("实际输出与运行消费")));
   region.native_runtime_evidence = nativeRuntimeEvidence(region.visual_route_analysis, { candidate: SHA, target: SHA });
   assert.deepEqual(validateNativeRuntimeEvidence(region, contract, null, options), []);
@@ -117,7 +117,7 @@ test("V5 原生实际输出和消费须匹配冻结尺寸、颜色、线宽与�
   assert.deepEqual(validateNativeRuntimeEvidence(region, contract, null, options), []);
 });
 
-test("V5 原生消费工件读取真实消费内容，声明通过不能掩盖损坏或参数漂移", async () => {
+test("V4 原生消费工件读取真实消费内容，声明通过不能掩盖损坏或参数漂移", async () => {
   const projectRoot = await mkdtemp(join(tmpdir(), "native-evidence-"));
   try {
     const region = nativeRegion();
@@ -127,14 +127,14 @@ test("V5 原生消费工件读取真实消费内容，声明通过不能掩盖�
     await writeFile(join(projectRoot, "native.json"), bytes);
     region.native_runtime_evidence.evidence_sha256 = "stale-summary";
     const contract = { target_conditions: { target_sha256: SHA }, candidate_identity: { sha256: SHA } };
-    assert.deepEqual(validateNativeRuntimeEvidence(region, contract, null, { stage: "V5", projectRoot }), []);
+    assert.deepEqual(validateNativeRuntimeEvidence(region, contract, null, { stage: "V4", projectRoot }), []);
     await writeFile(join(projectRoot, "native.json"), "tampered");
-    assert(validateNativeRuntimeEvidence(region, contract, null, { stage: "V5", projectRoot }).some((error) => error.includes("可读取的 JSON")));
+    assert(validateNativeRuntimeEvidence(region, contract, null, { stage: "V4", projectRoot }).some((error) => error.includes("可读取的 JSON")));
     // 摘要记录即使陈旧，仍读取并核对工件内真实消费参数。
     report.render_contract.line_width = 5;
     const changedBytes = Buffer.from(JSON.stringify(report));
     await writeFile(join(projectRoot, "native.json"), changedBytes);
-    assert(validateNativeRuntimeEvidence(region, contract, null, { stage: "V5", projectRoot }).some((error) => error.includes("运行工件 render_contract")));
+    assert(validateNativeRuntimeEvidence(region, contract, null, { stage: "V4", projectRoot }).some((error) => error.includes("运行工件 render_contract")));
   } finally {
     await rm(projectRoot, { recursive: true, force: true });
   }

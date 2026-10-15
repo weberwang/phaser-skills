@@ -70,7 +70,7 @@ test("exact 与 usability 测量递归忽略摘要字段但保留可见性和文
     measured.candidate_measurement.fileSha256 = { malformed: true };
     measured.candidate_measurement.source_sha256 = 17;
     // 候选缺失 evidenceSha256 也不影响摘要外的测量事实验收。
-    assert.deepEqual(validateStructuredFidelityCases([fidelityCase], sceneManifest, { stage: "V5" }), []);
+    assert.deepEqual(validateStructuredFidelityCases([fidelityCase], sceneManifest, { stage: "V4" }), []);
 
     const semanticChange = structuredClone(fidelityCase);
     const target = semanticChange.per_region_results[0].target_measurement;
@@ -79,7 +79,7 @@ test("exact 与 usability 测量递归忽略摘要字段但保留可见性和文
     candidate.visible = false;
     target.text = "PLAY";
     candidate.text = "PAUSE";
-    const errors = validateStructuredFidelityCases([semanticChange], sceneManifest, { stage: "V5" });
+    const errors = validateStructuredFidelityCases([semanticChange], sceneManifest, { stage: "V4" });
     assert(errors.some((item) => item.includes("未解释差异")), `${mode}: ${errors.join("\n")}`);
   }
 });

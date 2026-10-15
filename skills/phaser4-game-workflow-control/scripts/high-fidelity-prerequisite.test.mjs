@@ -5,8 +5,9 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { assertGlobalVisualBaselineSelection } from './global-visual-baseline-contract.mjs';
-import { assertFormalExecutionAfterV4, assertFormalImplementationAfterV2, assertHighFidelityPrerequisite, validateHighFidelityPrerequisiteShape } from './high-fidelity-prerequisite.mjs';
+import { assertFormalExecutionAfterV3, assertFormalImplementationAfterV2, assertHighFidelityPrerequisite, validateHighFidelityPrerequisiteShape } from './high-fidelity-prerequisite.mjs';
 import { encodePngRgba } from '../../phaser4-game-asset-integration/scripts/effect_image_raster.mjs';
+import { bindVisualEvidenceFixture } from './workflow-visual-evidence-fixture.mjs';
 
 const TARGET_SHA = `sha256:${'a'.repeat(64)}`;
 const CANDIDATE_SHA = `sha256:${'b'.repeat(64)}`;
@@ -151,11 +152,16 @@ function makeFixture(unitType = 'SCENE', selectedLayer = 'pause') {
     reconstructionContract: join(repo, 'docs', 'scene-reconstruction-contract.json'),
     decompositionAnnotation: join(repo, 'docs', 'decomposition-annotation.png'),
     technicalDecomposition: join(repo, 'docs', 'technical-decomposition.json'),
+    layoutNodes: join(repo, 'docs', 'layout-nodes.json'),
     confirmation: join(repo, 'docs', 'v2-decomposition-confirmation.json'),
     pauseContext: join(repo, 'docs', 'pause-context.png'),
     settingsContext: join(repo, 'docs', 'settings-context.png'),
   };
   Object.values(files).forEach((path) => writeFileSync(path, `${path}\n`));
+  const layoutNode = { layout_node_id: 'scene-root', parent_layout_node_id: 'viewport', region_id: 'scene', target_bounds: { x: 0, y: 0, width: 390, height: 844 } };
+  const viewport = { width: 390, height: 844 };
+  writeFileSync(files.layoutNodes, `${JSON.stringify({ schema: 'phaser-layout-nodes/1.0', scene_id: 'play', state_id: 'default', viewport, layout_nodes: [layoutNode] }, null, 2)}\n`);
+  writeFileSync(files.reconstructionContract, `${JSON.stringify({ target_conditions: { scene_id: 'play', state_id: 'default', viewport }, layout_decomposition: { layout_nodes: [layoutNode], layout_annotation: { layout_nodes_file: 'docs/layout-nodes.json' } } }, null, 2)}\n`);
   const workItemId = unitType === 'SCENE' ? 'WI-1' : `WI-DISPLAY-${selectedLayer}`;
   const expected = unitType === 'SCENE' ? { sceneId: 'play', displayLayerId: null, hostSceneId: null } : { sceneId: 'play', displayLayerId: selectedLayer, hostSceneId: 'play' };
   const artifact = (path) => ({ file: path.slice(repo.length + 1).replaceAll('\\', '/'), sha256: hashFile(path), sceneId: 'play' });
@@ -218,7 +224,7 @@ test('无选图的纯基础包可在 V2/V3 前规划和执行', () => {
   fixture.work.visualStage = 'V1'; fixture.work.visualStageState = 'in-progress';
   // 纯基础包不消费视觉合同或正式资产，因此不要求全局三候选和冻结状态。
   assert.doesNotThrow(() => assertFormalImplementationAfterV2(fixture.work, packageValue, fixture.repo, fixture.io));
-  assert.doesNotThrow(() => assertFormalExecutionAfterV4(fixture.work, packageValue, fixture.repo, fixture.io));
+  assert.doesNotThrow(() => assertFormalExecutionAfterV3(fixture.work, packageValue, fixture.repo, fixture.io));
   rmSync(fixture.repo, { recursive: true, force: true });
 });
 
@@ -229,7 +235,7 @@ test('含视觉产物的基础包仍需全局冻结与选择引用', () => {
   assert.throws(() => assertFormalImplementationAfterV2(fixture.work, packageValue, fixture.repo, fixture.io), /globalStaticBaselineState|基础实施包|3 张候选图/);
   writeGlobalBaselineSelectionEvidence(fixture);
   assert.doesNotThrow(() => assertFormalImplementationAfterV2(fixture.work, packageValue, fixture.repo, fixture.io));
-  assert.doesNotThrow(() => assertFormalExecutionAfterV4(fixture.work, packageValue, fixture.repo, fixture.io));
+  assert.doesNotThrow(() => assertFormalExecutionAfterV3(fixture.work, packageValue, fixture.repo, fixture.io));
   rmSync(fixture.repo, { recursive: true, force: true });
 });
 
@@ -238,9 +244,9 @@ test('基础包声明正式视觉行为时回到 V2/V3 门，不得借单元类�
   const packageValue = { executionUnits: [{ unitType: 'SHARED' }, { unitType: 'MODULE' }] };
   fixture.work.visualIntegration = { registersFormalScene: true };
   fixture.work.visualStage = 'V2'; fixture.work.visualStageState = 'v2-production-planning-complete';
-  // 正式入口行为不消费全局选图门；正式执行必须等 V4 草图确认并进入 V5。
+  // 正式入口行为不消费全局选图门；正式执行必须进入 V4 并复核 V2/V3 来源。
   assert.doesNotThrow(() => assertFormalImplementationAfterV2(fixture.work, packageValue, fixture.repo, fixture.io));
-  assert.throws(() => assertFormalExecutionAfterV4(fixture.work, packageValue, fixture.repo, fixture.io), /V4 页面草图确认/);
+  assert.throws(() => assertFormalExecutionAfterV3(fixture.work, packageValue, fixture.repo, fixture.io), /只能在 V4/);
   rmSync(fixture.repo, { recursive: true, force: true });
 });
 
@@ -313,19 +319,19 @@ test('foundation-only 包仅伪造冻结状态或缺少三候选人工证据时�
   const packageValue = makeVisualFoundationPackage();
   fixture.work.visualStage = 'V1'; fixture.work.visualStageState = 'global-static-baseline-frozen';
   assert.throws(() => assertFormalImplementationAfterV2(fixture.work, packageValue, fixture.repo, fixture.io), /globalStaticBaselineState|基础实施包|3 张候选图/);
-  assert.throws(() => assertFormalExecutionAfterV4(fixture.work, packageValue, fixture.repo, fixture.io), /globalStaticBaselineState|基础实施包|3 张候选图/);
+  assert.throws(() => assertFormalExecutionAfterV3(fixture.work, packageValue, fixture.repo, fixture.io), /globalStaticBaselineState|基础实施包|3 张候选图/);
   fixture.work.globalStaticBaselineState = 'global-static-baseline-frozen';
   assert.throws(() => assertFormalImplementationAfterV2(fixture.work, packageValue, fixture.repo, fixture.io), /3 张候选图|人工确认/);
-  assert.throws(() => assertFormalExecutionAfterV4(fixture.work, packageValue, fixture.repo, fixture.io), /3 张候选图|人工确认/);
+  assert.throws(() => assertFormalExecutionAfterV3(fixture.work, packageValue, fixture.repo, fixture.io), /3 张候选图|人工确认/);
   rmSync(fixture.repo, { recursive: true, force: true });
 });
 
-test('混入 SCENE 的实施包仍受 V2/V4 草图正式门约束', () => {
+test('混入 SCENE 的实施包仍受 V2/V3 正式门约束', () => {
   const fixture = makeFixture();
   const packageValue = { executionUnits: [{ unitType: 'SHARED' }, { unitType: 'SCENE' }] };
   fixture.work.visualStage = 'V1'; fixture.work.visualStageState = 'global-static-baseline-frozen'; fixture.work.globalStaticBaselineState = 'global-static-baseline-frozen';
   assert.throws(() => assertFormalImplementationAfterV2(fixture.work, packageValue, fixture.repo, fixture.io), /V2 拆解方案|V2 前置门/);
-  assert.throws(() => assertFormalExecutionAfterV4(fixture.work, packageValue, fixture.repo, fixture.io), /V4 页面草图确认/);
+  assert.throws(() => assertFormalExecutionAfterV3(fixture.work, packageValue, fixture.repo, fixture.io), /只能在 V4/);
   rmSync(fixture.repo, { recursive: true, force: true });
 });
 
@@ -536,18 +542,18 @@ test('全局基线候选扩展名伪装为 PNG 时拒绝', () => {
   rmSync(fixture.repo, { recursive: true, force: true });
 });
 
-test('V2/V3 资源阶段禁止正式场景执行，V5 必须有已确认草图输入', () => {
+test('V2/V3 资源阶段禁止正式场景执行，V4 直接复核真实 V2/V3 来源', () => {
   const fixture = makeFixture();
   fixture.pkg.executionUnits = [{ unitType: 'SCENE' }];
-  const v3Path = join(fixture.repo, 'docs', 'v3-formal-acceptance.json');
-  const v3Diff = `sha256:${'c'.repeat(64)}`;
-  writeFileSync(v3Path, `${JSON.stringify({ evidenceType: 'v3-formal-acceptance', status: 'PASS', workItemId: 'WI-1', contentHash: CANDIDATE_SHA, diffFingerprint: v3Diff, candidateIdentity: { sha256: CANDIDATE_SHA, diffFingerprint: v3Diff } }, null, 2)}\n`, 'utf8');
+  bindVisualEvidenceFixture({ repo: fixture.repo, work: fixture.work, pkg: fixture.pkg });
   fixture.work.visualStage = 'V2'; fixture.work.visualStageState = 'v2-production-planning-complete';
-  assert.throws(() => assertFormalExecutionAfterV4(fixture.work, fixture.pkg, fixture.repo, fixture.io), /V4 页面草图确认/);
-  fixture.work.visualStage = 'V3'; fixture.work.visualStageState = 'v3-formal-acceptance-complete'; fixture.work.visualStageEvidenceRefs.V3 = { path: 'docs/v3-formal-acceptance.json', sha256: hashFile(v3Path), workItemId: 'WI-1' };
-  assert.throws(() => assertFormalExecutionAfterV4(fixture.work, fixture.pkg, fixture.repo, fixture.io), /V4 页面草图确认/);
-  fixture.work.visualStage = 'V5'; fixture.work.visualStageState = 'in-progress';
-  assert.throws(() => assertFormalExecutionAfterV4(fixture.work, fixture.pkg, fixture.repo, fixture.io), /V4 页面草图确认|V5 Implementation Package/);
+  assert.throws(() => assertFormalExecutionAfterV3(fixture.work, fixture.pkg, fixture.repo, fixture.io), /只能在 V4/);
+  fixture.work.visualStage = 'V3'; fixture.work.visualStageState = 'v3-formal-acceptance-complete';
+  assert.throws(() => assertFormalExecutionAfterV3(fixture.work, fixture.pkg, fixture.repo, fixture.io), /只能在 V4/);
+  fixture.work.visualStage = 'V4'; fixture.work.visualStageState = 'in-progress';
+  assert.doesNotThrow(() => assertFormalExecutionAfterV3(fixture.work, fixture.pkg, fixture.repo, fixture.io));
+  fixture.work.visualStageEvidenceRefs.V3 = undefined;
+  assert.throws(() => assertFormalExecutionAfterV3(fixture.work, fixture.pkg, fixture.repo, fixture.io), (error) => error.result?.missingEvidence?.includes('V3 source evidence path'));
   rmSync(fixture.repo, { recursive: true, force: true });
 });
 

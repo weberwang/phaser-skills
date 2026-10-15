@@ -1,7 +1,6 @@
 import { isAbsolute, relative } from 'node:path';
 import { assertGlobalVisualBaselineSelection } from './global-visual-baseline-contract.mjs';
-import { classifyVisibleVisualProductionIntegration } from './visual-stage-prerequisites.mjs';
-import { assertConfirmedPageSketch } from './page-sketch-prerequisite.mjs';
+import { assertVisualStagePrerequisites, classifyVisibleVisualProductionIntegration } from './visual-stage-prerequisites.mjs';
 import { V2_PLAN_FIELDS } from './v2-reconstruction-plan-contract.mjs';
 
 const SCENE_UNIT_TYPES = new Set(['SCENE', 'DISPLAY_LAYER']);
@@ -23,12 +22,11 @@ const OPTIONAL_SNAPSHOT_FIELDS = new Set([
   'diffFingerprint', 'diff_fingerprint', 'evidenceSha256', 'evidence_sha256',
   'baselineId', 'baseline_id',
 ]);
-const VISUAL_STAGES = ['V0', 'V1', 'V2', 'V3', 'V4', 'V5'];
+const VISUAL_STAGES = ['V0', 'V1', 'V2', 'V3', 'V4'];
 const PACKAGE_VISUAL_FIELDS = Object.freeze([
   'visualContractVersion', 'candidateVersion', 'visualManifestFile', 'visualManifestSha256',
   'visualDecompositionConfirmations', 'current_stage',
   'currentStage', 'scene_reconstruction_contract', 'sceneReconstructionContract', 'visualProductionUnits',
-  'pageSketchFile', 'pageSketchSha256',
 ]);
 
 /** 判断值是否为不带数组的普通对象。 */
@@ -83,9 +81,9 @@ function prerequisiteError(unit, detail) {
   return new Error(`视觉 V2 前置门拒绝 ${unit?.unitId ?? '<package>'}：${detail}；应回到当前 Work Item 的 V2 拆解方案确认`);
 }
 
-/** 生成正式执行 V4 门失败信息，指出需要先确认当前页面草图。 */
+/** 生成正式执行前置门错误，指出必须回到当前 Work Item 核实 V2/V3 来源。 */
 function executionGateError(detail) {
-  return new Error(`V5 正式功能执行前置门拒绝：${detail}；应回到当前场景 Work Item 的 V4 页面草图确认`);
+  return new Error(`V4 正式功能执行前置门拒绝：${detail}；应回到当前场景 Work Item 核实 V2 拆解与 V3 正式资源验收`);
 }
 
 /**
@@ -145,21 +143,20 @@ export function assertFormalImplementationAfterV2(work, pkg, repo, io) {
 }
 
 /**
- * 判断正式执行是否已经越过 V4 页面草图人工确认边界。
- * V2/V3 可准备资源与实施计划；正式 SCENE/DISPLAY_LAYER 单元只允许在 V5 执行。
+ * 校验正式执行所需的 V2/V3 当前来源及 V4 实施状态。
+ * V2 冻结拆解和 V3 正式资源均由同一视觉前置门复核，避免借状态字段或根 PASS 绕过来源校验。
  */
-export function assertFormalExecutionAfterV4(work, pkg, repo, io) {
+export function assertFormalExecutionAfterV3(work, pkg, repo, io) {
   const foundationMode = foundationGateMode(work, pkg);
   if (foundationMode === 'none') return true;
   if (foundationMode === 'global-baseline') return assertFoundationBaselineFrozen(work, repo, io);
   const formalUnits = (pkg?.executionUnits ?? []).filter((unit) => FORMAL_UNIT_TYPES.has(unit?.unitType));
   if (!formalUnits.length) return true;
   const stage = String(work?.visualStage ?? '').trim().toUpperCase();
-  if (stage !== 'V5') throw executionGateError(`正式功能单元只能在 V4 草图确认并推进到 V5 后执行，当前阶段为 ${stage || 'unknown'}`);
-  if (!repo || !io) throw executionGateError('缺少 V4 页面草图证据读取能力');
-  let sketch;
-  try { sketch = assertConfirmedPageSketch(work, repo); } catch (error) { throw executionGateError(error.message); }
-  if (pkg?.pageSketchFile !== sketch.reference.path) throw executionGateError('Implementation Package 必须绑定当前 Work Item 的 V4 页面草图来源文件');
+  if (stage !== 'V4' || !['in-progress', 'v4-runtime-integration-candidate'].includes(String(work?.visualStageState ?? ''))) throw executionGateError(`正式功能单元只能在 V4 正式实施/运行验收状态执行，当前阶段为 ${stage || 'unknown'}/${work?.visualStageState ?? 'missing'}`);
+  if (!repo || !io) throw executionGateError('缺少 V2/V3 当前证据读取能力');
+  const result = assertVisualStagePrerequisites({ ...work, visibleVisualProductionIntegration: true }, { projectRoot: repo, implementationPackage: pkg });
+  if (!result.ok) throw executionGateError(result.errors?.[0]?.message ?? result.missingEvidence?.[0] ?? 'V2/V3 阶段证据未闭合');
   return true;
 }
 

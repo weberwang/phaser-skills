@@ -5,7 +5,7 @@ function isObject(value) { return value !== null && typeof value === "object" &&
 /** 判断字符串是否包含有效合同内容。 */
 function nonEmptyString(value) { return typeof value === "string" && value.trim().length > 0; }
 
-/** 提取资源的统一输出元数据，供 V4 文件门和 图像生成 合同共用。 */
+/** 提取资源的统一输出元数据，供 V3 文件门和 图像生成 合同共用。 */
 export function resolveOutputMetadata(asset = {}) {
   const output = isObject(asset.output) ? asset.output : (isObject(asset.output_metadata) ? asset.output_metadata : {});
   // 图像生成 的 runtime_outputs 是归一化后的交付路径；只有缺少所有显式输出字段时才退回 source_file。
@@ -20,7 +20,7 @@ export function isRasterDelivery(deliveryKind, mimeType = "") {
   return deliveryKind === "raster-image" && (!nonEmptyString(mimeType) || /^image\/(png|webp|jpeg|jpg|avif|bmp|gif)$/i.test(mimeType));
 }
 
-/** 固定视觉 V4 只接受 PNG/JPEG 魔数，不能被 actual_assets.mime_type 自报值绕过。 */
+/** 固定视觉 V3 只接受 PNG/JPEG 魔数，不能被 actual_assets.mime_type 自报值绕过。 */
 export function isPngOrJpegMagic(bytes) {
   if (!Buffer.isBuffer(bytes)) return false;
   const png = bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));

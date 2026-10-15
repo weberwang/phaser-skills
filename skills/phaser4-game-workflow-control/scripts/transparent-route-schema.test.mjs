@@ -75,8 +75,8 @@ test("直接 Alpha 和遮罩路线要求可追溯能力或独立素材身份", (
   }
 });
 
-test("透明生成预览按候选与归一化 PNG 绑定，并保留 V5 检查项", () => {
-  // 机器格式检查只负责身份和 Alpha，V5 仍须完成四项视觉检查。
+test("透明生成预览按候选与归一化 PNG 绑定，并保留 V4 检查项", () => {
+  // 机器格式检查只负责身份和 Alpha，V4 仍须完成四项视觉检查。
   for (const [name, schema] of Object.entries(schemaDocuments)) {
     const defs = schema.$defs;
     assert.deepEqual(defs.transparencyPreview.required, ["source_file", "light", "dark", "inspection"]);

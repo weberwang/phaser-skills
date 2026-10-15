@@ -1,8 +1,8 @@
 # 视觉与功能还原
 
-缺少瞬态弹窗宿主图时，为弹窗建立独立 DISPLAY_LAYER Work Item 并停留在其自身前置门；宿主场景继续自己的 V1–V5。弹窗的完整上下文要求和运行证据只约束弹窗工作项，不进入宿主场景完成条件。
+缺少瞬态弹窗宿主图时，为弹窗建立独立 DISPLAY_LAYER Work Item 并停留在其自身前置门；宿主场景继续自己的 V1、V2、V3、V4。弹窗的完整上下文要求和运行证据只约束弹窗工作项，不进入宿主场景完成条件。
 
-参考截图、效果图、录屏、运行项目和源码是输入，不是通过结论。参考还原属于 V0 的完整路径并执行 V1-V5；功能契约仍优先定义玩法行为，但当 Work Item 明确以指定效果图或参考截图为还原目标时，必须启用“忠实还原模式”。该模式默认使用 `visual_validation.mode=usability`，不因 effect-image 自动启用 `exact`；只有用户明确要求像素级还原时才选择 `exact`。
+参考截图、效果图、录屏、运行项目和源码是输入，不是通过结论。参考还原属于 V0 的完整路径并执行 V1、V2、V3、V4；功能契约仍优先定义玩法行为，但当 Work Item 明确以指定效果图或参考截图为还原目标时，必须启用“忠实还原模式”。该模式默认使用 `visual_validation.mode=usability`，不因 effect-image 自动启用 `exact`；只有用户明确要求像素级还原时才选择 `exact`。
 
 effect-image 生成式位图的 canonical 提示词模板、asset_prompt 事实继承和生成记录绑定见[《Effect-image 生成式位图忠实还原提示词合同》](effect-image-prompt-contract.md)；本文只规定场景还原路由与视觉事实门。
 
@@ -52,31 +52,25 @@ V2 布局标注在拆解图确认之后串行产出：阶段 A 先从冻结事�
 
 ## V3 正式资源验收
 
-V3 消费 V2 已确认的拆解图、技术 JSON、coverage、布局合同和生产计划，生产并验收图片资源或原生实现单元。图片资源保留真实来源、许可信息、生成记录、独立输出文件、组件状态和冻结目标绑定；原生实现保留与冻结合同一致的运行实现来源，不能伪造图片输出。静态资源按已冻结的 component × required state 批量生产，完成后直接提供可逐张放大的图片画廊/联系表；对照说明留在图片旁，正文只列失败、缺失和待处理差异。此阶段不依赖正式 Scene 功能运行，但后续 V5 必须验证实际原生渲染和运行消费。
+V3 消费 V2 已确认的拆解图、技术 JSON、coverage、布局合同和生产计划，生产并验收图片资源或原生实现单元。图片资源保留真实来源、许可信息、生成记录、独立输出文件、组件状态和冻结目标绑定；原生实现保留与冻结合同一致的运行实现来源，不能伪造图片输出。静态资源按已冻结的 component × required state 批量生产，完成后直接提供可逐张放大的图片画廊/联系表；对照说明留在图片旁，正文只列失败、缺失和待处理差异。此阶段不依赖正式 Scene 功能运行，但后续 V4 必须验证实际原生渲染和运行消费。
 
-V3 验收后进入独立 V4 草图阶段。按[页面还原草图作业](visual-alignment-authoring.md)生成草图数据，读取正式资源与冻结底图进行预览；选择、移动父节点带动子孙，保存与确认分别执行。V2 的目标节点和离线审阅页仍只读。
+V4 直接消费 V2 确认的布局目标与 V3 验收的正式资源，在项目正式 Phaser Scene 中实现并校准真实画面；V2 的目标节点和离线审阅页保持只读。具体还原与偏差处置按[正式场景视觉还原与校准](visual-alignment-authoring.md)执行。
 
-生成式位图区域按 V2 `component_inventory` 收齐全部待生成 component × required state，作为[一个批量生成任务](visual-production-pipeline.md#图片批量生成)一次提交；每项交付 individual 位图，`atlas_allowed=false`，不能将独立文件要求解释为逐张调度。宽高由逻辑像素 `ceil(max placement width/height × intended_scale_range.max)` 决定，`max_dpr=1`，`padding_policy=none`。这里的 1 表示图片按最大约定逻辑显示尺寸 1:1 生产；运行时实际 DPR 由设备动态读取并封顶为 2，不改变已冻结的资产尺寸；历史 1.5/2 倍生产证据须重生成或标记 `stale`。系统根据提示词、参考输入、主体材质、透明需求和已验证能力选择实际生成工具，并在记录中写入实际工具、版本、输入/输出 SHA、参数和后处理。生成资产的 `expected_assets.alpha=true` 必须冻结透明策略与边缘类型：只对明确硬边且颜色分离通过的素材使用公共纯色去背；直接 Alpha 必须对工具和对应边缘类型完成能力验证，并解码 PNG 证明真实 Alpha；复杂边缘可用独立遮罩/人工创作、重新生成，或按明确变更合同转为 Phaser 特效。半透明、辉光、柔和阴影、毛发、玻璃和混合边缘禁止阈值去背；工具无法可靠交付时报告能力缺口，不提高容差、硬抠轮廓、删除光效或伪造透明。归一化保持 Alpha、比例和主体边界，不能把棋盘格烘焙背景。每条透明路线生成浅底与深底预览，V5 记录主体完整、背景残留、色边和半透明区域的视觉检查。已有真实透明图按资源复用合同接入，不伪造生成或去背记录；`image_generation_required=true` 的冻结合同不能由路线判断或提示词生成器自动替换。
+生成式位图区域按 V2 `component_inventory` 收齐全部待生成 component × required state，作为[一个批量生成任务](visual-production-pipeline.md#图片批量生成)一次提交；每项交付 individual 位图，`atlas_allowed=false`，不能将独立文件要求解释为逐张调度。宽高由逻辑像素 `ceil(max placement width/height × intended_scale_range.max)` 决定，`max_dpr=1`，`padding_policy=none`。这里的 1 表示图片按最大约定逻辑显示尺寸 1:1 生产；运行时实际 DPR 由设备动态读取并封顶为 2，不改变已冻结的资产尺寸；历史 1.5/2 倍生产证据须重生成或标记 `stale`。系统根据提示词、参考输入、主体材质、透明需求和已验证能力选择实际生成工具，并在记录中写入实际工具、版本、输入/输出 SHA、参数和后处理。生成资产的 `expected_assets.alpha=true` 必须冻结透明策略与边缘类型：只对明确硬边且颜色分离通过的素材使用公共纯色去背；直接 Alpha 必须对工具和对应边缘类型完成能力验证，并解码 PNG 证明真实 Alpha；复杂边缘可用独立遮罩/人工创作、重新生成，或按明确变更合同转为 Phaser 特效。半透明、辉光、柔和阴影、毛发、玻璃和混合边缘禁止阈值去背；工具无法可靠交付时报告能力缺口，不提高容差、硬抠轮廓、删除光效或伪造透明。归一化保持 Alpha、比例和主体边界，不能把棋盘格烘焙背景。每条透明路线生成浅底与深底预览，V4 记录主体完整、背景残留、色边和半透明区域的视觉检查。已有真实透明图按资源复用合同接入，不伪造生成或去背记录；`image_generation_required=true` 的冻结合同不能由路线判断或提示词生成器自动替换。
 
-## V4 草图组合与确认
+## V4 运行态与动态验收
 
-草图文件绑定 V2 节点、V3 正式清单和资源文件身份。V4 直接展示正式资源与冻结底图的组合预览；用户检查当前组合与坐标后确认，代理记录并冻结内容摘要，登记 `visualStageEvidenceRefs.V4`；后续修改使确认失效。显示层绑定 `displayLayerId` 与 `hostSceneId` 并查看宿主上下文。V5 正式实现消费同一确认草图，运行候选记录 `pageSketchSha256`，再校验正式 `combination_preacceptance` 和动态证据。
-
-组合预验收直接展示逐资源画廊和冻结效果图/候选同条件并排预览，原图、生产输出和当前运行资产均可放大查看。逐项标明差异属于资源本身、缩放/裁切、布局还是显示层；资源偏差退回 V3 修复批次，直接展示参考/修前/修后三图供用户确认修复效果，并按图像反馈继续修，不等待文字修复计划确认。技术 ID、文件路径或普通生产方案调整由代理更新内部计划、身份绑定并重验；已确认拆解标签或生产边界改变时，重出受影响拆解图供用户确认；只有冻结视觉目标、玩法语义、任务范围或授权发生实质变化时才询问具体取舍。布局/显示层偏差在当前候选修正并重验，冻结事实或拆解确实错误时退回 V1/V2。`visual_fidelity` 中的 `passed` 必须对应可查看的原图区域、运行资产和组合画面，不得由生成记录合规或“画面能用”直接推断。
-
-## V5 运行态与动态验收
-
-V5 按 `visual_validation.mode` 运行证据验证视觉与功能联合结果。默认 `usability` 在目标及代表性视口/状态提供可读画面，检查布局关系、边界、遮挡、交互和恢复，并与冻结效果图并排核对主要构图及高显著性资源的可观察视觉事实；参考与候选记录视口、实际有效 DPR（动态封顶 2）、语言、操作轨迹、随机种子和动画时间点。只有 `exact` 或明确精确需求时才要求完整 viewport、逐状态/逐区域忠实度矩阵、严格容差、ROI、叠加和像素差证据。默认模式下并排核对不等于逐像素验收，但明显视觉漂移仍须修复。
+V4 按 `visual_validation.mode` 运行证据验证视觉与功能联合结果。默认 `usability` 在目标及代表性视口/状态提供可读画面，检查布局关系、边界、遮挡、交互和恢复，并与冻结效果图并排核对主要构图及高显著性资源的可观察视觉事实；参考与候选记录视口、实际有效 DPR（动态封顶 2）、语言、操作轨迹、随机种子和动画时间点。只有 `exact` 或明确精确需求时才要求完整 viewport、逐状态/逐区域忠实度矩阵、严格容差、ROI、叠加和像素差证据。默认模式下并排核对不等于逐像素验收，但明显视觉漂移仍须修复。
 
 每个 fidelity/parity case 不可变记录冻结目标文件、当前实际代码或构建、scene/state、viewport、实际有效 DPR、语言、随机种子、输入轨迹、动画采样/稳定帧、布局合同版本、视觉基线版本、双方证据、预定义容差、例外 ID 和结论。上游事实或当前受影响候选身份变化才令对应旧案例失效并重新采集；其他单元路径级结果继续有效。默认 `usability` 保留代表性案例，`exact` 或明确全覆盖需求才要求全部视口/状态组合。
 
 每个原生区域还须提交 `native_runtime_evidence`，其 `observed_method`、`observed_delivery_kind`、`render_contract`、`status=passed`、指向消费报告 JSON 的 `evidence` 必须对应本次实际运行对象和结果。`projectRoot` 可用时必须读取 JSON 工件，校验 `report_schema='native-render-consumption/1.0'`、`consumed=true`，以及与当前区域一致的 `region_id`、`scene_id`、`state_id`；实际 method、delivery kind 和 render contract 必须与 `native_runtime_evidence` 逐值一致；candidate/target/baseline/diff 摘要不参与验收。无关 JSON 不能代替实际消费报告。规划参数本身不足以证明运行输出和消费一致。
 
-机器清单生命周期固定为：非效果图 `not-applicable`；效果图完成 V2 拆解确认后为 `v2-ready`，此时允许 fidelity case 为空；只有 V5 已验证才为 `v5-complete`，此时当前验证模式要求的关键 case 必须通过。默认 `usability` 保留代表性场景/状态案例；`exact` 或明确全覆盖需求才要求冻结目标的每个 scene/state 组合至少有一个 passed case。
+机器清单生命周期固定为：非效果图 `not-applicable`；效果图完成 V2 拆解确认后为 `v2-ready`，此时允许 fidelity case 为空；只有 V4 已验证才为 `v4-complete`，此时当前验证模式要求的关键 case 必须通过。默认 `usability` 保留代表性场景/状态案例；`exact` 或明确全覆盖需求才要求冻结目标的每个 scene/state 组合至少有一个 passed case。
 
 ## 失败条件
 
-出现下列任一情况，V2、V3、V5 或完成报告不得通过：
+出现下列任一情况，V2、V3、V4 或完成报告不得通过：
 
 - `exact` 模式下存在未解释差异或超出预定义容差的差异；`usability` 下存在明显越界、裁切、关键遮挡、不可读或交互失效。
 - 缺少当前验证模式所需的同条件参考证据、候选证据或适用的响应式证据；完整 viewport 只在 `exact` 或明确要求时必需。
@@ -89,15 +83,15 @@ V5 按 `visual_validation.mode` 运行证据验证视觉与功能联合结果。
 ## 常用命令
 
 ```text
-失败：node scripts/validate_visual_manifest.mjs docs/visual-assets.json --stage V5
-输出：current_stage=V5 未执行真实文件门，V5 FAIL。
+失败：node scripts/validate_visual_manifest.mjs docs/visual-assets.json --stage V4
+输出：current_stage=V4 未执行真实文件门，V4 FAIL。
 
-成功：node scripts/validate_visual_manifest.mjs docs/visual-assets.json --stage V5 --check-files --project-root .
+成功：node scripts/validate_visual_manifest.mjs docs/visual-assets.json --stage V4 --check-files --project-root .
 输出：scene contract、与 `visual_validation.mode` 匹配的 F2 机器证据、runtime replay 和文件门通过（exit 0）。
 ```
 
 ## 全局基线引用
 
-场景效果图和生成式位图资源必须引用已冻结的全局视觉基线；候选生成、人工选择、冻结状态、锚点继承和文件门以[全局视觉控制](global-visual-control.md)及控制面 Schema 为准。场景自身从 V1 开始，按本文件的 V2 两次确认、V4 草图组合确认和 V5 运行态联合验收推进。
+场景效果图和生成式位图资源必须引用已冻结的全局视觉基线；候选生成、人工选择、冻结状态、锚点继承和文件门以[全局视觉控制](global-visual-control.md)及控制面 Schema 为准。场景自身从 V1 开始，按本文件的 V2 两次确认、V3 资源验收和 V4 正式场景运行态联合验收推进。
 
 生成记录必须明确 `origin=generated|provided`；只有 generated 强制绑定基线四元组、全部 `style_reference_inputs`、canonical 全局一致性段、`style_drift_policy=forbid`、实际完整提示词、实际输出与一致性证据。provided 图不得伪造生成记录。记录或路径问题先原地修复，候选未变的提示词/输出证据更新重验当前门；基线、锚点、目标实际内容或冻结生成合同真实变化时才令旧记录失效，并按合同返回最早受影响阶段。

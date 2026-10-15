@@ -136,6 +136,6 @@ export function validateTransparencyPreview(generation, expectedAsset, options =
     if (!nonEmptyString(inspection.evidence)) errors.push("透明视觉检查通过必须提供检查证据");
     for (const check of ["subject_integrity", "background_residue", "color_fringe", "semi_transparency"]) if (inspection.checks?.[check] !== "passed" && !(check === "semi_transparency" && generation.edge_profile === "hard-edge" && inspection.checks?.[check] === "not-applicable")) errors.push(`透明视觉检查 ${check} 未通过`);
   }
-  if (String(options.stage).toUpperCase() === "V5" && inspection?.status !== "passed") errors.push("V5 透明素材尚未完成深浅底视觉验收，格式通过不得自动放行");
+  if (String(options.stage).toUpperCase() === "V4" && inspection?.status !== "passed") errors.push("V4 透明素材尚未完成深浅底视觉验收，格式通过不得自动放行");
   return errors;
 }

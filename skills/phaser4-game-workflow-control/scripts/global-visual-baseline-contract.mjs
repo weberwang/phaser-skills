@@ -27,7 +27,7 @@ const OPTIONAL_SNAPSHOT_FIELDS = new Set([
   'targetSha256', 'target_sha256', 'candidateSha256', 'candidate_sha256', 'candidate_sha',
   'baselineHash', 'baseline_hash', 'baselineSha256', 'baseline_sha256', 'contentHash', 'content_hash',
   'artifactHash', 'artifact_hash', 'dependencyHash', 'dependency_hash', 'diffFingerprint', 'diff_fingerprint', 'diffSha256', 'diff_sha256',
-  'evidenceSha256', 'evidence_sha256', 'visualManifestSha256', 'visual_manifest_sha256', 'pageSketchSha256', 'page_sketch_sha256',
+  'evidenceSha256', 'evidence_sha256', 'visualManifestSha256', 'visual_manifest_sha256',
   'referenceSha256', 'reference_sha256', 'annotationSha256', 'annotation_sha256', 'metadataSha256', 'metadata_sha256',
   'receiptSha256', 'receipt_sha256', 'proposalSha256', 'proposal_sha256', 'entry_sha256', 'ledger_sha256',
 ]);

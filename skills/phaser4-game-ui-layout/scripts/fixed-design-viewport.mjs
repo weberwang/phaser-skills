@@ -42,14 +42,6 @@ export function cssPointToDesign({ x, y }, viewport) {
   return { x: x / viewport.scale - viewport.offsetX, y: y / viewport.scale - viewport.offsetY };
 }
 
-/** 将冻结草图的 CSS 坐标经设计空间映射到目标视口，供 V4 与项目 V5 共同消费。 */
-export function calculateFixedDesignPreview(sourceSize, targetSize) {
-  const source = calculateFixedDesignViewport(sourceSize);
-  const target = calculateFixedDesignViewport(targetSize);
-  const origin = designPointToCss(cssPointToDesign({ x: 0, y: 0 }, source), target);
-  return { source, target, scale: target.scale / source.scale, x: origin.x, y: origin.y };
-}
-
 /** 背景 cover 的可见区域原点转换为设计坐标，避免主轴适配后的居中偏移露出边缘。 */
 export function calculateFixedDesignBackground({ sourceWidth, sourceHeight, viewport, sourceFocalPoint, targetPoint }) {
   if (!viewport || ![viewport.visibleWidth, viewport.visibleHeight, viewport.offsetX, viewport.offsetY].every(Number.isFinite)) {

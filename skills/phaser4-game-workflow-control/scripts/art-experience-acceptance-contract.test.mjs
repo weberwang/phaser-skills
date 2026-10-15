@@ -10,7 +10,7 @@ function validAcceptance(recordingFile) {
   return {
     schemaVersion: 'phaser4-art-experience-acceptance/1.0',
     workItemId: 'WI-1',
-    candidateId: 'V5-1',
+    candidateId: 'V4-1',
     sceneId: 'play',
     status: 'passed',
     confirmedAt: '2026-10-01T12:00:00.000Z',
@@ -32,11 +32,11 @@ function makeProject() {
   return { projectRoot, recordingFile: 'evidence/play.test-recording' };
 }
 
-test('验收合同接受当前 V5 身份、完整五维人工判断与合法不适用项', () => {
+test('验收合同接受当前 V4 身份、完整五维人工判断与合法不适用项', () => {
   const project = makeProject();
   const acceptance = validAcceptance(project.recordingFile);
   assert.deepEqual(validateArtExperienceAcceptance(acceptance, {
-    workItemId: 'WI-1', candidateId: 'V5-1', sceneId: 'play',
+    workItemId: 'WI-1', candidateId: 'V4-1', sceneId: 'play',
   }, project), []);
 });
 
@@ -45,7 +45,7 @@ test('不适用事件不要求录屏，但不能附带伪造观看字段', () =>
   const acceptance = validAcceptance(project.recordingFile);
   acceptance.scenarios[1] = { ...acceptance.scenarios[1], recordingFile: 'evidence/play.test-recording' };
   const errors = validateArtExperienceAcceptance(acceptance, {
-    workItemId: 'WI-1', candidateId: 'V5-1', sceneId: 'play',
+    workItemId: 'WI-1', candidateId: 'V4-1', sceneId: 'play',
   }, project);
   assert(errors.some((message) => message.includes('必须为 null')));
 });

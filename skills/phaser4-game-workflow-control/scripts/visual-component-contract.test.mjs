@@ -41,7 +41,7 @@ test("V3沿用权威视觉路线判断角色冲突，并拒绝真实背景层和
   assert.equal(skinErrors.some((item) => item.includes("九宫格 stretch")), false);
 
   const routeOverrideErrors = validateVisualComponentContract(nineSliceRegion("background", "hud", "panel"), { stage: "V3", region_id: "panel-region" });
-  assert.equal(routeOverrideErrors.some((item) => item.includes("九宫格 stretch")), false, "panel route 应覆盖可变 role 文本，与 V2/V4 判定一致");
+  assert.equal(routeOverrideErrors.some((item) => item.includes("九宫格 stretch")), false, "panel route 应覆盖可变 role 文本，与 V2/V3 判定一致");
 
   const backgroundErrors = validateVisualComponentContract(nineSliceRegion("background", "background", "panel"), { stage: "V3", region_id: "panel-region" });
   assert(backgroundErrors.some((item) => item.includes("九宫格 stretch")));
