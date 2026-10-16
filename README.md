@@ -34,7 +34,7 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 
 单场景视觉任务在“逐场景生产”内按“场景定义 → 拆解与布局确认 → 正式资源验收 → 正式场景实现、校准与运行验收”推进。V4 直接读取 V2 的结构和目标布局、V3 验收通过的正式资源，在实际场景中迭代还原效果。该视图只简化展示；全局状态、G0-G3、V0/V1/V2/V3/V4、A0-A6、F0-F4 和证据硬门继续由控制面维护，详见[控制模型](skills/phaser4-game-workflow-control/references/control-model.md)与[状态、阶段与停止门](skills/phaser4-game-workflow-control/references/state-gates.md)。
 
-通用帧动画按普通、角色动作、特效或 UI 选择制作规则，默认视频抽帧，图片递归补帧仅在用户明确选用时启用。内部完成动作分析、时间轴、尺寸与批次方案后，在已有授权内直接制作真实视频或关键帧，不等待文字设计确认；只有玩法事件、时长或行为边界有决定性歧义时才询问。真实视频人工验收后才能抽帧；图片首尾、关键帧和递归父图逐张确认后继续制作，最终真实序列仍由用户验收。分辨率、条数、预算、来源证据和 Phaser 接入见[通用帧动画技能](skills/phaser4-frame-animation/SKILL.md)与[区域规划](skills/phaser4-frame-animation/references/region-planning.md)。
+通用帧动画按普通、角色动作、特效或 UI 选择制作规则，默认视频抽帧，图片递归补帧仅在用户明确选用时启用。内部完成动作分析、时间轴、尺寸与批次方案后，先向用户阐述设计理念，说明希望带来什么感觉及动作与节奏的依据，等待用户明确确认当前动作方案后，再在已有授权内制作真实视频或关键帧；只有玩法事件、时长或行为边界有决定性歧义时才询问。真实视频人工验收后才能抽帧；图片首尾、关键帧和递归父图逐张确认后继续制作，最终真实序列仍由用户验收。分辨率、条数、预算、来源证据和 Phaser 接入见[通用帧动画技能](skills/phaser4-frame-animation/SKILL.md)与[区域规划](skills/phaser4-frame-animation/references/region-planning.md)。
 
 先在目标 Phaser 项目根目录初始化一个 Work Item。下面的 PowerShell 示例会以当前 Git HEAD 作为不可变基线，可直接复制执行：
 
