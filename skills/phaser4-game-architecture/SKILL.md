@@ -20,6 +20,7 @@ description: Phaser 4 移动端 2D 游戏的技术架构角色。需要划分或
 读取全局 Work Item、模块审计、依赖能力档、服务边界和项目权威工件。按 F0 范围与流程、F1 规格一致性、F2 架构质量、F3 工程验证、F4 集成/发布决策提交结果，不自行改变全局状态。
 
 - 用 Phaser 4、TypeScript、Vite 实现 Web 核心；新项目优先采用官方当前的 create-phaser-game 流程。
+- 新建或调整 Vite 生产构建时，按[生产构建压缩与发布检查](references/production-build.md)落实 Terser 两轮压缩、标识符缩短、注释移除与生产 Source Map 默认关闭；评估 Phaser Compressor 按需裁剪引擎，并交接实际配置入口、构建命令和验证证据。
 - 仅在移动平台档被实际需求触发时用 Capacitor 承载 iOS 与 Android，并将每个已采用插件封装在平台适配层；初始化不得默认安装非必需插件。
 - Android/iOS 原生平台功能优先使用现有插件，按下述[原生平台插件选型](#原生平台插件选型)执行，避免重复实现原生能力。
 - 小游戏必须单独验证；可选商业能力须有显式接口和已批准开关。
