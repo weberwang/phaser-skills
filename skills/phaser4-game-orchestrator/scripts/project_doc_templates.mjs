@@ -192,6 +192,10 @@ templates.core["TDD.md"] += `
 只登记已采用 SDK。依赖真实初始化完成时必须等待官方完成回调或明确就绪状态，不能把请求受理当成完成。无依赖分支可以并行；可选 SDK 后台推进，区分核心就绪和后台结果，不等待所有 SDK 后才启动 Phaser。同生命周期同配置幂等，重复调用复用任务，延迟初始化与条件恢复仍由统一文件编排；已有 SDK 领域服务的唯一恢复任务继续复用，不新增重复 timer。失败只影响实际依赖分支，配置切换/销毁使旧回调失效并清理自建监听器。
 
 采用 MAX 时，它与 CMP/Google UMP/ATT 在同一文件中独立调度；隐私任务不成为 MAX 初始化前置，初始化成功不代表允许广告请求。SDK 真实就绪、隐私状态已正确传递及业务请求条件分别判断。既有合同的官方能力冲突须取得锁定版本证据与适用验证才能关闭，统一编排不代表已经解决。
+
+MAX 内建 Terms and Privacy Policy Flow 在 initialize 前显式关闭，核对 Android 当前变体实际打包的 applovin_settings.json 中 consent_flow_settings.consent_flow_enabled=false，以及 iOS App target 打包的 AppLovin-Settings.plist 中 ConsentFlowInfo.ConsentFlowEnabled=NO；当前核对的官方 Cordova JS API 未暴露流程开关，不套用其他框架 API。上述为目标关闭值，官方指南示范启用配置，必须按锁定 SDK 版本验证实际读取与关闭效果；不能仅凭文件值宣称成功。关闭流程时仍保留广告启用配置、官方插件初始化调用与真实完成回调；不跳过初始化、不伪造成功、不绕过 load/show 的隐私门。
+
+采用 AppsFlyer 时，分别登记 MAX 和 AppsFlyer 独立分支，各自只依赖真实前置与适用隐私条件。不得在 MAX 初始化或内建隐私回调中启动 AppsFlyer，MAX 也不等待 AppsFlyer 初始化、启动或归因结果；一个分支失败/超时不取消另一个，各自持有状态与恢复任务。核实插件版本与 Capacitor 支持，手动启动模式不能遗漏该版本的 start，自动启动模式不重复 start。覆盖两种完成先后、任一失败/超时、隐私未决和重复调用，提供实际配置与SDK回调/启动证据；未取得目标平台运行证据时标记未验证。
 `;
 
 export const CORE_TEMPLATES = templates.core;

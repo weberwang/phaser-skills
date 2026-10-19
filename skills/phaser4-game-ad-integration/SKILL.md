@@ -14,7 +14,7 @@ description: "Phaser 4 + Capacitor 移动项目通过 AppLovin 官方 MAX Cordov
 - 本 Skill 不替项目自动配置 MAX 控制台、广告网络账号、商店元数据或发布渠道。SDK key 与 ad unit ID 按环境从受控构建配置注入官方插件适配层，不手写进业务源码、示例、日志或提交记录；广告网络账号凭证与 Ad Review key 不得进入 Web 代码或公开产物。
 - 广告只在自然中断点尝试展示；调用方永不等待广告加载、网络请求或展示完成。不可展示时必须按广告位当前状态立即返回结果，不得阻塞场景切换、输入、主循环或结算流程。后台加载、加载失败和重试保持静默，不弹 Toast。
 - 视频广告位在用户触发展示但当前不可用，或官方插件接受展示后回调 `displayFailed` 时，通过统一 UI 层弹出一次“视频广告暂不可用，请稍后再试”Toast；不得由插件适配层直接操作 Phaser UI，也不得因重复回调重复提示。
-- SDK 初始化与隐私流程独立推进：初始化调用、完成状态和失败重试均不等待隐私弹窗、CMP 或 ATT；隐私未决、失败或拒绝不阻塞 SDK 初始化。不得启用会把初始化完成回调串在隐私弹窗之后的 MAX 自动 Terms and Privacy Policy Flow；隐私收集由独立任务通过项目采用的原生 CMP/Google UMP 与 ATT 入口处理，广告服务只消费真实隐私状态，并仅对广告加载与展示检查 privacy gate。SDK 初始化成功仍以官方插件真实完成回调为准，不能用请求受理或隐私结果代替。具体配置和能力边界以细则合同为准。
+- SDK 初始化与隐私流程独立推进：初始化调用、完成状态和失败重试均不等待隐私弹窗、CMP 或 ATT；隐私未决、失败或拒绝不阻塞 SDK 初始化。MAX 内建 Terms and Privacy Policy Flow 必须在初始化前显式关闭并核验同步后的有效原生配置；广告服务仍启用且继续调用 MAX initialize，不能通过禁用广告或跳过初始化实现关闭流程。隐私收集由独立任务通过项目采用的原生 CMP/Google UMP 与 ATT 入口处理，广告服务只消费真实隐私状态，并仅对广告加载与展示检查 privacy gate。SDK 初始化成功仍以官方插件真实完成回调为准，不能用请求受理或隐私结果代替。具体配置和能力边界以细则合同为准。
 - Banner 不参与初始化预加载；首次请求展示时才创建原生视图并加载，调用立即返回。收到 loaded 且布局安全、业务仍请求可见时显示；创建或加载失败均保持隐藏并按同一独立退避持续重试；离开展示场景清除可见请求并取消重试，旧回调不得恢复创建或显示。不弹 Toast、不占用错误高度、不等待加载。
 
 ## 全局控制接入
@@ -26,6 +26,8 @@ description: "Phaser 4 + Capacitor 移动项目通过 AppLovin 官方 MAX Cordov
 ## 交付流程
 
 广告 SDK 初始化及独立隐私任务的应用层启动统一接入 `src/bootstrap/initialize-sdks.ts`，按[SDK 统一初始化](../phaser4-game-architecture/references/sdk-initialization.md)编排；MAX 真实调用和回调仍由官方插件适配器封装，已有初始化恢复任务仍由广告服务唯一持有。不得在 Scene、Boot/Preload 或构造函数再建启动入口，也不因单文件集中而让隐私任务成为 MAX 初始化前置。
+
+项目采用 AppsFlyer 时，它在同一统一文件中独立初始化和启动，不等待 MAX、MAX 内建隐私流程或广告加载，也不在 MAX 回调中启动；MAX 同样不等待 AppsFlyer 或归因结果。两者的失败、超时与恢复分别处理，不相互取消，不重复安装或初始化插件已管理的传递依赖。
 
 1. 读取当前 Work Item、项目 TDD/依赖能力档、Capacitor 平台状态及官方插件安装状态；按 [AppLovin MAX 接入合同](references/applovin-max-contract.md)登记范围、非目标、公开接口、状态所有权、生命周期和失败边界。广告属于可选商业能力，不能把它作为 Phaser Web 核心循环的运行前置。
 2. 提交最小模块提议：Web/小游戏 no-op、AppLovin 官方 Cordova 插件、共享 TypeScript 业务门面与插件 API 适配器、测试替身。核对官方插件发布版本、许可证、Android/iOS 支持、Capacitor 兼容方式、回调语义和隐私能力；不得提出社区插件或自建原生桥作为备用实现。

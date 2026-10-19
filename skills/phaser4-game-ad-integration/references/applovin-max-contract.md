@@ -268,6 +268,32 @@ Phaser 场景只提供 `slotId` 与自然中断点上下文并消费结构化结
 
 Google AdMob 的同意收集由独立隐私任务使用符合项目要求的 Google UMP/CMP，核实相应消息配置、IAB TCF 与实际聚合网络覆盖；外部控制台配置仍由责任人在授权范围内完成。已有的真实隐私标志按所锁定插件支持的接口在初始化前同步，不等待新的交互结果；未知状态不得伪造为同意或拒绝。后续结果到达时更新 privacy gate；向 MAX 及各聚合网络同步隐私标志、TCF/ATT 状态的能力必须逐项核实，不能仅更新业务 gate 就宣称传递成功。只有真实状态已正确传递且广告策略允许时才恢复广告请求，不通过重新初始化 SDK 掩盖能力缺口。iOS ATT/NSUserTrackingUsageDescription 由隐私任务统一管理，避免重复请求，不等待 ATT 才初始化 SDK。儿童数据、年龄限制和地区义务不能由广告模块自行假设或绕过。
 
+### 关闭 MAX 内建隐私流程并保留初始化
+
+在调用 MAX initialize 之前显式关闭 Terms and Privacy Policy Flow。当前核对的[官方 Cordova JS API](https://github.com/AppLovin/AppLovin-MAX-Cordova/blob/master/plugin/www/applovinmax.js)未提供该流程的公开开关，不得套用 React Native、Flutter 或直接原生 SDK 的同名 API；实施时重新核对锁定版本。采用原生资源配置时合并到目标工程对应文件，保留其其他有效设置。以下是要求达到的关闭配置值；官方 Android/iOS 指南示范的是启用值，必须按锁定 SDK 版本验证 `false`/`NO` 确实被读取并关闭流程，不能仅凭文件内容宣称关闭成功：
+
+Android 实际 app module 的 `src/main/res/raw/applovin_settings.json`（常规 Capacitor 路径为 `android/app/src/main/res/raw/applovin_settings.json`）：
+
+```json
+{
+  "consent_flow_settings": {
+    "consent_flow_enabled": false
+  }
+}
+```
+
+iOS 实际 App target 打包的 `AppLovin-Settings.plist` 中，`ConsentFlowInfo` 字典的布尔项 `ConsentFlowEnabled` 为 `NO`（plist 表示为 `<false/>`）。TDD 记录实际文件位置与 target 资源归属，不能只创建一个未被打包的同名文件。Android 同样核对当前构建变体和资源覆盖，Capacitor 同步后重新检查最终值，避免生成配置或初始化前的插件调用重新开启流程。
+
+关闭流程后，广告功能开关、SDK key、广告位配置和 MAX 插件保持正常接入；注册初始化结果处理后仍通过官方插件发起一次有效初始化，以真实完成回调推进 SDK 状态。不能删除 initialize、提前 return、伪造完成回调、把广告服务设为 disabled 或调用隐私结果代替 SDK 完成来实现“关闭”。初始化瞬时失败继续使用现有唯一恢复任务，关闭流程不清除或复用广告位加载 timer。
+
+初始化成功后仍按已有规则投递全屏广告位预加载意图；实际 load/show 继续受真实隐私状态与其他 gates 约束，关闭 MAX 内建流程不等于同意收集完成或允许立即请求广告。独立 CMP/UMP/ATT 继续履行自身职责，上述版本能力冲突仍需证据关闭。
+
+### 与 AppsFlyer 独立推进
+
+若项目采用 AppsFlyer，统一初始化文件分别启动 MAX 和 AppsFlyer 分支，不建立相互等待边。AppsFlyer 不挂在 MAX 初始化成功、失败、内建隐私流程结束或广告 ready 回调后；MAX 不等待 AppsFlyer 初始化/启动、归因结果或其错误恢复。每个分支仅消费自身真实前置与隐私要求，各自维护幂等、状态、失败及恢复；一个分支失败不能提前终止另一个分支。AppsFlyer 的具体插件 API 和证据按[SDK 统一初始化](../../phaser4-game-architecture/references/sdk-initialization.md#appsflyer-独立启动)交付，不在广告模块中建立第二个归因 SDK 所有者。
+
+验证必须分别覆盖 MAX 先完成、AppsFlyer 先完成、任一失败/超时与隐私未决，证明关闭内建流程后 MAX 初始化调用和真实回调仍存在，AppsFlyer 启动不受其结果影响。仅修改配置或通过 TypeScript 编译不能证明实际广告初始化、归因或加载展示已通过；真机与外部配置继续按明确授权执行。
+
 ## 全屏广告静默预加载与独立持续重试
 
 ### 常规路径
