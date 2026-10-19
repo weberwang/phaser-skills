@@ -258,6 +258,8 @@ Phaser 场景只提供 `slotId` 与自然中断点上下文并消费结构化结
 
 ## 初始化与隐私独立推进
 
+应用层所有 SDK 初始化统一由 `src/bootstrap/initialize-sdks.ts` 编排，MAX 和独立隐私任务分别接入同一文件的独立分支；具体规则见[SDK 统一初始化](../../phaser4-game-architecture/references/sdk-initialization.md)。官方插件适配器封装原生调用，广告服务保留唯一初始化恢复任务，不新增并行重试器；下述真实完成回调、隐私门与能力冲突继续有效，不因单文件集中而改变依赖或推断成功。
+
 1. 启动时读取受控平台配置，检查平台、当前 Activity/ViewController、环境开关与插件配置；Web/小游戏直接 no-op。支持的原生平台服务启用且具备有效配置时，必须调用 MAX initialize，不以同意隐私、CMP 完成或 ATT 授权作为前置条件；不得把拒绝同意转换为禁用 MAX 初始化。
 2. 初始化任务只处理 MAX 的调用、真实完成回调及失败恢复；隐私收集另建独立任务，通过项目采用的原生 CMP/Google UMP 与 ATT 入口执行，不作为初始化任务的前置依赖或验收条件。工作流要求两者可独立完成：SDK 回调先到时立即确认初始化成功，即使 privacy 仍为 pending/blocked；隐私结果先到时只更新真实隐私状态，不推断 SDK 已初始化，也不再次 initialize。初始化调用只确认本地受理并快速返回，不等待隐私流程或广告事件。上述是目标行为，具体插件是否支持须按下一条核实，不能视为现有 MAX 接入能力已经满足。
 3. 不启用 MAX 自动 Terms and Privacy Policy Flow。[Android 官方流程](https://support.applovin.com/en/max/android/overview/terms-and-privacy-policy-flow)与[iOS 官方流程](https://support.applovin.com/en/max/ios/overview/terms-and-privacy-policy-flow)明确该模式会在用户结束流程后才发送初始化完成回调，不能满足本工作流的解耦要求。按锁定插件/SDK 支持的入口关闭该模式；使用原生资源配置时，Android `res/raw/applovin_settings.json` 的 `consent_flow_settings.consent_flow_enabled` 为 `false`，iOS `AppLovin-Settings.plist` 的 `ConsentFlowInfo.ConsentFlowEnabled` 为 `NO`，并核验同步后的有效配置。同一官方文档还要求自行集成的 CMP 在 MAX 初始化前完成，因此关闭自动流程本身不能证明完整解耦可行；当前官方接入顺序与目标行为存在能力冲突。只有取得锁定版本支持独立初始化及后续隐私状态传递的官方证据和适用集成验证后，才能宣称该实现满足合同；否则将广告接入标为能力未满足并报告，不把隐私任务重新设为初始化前置，不牵连游戏核心流程。不得套用其他框架的同名 API、创建新的原生广告桥，或提前伪造初始化完成来掩盖冲突。

@@ -4,6 +4,8 @@
 
 Android/iOS 原生平台功能优先通过插件实现：先复用项目现有插件，再评估适用的官方或社区插件；仅在明确能力缺口下补充自建原生实现。选型、平台适配边界和必要宿主配置遵循[原生平台插件选型](skills/phaser4-game-architecture/SKILL.md#原生平台插件选型)。
 
+游戏项目所有已采用 SDK 的初始化统一放在 `src/bootstrap/initialize-sdks.ts`，由应用入口调用，依赖顺序、并行/延迟分支和失败处理集中维护；原生调用仍通过平台适配器。具体边界与 TDD 交付见[SDK 统一初始化](skills/phaser4-game-architecture/references/sdk-initialization.md)。
+
 ## 安装
 
 需要 Node.js 22.20 或更高版本：

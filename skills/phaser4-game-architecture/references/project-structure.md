@@ -19,6 +19,8 @@ game-project/
 ├── capacitor.config.ts              # 采用原生宿主时创建，webDir 对应 Web 构建输出
 ├── src/
 │   ├── main.ts                      # 应用装配：选择平台适配器、创建服务、启动游戏
+│   ├── bootstrap/
+│   │   └── initialize-sdks.ts       # 所有已采用 SDK 的唯一初始化编排，按需创建
 │   ├── styles/                      # 宿主全屏、画布容器等全局样式
 │   ├── game/
 │   │   ├── main.ts                  # Phaser 配置、场景注册与游戏创建
@@ -80,6 +82,7 @@ game-project/
 ## 代码归属与依赖
 
 - `src/main.ts` 只负责应用装配；`src/game/main.ts` 只负责 Phaser 启动和注册。业务规则不进入入口文件，避免所有场景和服务集中在一个控制器中。
+- 所有 SDK 初始化集中在 `src/bootstrap/initialize-sdks.ts`，由 `src/main.ts` 调用唯一入口；依赖顺序、并行/延迟条件和失败处理遵循[SDK 统一初始化](sdk-initialization.md)。平台适配器封装具体调用，Scene、Boot/Preload 和业务构造函数不另行初始化 SDK；没有采用 SDK 时不预建空文件。
 - 一个场景的规则、实体、常驻 UI、布局与测试就近组织在 `scenes/<scene-id>/`；不要在根级 `entities/`、`managers/` 或 `ui/` 汇集所有场景的私有实现。按需拆分内部目录，小场景无需机械创建全部子目录。
 - `modules/<module-id>/` 归属场景无关的基础服务；场景通过其公开接口调用。模块不得导入具体场景、显示层或其私有实现，场景之间也不得直接访问对方内部状态。纯规则与数据校验优先保持独立于 Phaser 显示对象，方便定向测试。
 - `platform/` 提供平台接口的实现，`game/contracts/` 定义接口，`src/main.ts` 完成注入。游戏业务不得直接导入 Capacitor 或具体平台适配器；平台实现不得依赖具体场景。Android 原生主题、Manifest 和 Activity 修改归属根级 `android/` 工程，不能放入 TypeScript 适配目录代替原生配置。

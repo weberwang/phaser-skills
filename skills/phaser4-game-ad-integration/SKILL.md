@@ -25,6 +25,8 @@ description: "Phaser 4 + Capacitor 移动项目通过 AppLovin 官方 MAX Cordov
 
 ## 交付流程
 
+广告 SDK 初始化及独立隐私任务的应用层启动统一接入 `src/bootstrap/initialize-sdks.ts`，按[SDK 统一初始化](../phaser4-game-architecture/references/sdk-initialization.md)编排；MAX 真实调用和回调仍由官方插件适配器封装，已有初始化恢复任务仍由广告服务唯一持有。不得在 Scene、Boot/Preload 或构造函数再建启动入口，也不因单文件集中而让隐私任务成为 MAX 初始化前置。
+
 1. 读取当前 Work Item、项目 TDD/依赖能力档、Capacitor 平台状态及官方插件安装状态；按 [AppLovin MAX 接入合同](references/applovin-max-contract.md)登记范围、非目标、公开接口、状态所有权、生命周期和失败边界。广告属于可选商业能力，不能把它作为 Phaser Web 核心循环的运行前置。
 2. 提交最小模块提议：Web/小游戏 no-op、AppLovin 官方 Cordova 插件、共享 TypeScript 业务门面与插件 API 适配器、测试替身。核对官方插件发布版本、许可证、Android/iOS 支持、Capacitor 兼容方式、回调语义和隐私能力；不得提出社区插件或自建原生桥作为备用实现。
 3. 冻结插件适配契约：`initialize`、`preload(slotId)`、`tryShow(context)`、`setBannerVisibility(slotId, visible)`、`isReady(slotId)` 均为非阻塞调用并返回结构化结果；适配器把官方插件的 callback/event API 归一化为该契约。初始化失败进入 `failed`：明确的瞬时故障由服务唯一的初始化重试任务按 2/4/8/16/32/64 秒持续退避；后台、离线或宿主条件未满足时暂停，恢复后继续；配置或依赖错误修正后显式重试。初始化重试与广告位加载重试隔离，不混用 timer 或计数。服务初始化幂等；支持平台且服务启用、插件配置有效时，必须发起 MAX 初始化，不以隐私同意、CMP 完成或 ATT 授权作为调用前置。每个广告位只有一个业务状态所有者，原生格式对象由官方插件内部管理。初始化成功后立即投递全部启用的插页与激励视频预加载意图，实际加载经过广告请求隐私门；所有已发起的加载失败都由各广告位自己的重试 timer 持续调度，不按错误类别终止、不设次数上限，直到成功；禁用、移除或服务销毁终止重试，运行 gates 关闭仅暂停。各广告位独立保存计数与 deadline，并应用同一套 `2/4/8/16/32/64 秒`退避、抖动、去重、后台/离线暂停和恢复规则。一个广告位取消、重排或触发重试不得改变其他广告位的 timer。

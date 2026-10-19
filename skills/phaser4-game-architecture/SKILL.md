@@ -22,6 +22,7 @@ description: Phaser 4 移动端 2D 游戏的技术架构角色。需要划分或
 - 用 Phaser 4、TypeScript、Vite 实现 Web 核心；新项目优先采用官方当前的 create-phaser-game 流程。
 - 新建或调整 Vite 生产构建时，按[生产构建压缩与发布检查](references/production-build.md)落实 Terser 两轮压缩、标识符缩短、注释移除与生产 Source Map 默认关闭；评估 Phaser Compressor 按需裁剪引擎，并交接实际配置入口、构建命令和验证证据。
 - 仅在移动平台档被实际需求触发时用 Capacitor 承载 iOS 与 Android，并将每个已采用插件封装在平台适配层；初始化不得默认安装非必需插件。
+- 项目所有已采用 SDK 的初始化由 `src/bootstrap/initialize-sdks.ts` 单文件统一编排，`src/main.ts` 只调用其唯一入口；设计和实施时读取[SDK 统一初始化](references/sdk-initialization.md)，在 TDD 明确真实依赖、并行/延迟条件、就绪判据和失败/重试所有权，禁止在场景、构造函数或导入副作用中分散启动。
 - Android/iOS 原生平台功能优先使用现有插件，按下述[原生平台插件选型](#原生平台插件选型)执行，避免重复实现原生能力。
 - 小游戏必须单独验证；可选商业能力须有显式接口和已批准开关。
 - 基础模块阶段建立统一音频服务与生命周期适配，按[后台暂停与恢复约束](../phaser4-game-audio/SKILL.md#后台暂停与恢复约束)实现后台暂停、前台原位置续播；保留手动暂停和静音状态，防止重复恢复、过期音效补播及已销毁实例复活，纳入基础包和 TDD。
