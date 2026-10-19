@@ -15,6 +15,7 @@ description: "Phaser 4 + Capacitor 移动项目通过 AppLovin 官方 MAX Cordov
 - 广告只在自然中断点尝试展示；调用方永不等待广告加载、网络请求或展示完成。不可展示时必须按广告位当前状态立即返回结果，不得阻塞场景切换、输入、主循环或结算流程。后台加载、加载失败和重试保持静默，不弹 Toast。
 - 视频广告位在用户触发展示但当前不可用，或官方插件接受展示后回调 `displayFailed` 时，通过统一 UI 层弹出一次“视频广告暂不可用，请稍后再试”Toast；不得由插件适配层直接操作 Phaser UI，也不得因重复回调重复提示。
 - SDK 初始化与隐私流程独立推进：初始化调用、完成状态和失败重试均不等待隐私弹窗、CMP 或 ATT；隐私未决、失败或拒绝不阻塞 SDK 初始化。MAX 内建 Terms and Privacy Policy Flow 必须在初始化前显式关闭并核验同步后的有效原生配置；广告服务仍启用且继续调用 MAX initialize，不能通过禁用广告或跳过初始化实现关闭流程。隐私收集由独立任务通过项目采用的原生 CMP/Google UMP 与 ATT 入口处理，广告服务只消费真实隐私状态，并仅对广告加载与展示检查 privacy gate。SDK 初始化成功仍以官方插件真实完成回调为准，不能用请求受理或隐私结果代替。具体配置和能力边界以细则合同为准。
+- 每次实际 MAX 初始化前，适配器按统一入口的初始化请求先手动调用官方插件 `setHasUserConsent(false)`，再调用 `initialize`；同配置重复调用复用现有任务。`hasUserConsent=false` 不等于禁止广告，不得据此返回 `privacy-pending`/`privacy-blocked`、跳过 load/show、停止预加载或暂停加载重试。privacy gate 只表达尚未满足的其他实际适用请求条件，不以 `hasUserConsent === true` 作为广告准入条件；不得把该 MAX 配置当作用户已完成选择的回执或 AppsFlyer 的同意状态。
 - Banner 不参与初始化预加载；首次请求展示时才创建原生视图并加载，调用立即返回。收到 loaded 且布局安全、业务仍请求可见时显示；创建或加载失败均保持隐藏并按同一独立退避持续重试；离开展示场景清除可见请求并取消重试，旧回调不得恢复创建或显示。不弹 Toast、不占用错误高度、不等待加载。
 
 ## 全局控制接入
@@ -59,7 +60,7 @@ setBannerVisibility(slotId, visible): Promise<BannerVisibilityResult> // 展示�
 
 - 平台边界：Web/小游戏调用为 no-op；Android/iOS 仅通过 AppLovin 官方 Cordova 插件调用 MAX，未引入社区插件、自建原生广告插件或直接 SDK 接入；宿主页面生命周期、Activity/ViewController 和前后台切换已明确。
 - 生命周期：初始化幂等；每个已配置广告位持有业务 phase、加载计数、retry deadline 和至多一个加载重试 timer，格式匹配的原生对象由官方插件管理；广告服务额外持有激励视频结束后的 30 秒插页保护截止时间，但不为此创建 timer。所有广告位共享该跨格式保护状态等服务级门，不共享加载重试 timer，不设置跨广告位全屏互斥；实例重建递增 `instanceGeneration`，展示请求生成唯一 `showRequestId`；成功初始化立刻投递全部启用的插页与激励视频预加载意图，实际加载经过广告请求隐私门，重复调用不会并发请求。
-- 原生门：Activity/ViewController provider、前台状态和网络连通性参与初始化调度；privacy readiness 仅参与广告加载与展示，不参与初始化调用、完成判定或重试。`phase` 只表示广告资源/展示阶段，门状态独立计算，不混入 Phaser 场景状态。
+- 原生门：Activity/ViewController provider、前台状态和网络连通性参与初始化调度；privacy readiness 仅参与广告加载与展示，不参与初始化调用、完成判定或重试，也不等于 `hasUserConsent`。必须覆盖 `false` 已设置且无其他阻断时正常加载的路径。`phase` 只表示广告资源/展示阶段，门状态独立计算，不混入 Phaser 场景状态。
 - 节奏：插页只在自然中断点展示；匹配的激励视频 `hidden` 事件从其单调时间戳起阻断插页 30 秒，保护期只阻断插页，不阻断 Banner、激励视频、后台预加载或奖励结算。保护期内立即静默返回剩余毫秒数，过期后无需 timer 唤醒即可恢复判定；`hidden` 与 `displayFailed` 都会触发对应广告位的后台预加载。
 - 就绪判断：全屏广告实例的就绪属性是预加载成功的唯一依据；适配器通过官方 isInterstitialReady/isRewardedAdReady 读取插件内部实例状态，不另存独立 ready 布尔值。loaded 仅触发复核；展示与重试前重新读取，实例不存在、失效或读取失败均视为未就绪；Banner 仍按创建后的加载事件管理，不参与预加载。
 - 初始化恢复：服务最多一个初始化请求和一个待执行重试 timer；瞬时失败持续退避，宿主/前台/网络门关闭保留 deadline，隐私状态不暂停初始化重试，恢复时去重调度；配置错误不自动重试。成功、禁用或销毁清理初始化恢复任务，成功后只投递一次全屏预加载意图，广告请求仍检查隐私门，阻断时保留意图待恢复。

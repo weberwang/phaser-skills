@@ -6,7 +6,7 @@ Android/iOS 原生平台功能优先通过插件实现：先复用项目现有�
 
 游戏项目所有已采用 SDK 的初始化统一放在 `src/bootstrap/initialize-sdks.ts`，由应用入口调用，依赖顺序、并行/延迟分支和失败处理集中维护；原生调用仍通过平台适配器。具体边界与 TDD 交付见[SDK 统一初始化](skills/phaser4-game-architecture/references/sdk-initialization.md)。
 
-MAX 内建隐私流程在初始化前显式关闭，广告服务仍正常调用官方插件初始化；采用 AppsFlyer 时在统一入口独立启动，两者不相互等待或传播失败。关闭 MAX 流程不解除广告请求的隐私门，配置及验证要求见[接入合同](skills/phaser4-game-ad-integration/references/applovin-max-contract.md#关闭-max-内建隐私流程并保留初始化)。
+MAX 初始化前手动调用 `setHasUserConsent(false)`，关闭内建隐私流程，再正常调用官方插件初始化；`false` 不作为广告加载或展示的阻断条件，其他实际适用的请求条件单独判断。采用 AppsFlyer 时在统一入口独立启动，两者不相互等待或传播失败，也不相互复制同意状态。调用顺序与验证要求见[接入合同](skills/phaser4-game-ad-integration/references/applovin-max-contract.md#初始化前设置-hasuserconsentfalse)。
 
 ## 安装
 

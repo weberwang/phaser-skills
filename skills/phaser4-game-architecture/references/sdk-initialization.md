@@ -26,9 +26,11 @@
 
 ## 广告与隐私分支
 
-MAX 与 CMP/Google UMP/ATT 的初始化或收集入口均由本文件统一调度，但保持[广告合同的独立推进关系](../../phaser4-game-ad-integration/references/applovin-max-contract.md#初始化与隐私独立推进)：隐私任务不成为 MAX 初始化或初始化恢复的前置；MAX 初始化成功也不代表可以请求广告。隐私真实状态已传递且请求策略满足后，才由广告服务执行允许的加载/展示；Banner 不参与启动预加载。
+MAX 与 CMP/Google UMP/ATT 的初始化或收集入口均由本文件统一调度，但保持[广告合同的独立推进关系](../../phaser4-game-ad-integration/references/applovin-max-contract.md#初始化与隐私独立推进)：MAX 初始化请求通过适配器先手动调用 `setHasUserConsent(false)`，再调用 `initialize`；隐私任务不成为本合同目标初始化或初始化恢复的前置。该布尔值不作为广告加载、展示或加载重试的阻断条件，其他实际适用请求条件满足时正常加载；Banner 不参与启动预加载，业务请求展示时按需加载。
 
 MAX 内建 Terms and Privacy Policy Flow 必须在 MAX 初始化前显式关闭，并核对同步后 Android/iOS 实际构建配置；关闭的是内建交互流程，广告服务开关和 MAX 初始化调用仍保持启用。MAX 的真实初始化完成回调、失败重试和广告请求隐私门分别维护，不把“配置已关闭”写成“SDK 初始化成功”。原生配置、调用与验收见[关闭 MAX 内建流程](../../phaser4-game-ad-integration/references/applovin-max-contract.md#关闭-max-内建隐私流程并保留初始化)。
+
+广告请求的 `privacy=ready` 不等于 `hasUserConsent=true`。手动配置的 `false` 已按插件约定传递且没有其他实际阻断时应允许加载；不能用 `hasUserConsent === true` 或将 `false` 保留为 `pending` 间接阻止请求。适用 CMP/TCF、地区/网络策略等其他条件仍按具体事实判断，不能由该 MAX 配置伪造用户选择回执；AppsFlyer 的同意状态与启动条件也不从此值复制。顺序和原生值验证见[初始化前设置 hasUserConsent=false](../../phaser4-game-ad-integration/references/applovin-max-contract.md#初始化前设置-hasuserconsentfalse)。
 
 ### AppsFlyer 独立启动
 
@@ -38,7 +40,7 @@ MAX 内建 Terms and Privacy Policy Flow 必须在 MAX 初始化前显式关闭�
 
 选用 AppsFlyer 插件时核实其实际版本和 Capacitor 支持，不将其他框架或不同主版本的 API 混用；若采用[官方 Cordova 插件](https://github.com/AppsFlyerSDK/appsflyer-cordova-plugin)，其官方兼容性说明仍须逐项验证。采用手动启动模式时，必须在自身前置满足后调用锁定版本对应的 start 接口，不能只完成 init 就遗漏启动；自动启动模式则不重复 start。两种模式都不依赖 MAX 回调。
 
-既有广告合同已标记官方接入顺序与解耦目标的能力冲突。统一文件只集中编排，不消除该冲突；仍须核对锁定版本的官方能力与适用集成证据。不能改写依赖、伪造初始化完成或另建原生桥以宣称满足合同。MAX adapter 与其管理的聚合网络 SDK 不再逐个由业务初始化。
+若项目实际采用的 CMP/TCF 集成存在初始化顺序前置，按锁定版本的官方能力与适用集成证据单独核实它与解耦目标的关系；手动 `hasUserConsent=false` 本身不构成能力冲突或请求阻断。统一文件不伪造 CMP 结果或初始化完成，也不另建原生桥掩盖真实冲突。MAX adapter 与其管理的聚合网络 SDK 不再逐个由业务初始化。
 
 ## 交付与验证
 
@@ -46,4 +48,4 @@ MAX 内建 Terms and Privacy Policy Flow 必须在 MAX 初始化前显式关闭�
 
 按当前改动推荐并自动执行适用 T0–T3 验证。实现时定向检查重复启动、真实依赖等待、无依赖并行、可选失败不阻塞核心、延迟条件恢复、平台不支持、旧回调失效及已有恢复任务不被重复创建；核对 SDK 初始化没有散落在 Scene、构造函数或导入副作用中。只交付本工作流规范时检查链接、模板输出与现有回归，不把文档检查描述为真实 SDK 集成通过，不自动发起真机或外部配置操作。
 
-采用 MAX 与 AppsFlyer 时，额外覆盖两种完成先后顺序、任一失败/超时、隐私仍未决以及重复启动：MAX 内建流程关闭后仍发起且只发起一次有效初始化，AppsFlyer 不依赖其结果；各自真实回调只更新自身状态。目标项目必须提供实际有效原生配置和适用初始化/启动证据，才能报告运行通过。
+采用 MAX 与 AppsFlyer 时，额外覆盖两种完成先后顺序、任一失败/超时、其他实际请求条件仍未决以及重复启动：MAX 内建流程关闭后先设置 `hasUserConsent=false`，再发起且只发起一次有效初始化；该值为 `false` 且其他条件满足时，全屏加载、Banner 按需加载、展示和加载重试均不被隐私门误拦截，AppsFlyer 不依赖其结果。各自真实回调只更新自身状态。目标项目必须提供实际有效原生配置和适用初始化/启动/加载证据，才能报告运行通过。
