@@ -1,3 +1,21 @@
+# 依赖、构建和临时尝试不进入阶段提交。
 node_modules/
-/output/
-/docs/
+/dist/
+/.workflow-tmp/**
+!/.workflow-tmp/**/
+
+# 产物默认忽略文件，保持父目录可遍历，供必要文件精确放行。
+/output/**
+!/output/**/
+/docs/**
+!/docs/**/
+/assets-source/**
+!/assets-source/**/
+/.workflow-control/**
+!/.workflow-control/**/
+/.phaser-workflow/**
+!/.phaser-workflow/**/
+
+# 工作流必要文件开始
+# 仅追加当前工作项及其有效依赖的具体文件，不放行整个产物目录。
+# 工作流必要文件结束

@@ -154,5 +154,31 @@ normalizeVisualStageTemplates(templates.optional.assets);
 // 正式场景直接消费上游合同，避免为预览维护第二份布局和确认状态。
 templates.core["visual-design.md"] += "\nV3 正式资源验收后直接进入 V4。正式 Scene 依据 V2 的节点结构、布局约束和资源对应关系，加载 V3 accepted 资源；布局和呈现调整写入正式实现配置，在实际运行中复验。只有上游结构、目标布局方案或资源合同变化时才更新对应 V2/V3 证据。无需生成独立预览、草图数据或草图确认记录。\n";
 
+// 目录映射随 TDD 初始化交付，避免生产者继续把临时文件、正式资源和机器记录写进同一输出目录。
+templates.core["TDD.md"] += `
+## 产物目录与确认流转
+
+路径相对项目根目录，按实际需要创建。\`ownerType/ownerId\` 使用 \`global/<projectId>\`、\`modules/<moduleId>\`、\`scenes/<sceneId>\` 或 \`display-layers/<displayLayerId>\`，与代码及资源清单归属一致。
+
+| 类别 | 默认目录 | 项目实际目录/所有者/保留策略 |
+| --- | --- | --- |
+| 临时中间产物 | \`.workflow-tmp/<workItemId>/<stageId>/<attemptId>/\` | |
+| 长期确认产物 | \`docs/artifacts/<ownerType>/<ownerId>/<stageId>/<revisionId>/\` | |
+| 源素材与生产输入 | \`assets-source/<ownerType>/<ownerId>/<assetId>/<revisionId>/\` | |
+| 已验收游戏资源 | \`public/assets/shared/\`、\`public/assets/scenes/<sceneId>/\`、\`public/assets/display-layers/<displayLayerId>/\` | |
+| 实际验证附件 | \`.workflow-control/evidence/<workItemId>/attachments/<stageId>/<runId>/\`，受 Work Item.evidenceRoot 约束 | |
+| 工作流机器记录 | \`.workflow-control/\`；视觉确认账本与回执使用 \`.phaser-workflow/user-resolutions/\` | |
+
+制作前在实施包绑定上述路径与文件所有权。待确认候选及完整依赖先保存到长期版本目录，更新审阅页/JSON/清单引用后再展示；用户确认后原地保留，返修使用新版本，不覆盖已确认文件。目录名和复制动作不代表验收通过，确认继续使用控制面现有记录；实施代理不得手写或迁移受保护确认账本。
+
+V2 的 layout.png、layout-nodes.json、layout-decision.json、review.html、generation-result.json 保持同批同目录。游戏资源先在临时目录生产并预检，记录 V3 accepted 前安装到 public/assets/ 最终路径，更新尚未冻结的资源清单、加载键、生成/归一化记录和审阅引用，再执行实际文件门与必要人工确认；安装到验收通过之间不得进入正式场景加载、构建或发布。通过后冻结路径，不再搬迁，返修用新版本且不覆盖仍被有效确认引用的文件。原始输入保留在 assets-source/，效果图和预览留在 docs/artifacts/，不额外复制正式资源。
+
+生产记录等领域 JSON 随产物保存；.workflow-control/evidence/<workItemId>/ 保存机器清单、执行状态与单元结果，附件放其 attachments/ 子目录，不混入 work-items/ 或 approvals/。Evidence Manifest、files[] 和命令 outputFile 必须位于当前 evidenceRoot，领域清单通过自身引用关联长期产物与正式资源，不直接将这些外部路径写入受此边界限制的字段。
+
+.workflow-tmp/ 默认忽略；docs/、assets-source/、.workflow-control/ 和 .phaser-workflow/ 默认忽略文件并保留父目录可遍历，按最小提交集逐文件放行。仅提交本任务运行/构建必需文件，以及恢复当前 Work Item 所需的记录和逐层引用的真实文件；覆盖有效实施包、执行状态/单元结果、规格/清单、确认回执及其图片、布局包、日志和必要源输入，不能只提交引用 JSON。已确认或长期保存不等于必须入库，无当前必要引用的历史产物可仅本地保留；不能裁剪权威记录或解除引用以缩小提交。
+
+Git 精确放行规则维护在 .gitignore，使用控制 Skill 的 assets/minimal-project.gitignore 合并，不覆盖项目其他规则、不整体放行任务目录，不新增第二套状态或提交清单。提交前核对最终忽略效果以及必要文件已存在于 HEAD 或暂存区。忽略不会取消已有跟踪；仅对本任务明确无必要引用的文件精确移出索引并保留本地，不批量清理历史。收尾清理仍只处理本任务无引用且可再生成的临时文件，本目录约定不自动迁移或删除已有文件。
+`;
+
 export const CORE_TEMPLATES = templates.core;
 export const OPTIONAL_TEMPLATES = templates.optional;

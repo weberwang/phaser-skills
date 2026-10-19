@@ -25,6 +25,10 @@ description: 清理 Phaser 4 项目中过期或未使用的工作流记录文件
 
 原视频可能用于重新抽帧，去背景原图可能支撑生产记录与质量复核，`review.html` 可能是人工审阅所需的实际产物。不要按扩展名、目录名含 `output`/`temp`，或体积大小批量判断。已有产物目录规范见[游戏项目目录规范](../phaser4-game-architecture/references/project-structure.md)，证据语义见[控制模型](../phaser4-game-workflow-control/references/control-model.md)。
 
+按[产物目录与确认流转](../phaser4-game-architecture/references/project-structure.md#产物目录与确认流转)，`.workflow-tmp/<workItemId>/<stageId>/<attemptId>/` 是本任务临时候选的盘点入口，不是可整目录删除的授权。`docs/artifacts/` 的待确认/已确认版本、`assets-source/` 的生产输入、`public/assets/` 的正式资源、`.workflow-control/evidence/<workItemId>/attachments/` 的验证附件与控制面机器记录分别判定并保留依赖；目录本身不证明通过、无引用或可删除。已被证据引用的临时文件也必须保留，清理不能擅自迁移已冻结路径或重写确认记录。
+
+Git 收尾按[最小提交集](../phaser4-game-workflow-control/references/minimal-git.md)只纳入运行/构建必需文件和当前工作项有效引用的必要记录。未入库或被忽略的长期产物仍按本 Skill 保留，不因不属于最小提交集自动清理；本地删除检查继续覆盖所有保留任务的引用，不能只检查本次准备提交的文件。
+
 ## 清理流程
 
 1. **限定范围**：读取当前任务、Work Item、允许路径和现有保留策略。确认仓库绝对根路径，记录 Git 已有修改及暂存内容；识别并行任务和正在写入产物的进程。没有既定保留期限时，不自行发明“超过 N 天删除”的策略，先处理能证明无用且可再生成的文件。
