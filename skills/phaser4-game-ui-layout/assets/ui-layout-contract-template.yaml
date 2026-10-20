@@ -57,7 +57,7 @@
     "listenerCleanup": "required"
   },
   "maxRuntimeDpr": 2,
-  "scaleMode": "RESIZE",
+  "scaleMode": "custom",
   "cameraViewportPolicy": {
     "coordinateSpace": "css-logical-px",
     "gameSizeSpace": "css-logical-px",

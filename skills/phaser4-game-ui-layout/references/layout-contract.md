@@ -18,7 +18,7 @@ schema 1.2.0 根对象包含 `fidelity`、`frozen_visual_target`、`layout_nodes
 
 `orientationPolicy.allowed` 必须是非空且无重复的 `portrait`/`landscape` 数组，不从缺省值推断双方向支持。`designResolutionPolicy` 只要求声明 `allowed` 中方向的分支：竖屏基准为 1080×1920、按宽度适配；横屏基准为 1920×1080、按高度适配。实际 CSS 视口为 `W×H` 时，竖屏比例 `s=W/1080`、可见逻辑区域为 `1080×(H/s)`；横屏比例 `s=H/1080`、可见逻辑区域为 `(W/s)×1080`。设计区域在可见区域中居中，另一轴可以展开或裁切；安全区、UI 锚点和输入命中必须使用实际可见区域。横竖屏以运行时视口宽高判断，宽高相等时按横屏处理。
 
-Canvas 必须填满真实 CSS 视口，`scaleMode` 采用 `RESIZE` 或能证明同等行为的 `custom`，不能用 `FIT` 留黑边。逻辑尺寸、CSS 尺寸、物理 backing、`gameSize`、Camera viewport/zoom/origin 和输入映射之间的关系仍需实证；单独声明模式或构建成功都不是高分屏兼容证明。
+Canvas 必须填满真实 CSS 视口，布局合同的 `scaleMode` 固定为项目自定义的 `custom`，不能用 `FIT` 留黑边。Phaser `Scale.RESIZE` 可在适配器内部负责画布尺寸更新，但不作为合同值，也不能替代项目对逻辑尺寸、CSS 尺寸、物理 backing、`gameSize`、Camera viewport/zoom/origin 和输入映射的计算与实证；单独声明模式或构建成功都不是高分屏兼容证明。
 
 Camera 合同必须说明逻辑 viewport 如何映射到物理 backing，zoom 不得偷换 DPR，origin 必须显式声明；输入合同必须说明 CSS client 坐标如何经过逻辑 viewport、Camera 再到世界/命中空间。弹窗和 `DISPLAY_LAYER` 默认继承宿主的 CSS 逻辑视口、有效 DPR、Camera/输入合同和 safe area；若使用独立 Camera，必须在自身合同声明并单独验证。
 

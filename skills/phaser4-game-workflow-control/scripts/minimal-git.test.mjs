@@ -52,7 +52,7 @@ test('默认排除产物文件并保留运行、构建和验证入口', (t) => {
     if (path !== '.gitignore') write(root, path);
     assert.equal(ignored(root, path), false, path);
   }
-  for (const path of ['node_modules/pkg/index.js', 'dist/index.html', '.workflow-tmp/WI-1/V3/try-1/frame.png', 'output/old.log', 'docs/TDD.md', 'docs/artifacts/scenes/battle/V2/r1/layout.png', 'assets-source/scenes/battle/hero/r1/source.png', '.workflow-control/work-items/WI-1.json', '.phaser-workflow/user-resolutions/ledger.json']) {
+  for (const path of ['node_modules/pkg/index.js', 'dist/index.html', 'output/intermediate/WI-1/V3/try-1/frame.png', 'output/candidates/WI-1/V3/candidate-1/hero.png', 'docs/TDD.md', 'docs/confirmed/scenes/battle/layout-target/v1/layout.png', 'evidence/WI-1/reviews/V2/candidate-1/review.html', 'evidence/WI-1/validation/V4/run-1/screenshot.png', 'assets-source/scenes/battle/hero/r1/source.png', '.workflow-control/work-items/WI-1.json', '.phaser-workflow/user-resolutions/ledger.json']) {
     write(root, path);
     assert.equal(ignored(root, path), true, path);
   }
@@ -62,37 +62,44 @@ test('嵌套必要文件可精确放行，同任务邻居和其他任务继续�
   const root = fixture(t);
   const selected = [
     'docs/TDD.md',
-    'docs/artifacts/scenes/battle/V2/r1/layout.png',
+    'docs/confirmed/scenes/battle/layout-target/v1/layout.png',
+    'evidence/WI-1/reviews/V2/candidate-1/review.html',
+    'evidence/WI-1/reviews/V2/candidate-1/layout.png',
+    'evidence/WI-1/validation/V4/run-1/screenshot.png',
+    'evidence/WI-1/validation/V4/run-1/test.log',
     '.workflow-control/work-items/WI-1.json',
     '.workflow-control/evidence/WI-1/attachments/V4/run-1/test.log',
     '.phaser-workflow/user-resolutions/WI-1/receipt.json',
     'assets-source/scenes/battle/hero/r1/hero [1].png',
-    '.workflow-tmp/WI-1/V3/try-1/still-referenced.png',
   ];
   allow(root, selected);
   for (const path of selected) {
     write(root, path);
     assert.equal(ignored(root, path), false, path);
   }
-  for (const path of ['docs/unused.md', 'docs/artifacts/scenes/battle/V2/r1/old.png', '.workflow-control/work-items/WI-2.json', '.workflow-control/evidence/WI-1/attachments/V4/run-1/debug.log', '.phaser-workflow/user-resolutions/WI-1/unrelated.json', 'assets-source/scenes/battle/hero/r1/hero 1.png', '.workflow-tmp/WI-1/V3/try-1/unused.png']) {
+  for (const path of ['docs/unused.md', 'docs/confirmed/scenes/battle/layout-target/v0/old.png', 'evidence/WI-1/reviews/V2/candidate-1/unused.png', 'evidence/WI-2/validation/V4/run-1/screenshot.png', '.workflow-control/work-items/WI-2.json', '.workflow-control/evidence/WI-1/attachments/V4/run-1/debug.log', '.phaser-workflow/user-resolutions/WI-1/unrelated.json', 'assets-source/scenes/battle/hero/r1/hero 1.png', 'output/intermediate/WI-1/V3/try-1/unused.png']) {
     write(root, path);
     assert.equal(ignored(root, path), true, path);
   }
 });
 
-test('按必要引用暂存的快照包含真实附件，未选择的本地产物不随快照交付', (t) => {
+test('按必要引用暂存的快照包含机器附件与根级审阅媒体，未选择产物仍留在本地', (t) => {
   const root = fixture(t);
   const workPath = '.workflow-control/work-items/WI-1.json';
   const manifestPath = '.workflow-control/evidence/WI-1/manifest.json';
   const attachmentPath = '.workflow-control/evidence/WI-1/attachments/V4/run-1/test.log';
-  const layoutPath = 'docs/artifacts/scenes/battle/V2/r1/layout.png';
+  const layoutPath = 'docs/confirmed/scenes/battle/layout-target/v1/layout.png';
+  const reviewPath = 'evidence/WI-1/reviews/V2/candidate-1/review.html';
+  const reviewMediaPath = 'evidence/WI-1/reviews/V2/candidate-1/layout.png';
+  const screenshotPath = 'evidence/WI-1/validation/V4/run-1/screenshot.png';
+  const humanLogPath = 'evidence/WI-1/validation/V4/run-1/test.log';
   const runtimePath = 'public/assets/scenes/battle/hero.png';
-  const oldPath = 'docs/artifacts/scenes/battle/V2/r0/layout.png';
-  const required = [workPath, manifestPath, attachmentPath, layoutPath];
+  const oldPath = 'docs/confirmed/scenes/battle/layout-target/v0/layout.png';
+  const required = [workPath, manifestPath, attachmentPath, layoutPath, reviewPath, reviewMediaPath, screenshotPath, humanLogPath];
   allow(root, required);
-  write(root, workPath, JSON.stringify({ evidenceManifest: manifestPath, layout: layoutPath }));
+  write(root, workPath, JSON.stringify({ evidenceManifest: manifestPath, layout: layoutPath, review: reviewPath, reviewMedia: reviewMediaPath, screenshot: screenshotPath, validationLog: humanLogPath }));
   write(root, manifestPath, JSON.stringify({ files: [attachmentPath] }));
-  for (const path of [attachmentPath, layoutPath, runtimePath, oldPath]) write(root, path);
+  for (const path of [attachmentPath, layoutPath, reviewPath, reviewMediaPath, screenshotPath, humanLogPath, runtimePath, oldPath]) write(root, path);
   // literal pathspec 确保实际文件名不会作为通配符扩大暂存集合。
   execFileSync('git', ['add', '--', ...['.gitignore', runtimePath, ...required].map((path) => `:(literal)${path}`)], { cwd: root });
   const snapshot = join(root, 'snapshot');
@@ -100,7 +107,7 @@ test('按必要引用暂存的快照包含真实附件，未选择的本地产�
   execFileSync('git', ['checkout-index', '--all', `--prefix=${snapshot.replaceAll('\\', '/')}/`], { cwd: root });
   const work = JSON.parse(readFileSync(join(snapshot, workPath), 'utf8'));
   const manifest = JSON.parse(readFileSync(join(snapshot, work.evidenceManifest), 'utf8'));
-  for (const path of [runtimePath, work.layout, ...manifest.files]) assert(existsSync(join(snapshot, path)), path);
+  for (const path of [runtimePath, work.layout, work.review, work.reviewMedia, work.screenshot, work.validationLog, ...manifest.files]) assert(existsSync(join(snapshot, path)), path);
   assert(existsSync(join(root, oldPath)), '未入库产物仍留在本地');
-  assert.equal(existsSync(join(snapshot, oldPath)), false, '旧版本不进入提交快照');
+  assert.equal(existsSync(join(snapshot, oldPath)), false, '未引用版本不进入提交快照');
 });

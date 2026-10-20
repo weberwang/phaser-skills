@@ -17,7 +17,7 @@
 
 ## SDK 初始化归属
 
-所有实际采用 SDK 的初始化统一放在 `src/bootstrap/initialize-sdks.ts`，由应用装配入口调用；先后依赖、独立并行、延迟触发、核心启动是否等待和失败/重试所有权按[SDK 统一初始化](../../phaser4-game-architecture/references/sdk-initialization.md)在 TDD 逐项记录。各 SDK 的原生 API 与事件仍由平台适配器封装，不在 Scene 或服务构造函数独立启动；插件已管理的传递 SDK 不重复初始化。广告、隐私等独立分支不会因为共用一个编排文件而变成串行依赖。
+所有实际采用 SDK 的初始化调用、回调、幂等状态和初始化恢复统一放在 `src/platform/initialize-sdks.ts`，由应用装配入口一次投递；各 SDK 独立发起，不等待其他 SDK 或形成核心启动屏障。自身官方必需前置仍须核实，能力冲突只报告对应 SDK，不阻断其他分支或游戏首帧。业务能力接口及广告位运行期恢复保持模块所有权，详见[SDK 单文件独立初始化](../../phaser4-game-architecture/references/sdk-initialization.md)。
 
 ## API 与服务边界
 

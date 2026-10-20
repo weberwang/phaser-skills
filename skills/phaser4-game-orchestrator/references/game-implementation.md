@@ -12,7 +12,7 @@
 
 ## G1 强制实施序列
 
-基础实施先按[游戏项目目录规范](../../phaser4-game-architecture/references/project-structure.md)冻结入口、基础模块、场景、显示层、平台适配、资源、测试和产物的路径与所有权；按实际需要创建目录，后续实施沿同一映射落盘。
+基础实施先按[游戏项目目录规范](../../phaser4-game-architecture/references/project-structure.md)冻结入口、基础模块、场景、显示层、平台适配、资源、测试和产物的路径与所有权；产物分别按[产物存放与证据边界](../../phaser4-game-architecture/references/artifact-storage.md)写入临时、候选、确认、源素材、正式资源和人工作业审阅/验证目录。根级 `evidence/` 不作为机器 `evidenceRoot`；工作流机器记录和受限证据字段按控制工具真实布局执行。按实际需要创建目录，后续实施沿同一映射落盘。
 
 Android/iOS 原生平台功能按[原生平台插件选型](../../phaser4-game-architecture/SKILL.md#原生平台插件选型)优先复用现有插件，再选择适用的官方或社区插件；仅在明确能力缺口下补充自建原生实现。实施包记录插件选型与平台适配边界，必要宿主配置和冷启动/恢复验收仍按对应约束执行。
 

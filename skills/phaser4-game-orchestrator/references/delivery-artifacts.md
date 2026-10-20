@@ -10,9 +10,9 @@
 
 ## 产物落盘
 
-目录与流转统一按[产物目录与确认流转](../../phaser4-game-architecture/references/project-structure.md#产物目录与确认流转)执行：临时尝试放 `.workflow-tmp/<workItemId>/<stageId>/<attemptId>/`；待确认及已确认的效果图、拆解和布局包放 `docs/artifacts/<ownerType>/<ownerId>/<stageId>/<revisionId>/`；源素材放 `assets-source/`；已验收运行资源放对应 `public/assets/`；实际验证附件放 `.workflow-control/evidence/<workItemId>/attachments/<stageId>/<runId>/`，受 Work Item 的 `evidenceRoot` 边界约束。工作流机器记录保持 `.workflow-control/` 的工具路径，领域生产 JSON 随其产物保存。
+目录与流转统一按[产物目录与归档规范](../../phaser4-game-architecture/references/artifact-storage.md)执行：未送审候选和中间文件使用 `output/candidates/`、`output/intermediate/`；已确认非运行成果使用 `docs/confirmed/<owner>/<artifact-id>/<version>/`；源输入和正式资源分别使用 `assets-source/<owner>/`、`public/assets/<owner>/`。领域审阅与验证文件放根级 `evidence/<workItemId>/reviews/`、`evidence/<workItemId>/validation/`；机器记录保持 `.workflow-control/` 的实际布局。根级 evidence 不是机器 evidenceRoot；受 evidenceRoot 约束的 Manifest、files[]、outputFile 仍写入控制根，领域清单通过自身引用关联外部文件。
 
-待确认文件先完成长期落盘和引用更新再展示，确认后不因状态变化迁移文件；长期目录可以包含待确认候选，是否通过以实际确认记录为准。TDD 记录项目实际映射，Work Item/实施包与证据清单引用真实文件，不依赖临时文件作为后续唯一输入，也不额外复制状态或正式资源。
+待确认文件先完成保留目录落盘和引用更新再展示，确认后按用途归档；原始审阅文件不因归档搬迁覆盖，副本不创建第二套确认状态。TDD 记录项目实际映射，Work Item、实施包及证据清单引用真实文件，不将临时文件作为后续唯一输入。
 
 游戏资源在记录 V3 `accepted` 前安装到计划中的正式路径，并更新尚未冻结的生产/归一化记录后重验实际文件；安装到通过之间不得进入正式场景加载、构建或发布。通过后冻结路径，返修用新版本，不覆盖仍被有效确认引用的资源，也不在通过后再搬迁文件。
 
@@ -33,7 +33,7 @@
 | `docs/game-feel.md`（按需） | 当前任务需要独立记录动态反馈意图、事件语义或组合规则时使用；也可复用 GDD/视觉设计文档，不是默认工件或机器必需字段，参考[汁水感设计指南](../../phaser4-game-juice/references/design-guide.md) |
 | `docs/asset-license-register.md` | 资源/音频来源、授权与发布资格 |
 | `docs/visual-assets.json` | 含场景或 shared 归属的视觉资源机器清单，不驱动全局状态 |
-| `docs/artifacts/scenes/<sceneId>/V2/<revisionId>/`（显示层使用 `display-layers/<displayLayerId>`） | 同批 `layout.png`、`layout-nodes.json`、`layout-decision.json`、离线 `review.html`、`generation-result.json`；在展示前固定引用路径，审阅页规则见[离线布局审阅产物](../../phaser4-game-ui-layout/references/layout-review-artifacts.md) |
+| `docs/confirmed/scenes/<scene-id>/<artifact-id>/<version>/`（显示层使用 `display-layers/<displayLayerId>`） | 同批 `layout.png`、`layout-nodes.json`、`layout-decision.json`、离线 `review.html`、`generation-result.json`；在展示前固定引用路径，审阅页规则见[离线布局审阅产物](../../phaser4-game-ui-layout/references/layout-review-artifacts.md) |
 | `docs/qa-plan.md` | 测试策略，不得自填通过状态 |
 | `docs/platform-matrix.md` | 分层平台证据；不自动触发真机 |
 | `docs/release-checklist.md` | 独立发布工作项的候选清单，不是发布授权 |

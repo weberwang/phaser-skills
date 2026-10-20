@@ -19,8 +19,11 @@ game-project/
 ├── capacitor.config.ts              # 采用原生宿主时创建，webDir 对应 Web 构建输出
 ├── src/
 │   ├── main.ts                      # 应用装配：选择平台适配器、创建服务、启动游戏
-│   ├── bootstrap/
-│   │   └── initialize-sdks.ts       # 所有已采用 SDK 的唯一初始化编排，按需创建
+│   ├── platform/
+│   │   ├── initialize-sdks.ts       # 所有已采用 SDK 的唯一初始化、回调与恢复入口，按需创建
+│   │   ├── web/                     # 浏览器可见性、存储等适配
+│   │   ├── android/                 # Android 宿主生命周期与平台能力适配
+│   │   └── ios/                     # 实际采用 iOS 时创建
 │   ├── styles/                      # 宿主全屏、画布容器等全局样式
 │   ├── game/
 │   │   ├── main.ts                  # Phaser 配置、场景注册与游戏创建
@@ -45,10 +48,6 @@ game-project/
 │   │   ├── display-layers/          # 独立瞬态显示层，按 displayLayerId 划分
 │   │   │   └── pause-menu/          # 弹窗自身控制、UI、布局和生命周期
 │   │   └── shared/                  # 已满足共享条件的实体、UI 或纯函数
-│   └── platform/
-│       ├── web/                     # 浏览器可见性、存储等适配
-│       ├── android/                 # Android 宿主生命周期与平台能力适配
-│       └── ios/                     # 实际采用 iOS 时创建
 ├── public/
 │   └── assets/                      # 正式运行资源，按所有权划分
 │       ├── shared/                  # 启动必需或跨场景稳定复用的资源
@@ -62,8 +61,12 @@ game-project/
 │   ├── e2e/                        # 已采用的端到端测试
 │   └── fixtures/                   # 测试专用数据与资源
 ├── scripts/                         # 构建、资源处理和工程检查工具
+├── dist/                            # Web 构建产物，不手工维护
 ├── docs/                            # GDD、TDD、资源合同和项目说明
-│   └── artifacts/                   # 待确认及已确认的长期非运行产物，按归属/阶段/版本保存
+│   └── confirmed/                   # 已确认的长期非运行产物，按归属/产物/版本保存
+├── evidence/<workItemId>/           # 人工审阅与验证产物，不是控制工具的 evidenceRoot
+│   ├── reviews/                     # 送审候选、审阅页及必要视觉输入
+│   └── validation/                  # 用户可读截图、录屏、测试日志与报告
 ├── .workflow-control/               # 工作流机器记录，保持控制工具实际路径
 │   ├── work-items/                  # Work Item
 │   ├── approvals/                   # 审批账本（实际需要时创建）
@@ -73,16 +76,17 @@ game-project/
 │       ├── <evidenceId>.json        # Evidence Manifest
 │       ├── execution-state.json    # 执行状态
 │       ├── units/                  # 单元结果
-│       └── attachments/<stageId>/<runId>/ # 截图、录屏、日志和报告
+│       └── attachments/<stageId>/<runId>/ # 工具要求位于 evidenceRoot 内的附件
 ├── .phaser-workflow/user-resolutions/ # 控制工具固定的受保护视觉确认账本与回执
-├── .workflow-tmp/<workItemId>/       # 按阶段/尝试隔离的临时中间产物，不进入构建或长期证据
-└── dist/                            # Web 构建产物，不手工维护
+└── output/                           # 默认忽略的本地产物，不进入构建或正式资源
+    ├── intermediate/<workItemId>/<stageId>/<attemptId>/ # 可再生成的临时转换与调试文件
+    └── candidates/<workItemId>/<stageId>/<candidateId>/ # 尚未送审的候选
 ```
 
 ## 代码归属与依赖
 
 - `src/main.ts` 只负责应用装配；`src/game/main.ts` 只负责 Phaser 启动和注册。业务规则不进入入口文件，避免所有场景和服务集中在一个控制器中。
-- 所有 SDK 初始化集中在 `src/bootstrap/initialize-sdks.ts`，由 `src/main.ts` 调用唯一入口；依赖顺序、并行/延迟条件和失败处理遵循[SDK 统一初始化](sdk-initialization.md)。平台适配器封装具体调用，Scene、Boot/Preload 和业务构造函数不另行初始化 SDK；没有采用 SDK 时不预建空文件。
+- 所有 SDK 初始化集中在 `src/platform/initialize-sdks.ts`，由 `src/main.ts` 调用唯一入口；每个 SDK 独立投递，Phaser 首帧不等待 SDK 批次，回调、幂等状态和 SDK 初始化重试遵循[SDK 统一初始化](sdk-initialization.md)。平台适配器封装原生 API 细节，广告位等 SDK 就绪后的业务恢复仍归所属服务；Scene、Boot/Preload 和业务构造函数不另行初始化 SDK。没有采用 SDK 时不预建空文件。
 - 一个场景的规则、实体、常驻 UI、布局与测试就近组织在 `scenes/<scene-id>/`；不要在根级 `entities/`、`managers/` 或 `ui/` 汇集所有场景的私有实现。按需拆分内部目录，小场景无需机械创建全部子目录。
 - `modules/<module-id>/` 归属场景无关的基础服务；场景通过其公开接口调用。模块不得导入具体场景、显示层或其私有实现，场景之间也不得直接访问对方内部状态。纯规则与数据校验优先保持独立于 Phaser 显示对象，方便定向测试。
 - `platform/` 提供平台接口的实现，`game/contracts/` 定义接口，`src/main.ts` 完成注入。游戏业务不得直接导入 Capacitor 或具体平台适配器；平台实现不得依赖具体场景。Android 原生主题、Manifest 和 Activity 修改归属根级 `android/` 工程，不能放入 TypeScript 适配目录代替原生配置。
@@ -99,25 +103,12 @@ game-project/
 
 ## 产物目录与确认流转
 
-以下路径相对游戏项目根目录。`ownerType/ownerId` 与代码和资源清单使用同一归属：`global/<projectId>`、`modules/<moduleId>`、`scenes/<sceneId>`、`display-layers/<displayLayerId>`；`stageId` 使用当前实际阶段（例如 G0、V2、V3、V4）。目录按需创建，标识不得包含路径分隔符或 `..`。
+项目产物按用途、归属与确认状态存放，完整目录、审阅/验证流程、冻结路径保护和 Git 引用规则见[产物存放与证据边界](artifact-storage.md)。本目录规范仅列出推荐的项目组织方式；所有路径相对目标游戏项目根目录，目录按需创建。
 
-| 类别 | 默认目录 | 内容与保留边界 |
-| --- | --- | --- |
-| 临时中间产物 | `.workflow-tmp/<workItemId>/<stageId>/<attemptId>/` | 试生成、未提交的候选、抽帧工作文件、临时转换、调试日志与缓存；按尝试隔离，不覆盖其他任务 |
-| 长期确认产物 | `docs/artifacts/<ownerType>/<ownerId>/<stageId>/<revisionId>/` | 效果图、拆解图、布局审阅包、已确认预览及交付说明；同版本依赖一起保存，确认后原地保留 |
-| 源素材与生产输入 | `assets-source/<ownerType>/<ownerId>/<assetId>/<revisionId>/` | 用户原图、原视频、可编辑源文件、独立遮罩及可复现生产所需输入；保留实际被使用的版本 |
-| 正式游戏资源 | `public/assets/shared/`、`public/assets/scenes/<sceneId>/`、`public/assets/display-layers/<displayLayerId>/` | 最终验收在此校验真实文件，只有通过后才能作为运行资源加载或构建发布；按需细分 `images/`、`audio/`、`atlases/`、`fonts/`，全局或模块资源仅在运行必需或满足共享条件时进入 shared |
-| 验证附件 | `.workflow-control/evidence/<workItemId>/attachments/<stageId>/<runId>/` | 实际截图、录屏、测试日志和报告；必须位于当前 Work Item 的 `evidenceRoot` 下，与机器清单分子目录保存 |
-| 工作流机器记录 | `.workflow-control/` 的标准子目录；视觉确认使用 `.phaser-workflow/user-resolutions/` | Work Item、审批、变更、委派、实施包和证据清单归控制面；视觉确认账本/回执保留工具固定的受保护位置，具体布局见[Schema 与布局](../../phaser4-game-workflow-control/references/schemas.md) |
-
-### 从制作到确认
-
-1. 制作前在 TDD 和当前实施包确定上述实际目录、任务及资源归属、阶段、尝试/版本标识、正式加载路径和保留策略；工具支持输出参数时显式指定，不把项目根或笼统 `output/` 当作统一产物目录。工具固定输出先按原接口生成，在建立最终引用前整理；初始化器只记录约定，不预建空目录。
-2. 临时制作写入当前尝试目录；待提交人工确认时，先将候选及其完整依赖保存到长期版本目录，并更新审阅页、JSON 和清单中的引用，再向用户展示。同一 V2 布局包的 `layout.png`、`layout-nodes.json`、`layout-decision.json`、`review.html` 和 `generation-result.json` 保持同批同目录。若正式证据已经引用某文件，该文件即受保留规则保护，不能因位于临时目录而删除。
-3. 用户确认后在原长期路径保留该版本，由有权限的控制工具记录确认；目录名、复制文件或放入长期目录不代表验收通过，不新增第二套状态字段或确认流程。已确认版本不覆盖，返修使用新版本并只更新受影响引用；受保护账本和已冻结引用不得由实施代理手写或为整理目录而迁移。
-4. 游戏资源先在临时目录完成生产和预检；记录 V3 `accepted` 前，将最终运行输出安装到计划中的 `public/assets/` 路径，更新尚未冻结的资源清单、加载键、生成/归一化记录及审阅引用，再针对这些实际文件执行 V3 文件门与必要人工确认。安装与最终验收作为完整步骤，未通过的中间状态不得被正式场景加载、构建或发布，也不得覆盖仍被有效确认引用的文件；返修使用新的资源版本路径。通过后冻结实际路径，不再迁移或补写旧通过记录。原始输入留在 `assets-source/`，效果图和预览留在长期产物目录；运行目录不再另建 `accepted/` 副本，长期目录也不复制一套正式运行资源。
-5. 工作流机器记录引用长期产物、源素材、正式资源和验证附件的真实路径；生产记录、布局节点等领域 JSON 随对应产物保存，不能仅因是 JSON 就当作控制面状态。`.workflow-control/evidence/<workItemId>/` 保存机器清单/执行记录，实际验证附件存入其 `attachments/` 子目录，不混入 `work-items/` 或 `approvals/`。Evidence Manifest 自身、`files[]` 和命令 `outputFile` 必须在 Work Item 的 `evidenceRoot` 内；领域清单通过自身引用关联长期产物与正式资源，不把这些外部路径直接填入受此边界限制的字段。实际 `evidenceRoot` 由控制工具确定，不为套用推荐目录手写更改。
-6. 本地保留与 Git 提交分开处理：按[最小 Git 提交集](../../phaser4-game-workflow-control/references/minimal-git.md)，只提交运行/构建必需文件及恢复当前工作项所需的记录和逐层引用文件。`.workflow-tmp/` 默认忽略；`docs/`、`assets-source/`、`.workflow-control/` 和 `.phaser-workflow/` 默认忽略文件，保持父目录可遍历，再精确放行必要文件，不按整个任务或产物目录入库。已确认但无当前必要引用的历史版本可仅本地保留，忽略不等于可删除。阶段收尾仍按[清理规则](../../phaser4-game-artifact-cleanup/SKILL.md)处理本任务无引用且可再生成的临时文件；本规范本身不授权迁移或删除已有文件。
+- `output/intermediate/` 与 `output/candidates/` 只承载当前任务的临时转换和未送审候选；`docs/confirmed/<owner>/<artifact-id>/<version>/` 保存已确认的非运行成果；源素材与正式运行资源分别保留在 `assets-source/` 与 `public/assets/`。
+- 根级 `evidence/<workItemId>/reviews/` 与 `validation/` 保存供人审阅的候选和验证产物。它不是控制工具的 `evidenceRoot`；`.workflow-control/` 机器记录、其 `evidence/<workItemId>/attachments/` 与 `.phaser-workflow/user-resolutions/` 均使用当前控制工具的真实布局。
+- Evidence Manifest、自身文件列表及受 `evidenceRoot` 约束的输出路径必须留在工具为当前 Work Item 确定的证据根内；不得把根级 `evidence/` 或其他外部路径填入这些字段。领域文档或允许外部路径的字段可按其合同关联根级审阅文件。
+- 新产物使用上述路径。已冻结文件或机器记录若仍引用旧路径，保留原位置与引用，不批量搬迁、不自动改写记录；确认状态由人工确认与控制面记录表达，不能只凭目录名判断。
 
 ## 基础阶段执行与验收
 

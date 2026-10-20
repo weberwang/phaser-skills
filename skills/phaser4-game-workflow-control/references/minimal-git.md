@@ -11,6 +11,8 @@
 | 续接记录 | 当前 Work Item、绑定的实施包、执行状态、必要单元结果、Diff Audit、Evidence Manifest，以及仍参与当前决定的委派/并行批次、变更、审批与视觉确认回执 |
 | 实际引用产物 | 上述有效记录及规格引用的图片、布局包、生成/归一化记录、日志、截图、录屏和必要源输入，逐层检查文件引用直到没有缺项 |
 
+根级 `evidence/<workItemId>/reviews/` 与 `validation/` 是人工作业审阅/验证产物目录，不是控制工具的 `evidenceRoot`。当前工作项确实引用其中的媒体、审阅页、截图、录屏或日志时，按实际依赖逐文件纳入；Evidence Manifest、自身文件列表、命令 `outputFile` 等受 `evidenceRoot` 限制的字段仍只能引用工具实际证据根内的路径，不得填写根级 `evidence/` 或其他外部路径。已冻结引用不为入库批量迁移或自动改写。
+
 “当前”包括本次推进的工作项，以及它实际依赖的全局、宿主、共享模块或其他工作项的有效文件。已完成工作项仍被引用时，相关文件仍必需；无引用的历史任务不因同处一个目录而入库。并行批次的同包历史分配、执行状态中已完成单元的结果，以及用户确认所绑定的候选都是续接判断的一部分，不能只保留正在执行的那个单元。
 
 确认账本或清单是一个实际文件时，保留完整文件，不为缩小提交而裁剪账本条目、删除 Schema 必需字段、伪造通过或解除真实依赖。当前选择证据若引用三张候选，三张及其必要记录都选入，不能自行改成只保存所选图。
@@ -37,14 +39,18 @@
 !/.workflow-control/evidence/WI-1/execution-state.json
 !/.workflow-control/evidence/WI-1/units/result-1.json
 !/.workflow-control/evidence/WI-1/attachments/V4/run-1/test.log
-!/docs/artifacts/scenes/battle/V2/r1/layout.png
+!/evidence/WI-1/reviews/V2/candidate-1/review.html
+!/evidence/WI-1/reviews/V2/candidate-1/layout.png
+!/evidence/WI-1/validation/V4/run-1/screenshot.png
+!/evidence/WI-1/validation/V4/run-1/test.log
+!/docs/confirmed/scenes/battle/layout-target/v1/layout.png
 # 工作流必要文件结束
 ```
 
 ## 提交前核对
 
 1. 从当前 Work Item、实际规格和入口出发，结合字段语义递归检查真实引用；覆盖实施包、执行状态/结果、Diff Audit、有效确认、清单、HTML/CSS/JSON 内嵌资源和实际加载路径。`allowedPaths`、未来 `expectedOutputs`、命令示例、失效占位路径不是自动提交依据；动态引用无法确定时先查实际加载/生成逻辑，不机械把所有字符串或整个目录选入。
-2. 确认事务已经结束、记录可一致读取。当前必需文件缺失时修复或明确阻塞，不通过移除引用、跳过门或声称“以后可生成”来缩小提交。必要日志/附件仍放在 Work Item 的 `evidenceRoot` 内，不能为入库另造证据路径。
+2. 确认事务已经结束、记录可一致读取。当前必需文件缺失时修复或明确阻塞，不通过移除引用、跳过门或声称“以后可生成”来缩小提交。工具要求的机器日志/附件仍放在 Work Item 的实际 `evidenceRoot` 内；人工作业文件可按项目归档规则保存在根级 `evidence/<workItemId>/reviews/` 或 `validation/`，不能把这些外部路径填入受 `evidenceRoot` 约束的字段，也不能为入库另造机器证据路径。
 3. 合并精确放行条目，逐文件检查 `git check-ignore --no-index -v -- <路径>`；再用 `git ls-files --cached -- <路径>` 核对已跟踪情况。检查仓库级、全局和嵌套忽略规则的最终效果，不仅查看根 `.gitignore` 文本。
 4. 只暂存本任务最小集合及必要 `.gitignore` 变化，先核对其他人的暂存内容，不使用 `git add .` 或 `git add -A`。检查选定差异与暂存清单，确保必要引用文件已经在 HEAD 或本次暂存区中；只存在于工作区的文件不足以支持重新检出续接。阶段提交仍遵守[控制面收尾规则](../SKILL.md#阶段收尾与-git-提交)。
 5. 按适用 T0–T3 执行当前候选检查。提交完成后报告哈希、必要文件范围、验证结果和仅本地保留项；不自动推送、改分支、创建 worktree、运行真机或删除本地保留产物。

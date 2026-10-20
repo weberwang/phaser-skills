@@ -6,11 +6,11 @@
 
 ## 视口、设计空间与高分屏
 
-实现遵守布局合同中的 `logicalViewportSpace`、`designResolutionPolicy`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr` 和 `scaleMode`。CSS client rect 是运行视口输入；Canvas backing 由 CSS 尺寸乘 effective DPR 并向上取整。物理 backing 像素不直接参与 UI 布局或输入命中。
+实现遵守布局合同中的 `logicalViewportSpace`、`designResolutionPolicy`、`canvasBackingPolicy`、`runtimeDprPolicy`、`maxRuntimeDpr` 和 `scaleMode=custom`。CSS client rect 是运行视口输入；Canvas backing 由 CSS 尺寸乘 effective DPR 并向上取整。Phaser `Scale.RESIZE` 可以作为内部画布尺寸更新方式，实际逻辑视口、Camera 与输入仍须由项目布局代码按合同映射。物理 backing 像素不直接参与 UI 布局或输入命中。
 
 项目可复用 [`calculateFixedDesignViewport`](../scripts/fixed-design-viewport.mjs) 将 CSS 视口换算为固定设计基准、缩放比例和可见逻辑区域。竖屏按 1080×1920 设计基准的宽度缩放，`scale=viewportWidth/1080`；横屏按 1920×1080 设计基准的高度缩放，`scale=viewportHeight/1080`；另一轴从设计区域中心展开或裁切。设计坐标到 CSS 坐标及输入逆变换使用该工具导出的换算函数，避免把 CSS、Camera、Container 和物理像素混在一起。
 
-初始布局、每次 resize、方向变化和 DPR 变化都从布局合同重新计算。屏幕 UI Camera/根容器与输入使用同一比例和可见区域，偏移只应用一次，并将运行结果写入 `designTransform` 证据。玩法相机和世界空间对象独立声明策略，不强制使用屏幕 UI 的比例。Canvas 填满 CSS 视口；`RESIZE` 或等效 `custom` 必须配合实测变换、输入映射与覆盖证据。
+初始布局、每次 resize、方向变化和 DPR 变化都从布局合同重新计算。屏幕 UI Camera/根容器与输入使用同一比例和可见区域，偏移只应用一次，并将运行结果写入 `designTransform` 证据。玩法相机和世界空间对象独立声明策略，不强制使用屏幕 UI 的比例。Canvas 填满 CSS 视口；即使内部使用 `Phaser.Scale.RESIZE`，也必须由项目代码完成合同所需的自定义变换，并提供实测变换、输入映射与覆盖证据。
 
 运行时 DPR 在 resize、方向切换和显示密度变化时从设备重新读取：非法值回退 1，正有限值封顶 2。CSS/display 尺寸与 backing 尺寸同步更新，记录 raw/effective DPR，并清理 Scene 监听器。资源生产的 DPR=1 基线属于 `assetResolutionPolicy`，不能作为运行时 DPR 或降低清晰度的理由。
 

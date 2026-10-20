@@ -4,7 +4,7 @@
 
 Android/iOS 原生平台功能优先通过插件实现：先复用项目现有插件，再评估适用的官方或社区插件；仅在明确能力缺口下补充自建原生实现。选型、平台适配边界和必要宿主配置遵循[原生平台插件选型](skills/phaser4-game-architecture/SKILL.md#原生平台插件选型)。
 
-游戏项目所有已采用 SDK 的初始化统一放在 `src/bootstrap/initialize-sdks.ts`，由应用入口调用，依赖顺序、并行/延迟分支和失败处理集中维护；原生调用仍通过平台适配器。具体边界与 TDD 交付见[SDK 统一初始化](skills/phaser4-game-architecture/references/sdk-initialization.md)。
+游戏项目所有已采用 SDK 的初始化统一放在 `src/platform/initialize-sdks.ts`，由应用入口独立投递各 SDK 任务并立即返回；Phaser 首帧不等待 SDK 批次。初始化调用、真实回调、幂等状态和单 SDK 初始化重试集中维护，业务运行期恢复仍由所属模块负责；原生 API 细节可由平台适配器封装。具体边界与 TDD 交付见[SDK 统一初始化](skills/phaser4-game-architecture/references/sdk-initialization.md)。
 
 MAX 初始化前手动调用 `setHasUserConsent(false)`，关闭内建隐私流程，再正常调用官方插件初始化；`false` 不作为广告加载或展示的阻断条件，其他实际适用的请求条件单独判断。采用 AppsFlyer 时在统一入口独立启动，两者不相互等待或传播失败，也不相互复制同意状态。调用顺序与验证要求见[接入合同](skills/phaser4-game-ad-integration/references/applovin-max-contract.md#初始化前设置-hasuserconsentfalse)。
 
@@ -62,13 +62,13 @@ node .\.agents\skills\phaser4-game-workflow-control\scripts\workflow-control.mjs
 
 ## 控制面边界
 
-游戏项目的产物按[目录与确认流转规范](skills/phaser4-game-architecture/references/project-structure.md#产物目录与确认流转)分别落盘：`.workflow-tmp/` 保存按任务、阶段和尝试隔离的临时中间产物；`docs/artifacts/` 保存按归属、阶段和版本组织的长期确认产物；`assets-source/` 保存生产源素材；`public/assets/` 保存对应场景/显示层或共享的已验收游戏资源；`.workflow-control/` 保存工作流机器记录，其中 `evidence/<workItemId>/attachments/` 分目录保存实际验证附件；视觉确认账本与回执保留在工具固定的 `.phaser-workflow/user-resolutions/`。提交人工确认前固定长期产物路径，确认后原地保留，目录名不代替验收状态。
+游戏项目的产物按[目录与确认流转规范](skills/phaser4-game-architecture/references/project-structure.md#产物目录与确认流转)及[产物存放与证据边界](skills/phaser4-game-architecture/references/artifact-storage.md)分别落盘：`output/intermediate/` 保存按任务、阶段和尝试隔离的临时中间产物，`output/candidates/` 保存尚未送审的候选；`docs/confirmed/<owner>/<artifact-id>/<version>/` 保存确认后的非运行产物；`assets-source/` 保存生产源素材，`public/assets/` 保存 Phaser 正式资源。根级 `evidence/<workItemId>/reviews/` 与 `validation/` 保存人工作业审阅和验证产物，不作为控制工具的 `evidenceRoot`；`.workflow-control/` 机器记录、其 `evidenceRoot` 附件及 `.phaser-workflow/user-resolutions/` 确认账本均保持工具实际路径，受 `evidenceRoot` 约束的字段不得填写外部目录路径。提交当前工作项时，按实际引用纳入所需媒体、审阅页、截图、日志和记录；已冻结路径不批量迁移或自动改写。
 
 - `$phaser4-game-workflow-control` 独占全局状态、风险门、任务范围、状态迁移和证据一致性。普通 A0-A3 工作直接依据当前用户任务，不创建独立授权记录，也不设置 F0 授权有效硬门。
 - 任务内可以调整实现方案、文件路径、资源清单和测试范围；同步更新 Work Item/实施包并重验受影响部分即可。无外部副作用的本地 A4 集成可按任务执行；涉及外部写入、付费、真机、破坏性或外部删除、发布的 A4-A6 操作仍必须逐对象建立 pending 并获得显式批准。控制面只校验和记录，不代执行这些动作。
 - V0→V1→V2→V3→V4 的视觉硬门、全局静态基线、场景拆解与布局确认、高保真前置继续使用带真实路径和任务归属的证据；V4 直接消费当前 V2/V3 产物并对正式场景调整验收。缺失或失效时 fail closed。阶段与字段以控制面文档和 Schema 为准。
 - 共享工作区不自动回滚、不覆盖他人修改；启动本地验证服务前先查找同项目健康实例并复用。
-- 阶段任务验收完成后，执行代理按[最小 Git 提交集](skills/phaser4-game-workflow-control/references/minimal-git.md)维护 `.gitignore`：只提交本任务运行/构建必需文件与当前工作项有效引用的必要记录及实际产物；产物目录默认忽略文件，再逐文件精确放行，不把整个历史目录入库。长期保留与 Git 提交分开，未入库不代表可删除；使用当前分支提交并报告哈希，不自动推送。详见[阶段收尾与 Git 提交](skills/phaser4-game-workflow-control/SKILL.md#阶段收尾与-git-提交)和[忽略模板](skills/phaser4-game-workflow-control/assets/minimal-project.gitignore)。
+- 阶段任务验收完成后，执行代理按[最小 Git 提交集](skills/phaser4-game-workflow-control/references/minimal-git.md)维护 `.gitignore`：只提交本任务运行/构建必需文件与当前工作项有效引用的必要记录和实际产物；有效依赖中的图片、视频、Spine 文件、审阅页、截图、日志及源输入都必须随引用一起纳入，不能只保留路径字符串。产物目录默认忽略文件，再逐文件精确放行，不把无关历史目录入库。长期保留与 Git 提交分开，未入库不代表可删除；使用当前分支提交并报告哈希，不自动推送。详见[阶段收尾与 Git 提交](skills/phaser4-game-workflow-control/SKILL.md#阶段收尾与-git-提交)和[忽略模板](skills/phaser4-game-workflow-control/assets/minimal-project.gitignore)。
 
 视觉几何与测试默认以可用性为准：位置、尺寸、边距、换行允许合理偏差，越界、裁切、关键遮挡、不可读和交互失效必须修复。像素级容差、全视口/全状态矩阵只在任务明确要求或项目合同明确指定时启用；V2 拆解确认、布局确认、独立资源产物和关键功能证据仍然保留。
 
@@ -137,6 +137,8 @@ npm run test:quick
 npm run test:minimal-git
 npm run test:workflow
 npm run test:frame-animation
+npm run test:minimal-git
+npm run test:production-build
 npm run test:full
 npm test
 ```

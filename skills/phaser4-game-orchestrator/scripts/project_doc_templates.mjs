@@ -22,7 +22,7 @@ const templates = {
       "platform-matrix.md": "# \u5e73\u53f0\u77e9\u9635\n\n\u5171\u4eab\u57fa\u7840\u53ea\u505a\u4ee3\u8868\u6027 Vite/Phaser \u542f\u52a8\u3001\u9996\u573a\u666f\u3001\u8d44\u6e90\u4e0e\u9002\u7528\u63d2\u4ef6\u70df\u6d4b\uff1b\u5173\u952e\u73a9\u6cd5\u6d41\u5728\u4e3b\u76ee\u6807\u5e73\u53f0\u8fd0\u884c\uff1b\u53ea\u6709\u6700\u7ec8\u96c6\u6210/G3/release \u6267\u884c\u4e0b\u8ff0\u5b8c\u6574\u77e9\u9635\u3002\u4e0d\u5f97\u81ea\u52a8\u53d1\u8d77\u771f\u673a\u9a8c\u6536\u3002\n\n| \u6e20\u9053 | \u4f18\u5148\u7ea7 | \u6253\u5305\u65b9\u5f0f | \u6784\u5efa/\u8fd0\u884c\u8bc1\u636e | \u65b9\u5411/\u89c6\u53e3/\u6027\u80fd/\u5b58\u6863 | \u5546\u5e97\u8d44\u6599/\u5408\u89c4 | \u8d1f\u8d23\u4eba |\n| --- | --- | --- | --- | --- | --- | --- |\n"
     },
     "release": {
-      "release-checklist.md": "# \u53d1\u5e03\u68c0\u67e5\u6e05\u5355\n\n## \u53d1\u5e03\u5019\u9009\u7248\u672c\n\n- \u7248\u672c\u53f7\uff1a\n- \u6784\u5efa\u63d0\u4ea4\uff1a\n- \u5019\u9009\u5305 SHA-256\uff1a\n- \u6784\u5efa\u547d\u4ee4\uff1a\n- \u5019\u9009\u5305\u4f4d\u7f6e\uff1a\n\n## \u5fc5\u987b\u6838\u9a8c\n\n- [ ] \u4eba\u5de5\u5df2\u6279\u51c6 G3\u3002\n- [ ] \u6bcf\u4e2a\u76ee\u6807\u6e20\u9053\u90fd\u6709\u5bf9\u5e94\u5019\u9009\u5305\u548c\u6d4b\u8bd5\u8bc1\u636e\u3002\n- [ ] \u5546\u5e97\u8d44\u6599\u3001\u9690\u79c1\u58f0\u660e\u3001\u5206\u7ea7\u548c\u8d44\u6e90\u6388\u6743\u5df2\u6838\u9a8c\u3002\n- [ ] \u6ca1\u6709\u5bc6\u94a5\u6216\u5546\u5e97\u51ed\u636e\u8fdb\u5165\u4ed3\u5e93\u3002\n- [ ] \u5df2\u77e5\u98ce\u9669\u3001\u56de\u6eda\u6216\u70ed\u4fee\u590d\u65b9\u6848\u5df2\u8bb0\u5f55\u3002\n- [ ] API/\u670d\u52a1\u8fb9\u754c\u3001\u8fc1\u79fb\u56de\u6eda\u3001\u90e8\u7f72\u76d1\u63a7\u4e0e\u5907\u4efd\u6062\u590d\u5df2\u6309\u9002\u7528\u8303\u56f4\u6838\u9a8c\u3002\n- [ ] \u5408\u5e76\u524d\u5df2\u6838\u5bf9\u5f53\u524d\u5206\u652f\u3001\u6279\u51c6\u5019\u9009 SHA\u3001\u5e72\u51c0\u5de5\u4f5c\u533a\u3001git diff --check\u3001\u6d4b\u8bd5/CI\u3001\u5ba1\u6838\u7ed3\u8bba\u548c\u6388\u6743\u3002\n"
+      "release-checklist.md": "# 发布检查清单\n\n## 发布候选版本\n\n- 版本号：\n- 构建提交：\n- 候选包 SHA-256：\n- 构建命令：\n- 候选包位置：\n\n## 必须核验\n\n- [ ] 人工已批准 G3。\n- [ ] 每个目标渠道都有对应候选包和测试证据。\n- [ ] 商店资料、隐私声明、分级和资源授权已核验。\n- [ ] 生产构建显式关闭 Source Map，Terser 两轮压缩、标识符缩短与注释移除已在真实入口生效。\n- [ ] 最终公开目录及已解包渠道资源已检查，无映射文件、内联映射和映射引用；HTTP 响应头另行核对。\n- [ ] 没有密钥或商店凭据进入仓库。\n- [ ] 已知风险、回滚或热修复方案已记录。\n- [ ] API/服务边界、迁移回滚、部署监控与备份恢复已按适用范围核验。\n- [ ] 合并前已核对当前分支、批准候选 SHA、干净工作区、git diff --check、测试/CI、审核结论和授权。\n"
     }
   }
 };
@@ -154,49 +154,8 @@ normalizeVisualStageTemplates(templates.optional.assets);
 // 正式场景直接消费上游合同，避免为预览维护第二份布局和确认状态。
 templates.core["visual-design.md"] += "\nV3 正式资源验收后直接进入 V4。正式 Scene 依据 V2 的节点结构、布局约束和资源对应关系，加载 V3 accepted 资源；布局和呈现调整写入正式实现配置，在实际运行中复验。只有上游结构、目标布局方案或资源合同变化时才更新对应 V2/V3 证据。无需生成独立预览、草图数据或草图确认记录。\n";
 
-// 目录映射随 TDD 初始化交付，避免生产者继续把临时文件、正式资源和机器记录写进同一输出目录。
-templates.core["TDD.md"] += `
-## 产物目录与确认流转
-
-路径相对项目根目录，按实际需要创建。\`ownerType/ownerId\` 使用 \`global/<projectId>\`、\`modules/<moduleId>\`、\`scenes/<sceneId>\` 或 \`display-layers/<displayLayerId>\`，与代码及资源清单归属一致。
-
-| 类别 | 默认目录 | 项目实际目录/所有者/保留策略 |
-| --- | --- | --- |
-| 临时中间产物 | \`.workflow-tmp/<workItemId>/<stageId>/<attemptId>/\` | |
-| 长期确认产物 | \`docs/artifacts/<ownerType>/<ownerId>/<stageId>/<revisionId>/\` | |
-| 源素材与生产输入 | \`assets-source/<ownerType>/<ownerId>/<assetId>/<revisionId>/\` | |
-| 已验收游戏资源 | \`public/assets/shared/\`、\`public/assets/scenes/<sceneId>/\`、\`public/assets/display-layers/<displayLayerId>/\` | |
-| 实际验证附件 | \`.workflow-control/evidence/<workItemId>/attachments/<stageId>/<runId>/\`，受 Work Item.evidenceRoot 约束 | |
-| 工作流机器记录 | \`.workflow-control/\`；视觉确认账本与回执使用 \`.phaser-workflow/user-resolutions/\` | |
-
-制作前在实施包绑定上述路径与文件所有权。待确认候选及完整依赖先保存到长期版本目录，更新审阅页/JSON/清单引用后再展示；用户确认后原地保留，返修使用新版本，不覆盖已确认文件。目录名和复制动作不代表验收通过，确认继续使用控制面现有记录；实施代理不得手写或迁移受保护确认账本。
-
-V2 的 layout.png、layout-nodes.json、layout-decision.json、review.html、generation-result.json 保持同批同目录。游戏资源先在临时目录生产并预检，记录 V3 accepted 前安装到 public/assets/ 最终路径，更新尚未冻结的资源清单、加载键、生成/归一化记录和审阅引用，再执行实际文件门与必要人工确认；安装到验收通过之间不得进入正式场景加载、构建或发布。通过后冻结路径，不再搬迁，返修用新版本且不覆盖仍被有效确认引用的文件。原始输入保留在 assets-source/，效果图和预览留在 docs/artifacts/，不额外复制正式资源。
-
-生产记录等领域 JSON 随产物保存；.workflow-control/evidence/<workItemId>/ 保存机器清单、执行状态与单元结果，附件放其 attachments/ 子目录，不混入 work-items/ 或 approvals/。Evidence Manifest、files[] 和命令 outputFile 必须位于当前 evidenceRoot，领域清单通过自身引用关联长期产物与正式资源，不直接将这些外部路径写入受此边界限制的字段。
-
-.workflow-tmp/ 默认忽略；docs/、assets-source/、.workflow-control/ 和 .phaser-workflow/ 默认忽略文件并保留父目录可遍历，按最小提交集逐文件放行。仅提交本任务运行/构建必需文件，以及恢复当前 Work Item 所需的记录和逐层引用的真实文件；覆盖有效实施包、执行状态/单元结果、规格/清单、确认回执及其图片、布局包、日志和必要源输入，不能只提交引用 JSON。已确认或长期保存不等于必须入库，无当前必要引用的历史产物可仅本地保留；不能裁剪权威记录或解除引用以缩小提交。
-
-Git 精确放行规则维护在 .gitignore，使用控制 Skill 的 assets/minimal-project.gitignore 合并，不覆盖项目其他规则、不整体放行任务目录，不新增第二套状态或提交清单。提交前核对最终忽略效果以及必要文件已存在于 HEAD 或暂存区。忽略不会取消已有跟踪；仅对本任务明确无必要引用的文件精确移出索引并保留本地，不批量清理历史。收尾清理仍只处理本任务无引用且可再生成的临时文件，本目录约定不自动迁移或删除已有文件。
-`;
-
-// SDK 的启动关系集中交付到 TDD，防止实施时在场景和服务构造中各自发起初始化。
-templates.core["TDD.md"] += `
-## SDK 统一初始化
-
-项目所有实际采用 SDK 的初始化调用、依赖顺序、并行分支、延迟触发和失败处理入口统一在 \`src/bootstrap/initialize-sdks.ts\` 维护，由 \`src/main.ts\` 调用唯一入口 \`initializeSdks\`。没有采用 SDK 时不预建空文件。平台适配器负责原生调用与事件转换，不在 Scene、Boot/Preload、构造函数或导入副作用中另行启动；原生宿主自动初始化在此登记真实前置，不重复调用。插件已管理的传递 SDK 不重复初始化。
-
-| SDK/能力 | 平台/环境开关及配置来源 | 适配器 | 真实前置依赖 | 就绪判据 | 并行/延迟触发条件 | 是否阻塞核心启动及理由 | 失败降级/重试所有者 | 验证命令/证据 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-
-只登记已采用 SDK。依赖真实初始化完成时必须等待官方完成回调或明确就绪状态，不能把请求受理当成完成。无依赖分支可以并行；可选 SDK 后台推进，区分核心就绪和后台结果，不等待所有 SDK 后才启动 Phaser。同生命周期同配置幂等，重复调用复用任务，延迟初始化与条件恢复仍由统一文件编排；已有 SDK 领域服务的唯一恢复任务继续复用，不新增重复 timer。失败只影响实际依赖分支，配置切换/销毁使旧回调失效并清理自建监听器。
-
-采用 MAX 时，它与 CMP/Google UMP/ATT 在同一文件中独立调度；在每次真正发起 MAX 初始化前先通过官方插件手动调用 setHasUserConsent(false)，再 initialize，重复入口复用现有任务。SDK 真实就绪、MAX 标志和其他实际请求条件分别判断：hasUserConsent=false 不等于禁止广告，不能据此把 privacy 留在 pending/blocked、跳过加载/展示、停止预加载或暂停加载重试；该值已按插件约定传递且没有其他实际阻断时 privacy=ready，正常执行广告请求。隐私任务不成为本合同目标初始化前置，适用 CMP/TCF、地区/网络策略等其他真实条件单独核实，不因该布尔值制造能力冲突；false 不作为用户已完成选择的回执，也不自动复制给 AppsFlyer。较新真实选择与重试交错时，初始化完成后由同一标志所有者同步最新有效选择，不再次初始化，也不等待true才加载。
-
-MAX 内建 Terms and Privacy Policy Flow 在 initialize 前显式关闭，核对 Android 当前变体实际打包的 applovin_settings.json 中 consent_flow_settings.consent_flow_enabled=false，以及 iOS App target 打包的 AppLovin-Settings.plist 中 ConsentFlowInfo.ConsentFlowEnabled=NO；当前核对的官方 Cordova JS API 未暴露流程开关，不套用其他框架 API。上述为目标关闭值，官方指南示范启用配置，必须按锁定 SDK 版本验证实际读取与关闭效果；不能仅凭文件值宣称成功。关闭流程时仍保留广告启用配置、官方插件初始化调用与真实完成回调；不跳过初始化、不伪造成功、不绕过 load/show 的隐私门。
-
-采用 AppsFlyer 时，分别登记 MAX 和 AppsFlyer 独立分支，各自只依赖真实前置与适用隐私条件。不得在 MAX 初始化或内建隐私回调中启动 AppsFlyer，MAX 也不等待 AppsFlyer 初始化、启动或归因结果；一个分支失败/超时不取消另一个，各自持有状态与恢复任务。核实插件版本与 Capacitor 支持，手动启动模式不能遗漏该版本的 start，自动启动模式不重复 start。覆盖两种完成先后、任一失败/超时、其他实际条件未决、重复调用以及 hasUserConsent=false 正常加载路径，提供实际配置与SDK回调/启动/加载证据；未取得目标平台运行证据时标记未验证。
-`;
+// 生成的工程规范与当前归档、完整引用提交及独立初始化规则使用同一边界。
+templates.core["TDD.md"] += "\n## 产物目录与确认流转\n\n路径相对项目根目录；`<owner>` 使用 `shared`、`scenes/<scene-id>` 或 `display-layers/<display-layer-id>`。制作前在 TDD 与实施包填写实际映射和所有权，按需创建目录。\n\n| 类别 | 默认目录 | 项目实际目录/所有者/保留策略 |\n| --- | --- | --- |\n| 临时中间文件 | `output/intermediate/<workItemId>/<stageId>/<candidateId>/` | |\n| 尚未送审候选 | `output/candidates/<workItemId>/<stageId>/<candidateId>/` | |\n| 已确认非运行成果 | `docs/confirmed/<owner>/<artifact-id>/<version>/` | |\n| 源素材与必要生产输入 | `assets-source/<owner>/<asset-id>/<version>/` | |\n| 已验收运行资源 | `public/assets/<owner>/` | |\n| 人工审阅与验证文件 | `evidence/<workItemId>/reviews/<stageId>/<candidateId>/`、`evidence/<workItemId>/validation/<stageId>/<candidateId>/` | |\n| 控制面机器记录 | `.workflow-control/`，使用工具实际布局 | |\n| 受保护用户确认记录 | `.phaser-workflow/user-resolutions/`，只由现有控制入口维护 | |\n\n送审前将真实候选与必要输入保存到保留目录；确认后按用途归档，已冻结的原始审阅文件与确认引用保持路径和内容，不搬迁覆盖。归档副本不创建第二套确认状态。布局 PNG、节点、决策、review.html、generation-result.json 与必要参考输入整包保留；正式资源在实际文件门与验收通过前不能进入正式场景消费。\n\n根级 evidence/ 是领域审阅目录，不是 Work Item 的 evidenceRoot。后者默认 .workflow-control/evidence/<workItemId>/；Evidence Manifest、files[]、命令 outputFile 和其他受该边界约束的机器输出仍必须写入当前 evidenceRoot，领域文件通过清单内引用关联，不直接填入受限字段。工作流事务和原子写临时文件沿用工具实际位置。\n\n按最小提交集递归纳入当前工作项有效依赖：运行/构建文件、必要规格、机器记录、实际引用的图片/视频/布局包/审阅页/日志和源输入一起精确入库。不能只提交引用 JSON、裁剪账本或删除依赖来减少提交。无当前必要引用的历史产物可只本地保留；默认忽略文件并保持父目录可遍历，再逐文件放行，检查最终忽略结果与暂存快照。目录整理不自动迁移、取消跟踪或清理已有成果。\n\n## SDK 单文件独立初始化\n\n已采用 SDK 的初始化调用、完成回调、幂等状态与初始化重试统一放在 `src/platform/initialize-sdks.ts`，`src/main.ts` 调用唯一入口 `initializeSdks(config): void`。没有采用 SDK 时不创建占位文件；公共类型和业务能力接口保留原模块边界，不在场景、构造函数或导入副作用中另行初始化。\n\n| SDK/能力 | 平台/环境开关及配置来源 | 自身真实前置 | 真实完成信号 | 独立状态/初始化恢复所有者 | 业务使用门 | 验证命令/证据 |\n| --- | --- | --- | --- | --- | --- | --- |\n\n各 SDK 独立发起与恢复，任一同步异常、失败或永不回调不阻断其他 SDK、游戏首帧或场景启动；不建立跨 SDK await、dependsOn 或批次就绪屏障。官方必需前置不能绕过，无法满足独立时序的组合只报告对应 SDK 能力限制，不伪造成功。实际业务动作继续检查各自就绪、隐私和平台条件。\n\n每个 SDK 只有一套初始化请求、计数和 timer，重复入口复用同配置任务或结果，配置切换和销毁使旧回调失效。初始化恢复在统一文件中实现；广告位加载等运行期恢复仍由所属业务模块逐对象维护。插件已管理的传递 SDK 不重复初始化。\n\n采用 MAX 时，新实例首次真实 initialize 前手动传入布尔 setHasUserConsent(false)，并按锁定 SDK 的真实能力关闭内建隐私流程；设置 false 不能代替关闭流程，也不表示广告禁用。真实初始化完成后，其他实际请求条件满足时全屏预加载、Banner 按需加载、展示和重试正常执行，不等待该值变 true。同实例重试不覆盖后续真实隐私更新。MAX 与 AppsFlyer 各自初始化/启动，不互相等待或共享恢复状态。以实际配置、SDK 完成和业务请求证据分别验收；没有授权不自动运行真机或外部 SDK 操作。\n";
 
 export const CORE_TEMPLATES = templates.core;
 export const OPTIONAL_TEMPLATES = templates.optional;
