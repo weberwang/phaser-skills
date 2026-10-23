@@ -10,6 +10,11 @@ import { layoutNodeIdentityProjection, validateEffectImageParentChildLayoutNodes
 import { resolveVisualValidationMode, validateVisualValidationPolicy } from "../../phaser4-game-workflow-control/scripts/visual-validation-policy.mjs";
 import { matchesRepresentativeViewport, measuredOrientation, resolveOrientationCoverage } from "../../phaser4-game-workflow-control/scripts/orientation-validation-scope.mjs";
 import { validateUiInteractionTree, validateUiLayout } from "../../phaser4-game-asset-integration/scripts/ui-layout-organization.mjs";
+import { validateCenterAlignmentNodes } from "./center-alignment.mjs";
+import { validateLayoutExecutionNodes } from "./layout-execution.mjs";
+import { isSyntheticLayoutRoot } from "./layout-root-bounds.mjs";
+import { collectLayoutContextRoots } from "./layout-root-context.mjs";
+import { validateUiLayoutRuntime } from "./ui-layout-runtime-contract.mjs";
 
 const ROOT_REQUIRED = ["schema_version", "contract_id", "contract_version", "scope", "fidelity", "frozen_visual_target", "logicalViewportSpace", "designResolutionPolicy", "canvasBackingPolicy", "runtimeDprPolicy", "maxRuntimeDpr", "scaleMode", "cameraViewportPolicy", "cameraZoomPolicy", "cameraOriginPolicy", "inputCoordinatePolicy", "safeAreaPolicy", "resizePolicy", "orientationPolicy", "textResolutionPolicy", "assetResolutionPolicy", "performanceBudget", "representativeViewports", "requiredRuntimeEvidence", "targets", "coordinate_spaces", "regions", "layout_nodes", "content", "platform_insets", "scrolling", "dynamic_content", "overlay_rules", "breakpoints", "invariants", "critical_alignments", "parity_cases", "evidence_matrix"];
 const REQUIRED_EVIDENCE_AXES = new Set(["breakpoint-neighbors", "width", "height", "orientation", "text-scale", "localization", "safe-area", "action-state", "dpr", "dynamic-values", "scene-lifecycle", "overlay-keyboard-scroll"]);
@@ -623,9 +628,17 @@ function validateLayoutNodes(document, fidelity, binding, spaces, regionIds, err
     }
   });
   if (requiresLayoutNodes) validateUiInteractionTree(nodes.map((node) => ({ element_id: node?.layout_node_id, parent_element_id: node?.parent_layout_node_id, ui_layout: node?.ui_layout })), errors, "layout_nodes");
+  let rootBounds;
+  if (requiresLayoutNodes) {
+    validateLayoutExecutionNodes(nodes, errors, "layout_nodes", { requirePlan: true });
+    try {
+      rootBounds = collectLayoutContextRoots(viewport, [document, binding, document.frozen_visual_target], nodes);
+      validateCenterAlignmentNodes(nodes.filter((node) => !isSyntheticLayoutRoot(node)), errors, "layout_nodes", { ...viewport, root_bounds: rootBounds });
+    } catch (error) { errors.push(`layout_nodes 冻结根或中心关系无效：${error.message}`); }
+  }
   if (isEffectImageContract(document)) {
     // 父容器、相对测量和显式视觉对齐必须与场景拆解入口使用同一规则。
-    for (const issue of validateEffectImageParentChildLayoutNodes(nodes, viewport, { label: "layout_nodes" })) errors.push(issue.message);
+    for (const issue of validateEffectImageParentChildLayoutNodes(nodes, viewport, { label: "layout_nodes", rootBounds })) errors.push(issue.message);
   }
   const graph = new Map(); const stableRoots = new Set(["viewport", "safe-area"]);
   nodes.forEach((node, index) => {
@@ -748,6 +761,7 @@ export function validateContract(document) {
   if (requiresFrozenLayout) {
     validateCriticalAlignments(document.critical_alignments, ids, layoutNodes, fidelity?.status, errors, mode);
     if (fidelity?.status === "verified") {
+      if (isEffectImageContract(document)) validateUiLayoutRuntime(document, binding, errors);
       validateParityCases(document.parity_cases, document.scope, document.contract_version, document.frozen_visual_target, errors, mode, coverage);
       if (mode === "exact" && Array.isArray(document.parity_cases) && document.parity_cases.some((item) => item?.conclusion !== "passed")) errors.push("verified 的 parity_cases 必须全部 passed");
     } else if (!Array.isArray(document.parity_cases) || document.parity_cases.length > 0) errors.push("specified 的 parity_cases 必须为空数组");

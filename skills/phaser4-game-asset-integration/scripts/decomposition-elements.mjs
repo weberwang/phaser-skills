@@ -8,6 +8,7 @@
 import { normalizeSemanticGrouping, semanticGroupingOf, validateSemanticGrouping } from "./semantic-grouping-contract.mjs";
 import { normalizeUiLayout, validateUiInteractionTree, validateUiLayout } from "./ui-layout-organization.mjs";
 import { equalNineSliceContracts, isNineSliceStretch, isNineSliceStretchTargetAllowed, requiresNineSliceDecision, validateNineSliceContract, validateNineSliceTargetBounds } from "../../phaser4-game-ui-layout/scripts/nine-slice-contract.mjs";
+import { readLayoutPositionReference } from "../../phaser4-game-ui-layout/scripts/layout-root-bounds.mjs";
 
 const CONTAINER_ROLES = new Set(["container", "parent", "group", "layout-container", "empty-container"]);
 
@@ -48,7 +49,13 @@ function normalizeElement(element, region, index = 0) {
   const normalizedNineSlice = nineSlice === undefined ? undefined : validateNineSliceContract(nineSlice, `decomposition_elements.${field(element, "element_id", "elementId") ?? index}.nine_slice`);
   if (isNineSliceStretch(normalizedNineSlice) && elementType !== "component") throw new TypeError("九宫格 stretch 只能声明在叶子 component 图片皮肤上，不能用于结构容器");
   if (routeDecisionRequired && normalizedNineSlice === undefined) throw new TypeError(`decomposition_elements.${field(element, "element_id", "elementId") ?? index} 属于固定生产 UI 皮肤，V2 必须确认 nine_slice 或 not-applicable`);
-  return { element_id: field(element, "element_id", "elementId") ?? `${region.id}-element-${index + 1}`, element_type: elementType, role, bounds: validBounds(bounds) ? copyBounds(bounds) : bounds, scene_id: region.scene_id, state_id: region.state_id, region_id: region.id, component_id: componentId, placement_id: placementId, ...(nonEmptyString(parentElementId(element)) ? { parent_element_id: parentElementId(element) } : {}), ...(semanticGrouping !== undefined ? { semantic_grouping: normalizeSemanticGrouping(semanticGrouping) } : {}), ...(uiLayout !== undefined ? { ui_layout: normalizeUiLayout(uiLayout) } : {}), ...(normalizedNineSlice !== undefined ? { nine_slice: normalizedNineSlice } : {}), ...(routeDecisionRequired ? { nine_slice_decision_required: true } : {}), ...(typeof region?.owner_type === "string" ? { owner_type: region.owner_type } : typeof region?.ownerType === "string" ? { owner_type: region.ownerType } : {}), ...(typeof region?.layer === "string" ? { region_layer: region.layer } : {}), ...(nonEmptyString(routeElementType) ? { visual_route_element_type: routeElementType } : {}), empty_container: field(element, "empty_container", "emptyContainer") === true };
+  const coordinateSpace = field(element, "coordinate_space", "coordinateSpace");
+  const parentId = parentElementId(element);
+  // 拆解清单的显式顶层参照必须保留，供语义校验和后续布局生成共同复核。
+  readLayoutPositionReference(element, parentId);
+  const positionReferenceId = field(element, "position_reference_id", "positionReferenceId");
+  const referenceId = field(element, "reference_id", "referenceId");
+  return { element_id: field(element, "element_id", "elementId") ?? `${region.id}-element-${index + 1}`, element_type: elementType, role, bounds: validBounds(bounds) ? copyBounds(bounds) : bounds, scene_id: region.scene_id, state_id: region.state_id, region_id: region.id, component_id: componentId, placement_id: placementId, ...(nonEmptyString(parentId) ? { parent_element_id: parentId } : {}), ...(positionReferenceId !== undefined ? { position_reference_id: positionReferenceId } : {}), ...(referenceId !== undefined ? { reference_id: referenceId } : {}), ...(coordinateSpace !== undefined ? { coordinate_space: coordinateSpace } : {}), ...(semanticGrouping !== undefined ? { semantic_grouping: normalizeSemanticGrouping(semanticGrouping) } : {}), ...(uiLayout !== undefined ? { ui_layout: normalizeUiLayout(uiLayout) } : {}), ...(normalizedNineSlice !== undefined ? { nine_slice: normalizedNineSlice } : {}), ...(routeDecisionRequired ? { nine_slice_decision_required: true } : {}), ...(typeof region?.owner_type === "string" ? { owner_type: region.owner_type } : typeof region?.ownerType === "string" ? { owner_type: region.ownerType } : {}), ...(typeof region?.layer === "string" ? { region_layer: region.layer } : {}), ...(nonEmptyString(routeElementType) ? { visual_route_element_type: routeElementType } : {}), empty_container: field(element, "empty_container", "emptyContainer") === true };
 }
 
 /** 从当前区域生成稳定元素；显式 decomposition_elements 优先，支持人工声明空容器。 */
@@ -78,7 +85,7 @@ export function buildDecompositionElements(regions = []) { return regions.flatMa
 export function decompositionElementIds(elements = []) { return elements.map((element) => element?.element_id).filter(nonEmptyString); }
 
 /** 校验已确认 proposal 的拆解元素；允许人工修改几何，但不允许越界、漏区域或伪造角色。 */
-export function validateDecompositionElements(elements, regions = [], canvas = null, label = "decomposition_elements", errors = []) {
+export function validateDecompositionElements(elements, regions = [], canvas = null, label = "decomposition_elements", errors = [], rootBounds = {}) {
   if (!Array.isArray(elements) || elements.length === 0) { errors.push(`${label} 必须是非空数组`); return null; }
   const regionById = new Map(regions.map((region) => [region?.id ?? region?.region_id, region])); const ids = new Set(); const regionIds = new Set(); const elementById = new Map();
   for (const [index, element] of elements.entries()) {
@@ -144,7 +151,7 @@ export function validateDecompositionElements(elements, regions = [], canvas = n
       errors.push(`${label} component ${element.component_id} 的所有 placements 必须保留相同 nine_slice 决策`);
     } else if (!prior) componentNineSlice.set(element.component_id, { nineSlice: element.nine_slice });
   }
-  validateSemanticGrouping(elements, { canvas }, errors, label);
+  validateSemanticGrouping(elements, { canvas, ...rootBounds }, errors, label);
   validateUiInteractionTree(elements, errors, label);
   const expectedRegionIds = [...regionById.keys()].filter(nonEmptyString).sort(); const actualRegionIds = [...regionIds].sort(); if (JSON.stringify(actualRegionIds) !== JSON.stringify(expectedRegionIds)) errors.push(`${label} 未完整覆盖当前 scene/state 区域`);
   return elementById;

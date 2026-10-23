@@ -97,6 +97,7 @@ game-project/
 ## 资源、命名与产物
 
 - `public/assets/` 是正式运行资源的唯一输出目录，交付时只保留当前已验收资源；验收安装期间的候选按下述流转规则隔离。按 `shared`、场景 ID、显示层 ID 分所有权，再按需细分 `images/`、`audio/`、`atlases/` 等类型。资源目录与代码使用同一身份映射，资源键与加载路径由所属清单维护。
+- 加载方式、资源键与文件目录分别声明：Phaser Loader 使用资源清单中的真实 URL 和键，不从“运行时播放”推断特殊目录。图集沿用 `spritesheet.runtime_url`、`texture_key` 与正式文件的绑定，禁止移入 Cocos 专有 `assets/resources/` 或生成 `creator_resource_path`。模块导入资源沿用项目现有 Vite 入口，不额外复制到另一目录。
 - `assets-source/` 放可编辑源文件、原始音频和生产输入；临时、长期确认产物、验证附件与机器记录按下述目录分别保存，不能放入 `public/`，因为该目录的文件会随构建发布。需要模块导入的小型资源可随所属代码放置，但同一正式资源不得同时维护两份。
 - 目录与资源文件默认 `kebab-case`，TypeScript 类或主要组件文件用 `PascalCase.ts`，函数/工具模块用 `kebab-case.ts`；资源 ID、模块 ID、场景 ID、显示层 ID 明确映射。导入大小写必须与磁盘一致，不用 `index.ts` 批量再导出掩盖循环依赖。
 - `dist/`、`node_modules/`、原生构建目录、缓存和临时输出按项目 `.gitignore` 排除；原生工程中的主题、Manifest、Activity 等项目源配置应纳入版本管理，不能整体忽略 `android/` 或 `ios/`。控制面工件和正式证据按现有工作流规则保留，不为整理目录移动它们。

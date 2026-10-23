@@ -165,7 +165,29 @@ function validateV2LayoutStage(contract, targetInfo, stage, errors, requireFinal
   }
   if (!isObject(decompositionConfirmation) || !["accepted", "passed", "PASS"].includes(String(field(decompositionConfirmation, "status", "verdict", "result"))) || field(decompositionConfirmation, "confirmation_mode", "confirmationMode", "mode") !== "manual") errors.push(contractError(stage, contract, decompositionConfirmation, "布局阶段前置拆解确认必须是 manual accepted", { missing: "visual_decomposition_confirmation", returnStage: "V1/PROPOSAL", rootCause: "方案缺失" }));
   const layoutConfirmation = decomposition?.layout_annotation_confirmation ?? decomposition?.layoutAnnotationConfirmation;
-  validateLayoutAnnotationConfirmation(layoutConfirmation, { sceneId: targetInfo?.sceneId, stateId: targetInfo?.stateId, viewport: targetInfo?.viewport, referenceFile: contract?.reference_target?.original_file, proposalFile: decompositionConfirmation?.proposal_file, decompositionConfirmationId: decompositionConfirmation?.confirmation_id, layoutNodes: decomposition?.layout_nodes, checkFiles: false }, errors, "layout_decomposition.layout_annotation_confirmation");
+  validateLayoutAnnotationConfirmation(layoutConfirmation, {
+    sceneId: targetInfo?.sceneId,
+    stateId: targetInfo?.stateId,
+    viewport: targetInfo?.viewport,
+    root_bounds: targetInfo?.target?.root_bounds,
+    rootBounds: targetInfo?.target?.rootBounds,
+    root_bounds_sources: [decomposition?.root_bounds, decomposition?.rootBounds],
+    root_nodes: targetInfo?.target?.root_nodes,
+    rootNodes: targetInfo?.target?.rootNodes,
+    root_nodes_sources: [decomposition?.root_nodes, decomposition?.rootNodes],
+    safe_area_bounds: targetInfo?.target?.safe_area_bounds,
+    safeAreaBounds: targetInfo?.target?.safeAreaBounds,
+    safe_area_bounds_sources: [decomposition?.safe_area_bounds, decomposition?.safeAreaBounds],
+    safe_area: targetInfo?.target?.safe_area,
+    safeArea: targetInfo?.target?.safeArea,
+    safe_area_sources: [decomposition?.safe_area, decomposition?.safeArea],
+    layout_nodes_sources: [targetInfo?.target?.layout_nodes, targetInfo?.target?.layoutNodes, decomposition?.layout_nodes, decomposition?.layoutNodes, decomposition?.layout_annotation?.layout_nodes, decomposition?.layoutAnnotation?.layoutNodes],
+    referenceFile: contract?.reference_target?.original_file,
+    proposalFile: decompositionConfirmation?.proposal_file,
+    decompositionConfirmationId: decompositionConfirmation?.confirmation_id,
+    layoutNodes: decomposition?.layout_nodes,
+    checkFiles: false,
+  }, errors, "layout_decomposition.layout_annotation_confirmation");
   if (isObject(annotation) && isObject(layoutConfirmation)) {
     // 独立布局确认必须逐字段锁定同一最终 PNG，不能只复用上游拆解确认。
     for (const key of ["layout_annotation_file", "layout_annotation_width", "layout_annotation_height", "layout_annotation_schema", "layout_annotation_layout", "layout_review_file", "layout_nodes_file", "decomposition_confirmation_id", "layout_decision_file", "layout_decision_id", "scene_id", "state_id"]) if (annotation[key] !== layoutConfirmation[key]) errors.push(contractError(stage, contract, layoutConfirmation, `布局确认未绑定布局图字段 ${key}`, { missing: `layout_annotation_confirmation.${key}`, returnStage: "V2/PROPOSAL", rootCause: "方案缺失" }));
@@ -392,7 +414,7 @@ export function validateSceneCombinationPreacceptance(contract, stage = "V4", op
     const decomposition = field(contract, "layout_decomposition", "layoutDecomposition", "layout_decomposition_contract", "layoutDecompositionContract");
     const nodes = isObject(decomposition) && Array.isArray(field(decomposition, "layout_nodes", "layoutNodes")) ? field(decomposition, "layout_nodes", "layoutNodes") : [];
     const nodeById = new Map(nodes.map((node) => [field(node, "layout_node_id", "layoutNodeId"), node]).filter(([id]) => nonEmptyString(id)));
-    validateLayoutGeometryFacts(contract, preacceptance, stage, errors, { nodes, nodeById }, { visual_validation: { mode } });
+    validateLayoutGeometryFacts(contract, preacceptance, stage, errors, { nodes, nodeById }, { ...options, visual_validation: { mode } });
   }
   return errors;
 }
@@ -498,7 +520,7 @@ export function validateSceneReconstructionContract(contract, manifest = null, o
     if (lifecycle === "proposal-missing" || lifecycle === "missing") errors.push(contractError(stage, contract, null, "还原方案缺失，不能进入生产", { actual: lifecycle, returnStage: "V1/PROPOSAL" }));
   }
   // 同屏运行组合属于正式验收；V3 只验收正式资源，V4 直接实施与验收正式场景。
-  if (String(stage).toUpperCase() === "V4") errors.push(...validateSceneCombinationPreacceptance(contract, "V4", { effectImage, manifest, visual_validation: { mode } }));
+  if (String(stage).toUpperCase() === "V4") errors.push(...validateSceneCombinationPreacceptance(contract, "V4", { ...options, effectImage, manifest, visual_validation: { mode } }));
   return errors;
 }
 

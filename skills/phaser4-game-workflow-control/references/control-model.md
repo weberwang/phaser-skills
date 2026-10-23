@@ -113,12 +113,14 @@ Work Item 保存用户原始请求、目标、当前范围、实施计划、路�
 
 ## 实施顺序状态硬门
 
-effect-image 的 V2 功能归属是拆解确认的一部分，遵守[功能语义分组约束](../../phaser4-game-ui-layout/references/functional-semantic-grouping.md)。最终元素必须显式声明 `parent_element_id` 与 `semantic_grouping.kind/rationale`；位置依赖决定父子归属，共同表达同一信息且没有位置依赖的元素列为同组同级项，布局严格继承，不以几何包含兜底。机器检查归属结构和身份，语义判断由人工确认；新增容器、归属或理由变化返回拆解确认并使旧布局身份失效，不自动改写已冻结的项目工件。
+effect-image 的 V2 功能归属是拆解确认的一部分，遵守[功能语义分组约束](../../phaser4-game-ui-layout/references/functional-semantic-grouping.md)。最终元素声明 `parent_element_id` 与 `semantic_grouping.kind/rationale`，独立定位参照通过 `ui_layout.position_reference_id` 表达，非根溢出通过 `visual_overflow` 说明。父级与定位依赖分别确认，不以几何包含或位置依赖改树。机器检查结构、参照、合并依赖环及边界，语义与理由由人工确认；真实拆解事实变化时更新受影响确认，不自动改写已冻结项目工件。
 
 同一命令内，`loadExecutionState` 完整复核绑定 Result 后，READY 与完成证据只消费该已校验状态；独立命令入口仍重新读取并校验，不能跨命令缓存。
 全局实施顺序先建立任务范围、工程基线和必要的全局视觉基线，再完成 foundation-only 的 `SHARED`/`MODULE`。随后 SCENE Work Item 与 DISPLAY_LAYER Work Item 分别完成自己的 V1→V2→V3→V4。正式代码包顺序为 `SHARED`→`MODULE`→`SCENE`→`INTEGRATION`，或 `SHARED`→`MODULE`→`DISPLAY_LAYER`→`INTEGRATION`；两类视觉单元不得混在同一包。每个正式单元直接读取所属 Work Item 的 V2/V3 结果，弹窗的 `hostSceneId` 只绑定宿主上下文和公开接口。
 
-effect-image 的布局拆解在控制面按串行顺序处理：先在确认 proposal 中按原顺序冻结 `decomposition_elements`，再由布局阶段逐项继承 `parent_element_id` 为 `parent_layout_node_id` 并计算 `parent_target_bounds`。智能布局必须结合原图构图、视觉重心和元素语义，按同一顺序生成唯一决策并显式声明 `axis_alignment.horizontal=left|center|right` 与 `vertical=top|center|bottom`；不得依据四边距离自动决定对齐，也不得调序、生成多个布局方案或重新生成/替换视觉参考图。布局标注 PNG 只在冻结原图上叠加父子框与右栏说明。父内容框内的 `relative_position` 只承担测量和漂移复核，`offset` 与两个 `${vertical}-${horizontal}` 锚点按显式视觉决策计算。`reference_id` 必须等于父 ID，父级只能是节点、`viewport` 或 `safe-area`，不得循环或越界；视觉决策或父子几何实际变化时只重验受影响关系，不检查布局摘要。
+effect-image 的布局拆解沿用串行确认：proposal 按原序冻结拆解事实，布局逐项继承真实父级与有效参照，分别计算 `parent_target_bounds`、`reference_target_bounds`。双轴对齐由显式视觉决策确定，不按最近距离猜测，不调序或替换参考图。`relative_position` 测量真实父框距离，锚点与 `offset` 使用定位参照；合并依赖图不得有环，根边界与已声明安全区保持一致，非根溢出须有理由。生成结果、审阅资料与独立布局确认消费同一批事实；变化只重验受影响关系，不检查布局摘要。
+
+中心轴遵守[居中策略](../../phaser4-game-ui-layout/references/center-alignment.md)，从原 proposal 与决策独立复算最终位置，不改写原始测量。最终 V2 节点必须保存确定性 `layout_execution`；V4 effect-image 与 verified UI 按[Phaser 运行证据合同](../../phaser4-game-ui-layout/references/layout-runtime-evidence.md)消费同次真实对象采集。完整快照、实际父链、写入机制与已确认中心关系是共同要求，`usability` 保留原验收范围，不增加 exact 像素矩阵、SHA 校验或人工审批。
 
 进入 A3 `IMPLEMENTING` 时创建 `evidence/<workItemId>/execution-state.json`；纯工程 foundation-only 包在当前任务范围、工程基线、冻结实施包和工程证据就绪后即可在全局选图前初始化，具有视觉依赖的基础包仍须在三候选人工选择证据和全局静态基线冻结后初始化，场景/集成包在 V2 与 V3 前置闭合后进入 V4 正式实施。该状态记录绑定当前 Work Item、Implementation Package、baseline、执行计划指纹和 `executionUnits` 数组位置；只有通过 `unit-check` 的当前 PASS Result 可以把当前单元更新为 `COMPLETE`，并按预设数组激活下一串行单元或下一并行组的 `IN_PROGRESS`。并行组未全部完成时，后续顺序阶段不得提前激活；当前阶段实施序列完成后只输出 `WORKFLOW_COMPLETE`，表示该实施包已闭环，不表示场景 Work Item 已完成。场景 Work Item 继续推进时，必须在同一 `workItemId` 下通过显式阶段入口推进；V3 验收后进入 V4 并激活正式 Implementation Package，完成实施和运行验收。控制面先按旧包复核完整 Execution State，再清空旧 Diff Audit/validation batch；换包时归档旧状态并初始化新阶段状态，复用包时保留原单元结果。旧状态和 Result 只保留审计用途，不能证明新阶段候选。`delegate-check`、`parallel-check`、`unit-check`、`evidence-check` 和进入 `VALIDATING` 的迁移均必须读取并复核当前阶段状态，缺失、过期、篡改或身份/顺序不一致一律阻断；其中 SCENE/DISPLAY_LAYER 的 READY、委派和激活还必须复核当前 Work Item 的 V2/V3 结果。门禁问题先输出 `repair`/`revalidate` 及其真实受影响单元；只有上游事实失效、任务范围真实变化或硬门将被绕过时才输出 `return`；普通候选身份变化不触发 `RETURN`。
 

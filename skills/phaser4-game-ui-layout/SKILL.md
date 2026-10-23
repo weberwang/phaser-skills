@@ -9,7 +9,11 @@ description: 为 Phaser 4 游戏建立可验证的 UI 布局合同、坐标空�
 
 UI 布局参照按[场景与弹窗尺寸参照](references/layout-hierarchy.md#场景与弹窗尺寸参照)统一确定：全屏 UI 的父级是场景，按场景逻辑尺寸相对布局；弹窗有底板时，内容按底板对应功能容器的宽高相对布局；弹窗没有底板时，按宿主场景逻辑尺寸相对布局。弹窗底板容器本身相对场景定位，底板位图与内容一起归属该容器；全屏装饰背景仍是独立显示层。安全区约束关键内容的可见范围，不替换这三种尺寸参照。
 
-效果图 V2 拆解与布局遵守[功能语义分组约束](references/functional-semantic-grouping.md)和[Phaser UI 节点组织](references/layout-hierarchy.md)：先在编号拆解图上确认位置依赖与信息分组，再由代理自动整理停靠方案并展示布局图/预览确认；不先发文字方案要求确认。位置依赖方必须成为被依赖元素所对应布局容器的子元素，共同表达同一信息且彼此无位置依赖的元素列为同组同级项。父容器职责、布局所有者、尺寸、溢出、安全区和输入归属仍在技术合同中维护；禁止按文字类型或几何最小包含关系自动归父级。
+效果图 V2 拆解与布局遵守[功能语义分组约束](references/functional-semantic-grouping.md)和[Phaser UI 节点组织](references/layout-hierarchy.md)：先确认真实功能父级、信息分组、独立定位参照和显式溢出，再整理停靠决策并展示布局图/预览确认；不先发文字方案要求确认。图标与文字可保持同级，通过 `position_reference_id` 相互定位。父框与参照框分别维护，非根溢出须说明理由；禁止按类型、几何包含或单纯位置依赖改树。Phaser 组件 Container 与底板显示对象保持各自身份。
+
+中心轴遵守[居中策略与组合定位](references/center-alignment.md)：默认严格居中，设计偏移须有明确数值和理由；图文组合按成员联合矩形整体移动，角标不混入主内容居中框。布局节点从已确认拆解与决策重新派生，确认器独立复算，不改写 proposal 原始测量。
+
+V2 同时派生位置与尺寸各自唯一控制者的执行计划；V4 按[Phaser 布局执行与运行证据](references/layout-runtime-evidence.md)从正式 Scene 采集实际对象、父链、运行写入记录与同空间几何，再校验计划和真实中心关系。计划与测试 fixtures 不能代替运行采集；`usability` 不因此升级为完整 exact 几何矩阵，视觉效果仍由用户人工检查。
 
 ## 全局控制接入
 
@@ -58,7 +62,7 @@ UI 布局参照按[场景与弹窗尺寸参照](references/layout-hierarchy.md#�
 
 V2 的布局决策顺序固定为“代理内部生成拆解事实和技术 JSON → 展示编号拆解图并人工确认 → 代理自动生成双轴对齐决策及独立布局图/审阅页 → 展示布局图并独立确认 → 冻结 V2”。用户可直接按图号指出拆解或布局需要调整，代理更新技术事实并重出相应图片；不另行等待文字方案确认。布局生成入口仍拒绝未确认拆解、缺失决策、元素漏绑或未绑定当前 scene/state/target 的输入；两次图像确认分别绑定上游拆解、视觉决策文件和最终布局图身份。
 
-效果图节点还必须声明 `parent_layout_node_id`、`parent_target_bounds`、`relative_position` 和 `axis_alignment`。拆解确认后，智能布局结合原图构图、视觉重心和元素语义，为每个元素显式判断水平 `left/center/right` 与垂直 `top/center/bottom`；该判断不能由四边距离自动反推。`relative_position` 仍由父子 bounds 测量，用于复核包含关系和几何漂移；`offset`、`self_anchor`、`reference_anchor` 则按已选 `axis_alignment` 计算。`reference_id` 必须等于父 ID，父级仅可为具体节点或 `viewport`/`safe-area`，不得循环。视觉决策文件及其 ID 会进入布局图和确认记录，缺失决策必须阻断布局生成。
+效果图节点声明真实父级、父框、有效参照与参照框、父框相对距离及显式双轴对齐；不能由四边距离反推停靠。`relative_position` 测量真实父框，`offset` 和双轴锚点按有效参照计算，二者可不同；父边与参照边合并后必须无环。中心按 strict/reference 与组合规则派生，非根溢出须有理由，根边界仍检查。视觉决策及其 ID 进入布局图和确认记录，缺失决策时阻断生成。
 
 ## 资源导航
 

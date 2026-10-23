@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { Script } from "node:vm";
 import test from "node:test";
 import { computeRegionDefinitionSha256 } from "./effect_image_annotation_core.mjs";
 import { decodePngRgba, encodePngRgba } from "./effect_image_raster.mjs";
@@ -36,6 +37,35 @@ async function fixture() {
 /** 重写已确认 proposal 及其后续决定身份，测试遗漏/新增节点会被元素集合门拒绝。 */
 async function rewriteProposal(value, elements, rebind = true) { value.proposal.decomposition_elements = elements; value.proposal.technical_analysis.decomposition_elements = elements; value.proposal.technical_analysis.regions[0].decomposition_elements = elements; const proposalBytes = Buffer.from(JSON.stringify(value.proposal)); await writeFile(join(value.root, value.proposalFile), proposalBytes); if (!rebind) return; value.record.proposal_sha256 = sha256(proposalBytes); value.decision.proposal_sha256 = value.record.proposal_sha256; const decisionBytes = Buffer.from(JSON.stringify(value.decision)); await writeFile(join(value.root, value.decisionFile), decisionBytes); value.record.decision_record_sha256 = sha256(decisionBytes); value.receipt.decision_record_sha256 = value.record.decision_record_sha256; const receiptBytes = Buffer.from(JSON.stringify(value.receipt)); await writeFile(join(value.root, value.receiptFile), receiptBytes); value.record.user_decision_receipt_sha256 = sha256(receiptBytes); value.record.confirmation_sha256 = computeVisualConfirmationSha256(value.record); value.layoutDecision.proposal_sha256 = value.record.proposal_sha256; value.layoutDecision.decomposition_confirmation_sha256 = value.record.confirmation_sha256; const layoutDecisionBytes = Buffer.from(JSON.stringify(value.layoutDecision)); await writeFile(join(value.root, value.layoutDecisionFile), layoutDecisionBytes); value.layoutDecisionSha = sha256(layoutDecisionBytes); value.manifest.scene_reconstruction_contract.visual_decomposition_confirmation = value.record; value.manifest.coverage_audit.regions[0].confirmation = value.record; await writeFile(join(value.root, value.manifestFile), JSON.stringify(value.manifest)); }
 
+/** 把最小文件链扩展为可验证独立定位参照、非根溢出和小安全区的同一批输入。 */
+async function configureReferenceOverflowScenario(value, mutation = null) {
+  const elements = structuredClone(value.elements);
+  const panel = elements.find((element) => element.element_id === "panel-element");
+  const button = elements.find((element) => element.element_id === "button-element");
+  panel.bounds = { x: 10, y: 20, width: 30, height: 24 };
+  panel.parent_element_id = "safe-area";
+  button.bounds = { x: 16, y: 26, width: 10, height: 8 };
+  button.ui_layout.position_reference_id = "icon-element";
+  const icon = {
+    ...structuredClone(button), element_id: "icon-element", role: "component", bounds: { x: 12, y: 24, width: 4, height: 6 },
+    component_id: "icon", placement_id: "icon-placement", semantic_grouping: { kind: "standalone", rationale: "图标作为按钮的同级视觉定位参照" },
+    ui_layout: { grouping_basis: ["POSITION"], layout_owner: "PARENT", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" },
+  };
+  const badge = {
+    ...structuredClone(button), element_id: "badge-element", role: "component", bounds: { x: 38, y: 22, width: 5, height: 8 },
+    component_id: "badge", placement_id: "badge-placement", semantic_grouping: { kind: "standalone", rationale: "角标是独立的装饰节点" },
+    ui_layout: { grouping_basis: ["POSITION"], layout_owner: "PARENT", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE", visual_overflow: { reason: "角标绘制在卡片右沿之外" } },
+  };
+  elements.push(icon, badge);
+  value.manifest.coverage_audit.regions[0].bounds = { x: 10, y: 20, width: 40, height: 36 };
+  value.manifest.scene_reconstruction_contract.target_conditions.safe_area_bounds = { x: 0, y: 10, width: 180, height: 90 };
+  const decisions = elements.map((element) => ({ element_id: element.element_id, horizontal_alignment: "left", vertical_alignment: "top" }));
+  value.layoutDecision.elements = decisions;
+  mutation?.(elements, decisions);
+  await rewriteProposal(value, elements, true);
+  return elements;
+}
+
 test("拆解未人工 accepted 时阻断布局生成，确认摘要缺失或陈旧不阻断", async () => {
   const pending = await fixture(); pending.record.status = "pending"; await writeFile(join(pending.root, pending.manifestFile), JSON.stringify(pending.manifest)); assert.equal(await main(pending.args()), 1);
   const staleDigest = await fixture(); staleDigest.record.confirmation_sha256 = `sha256:${"f".repeat(64)}`; await writeFile(join(staleDigest.root, staleDigest.manifestFile), JSON.stringify(staleDigest.manifest)); assert.equal(await main(staleDigest.args()), 0);
@@ -56,10 +86,122 @@ test("完整 Stage A 文件链生成五件产物且重复输入可复现", async
   const artifactBytes = new Map();
   for (const fileField of artifacts) { const bytes = await readFile(join(value.root, result[fileField])); artifactBytes.set(fileField, bytes); assert(bytes.length > 0, `${fileField} 应实际生成`); }
   const decoded = decodePngRgba(artifactBytes.get("layout_annotation_file"));
-  assert.equal(decoded.metadata.decomposition_confirmation_id, value.record.confirmation_id); assert.equal(decoded.metadata.target_sha256, value.targetSha); assert.deepEqual(decoded.metadata.nodes.filter((node) => !node.is_root_container).map((node) => node.element_id), value.elements.map((element) => element.element_id)); assert.deepEqual(decoded.metadata.nodes.find((node) => node.element_id === "button-element").axis_alignment, { horizontal: "center", vertical: "center" }); assert.deepEqual(decoded.metadata.nodes.map((node) => ({ marker_id: node.marker_id, parent_marker_id: node.parent_marker_id, is_root_container: node.is_root_container })), [{ marker_id: "L01", parent_marker_id: "R01", is_root_container: false }, { marker_id: "L02", parent_marker_id: "L01", is_root_container: false }, { marker_id: "R01", parent_marker_id: null, is_root_container: true }]); assert(decoded.metadata.visible_rows.filter((row) => row.marker_id === "L01").map((row) => row.text).join("").includes("停靠=")); assert(decoded.metadata.visible_rows.filter((row) => row.marker_id === "L02").map((row) => row.text).join("").includes("停靠=")); assert(decoded.metadata.visible_rows.some((row) => row.marker_id === "R01" && row.text.includes("无上级"))); assert(!decoded.metadata.nodes.some((node) => node.layout_node_id === "ignored-manifest-node"));
+  assert.equal(decoded.metadata.decomposition_confirmation_id, value.record.confirmation_id);
+  assert.equal(decoded.metadata.target_sha256, value.targetSha);
+  assert.deepEqual(decoded.metadata.nodes.filter((node) => !node.is_root_container).map((node) => node.element_id), value.elements.map((element) => element.element_id));
+  const centeredButton = decoded.metadata.nodes.find((node) => node.element_id === "button-element");
+  assert.deepEqual(centeredButton.axis_alignment, { horizontal: "center", vertical: "center" });
+  assert.deepEqual(centeredButton.center_alignment, { horizontal: { mode: "strict" }, vertical: { mode: "strict" } });
+  assert.deepEqual(centeredButton.target_bounds, { x: 12, y: 10, width: 10, height: 8 }, "未声明偏移时应严格居中在实际父框内");
+  assert.deepEqual(centeredButton.layout_execution, { position_driver: "PARENT_LAYOUT", size_driver: "FIXED" });
+  const panelFact = decoded.metadata.nodes.find((node) => node.element_id === "panel-element");
+  assert.deepEqual(panelFact.layout_execution, { position_driver: "REFLOW", size_driver: "FIXED" });
+  assert.deepEqual(decoded.metadata.nodes.map((node) => ({ marker_id: node.marker_id, parent_marker_id: node.parent_marker_id, is_root_container: node.is_root_container })), [{ marker_id: "L01", parent_marker_id: "R01", is_root_container: false }, { marker_id: "L02", parent_marker_id: "L01", is_root_container: false }, { marker_id: "R01", parent_marker_id: null, is_root_container: true }]);
+  assert(decoded.metadata.visible_rows.filter((row) => row.marker_id === "L01").map((row) => row.text).join("").includes("停靠="));
+  assert(decoded.metadata.visible_rows.filter((row) => row.marker_id === "L02").map((row) => row.text).join("").includes("停靠="));
+  assert(decoded.metadata.visible_rows.some((row) => row.marker_id === "R01" && row.text.includes("无上级")));
+  assert(!decoded.metadata.nodes.some((node) => node.layout_node_id === "ignored-manifest-node"));
   const nodesDocument = JSON.parse(artifactBytes.get("layout_nodes_file").toString("utf8")); const reviewPayload = readLayoutReviewPayload(artifactBytes.get("layout_review_file").toString("utf8")); assert.deepEqual(reviewPayload.nodesDocument, nodesDocument, "HTML 必须展示同一份 layout-nodes.json"); assert.deepEqual(JSON.parse(artifactBytes.get("layout_decision_file").toString("utf8")), value.layoutDecision, "layout-decision.json 必须保留输入决策内容"); assert.deepEqual(await readFile(join(value.root, "reference.png")), originalReference, "布局阶段不得改写视觉参考图");
   const firstFiles = new Map(); for (const fileField of artifacts) firstFiles.set(fileField, Buffer.from(artifactBytes.get(fileField))); firstFiles.set("generation_result_file", Buffer.from(generationBytes));
   const secondStdout = await runGeneration(); const secondResultBytes = await readFile(join(value.root, secondStdout.generation_result_file)); assert.deepEqual(secondResultBytes, firstFiles.get("generation_result_file"), "相同输入应生成相同 generation-result"); for (const fileField of artifacts) assert.deepEqual(await readFile(join(value.root, result[fileField])), firstFiles.get(fileField), `${fileField} 应保持确定性`);
+});
+test("完整生成链保留兄弟定位参照、非根溢出和显式小安全区", async () => {
+  const value = await fixture();
+  await configureReferenceOverflowScenario(value, (_elements, decisions) => {
+    const button = decisions.find((item) => item.element_id === "button-element");
+    button.horizontal_alignment = "center";
+    button.center_alignment = { horizontal: { mode: "reference", offset: 7, reason: "按钮视觉中心略偏向右侧" } };
+  });
+  assert.equal(await main(value.args()), 0);
+  const annotation = decodePngRgba(await readFile(join(value.root, "evidence/v2/layout.png"))).metadata;
+  const nodesDocument = JSON.parse(await readFile(join(value.root, "evidence/v2/layout-nodes.json"), "utf8"));
+  const reviewHtml = await readFile(join(value.root, "evidence/v2/review.html"), "utf8");
+  const payload = readLayoutReviewPayload(reviewHtml);
+  const button = nodesDocument.layout_nodes.find((node) => node.layout_node_id === "button-element");
+  const badge = nodesDocument.layout_nodes.find((node) => node.layout_node_id === "badge-element");
+  assert.equal(button.parent_layout_node_id, "panel-element");
+  assert.equal(button.position_reference_id, "icon-element");
+  assert.deepEqual(button.parent_target_bounds, { x: 10, y: 20, width: 30, height: 24 });
+  assert.deepEqual(button.reference_target_bounds, { x: 12, y: 24, width: 4, height: 6 });
+  assert.equal(button.offset.x, 7, "中心偏移使用兄弟定位参照" );
+  assert.deepEqual(button.center_alignment, { horizontal: { mode: "reference", offset: 7, reason: "按钮视觉中心略偏向右侧" } });
+  assert.deepEqual(button.axis_alignment, { horizontal: "center", vertical: "top" }, "中心策略须独立存放，不能嵌入轴对齐字段");
+  assert.deepEqual(button.layout_execution, { position_driver: "PARENT_LAYOUT", size_driver: "FIXED" });
+  assert.deepEqual(button.target_bounds, { x: 16, y: 26, width: 10, height: 8 });
+  assert.equal(button.relative_position.left, 6, "相对距离继续使用实际父级" );
+  assert.deepEqual(badge.visual_overflow, { reason: "角标绘制在卡片右沿之外" });
+  assert.deepEqual(nodesDocument.root_nodes.find((rootNode) => rootNode.layout_node_id === "safe-area").target_bounds, { x: 0, y: 10, width: 180, height: 90 });
+  assert.deepEqual(payload.nodesDocument, nodesDocument);
+  assert.equal(annotation.nodes.find((node) => node.layout_node_id === "button-element").reference_id, "icon-element");
+  assert.match(reviewHtml, /独立定位参照/);
+  assert.match(reviewHtml, /突出父框的原因/);
+  const inlineScripts = [...reviewHtml.matchAll(/<script\b(?![^>]*\btype="application\/json")[^>]*>([\s\S]*?)<\/script>/giu)];
+  assert(inlineScripts.length > 0, "审阅页应包含交互脚本" );
+  for (const [, source] of inlineScripts) assert.doesNotThrow(() => new Script(source), "模板脚本必须可语法编译" );
+});
+
+test("生成链将图文组整体居中、传播参照位移并保留 STATIC/ANIMATION/NineSlice 执行计划", async () => {
+  const value = await fixture();
+  await configureReferenceOverflowScenario(value, (elements, decisions) => {
+    const icon = elements.find((element) => element.element_id === "icon-element");
+    const panel = elements.find((element) => element.element_id === "panel-element");
+    const badge = elements.find((element) => element.element_id === "badge-element");
+    const label = {
+      ...structuredClone(icon),
+      element_id: "label-element",
+      bounds: { x: 20, y: 24, width: 8, height: 6 },
+      component_id: "label",
+      placement_id: "label-placement",
+      semantic_grouping: { kind: "standalone", rationale: "说明文字与图标作为一个视觉单元" },
+      ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", position_driver: "ANIMATION", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" },
+    };
+    elements.push(label);
+    panel.ui_layout.position_driver = "STATIC";
+    badge.nine_slice = { mode: "stretch", reason: "角标底板按冻结九宫格保持边角", source_size: { width: 5, height: 8 }, borders: { left: 1, right: 1, top: 1, bottom: 1 } };
+    decisions.push({ element_id: "label-element", horizontal_alignment: "center", vertical_alignment: "top" });
+    const leader = decisions.find((item) => item.element_id === "icon-element");
+    leader.horizontal_alignment = "center";
+    leader.center_alignment = { horizontal: { mode: "strict" }, member_ids: ["icon-element", "label-element"] };
+    decisions.find((item) => item.element_id === "label-element").horizontal_alignment = "center";
+  });
+
+  assert.equal(await main(value.args()), 0);
+  const metadata = decodePngRgba(await readFile(join(value.root, "evidence/v2/layout.png"))).metadata;
+  const nodesDocument = JSON.parse(await readFile(join(value.root, "evidence/v2/layout-nodes.json"), "utf8"));
+  const nodes = nodesDocument.layout_nodes;
+  const icon = nodes.find((node) => node.layout_node_id === "icon-element");
+  const label = nodes.find((node) => node.layout_node_id === "label-element");
+  const button = nodes.find((node) => node.layout_node_id === "button-element");
+  const badge = nodes.find((node) => node.layout_node_id === "badge-element");
+  const panel = nodes.find((node) => node.layout_node_id === "panel-element");
+  assert.equal((icon.target_bounds.x + label.target_bounds.x + label.target_bounds.width) / 2, 25, "图文联合框严格落在父框水平中心");
+  assert.equal(icon.target_bounds.x, 17);
+  assert.equal(label.target_bounds.x, 25);
+  assert.equal(button.target_bounds.x, 21, "兄弟参照随图标组移动，按钮与图标间距保持不变");
+  assert.equal(badge.target_bounds.x, 38, "未纳入 member_ids 的角标不随组移动");
+  assert.equal(Object.hasOwn(badge, "center_alignment"), false);
+  assert.deepEqual(icon.axis_alignment, { horizontal: "center", vertical: "top" });
+  assert.deepEqual(icon.center_alignment, { horizontal: { mode: "strict" }, member_ids: ["icon-element", "label-element"] });
+  assert.deepEqual(panel.layout_execution, { position_driver: "STATIC", size_driver: "FIXED" });
+  assert.deepEqual(label.layout_execution, { position_driver: "ANIMATION", size_driver: "FIXED" });
+  assert.deepEqual(badge.layout_execution, { position_driver: "PARENT_LAYOUT", size_driver: "NINE_SLICE" });
+  assert.deepEqual(metadata.nodes.find((node) => node.layout_node_id === "icon-element").center_alignment, icon.center_alignment);
+  assert.deepEqual(metadata.nodes.find((node) => node.layout_node_id === "label-element").axis_alignment, { horizontal: "center", vertical: "top" });
+});
+
+test("生成链拒绝坏定位引用、父级与参照混合环、无理由溢出和根越界", async () => {
+  const mutations = [
+    (elements) => { elements.find((element) => element.element_id === "button-element").ui_layout.position_reference_id = "missing-element"; },
+    (elements) => { elements.find((element) => element.element_id === "icon-element").ui_layout.position_reference_id = "button-element"; },
+    (elements) => { delete elements.find((element) => element.element_id === "badge-element").ui_layout.visual_overflow; },
+    (elements) => { const panel = elements.find((element) => element.element_id === "panel-element"); panel.bounds.x = -1; panel.ui_layout.visual_overflow = { reason: "根外装饰" }; },
+    (elements) => { elements.find((element) => element.element_id === "button-element").coordinate_space = "ui"; elements.find((element) => element.element_id === "icon-element").coordinate_space = "world"; },
+  ];
+  for (const mutate of mutations) {
+    const value = await fixture();
+    await configureReferenceOverflowScenario(value, mutate);
+    assert.equal(await main(value.args()), 1);
+  }
 });
 test("已确认 proposal 遗漏或新增元素时未重新确认则拒绝生成", async () => { for (const omit of [true, false]) { const value = await fixture(); const elements = omit ? [value.elements[0]] : [...value.elements, { ...value.elements[1], element_id: "extra-element" }]; await rewriteProposal(value, elements, false); assert.equal(await main(value.args()), 1); } });
 test("已确认 proposal 的实际语义内容更新后，布局按最新内容生成且摘要漂移不阻断", async () => { const value = await fixture(); const changed = value.elements.map((element) => element.element_id === "button-element" ? { ...element, semantic_grouping: { ...element.semantic_grouping, rationale: "改变后的功能归属理由" } } : element); await rewriteProposal(value, changed, false); assert.equal(await main(value.args()), 0); const bytes = await readFile(join(value.root, "evidence/v2/layout.png")); const button = decodePngRgba(bytes).metadata.nodes.find((node) => node.element_id === "button-element"); assert.equal(button.semantic_grouping.rationale, "改变后的功能归属理由"); });

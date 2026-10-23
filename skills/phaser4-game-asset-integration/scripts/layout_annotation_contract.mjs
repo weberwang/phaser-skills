@@ -10,8 +10,11 @@ import { createHash } from "node:crypto";
 import { decodePngRgba, encodePngRgba, effectImageFontGlyph } from "./effect_image_raster.mjs";
 import { validateDecompositionElements } from "./decomposition-elements.mjs";
 import { validateUiInteractionTree, validateUiLayout } from "./ui-layout-organization.mjs";
-import { axisAlignmentOffset, isValidAxisAlignment } from "../../phaser4-game-workflow-control/scripts/layout-node-parent-geometry.mjs";
+import { axisAlignmentOffset, isValidAxisAlignment, validateEffectImageParentChildLayoutNodes } from "../../phaser4-game-workflow-control/scripts/layout-node-parent-geometry.mjs";
 import { requiresNineSliceDecision, validateNineSliceContract, validateNineSliceTargetBounds } from "../../phaser4-game-ui-layout/scripts/nine-slice-contract.mjs";
+import { collectLayoutRootBounds, readLayoutPositionReference } from "../../phaser4-game-ui-layout/scripts/layout-root-bounds.mjs";
+import { resolveCenteredLayoutNodes } from "../../phaser4-game-ui-layout/scripts/center-alignment.mjs";
+import { deriveLayoutExecutionPlans } from "../../phaser4-game-ui-layout/scripts/layout-execution.mjs";
 
 export const LAYOUT_ANNOTATION_SCHEMA = "layout-annotation/png/1";
 export const LAYOUT_ANNOTATION_LAYOUT = "image-plus-right-panel";
@@ -53,6 +56,8 @@ const ASCII_GLYPHS = {
 
 /** 判断普通对象。 */
 function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
+/** 判断非空合同字符串。 */
+function nonEmptyString(value) { return typeof value === "string" && value.trim().length > 0; }
 /** 读取 snake_case/camelCase 字段；确认记录只在这里做字段位置适配。 */
 function field(value, ...names) { for (const name of names) if (value?.[name] !== undefined && value?.[name] !== null) return value[name]; return undefined; }
 /** 生成属性排序后的 JSON，避免属性顺序改变元数据或确认身份。 */
@@ -91,19 +96,33 @@ export function deriveLayoutNodesFromDecompositionElements(elements, canvas, con
   if (!isObject(canvas) || !(canvas.width > 0) || !(canvas.height > 0)) throw new Error("布局标注需要有效目标画布尺寸");
   const validationErrors = [];
   const syntheticRegions = [...new Map(elements.map((element) => [element.region_id, { id: element.region_id, scene_id: element.scene_id, state_id: element.state_id, bounds: canvas }])).values()];
-  validateDecompositionElements(elements, syntheticRegions, canvas, "decomposition_elements", validationErrors);
+  validateDecompositionElements(elements, syntheticRegions, canvas, "decomposition_elements", validationErrors, context);
   if (validationErrors.length > 0) throw new Error(validationErrors[0]);
   const parentIds = new Map(elements.map((element) => [element.element_id, element.parent_element_id]));
   const alignmentDecisions = context.alignmentDecisions ?? context.alignment_decisions;
-  const alignmentFor = (element) => {
+  const decisionFor = (element) => {
     const alignment = alignmentDecisions instanceof Map ? alignmentDecisions.get(element.element_id) : alignmentDecisions?.[element.element_id];
     if (!isValidAxisAlignment(alignment)) throw new Error(`拆解元素 ${element.element_id} 缺少合法显式智能布局对齐决策`);
-    return { horizontal: alignment.horizontal, vertical: alignment.vertical };
+    return alignment;
   };
   return elements.map((element) => {
-    const parentId = parentIds.get(element.element_id); const bounds = { ...element.bounds }; const isContainer = element.element_type === "container"; const displayNameZh = field(element, "display_name_zh", "displayNameZh");
-    return { layout_node_id: element.element_id, element_id: element.element_id, element_type: element.element_type, layout_role: element.role, display_name_zh: displayNameZh ?? null, display_name: displayNameZh ?? field(element, "display_name", "displayName", "label", "name") ?? null, parent_layout_node_id: parentId, parent_element_id: parentId, target_bounds: bounds, bounds, is_container: isContainer, empty_container: isContainer && element.empty_container === true, semantic_grouping: element.semantic_grouping, ui_layout: element.ui_layout, ...(element.nine_slice !== undefined ? { nine_slice: element.nine_slice } : {}), ...(element.nine_slice_decision_required === true ? { nine_slice_decision_required: true } : {}), ...(element.owner_type ? { owner_type: element.owner_type } : {}), ...(element.region_layer ? { region_layer: element.region_layer } : {}), ...(element.visual_route_element_type ? { visual_route_element_type: element.visual_route_element_type } : {}), axis_alignment: alignmentFor(element), scene_id: element.scene_id ?? context.sceneId ?? context.scene_id, state_id: element.state_id ?? context.stateId ?? context.state_id, region_id: element.region_id, component_id: element.component_id, placement_id: element.placement_id };
+    const parentId = parentIds.get(element.element_id); const bounds = { ...element.bounds }; const isContainer = element.element_type === "container"; const displayNameZh = field(element, "display_name_zh", "displayNameZh"); const coordinateSpace = field(element, "coordinate_space", "coordinateSpace");
+    const positionReferenceId = readLayoutPositionReference(element, parentId);
+    const decision = decisionFor(element);
+    return { layout_node_id: element.element_id, element_id: element.element_id, element_type: element.element_type, layout_role: element.role, display_name_zh: displayNameZh ?? null, display_name: displayNameZh ?? field(element, "display_name", "displayName", "label", "name") ?? null, parent_layout_node_id: parentId, parent_element_id: parentId, position_reference_id: positionReferenceId, reference_id: positionReferenceId, ...(coordinateSpace !== undefined ? { coordinate_space: coordinateSpace } : {}), ...(element.ui_layout?.visual_overflow !== undefined ? { visual_overflow: element.ui_layout.visual_overflow } : {}), target_bounds: bounds, bounds, is_container: isContainer, empty_container: isContainer && element.empty_container === true, semantic_grouping: element.semantic_grouping, ui_layout: element.ui_layout, ...(decision.center_alignment !== undefined ? { center_alignment: decision.center_alignment } : {}), ...(element.nine_slice !== undefined ? { nine_slice: element.nine_slice } : {}), ...(element.nine_slice_decision_required === true ? { nine_slice_decision_required: true } : {}), ...(element.owner_type ? { owner_type: element.owner_type } : {}), ...(element.region_layer ? { region_layer: element.region_layer } : {}), ...(element.visual_route_element_type ? { visual_route_element_type: element.visual_route_element_type } : {}), axis_alignment: { horizontal: decision.horizontal, vertical: decision.vertical }, scene_id: element.scene_id ?? context.sceneId ?? context.scene_id, state_id: element.state_id ?? context.stateId ?? context.state_id, region_id: element.region_id, component_id: element.component_id, placement_id: element.placement_id };
   });
+}
+
+/** 从已确认拆解和视觉决定派生最终业务节点，先解析中心策略再冻结 Phaser 执行计划。 */
+export function deriveFinalLayoutNodesFromDecompositionElements(elements, canvas, context = {}) {
+  const preliminary = deriveLayoutNodesFromDecompositionElements(elements, canvas, context);
+  const rootBounds = collectLayoutRootBounds(canvas, { ...context, layout_nodes: preliminary });
+  // 中心解析器接收同一批已收集根，避免显式小安全区在二次推导时退化为整屏。
+  const rootContext = { ...canvas, root_bounds: rootBounds };
+  const centered = resolveCenteredLayoutNodes(preliminary, rootContext);
+  const plans = deriveLayoutExecutionPlans(centered);
+  const planById = new Map(plans.map((plan) => [plan.layout_node_id, plan.layout_execution]));
+  return centered.map((node) => ({ ...node, layout_execution: planById.get(node.layout_node_id) }));
 }
 /** 由深度计算确定性的颜色；相邻深度使用不同色相，同层节点复用同一颜色。 */
 export function colorForLayoutDepth(depth) {
@@ -129,7 +148,8 @@ export function assignLayoutMarkers(facts) {
     const markerId = markerById.get(fact.layout_node_id);
     if (!markerId) throw new Error(`布局事实 ${fact.layout_node_id} 缺少稳定标号`);
     const parentMarkerId = fact.parent_layout_node_id ? markerById.get(fact.parent_layout_node_id) ?? null : null;
-    return { ...fact, marker_id: markerId, parent_marker_id: parentMarkerId };
+    const referenceMarkerId = fact.position_reference_id ? markerById.get(fact.position_reference_id) ?? null : null;
+    return { ...fact, marker_id: markerId, parent_marker_id: parentMarkerId, reference_marker_id: referenceMarkerId };
   });
 }
 /** 检查外部传入的标号快照；重复标号会让右栏无法唯一追溯，必须拒绝生成。 */
@@ -152,33 +172,48 @@ export function deriveAutomaticLayoutFacts(layoutNodes, canvas, context = {}) {
     if ((roleDecisionRequired || node.nine_slice_decision_required === true) && node.nine_slice === undefined) throw new TypeError(`推导布局节点 ${id} 必须沿用 V2 冻结的 nine_slice 决策`);
     if (source.has(id)) throw new Error(`已确认拆解存在重复 layout_node_id：${id}`);
     if (node.nine_slice !== undefined) validateNineSliceTargetBounds(node.nine_slice, bounds, `布局节点 ${id}.target_bounds`);
-    source.set(id, { node, id, parentId, bounds }); const list = children.get(parentId) ?? []; list.push(id); children.set(parentId, list);
+    const positionReferenceId = readLayoutPositionReference(node, parentId);
+    source.set(id, { node, id, parentId, positionReferenceId, bounds });
+    const list = children.get(parentId) ?? []; list.push(id); children.set(parentId, list);
   }
   const interactionErrors = [];
   validateUiInteractionTree(layoutNodes.map((node) => ({ element_id: node.layout_node_id, parent_element_id: node.parent_layout_node_id, ui_layout: node.ui_layout })), interactionErrors, "布局节点");
   if (interactionErrors.length > 0) throw new Error(interactionErrors[0]);
-  const rootIds = [...new Set([...source.values()].map((item) => item.parentId).filter((id) => ROOT_IDS.has(id)))].sort();
   for (const item of source.values()) if (!ROOT_IDS.has(item.parentId) && !source.has(item.parentId)) throw new Error(`布局节点 ${item.id} 引用未确认的父容器：${item.parentId}`);
-  const rootBounds = { x: 0, y: 0, width: canvas.width, height: canvas.height }; const facts = [];
+  const roots = collectLayoutRootBounds(canvas, { ...context, layout_nodes: layoutNodes });
+  const rootIds = [...new Set([
+    ...[...source.values()].flatMap((item) => [item.parentId, item.positionReferenceId]).filter((id) => ROOT_IDS.has(id)),
+    ...roots.explicitRootIds,
+  ])].sort();
+  const facts = [];
   for (const rootId of rootIds) children.set(rootId, children.get(rootId) ?? []);
   const depthOf = (id, trail = []) => {
     if (trail.includes(id)) throw new Error(`布局父子关系存在循环：${[...trail, id].join(" -> ")}`);
     const item = source.get(id); return item ? depthOf(item.parentId, [...trail, id]) + 1 : 0;
   };
-  const parentBoundsOf = (parentId) => ROOT_IDS.has(parentId) ? rootBounds : source.get(parentId)?.bounds;
+  const parentBoundsOf = (parentId) => ROOT_IDS.has(parentId) ? roots[parentId] : source.get(parentId)?.bounds;
+  const referenceBoundsOf = (referenceId) => ROOT_IDS.has(referenceId) ? roots[referenceId] : source.get(referenceId)?.bounds;
   // source 按确认 proposal 的元素顺序建立；这里只做几何计算，不重排公开布局节点。
   for (const item of source.values()) {
     const parentBounds = parentBoundsOf(item.parentId); if (!parentBounds) throw new Error(`布局节点 ${item.id} 缺少父容器 bounds`);
-    const relative = relativePosition(parentBounds, item.bounds); if (Object.values(relative).some((value) => value < 0)) throw new Error(`布局节点 ${item.id} 超出已确认父容器 bounds`);
-    const alignment = field(item.node, "axis_alignment", "axisAlignment"); if (!isValidAxisAlignment(alignment)) throw new Error(`由已确认拆解元素推导的布局节点 ${item.id} 缺少合法显式 axis_alignment`); const offset = axisAlignmentOffset(parentBounds, item.bounds, alignment); const depth = depthOf(item.id); const childIds = (children.get(item.id) ?? []).slice(); const isContainer = childIds.length > 0 || explicitlyContainer(item.node); const selfAnchor = field(item.node, "self_anchor", "selfAnchor") ?? `${alignment.vertical}-${alignment.horizontal}`; const referenceAnchor = field(item.node, "reference_anchor", "referenceAnchor") ?? `${alignment.vertical}-${alignment.horizontal}`;
+    const referenceBounds = referenceBoundsOf(item.positionReferenceId);
+    if (!referenceBounds) throw new Error(`布局节点 ${item.id} 引用未确认的定位参照：${item.positionReferenceId}`);
+    const overflow = item.node.visual_overflow ?? item.node.ui_layout?.visual_overflow;
+    const overflowsParent = item.bounds.x < parentBounds.x || item.bounds.y < parentBounds.y || item.bounds.x + item.bounds.width > parentBounds.x + parentBounds.width || item.bounds.y + item.bounds.height > parentBounds.y + parentBounds.height;
+    if (overflowsParent && (!isObject(overflow) || !nonEmptyString(overflow.reason))) throw new Error(`布局节点 ${item.id} 超出已确认父容器 bounds，需提供 visual_overflow.reason`);
+    const relative = relativePosition(parentBounds, item.bounds);
+    const alignment = field(item.node, "axis_alignment", "axisAlignment"); if (!isValidAxisAlignment(alignment)) throw new Error(`由已确认拆解元素推导的布局节点 ${item.id} 缺少合法显式 axis_alignment`); const offset = axisAlignmentOffset(referenceBounds, item.bounds, alignment); const depth = depthOf(item.id); const childIds = (children.get(item.id) ?? []).slice(); const isContainer = childIds.length > 0 || explicitlyContainer(item.node); const selfAnchor = field(item.node, "self_anchor", "selfAnchor") ?? `${alignment.vertical}-${alignment.horizontal}`; const referenceAnchor = field(item.node, "reference_anchor", "referenceAnchor") ?? `${alignment.vertical}-${alignment.horizontal}`;
     const displayNameZh = field(item.node, "display_name_zh", "displayNameZh");
     const rawNineSlice = field(item.node, "nine_slice", "nineSlice"); const nineSlice = rawNineSlice === undefined ? undefined : validateNineSliceContract(rawNineSlice, `布局节点 ${item.id}.nine_slice`);
-    facts.push({ layout_node_id: item.id, element_id: field(item.node, "element_id", "elementId", "region_id", "regionId") ?? item.id, element_type: field(item.node, "element_type", "elementType") ?? (isContainer ? "container" : "component"), display_name_zh: displayNameZh ?? null, display_name: displayNameZh ?? field(item.node, "display_name", "displayName", "label", "name") ?? null, layout_role: field(item.node, "layout_role", "layoutRole", "role", "node_type", "nodeType") ?? null, parent_layout_node_id: item.parentId, parent_element_id: field(item.node, "parent_element_id", "parentElementId") ?? item.parentId, reference_id: item.parentId, parent_target_bounds: parentBounds, depth, color: colorForLayoutDepth(depth), bounds: item.bounds, target_bounds: item.bounds, is_container: isContainer, empty_container: isContainer && childIds.length === 0, semantic_grouping: field(item.node, "semantic_grouping") ?? null, ui_layout: field(item.node, "ui_layout") ?? null, ...(nineSlice !== undefined ? { nine_slice: nineSlice } : {}), ...(item.node.nine_slice_decision_required === true ? { nine_slice_decision_required: true } : {}), ...(item.node.owner_type ? { owner_type: item.node.owner_type } : {}), ...(item.node.region_layer ? { region_layer: item.node.region_layer } : {}), ...(item.node.visual_route_element_type ? { visual_route_element_type: item.node.visual_route_element_type } : {}), region_id: field(item.node, "region_id", "regionId") ?? null, component_id: field(item.node, "component_id", "componentId") ?? null, placement_id: field(item.node, "placement_id", "placementId") ?? null, child_layout_node_ids: childIds, relative_position: relative, axis_alignment: alignment, offset, self_anchor: selfAnchor, reference_anchor: referenceAnchor, docking: { horizontal: alignment.horizontal, vertical: alignment.vertical, self_anchor: selfAnchor, reference_anchor: referenceAnchor, offset }, is_root_container: false });
+    facts.push({ layout_node_id: item.id, element_id: field(item.node, "element_id", "elementId", "region_id", "regionId") ?? item.id, element_type: field(item.node, "element_type", "elementType") ?? (isContainer ? "container" : "component"), display_name_zh: displayNameZh ?? null, display_name: displayNameZh ?? field(item.node, "display_name", "displayName", "label", "name") ?? null, layout_role: field(item.node, "layout_role", "layoutRole", "role", "node_type", "nodeType") ?? null, parent_layout_node_id: item.parentId, parent_element_id: field(item.node, "parent_element_id", "parentElementId") ?? item.parentId, position_reference_id: item.positionReferenceId, reference_id: item.positionReferenceId, ...(field(item.node, "coordinate_space", "coordinateSpace") !== undefined ? { coordinate_space: field(item.node, "coordinate_space", "coordinateSpace") } : {}), parent_target_bounds: parentBounds, reference_target_bounds: referenceBounds, ...(overflow !== undefined ? { visual_overflow: overflow } : {}), depth, color: colorForLayoutDepth(depth), bounds: item.bounds, target_bounds: item.bounds, is_container: isContainer, empty_container: isContainer && childIds.length === 0, semantic_grouping: field(item.node, "semantic_grouping") ?? null, ui_layout: field(item.node, "ui_layout") ?? null, ...(item.node.center_alignment !== undefined ? { center_alignment: item.node.center_alignment } : {}), ...(item.node.layout_execution !== undefined ? { layout_execution: item.node.layout_execution } : {}), ...(nineSlice !== undefined ? { nine_slice: nineSlice } : {}), ...(item.node.nine_slice_decision_required === true ? { nine_slice_decision_required: true } : {}), ...(item.node.owner_type ? { owner_type: item.node.owner_type } : {}), ...(item.node.region_layer ? { region_layer: item.node.region_layer } : {}), ...(item.node.visual_route_element_type ? { visual_route_element_type: item.node.visual_route_element_type } : {}), region_id: field(item.node, "region_id", "regionId") ?? null, component_id: field(item.node, "component_id", "componentId") ?? null, placement_id: field(item.node, "placement_id", "placementId") ?? null, child_layout_node_ids: childIds, relative_position: relative, axis_alignment: alignment, offset, self_anchor: selfAnchor, reference_anchor: referenceAnchor, docking: { horizontal: alignment.horizontal, vertical: alignment.vertical, self_anchor: selfAnchor, reference_anchor: referenceAnchor, offset }, is_root_container: false });
   }
   for (const rootId of rootIds) {
-    const childIds = (children.get(rootId) ?? []).slice(); facts.push({ layout_node_id: rootId, element_id: rootId, display_name: rootId === "safe-area" ? "安全区域" : "根视口", layout_role: "root", parent_layout_node_id: null, parent_element_id: null, reference_id: null, parent_target_bounds: null, depth: 0, color: colorForLayoutDepth(0), bounds: rootBounds, target_bounds: rootBounds, is_container: true, empty_container: childIds.length === 0, semantic_grouping: null, ui_layout: null, child_layout_node_ids: childIds, relative_position: null, axis_alignment: null, offset: null, self_anchor: null, reference_anchor: null, docking: null, is_root_container: true });
+    const childIds = (children.get(rootId) ?? []).slice(); const bounds = roots[rootId]; facts.push({ layout_node_id: rootId, element_id: rootId, display_name: rootId === "safe-area" ? "安全区域" : "根视口", layout_role: "root", parent_layout_node_id: null, parent_element_id: null, position_reference_id: null, reference_id: null, parent_target_bounds: null, reference_target_bounds: null, depth: 0, color: colorForLayoutDepth(0), bounds, target_bounds: bounds, is_container: true, empty_container: childIds.length === 0, semantic_grouping: null, ui_layout: null, child_layout_node_ids: childIds, relative_position: null, axis_alignment: null, offset: null, self_anchor: null, reference_anchor: null, docking: null, is_root_container: true });
   }
-  return assignLayoutMarkers(facts.map((fact) => ({ ...fact, scene_id: context.sceneId ?? context.scene_id ?? null, state_id: context.stateId ?? context.state_id ?? null })));
+  const markedFacts = assignLayoutMarkers(facts.map((fact) => ({ ...fact, scene_id: context.sceneId ?? context.scene_id ?? null, state_id: context.stateId ?? context.state_id ?? null })));
+  const geometryErrors = validateEffectImageParentChildLayoutNodes(markedFacts, canvas, { label: "布局标注", rootBounds: roots });
+  if (geometryErrors.length > 0) throw new Error(geometryErrors[0].message);
+  return markedFacts;
 }
 /** 计算布局节点身份，确认记录会把该身份与上游拆解确认绑定。 */
 export function computeLayoutNodeIdentitySha256(facts) { return sha256(canonicalJson((facts ?? []).map((fact) => ({ ...fact })))); }
@@ -193,14 +228,18 @@ function displayNodeName(fact) { const id = String(fact.layout_node_id); const d
 /** 生成单个布局节点的完整停靠说明；父容器和空容器与叶子使用同一字段集合。 */
 function layoutNodeDescription(fact) {
   if (fact.is_root_container) return `根视口 [${fact.marker_id}]（id=${fact.layout_node_id}；无上级）`;
-  const kind = fact.is_container ? "父容器" : "子组件"; const parent = fact.parent_marker_id ?? fact.parent_layout_node_id; const distance = fact.relative_position;
+  const kind = fact.is_container ? "父容器" : "子组件"; const parent = fact.parent_marker_id ?? fact.parent_layout_node_id; const reference = fact.reference_marker_id ?? fact.position_reference_id; const distance = fact.relative_position;
   const nineSliceText = fact.nine_slice?.mode === "stretch"
     ? `；九宫格=stretch 源图=${fact.nine_slice.source_size.width}×${fact.nine_slice.source_size.height} 边界(L/R/T/B)=${fact.nine_slice.borders.left}/${fact.nine_slice.borders.right}/${fact.nine_slice.borders.top}/${fact.nine_slice.borders.bottom}`
     : fact.nine_slice?.mode === "not-applicable" ? `；九宫格=not-applicable（${String(fact.nine_slice.reason).replace(/\s+/gu, " ")}）` : "";
   // 仅折叠展示文本中的换行；确认理由原文仍完整保留在节点与身份中。
   const grouping = fact.semantic_grouping; const groupingText = isObject(grouping) ? `；功能分组=${SEMANTIC_GROUPING_LABELS[grouping.kind] ?? grouping.kind}（kind=${grouping.kind}）；分组理由=${String(grouping.rationale ?? "").replace(/\s+/gu, " ")}` : "；功能分组=缺失";
   const ui = fact.ui_layout; const uiText = isObject(ui) ? `；节点职责=${ui.grouping_basis.join("+")}；布局控制=${ui.layout_owner}；尺寸=${ui.size_policy}；溢出=${ui.overflow_policy}；安全区=${ui.safe_area_policy}；交互=${ui.interaction_policy}${ui.minimum_size ? `；最小尺寸=${ui.minimum_size.width}x${ui.minimum_size.height}` : ""}` : "；节点职责=缺失";
-  return `${kind} [${fact.marker_id}]${fact.empty_container ? "（空容器）" : ""}（父：[${parent}]）${groupingText}${uiText}${nineSliceText} 停靠=${alignmentDescription(fact.axis_alignment)}；自身锚点=${fact.self_anchor}；父锚点=${fact.reference_anchor}；偏移=x=${fact.offset.x}/y=${fact.offset.y}；标识=${displayNodeName(fact)}；辅助距离 left=${distance.left} right=${distance.right} top=${distance.top} bottom=${distance.bottom}`;
+  const centerText = fact.center_alignment ? `；中心策略=${JSON.stringify(fact.center_alignment)}` : "";
+  const executionText = fact.layout_execution ? `；执行计划=位置${fact.layout_execution.position_driver}/尺寸${fact.layout_execution.size_driver}` : "";
+  const relationText = fact.position_reference_id === fact.parent_layout_node_id ? "" : `；定位参照=[${reference}]`;
+  const overflowText = fact.visual_overflow?.reason ? `；允许超出父框=${String(fact.visual_overflow.reason).replace(/\s+/gu, " ")}` : "";
+  return `${kind} [${fact.marker_id}]${fact.empty_container ? "（空容器）" : ""}（父：[${parent}]${relationText}）${groupingText}${uiText}${centerText}${executionText}${nineSliceText}${overflowText} 停靠=${alignmentDescription(fact.axis_alignment)}；自身锚点=${fact.self_anchor}；参照锚点=${fact.reference_anchor}；偏移=x=${fact.offset.x}/y=${fact.offset.y}；标识=${displayNodeName(fact)}；相对父级距离 left=${distance.left} right=${distance.right} top=${distance.top} bottom=${distance.bottom}`;
 }
 /** 把颜色、距离和停靠事实展开为人工可读的右栏行。 */
 export function deriveLayoutAnnotationRows(facts) {
@@ -208,7 +247,7 @@ export function deriveLayoutAnnotationRows(facts) {
   const markedFacts = facts.every((fact) => LAYOUT_MARKER_PATTERN.test(String(fact?.marker_id ?? ""))) ? facts : assignLayoutMarkers(facts); if (!hasUniqueLayoutMarkers(markedFacts)) throw new Error("布局标注节点编号必须唯一且可追溯");
   const rows = [{ kind: "header", logical_row_id: "header", marker_id: null, layout_node_id: null, parent_marker_id: null, text: "布局标注说明：左侧框号与右栏编号一致" }];
   // 根说明独立于确认元素；其余节点严格保持确认元素原顺序，便于人工逐框核对。
-  for (const fact of [...markedFacts.filter((item) => item.is_root_container), ...markedFacts.filter((item) => !item.is_root_container)]) rows.push({ kind: fact.is_root_container ? "root" : fact.is_container ? "parent" : "child", logical_row_id: fact.marker_id, marker_id: fact.marker_id, layout_node_id: fact.layout_node_id, parent_layout_node_id: fact.parent_layout_node_id, parent_marker_id: fact.parent_marker_id, text: layoutNodeDescription(fact) });
+  for (const fact of [...markedFacts.filter((item) => item.is_root_container), ...markedFacts.filter((item) => !item.is_root_container)]) rows.push({ kind: fact.is_root_container ? "root" : fact.is_container ? "parent" : "child", logical_row_id: fact.marker_id, marker_id: fact.marker_id, layout_node_id: fact.layout_node_id, parent_layout_node_id: fact.parent_layout_node_id, parent_marker_id: fact.parent_marker_id, position_reference_id: fact.position_reference_id ?? null, reference_marker_id: fact.reference_marker_id ?? null, text: layoutNodeDescription(fact) });
   return rows;
 }
 /** 判断两个矩形是否相交；标注标签碰撞只影响标签位置，不会修改冻结节点 bounds。 */
@@ -279,7 +318,7 @@ export function renderLayoutAnnotation(originalBytes, canvas, facts, context = {
   const markerPlacements = computeLayoutMarkerPlacements(markedFacts, canvas, scale); for (const placement of markerPlacements) { const fact = markedFacts.find((item) => item.layout_node_id === placement.layout_node_id); const color = parseColor(fact?.color); if (placement.leader_line) drawLine(pixels, width, height, placement.leader_line.from.x, placement.leader_line.from.y, placement.leader_line.to.x, placement.leader_line.to.y, color); }
   // 所有引线先落底，再绘制标签，避免连线穿过编号导致“号”和框无法对应。
   for (const placement of markerPlacements) { const fact = markedFacts.find((item) => item.layout_node_id === placement.layout_node_id); const color = parseColor(fact?.color); fillRect(pixels, width, height, placement.bounds.x, placement.bounds.y, placement.bounds.width, placement.bounds.height, [17, 24, 39, 255]); strokeRect(pixels, width, height, placement.bounds.x, placement.bounds.y, placement.bounds.width, placement.bounds.height, color, 1); drawTextCentered(pixels, width, height, placement.bounds.x + placement.bounds.width / 2, placement.bounds.y + placement.bounds.height / 2, placement.marker_id, [255, 255, 255, 255], scale); }
-  const targetSha = context.targetSha256 ?? context.target_sha256; const nodeIdentitySha256 = computeLayoutNodeIdentitySha256(markedFacts); const markerMap = markedFacts.map((fact) => ({ marker_id: fact.marker_id, layout_node_id: fact.layout_node_id, element_id: fact.element_id, parent_layout_node_id: fact.parent_layout_node_id, parent_marker_id: fact.parent_marker_id, is_root_container: fact.is_root_container === true })); const metadata = { schema: LAYOUT_ANNOTATION_SCHEMA, layout: LAYOUT_ANNOTATION_LAYOUT, annotation_kind: LAYOUT_ANNOTATION_KIND, original_width: canvas.width, original_height: canvas.height, panel_width: panelWidth, panel_height: height, panel_content_bounds: { x: canvas.width, y: 0, width: panelWidth, height }, width, height, output_height: height, text_scale: scale, line_height: lineHeight, original_sha256: sha256(originalBytes), target_sha256: targetSha ?? null, scene_id: context.sceneId ?? context.scene_id ?? null, state_id: context.stateId ?? context.state_id ?? null, decomposition_confirmation_id: context.decompositionConfirmationId ?? context.decomposition_confirmation_id ?? null, decomposition_confirmation_sha256: context.decompositionConfirmationSha256 ?? context.decomposition_confirmation_sha256 ?? null, decomposition_proposal_sha256: context.decompositionProposalSha256 ?? context.decomposition_proposal_sha256 ?? null, layout_decision_id: context.layoutDecisionId ?? context.layout_decision_id ?? null, layout_decision_sha256: context.layoutDecisionSha256 ?? context.layout_decision_sha256 ?? null, generation_method: "automatic-visual-judgement-from-confirmed-decomposition", node_identity_sha256: nodeIdentitySha256, marker_map: markerMap, marker_layouts: markerPlacements, panel_content_complete: true, visible_row_count: renderedRows.length, visible_rows: renderedRows, nodes: markedFacts };
+  const targetSha = context.targetSha256 ?? context.target_sha256; const nodeIdentitySha256 = computeLayoutNodeIdentitySha256(markedFacts); const markerMap = markedFacts.map((fact) => ({ marker_id: fact.marker_id, layout_node_id: fact.layout_node_id, element_id: fact.element_id, parent_layout_node_id: fact.parent_layout_node_id, parent_marker_id: fact.parent_marker_id ?? null, position_reference_id: fact.position_reference_id ?? null, reference_marker_id: fact.reference_marker_id ?? null, is_root_container: fact.is_root_container === true })); const metadata = { schema: LAYOUT_ANNOTATION_SCHEMA, layout: LAYOUT_ANNOTATION_LAYOUT, annotation_kind: LAYOUT_ANNOTATION_KIND, original_width: canvas.width, original_height: canvas.height, panel_width: panelWidth, panel_height: height, panel_content_bounds: { x: canvas.width, y: 0, width: panelWidth, height }, width, height, output_height: height, text_scale: scale, line_height: lineHeight, original_sha256: sha256(originalBytes), target_sha256: targetSha ?? null, scene_id: context.sceneId ?? context.scene_id ?? null, state_id: context.stateId ?? context.state_id ?? null, decomposition_confirmation_id: context.decompositionConfirmationId ?? context.decomposition_confirmation_id ?? null, decomposition_confirmation_sha256: context.decompositionConfirmationSha256 ?? context.decomposition_confirmation_sha256 ?? null, decomposition_proposal_sha256: context.decompositionProposalSha256 ?? context.decomposition_proposal_sha256 ?? null, layout_decision_id: context.layoutDecisionId ?? context.layout_decision_id ?? null, layout_decision_sha256: context.layoutDecisionSha256 ?? context.layout_decision_sha256 ?? null, generation_method: "automatic-visual-judgement-from-confirmed-decomposition", node_identity_sha256: nodeIdentitySha256, marker_map: markerMap, marker_layouts: markerPlacements, panel_content_complete: true, visible_row_count: renderedRows.length, visible_rows: renderedRows, nodes: markedFacts };
   metadata.metadata_sha256 = computeLayoutAnnotationMetadataSha256(metadata); return { bytes: encodePngRgba(width, height, pixels, metadata), metadata, facts: markedFacts, rows: renderedRows, markerPlacements, width, height, metadataSha256: metadata.metadata_sha256, identitySha256: null };
 }
 /** 复算绘制器使用的字符像素集合，校验时因此能发现“metadata 完整但 PNG 文字被裁掉”。 */
@@ -317,11 +356,20 @@ export function validateLayoutAnnotationPng(bytes, expected = {}, errors = [], l
   if (metadata.width !== decoded.width || metadata.height !== decoded.height || !Number.isInteger(metadata.original_width) || !Number.isInteger(metadata.original_height) || metadata.original_width <= 0 || metadata.original_width >= decoded.width || metadata.original_height <= 0 || metadata.original_height > decoded.height || !Number.isInteger(metadata.text_scale) || metadata.text_scale < 1 || metadata.text_scale > 3) { errors.push(`${label} 元数据尺寸或文字字号与 PNG 不一致`); return null; }
   if (!Array.isArray(metadata.nodes) || metadata.nodes.length === 0 || metadata.nodes.some((node) => !isObject(node))) { errors.push(`${label}.nodes 必须是非空节点数组`); return null; }
   if (!Array.isArray(metadata.visible_rows) || metadata.visible_rows.length === 0 || metadata.visible_rows.some((row) => !isObject(row)) || metadata.panel_content_complete !== true) { errors.push(`${label} 右侧说明栏必须完整落盘`); return null; }
-  const expectedFactsRaw = expected.layoutNodes ? deriveAutomaticLayoutFacts(expected.layoutNodes, { width: metadata.original_width, height: metadata.original_height }, expected) : expected.layoutFacts; const expectedFacts = Array.isArray(expectedFactsRaw) ? (expectedFactsRaw.every((fact) => LAYOUT_MARKER_PATTERN.test(String(fact?.marker_id ?? ""))) ? expectedFactsRaw : assignLayoutMarkers(expectedFactsRaw)) : null;
+  let expectedFactsRaw = expected.layoutFacts;
+  if (expected.layoutNodes) {
+    try { expectedFactsRaw = deriveAutomaticLayoutFacts(expected.layoutNodes, { width: metadata.original_width, height: metadata.original_height }, expected); }
+    catch (error) {
+      // 冻结根来源冲突属于验证失败，应进入结构化错误列表而不是中断确认门。
+      errors.push(`${label}.nodes 无法从冻结布局事实推导：${error.message}`);
+      expectedFactsRaw = null;
+    }
+  }
+  const expectedFacts = Array.isArray(expectedFactsRaw) ? (expectedFactsRaw.every((fact) => LAYOUT_MARKER_PATTERN.test(String(fact?.marker_id ?? ""))) ? expectedFactsRaw : assignLayoutMarkers(expectedFactsRaw)) : null;
   if (Array.isArray(expectedFacts)) {
-    const projectFact = (fact) => ({ layout_node_id: fact.layout_node_id, element_id: fact.element_id, element_type: fact.element_type ?? (fact.is_container ? "container" : "component"), display_name_zh: fact.display_name_zh ?? null, display_name: fact.display_name ?? null, layout_role: fact.layout_role ?? null, parent_layout_node_id: fact.parent_layout_node_id, parent_element_id: fact.parent_element_id ?? fact.parent_layout_node_id ?? null, parent_marker_id: fact.parent_marker_id ?? null, marker_id: fact.marker_id, depth: fact.depth, color: fact.color, bounds: fact.bounds, is_container: fact.is_container, empty_container: fact.empty_container, semantic_grouping: fact.semantic_grouping ?? null, ui_layout: fact.ui_layout ?? null, nine_slice: fact.nine_slice ?? null, nine_slice_decision_required: fact.nine_slice_decision_required === true ? true : null, owner_type: fact.owner_type ?? null, region_layer: fact.region_layer ?? null, visual_route_element_type: fact.visual_route_element_type ?? null, region_id: fact.region_id ?? null, component_id: fact.component_id ?? null, placement_id: fact.placement_id ?? null, child_layout_node_ids: fact.child_layout_node_ids, relative_position: fact.relative_position, axis_alignment: fact.axis_alignment, offset: fact.offset, self_anchor: fact.self_anchor, reference_anchor: fact.reference_anchor, docking: fact.docking ?? null, is_root_container: fact.is_root_container === true });
+    const projectFact = (fact) => ({ layout_node_id: fact.layout_node_id, element_id: fact.element_id, element_type: fact.element_type ?? (fact.is_container ? "container" : "component"), display_name_zh: fact.display_name_zh ?? null, display_name: fact.display_name ?? null, layout_role: fact.layout_role ?? null, coordinate_space: fact.coordinate_space ?? null, parent_layout_node_id: fact.parent_layout_node_id, parent_element_id: fact.parent_element_id ?? fact.parent_layout_node_id ?? null, position_reference_id: fact.position_reference_id ?? null, reference_id: fact.reference_id ?? fact.position_reference_id ?? null, reference_marker_id: fact.reference_marker_id ?? null, parent_marker_id: fact.parent_marker_id ?? null, marker_id: fact.marker_id, parent_target_bounds: fact.parent_target_bounds ?? null, reference_target_bounds: fact.reference_target_bounds ?? null, visual_overflow: fact.visual_overflow ?? null, depth: fact.depth, color: fact.color, bounds: fact.bounds, is_container: fact.is_container, empty_container: fact.empty_container, semantic_grouping: fact.semantic_grouping ?? null, ui_layout: fact.ui_layout ?? null, center_alignment: fact.center_alignment ?? null, layout_execution: fact.layout_execution ?? null, nine_slice: fact.nine_slice ?? null, nine_slice_decision_required: fact.nine_slice_decision_required === true ? true : null, owner_type: fact.owner_type ?? null, region_layer: fact.region_layer ?? null, visual_route_element_type: fact.visual_route_element_type ?? null, region_id: fact.region_id ?? null, component_id: fact.component_id ?? null, placement_id: fact.placement_id ?? null, child_layout_node_ids: fact.child_layout_node_ids, relative_position: fact.relative_position, axis_alignment: fact.axis_alignment, offset: fact.offset, self_anchor: fact.self_anchor, reference_anchor: fact.reference_anchor, docking: fact.docking ?? null, is_root_container: fact.is_root_container === true });
     const actualProjection = Array.isArray(metadata.nodes) ? metadata.nodes.map(projectFact) : []; const expectedProjection = expectedFacts.map(projectFact); if (canonicalJson(actualProjection) !== canonicalJson(expectedProjection)) errors.push(`${label}.nodes 必须按已确认 decomposition_elements 原顺序完整绑定布局关系`);
-    const expectedMarkerMap = expectedFacts.map((fact) => ({ marker_id: fact.marker_id, layout_node_id: fact.layout_node_id, element_id: fact.element_id, parent_layout_node_id: fact.parent_layout_node_id, parent_marker_id: fact.parent_marker_id ?? null, is_root_container: fact.is_root_container === true })); if (canonicalJson(metadata.marker_map) !== canonicalJson(expectedMarkerMap)) errors.push(`${label}.marker_map 必须一一绑定编号、元素和父编号`); const markers = (metadata.nodes ?? []).map((fact) => fact.marker_id); if (new Set(markers).size !== markers.length || markers.some((marker) => !LAYOUT_MARKER_PATTERN.test(String(marker)))) errors.push(`${label} 节点编号必须唯一且使用 Lxx/Rxx 格式`);
+    const expectedMarkerMap = expectedFacts.map((fact) => ({ marker_id: fact.marker_id, layout_node_id: fact.layout_node_id, element_id: fact.element_id, parent_layout_node_id: fact.parent_layout_node_id, parent_marker_id: fact.parent_marker_id ?? null, position_reference_id: fact.position_reference_id ?? null, reference_marker_id: fact.reference_marker_id ?? null, is_root_container: fact.is_root_container === true })); if (canonicalJson(metadata.marker_map) !== canonicalJson(expectedMarkerMap)) errors.push(`${label}.marker_map 必须一一绑定编号、元素、父级和定位参照`); const markers = (metadata.nodes ?? []).map((fact) => fact.marker_id); if (new Set(markers).size !== markers.length || markers.some((marker) => !LAYOUT_MARKER_PATTERN.test(String(marker)))) errors.push(`${label} 节点编号必须唯一且使用 Lxx/Rxx 格式`);
     const expectedRows = deriveLayoutAnnotationRows(expectedFacts); const actualRows = metadata.visible_rows;
     const expectedScale = Math.max(1, Math.min(3, Math.floor(metadata.original_height / 320)));
     const expectedPanelWidth = Math.max(PANEL_MIN_WIDTH, Math.min(PANEL_MAX_WIDTH, Math.max(...expectedRows.map((row) => textWidth(row.text, expectedScale))) + PANEL_HORIZONTAL_PADDING * 2));

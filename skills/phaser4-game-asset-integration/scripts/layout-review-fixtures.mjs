@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { computeLayoutAnnotationConfirmationSha256, computeLayoutUserMessageSha256 } from "../../phaser4-game-workflow-control/scripts/layout_annotation_confirmation.mjs";
 import { buildLayoutNodesDocument, buildLayoutReviewBindings, computeLayoutReviewIdentitySha256, renderLayoutReviewBundle, serializeJson, sha256 as layoutBundleSha256 } from "./layout_review_bundle.mjs";
 import { computeLayoutAnnotationIdentitySha256, deriveAutomaticLayoutFacts, renderLayoutAnnotation } from "./layout_annotation_contract.mjs";
+import { deriveLayoutExecutionPlans } from "../../phaser4-game-ui-layout/scripts/layout-execution.mjs";
 
 /** 计算测试夹具文件的标准 SHA-256。 */
 function sha256Bytes(bytes) { return `sha256:${createHash("sha256").update(bytes).digest("hex")}`; }
@@ -20,8 +21,12 @@ export async function writeLayoutReviewFixtureArtifacts(root, manifest) {
   if (!decomposition || !Array.isArray(decomposition.layout_nodes) || !layoutAnnotation || !layoutConfirmation || !target || !canvas || !upstream) return;
 
   const originalBytes = await readFile(join(root, manifest.reference_target.original_file));
+  // 测试工件也要冻结项目职责派生的计划，防止确认文件绕过正式节点的执行策略校验。
+  const plans = deriveLayoutExecutionPlans(decomposition.layout_nodes);
+  const planById = new Map(plans.map((plan) => [plan.layout_node_id, plan.layout_execution]));
+  decomposition.layout_nodes = decomposition.layout_nodes.map((node) => ({ ...node, layout_execution: planById.get(node.layout_node_id) }));
   const facts = deriveAutomaticLayoutFacts(decomposition.layout_nodes, canvas, { sceneId: target.scene_id, stateId: target.state_id });
-  const layoutDecision = { decision_schema: "automatic-layout-decision/1.0", decision_id: layoutAnnotation.layout_decision_id, decision_method: "visual-judgement", target_sha256: manifest.reference_target.target_sha256, scene_id: target.scene_id, state_id: target.state_id, decomposition_confirmation_id: upstream.confirmation_id, decomposition_confirmation_sha256: upstream.confirmation_sha256, proposal_sha256: upstream.proposal_sha256, elements: decomposition.layout_nodes.map((node) => ({ element_id: node.element_id ?? node.layout_node_id, horizontal_alignment: node.axis_alignment.horizontal, vertical_alignment: node.axis_alignment.vertical })) };
+  const layoutDecision = { decision_schema: "automatic-layout-decision/1.0", decision_id: layoutAnnotation.layout_decision_id, decision_method: "visual-judgement", target_sha256: manifest.reference_target.target_sha256, scene_id: target.scene_id, state_id: target.state_id, decomposition_confirmation_id: upstream.confirmation_id, decomposition_confirmation_sha256: upstream.confirmation_sha256, proposal_sha256: upstream.proposal_sha256, elements: decomposition.layout_nodes.map((node) => ({ element_id: node.element_id ?? node.layout_node_id, horizontal_alignment: node.axis_alignment.horizontal, vertical_alignment: node.axis_alignment.vertical, ...(node.center_alignment !== undefined ? { center_alignment: node.center_alignment } : {}) })) };
   const layoutDecisionBytes = Buffer.from(`${JSON.stringify(layoutDecision, null, 2)}\n`);
   const layoutDecisionPath = join(root, layoutAnnotation.layout_decision_file);
   await mkdir(dirname(layoutDecisionPath), { recursive: true });

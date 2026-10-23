@@ -7,6 +7,11 @@
 
 import { validateEffectImageParentChildLayoutNodes } from "./layout-node-parent-geometry.mjs";
 import { resolveVisualValidationMode, visualGeometryDifferenceExceeds, visualBoundsOutsideViewport } from "./visual-validation-policy.mjs";
+import { validateCenterAlignmentNodes } from "../../phaser4-game-ui-layout/scripts/center-alignment.mjs";
+import { validateLayoutExecutionNodes } from "../../phaser4-game-ui-layout/scripts/layout-execution.mjs";
+import { isSyntheticLayoutRoot } from "../../phaser4-game-ui-layout/scripts/layout-root-bounds.mjs";
+import { collectLayoutContextRoots } from "../../phaser4-game-ui-layout/scripts/layout-root-context.mjs";
+import { validateSceneLayoutRuntime } from "./scene-layout-runtime-contract.mjs";
 
 /** 判断是否为普通对象。 */
 function isObject(value) {
@@ -282,10 +287,19 @@ export function validateLayoutDecomposition(contract, targetInfo, stage, errors,
     else nodeById.set(nodeId, node);
   }
   // effect-image 的父容器、相对测量和显式视觉对齐统一由共享几何合同校验。
-  for (const issue of validateEffectImageParentChildLayoutNodes(nodes, targetInfo?.viewport, { label: "layout_nodes" })) {
+  let roots;
+  const layoutErrors = [];
+  try { roots = collectLayoutContextRoots(targetInfo?.viewport, [targetInfo?.target, contract, decomposition, binding, decomposition.layout_annotation], nodes); }
+  catch (error) { layoutErrors.push(`layout_nodes 冻结根无效：${error.message}`); }
+  for (const issue of validateEffectImageParentChildLayoutNodes(nodes, targetInfo?.viewport, { label: "layout_nodes", rootBounds: roots })) {
     const node = issue.index >= 0 ? nodes[issue.index] : decomposition;
     errors.push(contractError(stage, contract, node, issue.message, { returnStage: "V1/PROPOSAL" }));
   }
+  validateLayoutExecutionNodes(nodes, layoutErrors, "layout_nodes", { requirePlan: true });
+  try {
+    validateCenterAlignmentNodes(nodes.filter((node) => !isSyntheticLayoutRoot(node)), layoutErrors, "layout_nodes", { ...targetInfo?.viewport, root_bounds: roots });
+  } catch (error) { layoutErrors.push(`layout_nodes 冻结根或中心关系无效：${error.message}`); }
+  for (const issue of layoutErrors) errors.push(contractError(stage, contract, decomposition, issue, { returnStage: "V2" }));
   return { decomposition, nodes, nodeById, binding };
 }
 
@@ -372,8 +386,10 @@ export function validateLayoutGeometryFacts(contract, preacceptance, stage, erro
   const mode = resolveVisualValidationMode(options, contract);
   const exact = mode === "exact";
   const geometry = field(preacceptance, "layout_geometry", "layoutGeometry", "layout_geometry_check", "layoutGeometryCheck");
+  // 快照覆盖是两种验收模式共同的运行事实要求；不能让 usability 在缺少几何记录时提前返回。
+  validateSceneLayoutRuntime(contract, geometry, layoutInfo.nodes, errors, options);
   if (!isObject(geometry)) {
-    if (exact) errors.push(contractError(stage, contract, preacceptance, "V4 同屏组合缺少 layout_geometry 几何检查", { missing: "layout_geometry", returnStage: "V3/V4", rootCause: "执行问题" }));
+    errors.push(contractError(stage, contract, preacceptance, "V4 同屏组合缺少 layout_geometry 几何检查", { missing: "layout_geometry", returnStage: "V3/V4", rootCause: "执行问题" }));
     return;
   }
   const formalLayout = field(geometry, "formal_layout_structure", "formalLayoutStructure", "formal_layout", "formalLayout", "structure", "formal_structure")

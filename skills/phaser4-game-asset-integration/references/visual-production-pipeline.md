@@ -58,7 +58,7 @@ F2 的机器出口必须由确定性验证执行，并绑定当前 baseline/diff
 
 UI 底板、按钮皮肤和框体在当前拆解里完成[九宫格适用决策](nine-slice-ui.md)。采用时把 `nine_slice` 的小图源尺寸与切片边宽保留到拆解元素、布局节点、对应组件/expected asset 及正式场景呈现配置；已有人工确认同时冻结这些事实。普通位图生产尺寸规则不用于把九宫格皮肤扩大到整块显示框。
 
-功能分组遵守[功能语义分组约束](../../phaser4-game-ui-layout/references/functional-semantic-grouping.md)。阶段 A 为每个元素明确 `parent_element_id` 和 `semantic_grouping.kind/rationale`：位置依赖决定父子层级，依赖方必须成为被依赖元素所对应布局容器的子元素；共同表达同一信息但互不依赖位置的元素进入同一个功能组件并保持同级。文字独立登记但归属对应信息组，不按元素类型集中归组。语义歧义留在拆解审阅，机器不根据距离或最小包含矩形补父级。阶段 B 只继承已确认归属；新增容器或修改归属、理由必须重新拆解确认，不能复用旧布局身份。
+功能分组遵守[功能语义分组约束](../../phaser4-game-ui-layout/references/functional-semantic-grouping.md)。阶段 A 确认 `parent_element_id` 和 `semantic_grouping.kind/rationale`，独立位置依赖写入 `ui_layout.position_reference_id`，非根溢出写明 `visual_overflow.reason`。文字与图标可以同属一个功能组件并互相参照，不为定位改挂父级或增加无职责容器。阶段 B 继承实际归属与有效参照，并按明确居中策略派生目标位置；不回写 proposal 原始测量。结构、参照或理由变化时重新确认受影响拆解，机器不按距离或包含关系猜父级。
 
 当前场景 Work Item 的 V1 冻结目标和初步还原草案有效后进入 V2。V2 把 V1 的视觉事实细化为可确认、可执行的还原方案，并按两个串行视觉硬门完成：阶段 A 在内部维护拆解图对应的技术 JSON、按序 `decomposition_elements`、功能归属与理由、component×state 和资源生产事实，向用户展示编号 PNG 供视觉确认；阶段 B 仅在拆解图确认后自动继承功能父子归属，补充停靠/对齐关系、布局测量、显示层关系和布局容差，生成布局标注 PNG 与审阅页供视觉确认。无需在任一图片确认前单独提交或等待文字提案、对齐决策或技术记录的确认。
 

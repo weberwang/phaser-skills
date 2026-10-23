@@ -5,9 +5,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { decodePngRgba, encodePngRgba } from "../../phaser4-game-asset-integration/scripts/effect_image_raster.mjs";
-import { computeLayoutAnnotationIdentitySha256, deriveAutomaticLayoutFacts, renderLayoutAnnotation } from "../../phaser4-game-asset-integration/scripts/layout_annotation_contract.mjs";
+import { computeLayoutAnnotationIdentitySha256, deriveAutomaticLayoutFacts, deriveFinalLayoutNodesFromDecompositionElements, renderLayoutAnnotation } from "../../phaser4-game-asset-integration/scripts/layout_annotation_contract.mjs";
 import { buildLayoutNodesDocument, buildLayoutReviewBindings, computeLayoutReviewIdentitySha256, deriveLayoutReviewArtifactPaths, renderLayoutReviewBundle, serializeJson, sha256 } from "../../phaser4-game-asset-integration/scripts/layout_review_bundle.mjs";
+import { validateAutomaticLayoutDecision } from "../../phaser4-game-asset-integration/scripts/automatic-layout-decision.mjs";
 import { readLayoutReviewPayload } from "../../phaser4-game-asset-integration/scripts/layout_review_page.mjs";
+import { validateConfirmationGroups } from "../../phaser4-game-asset-integration/scripts/visual-manifest-confirmation.mjs";
 import { computeLayoutAnnotationConfirmationSha256, computeLayoutUserMessageSha256, validateLayoutAnnotationConfirmation } from "./layout_annotation_confirmation.mjs";
 
 const SHA = `sha256:${"a".repeat(64)}`;
@@ -28,24 +30,55 @@ function confirmation(overrides = {}) {
 }
 
 /** 构造文件级布局确认链，覆盖 PNG、审阅页、节点 JSON、decision 和 receipt。 */
-async function fileBackedConfirmation() {
+async function fileBackedConfirmation({ firstBatch = false, viewportParentsOnly = false } = {}) {
   const projectRoot = await mkdtemp(join(tmpdir(), "layout-confirmation-"));
   const original = encodePngRgba(64, 48, Buffer.alloc(64 * 48 * 4, 220)); const targetSha = sha256(original); const referenceFile = "reference.png"; await writeFile(join(projectRoot, referenceFile), original);
   const nodes = [{ layout_node_id: "panel", element_id: "panel", element_type: "container", parent_element_id: "viewport", parent_layout_node_id: "viewport", semantic_grouping: { kind: "region", rationale: "组织对话框中的独立入口" }, ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, region_id: "panel-region", component_id: "panel", placement_id: "panel-placement", target_bounds: { x: 2, y: 2, width: 16, height: 12 }, layout_role: "container", axis_alignment: { horizontal: "center", vertical: "center" } }, { layout_node_id: "button", element_id: "button", element_type: "component", parent_element_id: "panel", parent_layout_node_id: "panel", semantic_grouping: { kind: "standalone", rationale: "完整按钮在区域内独立布局" }, ui_layout: { grouping_basis: ["INTERACTION"], layout_owner: "PARENT", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "HIT_TARGET" }, region_id: "panel-region", component_id: "button", placement_id: "button-placement", target_bounds: { x: 5, y: 5, width: 6, height: 4 }, node_type: "element", axis_alignment: { horizontal: "center", vertical: "center" } }];
-  const elements = nodes.map((node) => ({ element_id: node.element_id, element_type: node.element_type, role: node.layout_role ?? node.node_type, bounds: { ...node.target_bounds }, scene_id: "main", state_id: "default", region_id: "panel-region", component_id: node.component_id, placement_id: node.placement_id, parent_element_id: node.parent_element_id, semantic_grouping: node.semantic_grouping, ui_layout: node.ui_layout, empty_container: node.element_type === "container" ? false : false }));
-  const upstreamSha = `sha256:${"b".repeat(64)}`; const proposalFile = "evidence/v2/proposal.json"; const proposal = { proposal_id: "proposal-1", target_sha256: targetSha, scene_id: "main", state_id: "default", annotation_file: "evidence/v2/decomposition.png", annotation_sha256: upstreamSha, created_at: "2025-12-31T23:00:00Z", decomposition_elements: elements, technical_analysis: { decomposition_elements: elements, regions: [{ region_id: "panel-region", scene_id: "main", state_id: "default", bounds: { x: 0, y: 0, width: 64, height: 48 }, decomposition_elements: elements }] }, regions: [{ region_id: "panel-region", scene_id: "main", state_id: "default" }] }; const proposalBytes = Buffer.from(JSON.stringify(proposal), "utf8"); const proposalSha = sha256(proposalBytes); await mkdir(dirname(join(projectRoot, proposalFile)), { recursive: true }); await writeFile(join(projectRoot, proposalFile), proposalBytes);
-  const facts = deriveAutomaticLayoutFacts(nodes, { width: 64, height: 48 }, { sceneId: "main", stateId: "default" });
-  const layoutDecisionFile = "evidence/v2/automatic-layout-decision.json"; const layoutDecision = { decision_schema: "automatic-layout-decision/1.0", decision_id: "layout-decision-1", decision_method: "visual-judgement", target_sha256: targetSha, scene_id: "main", state_id: "default", decomposition_confirmation_id: "decomp-1", decomposition_confirmation_sha256: upstreamSha, proposal_sha256: proposalSha, elements: nodes.map((node) => ({ element_id: node.element_id, horizontal_alignment: node.axis_alignment.horizontal, vertical_alignment: node.axis_alignment.vertical })) }; const layoutDecisionBytes = serializeJson(layoutDecision); await writeFile(join(projectRoot, layoutDecisionFile), layoutDecisionBytes); const layoutDecisionSha = sha256(layoutDecisionBytes);
+  const safeAreaBounds = firstBatch ? { x: 2, y: 2, width: 56, height: 44 } : null;
+  if (firstBatch) {
+    // 一条真实文件链同时覆盖安全区根、兄弟参照和有理由的非根溢出。
+    nodes[0].parent_element_id = "safe-area"; nodes[0].parent_layout_node_id = "safe-area";
+    nodes[1].ui_layout.position_reference_id = "icon";
+    nodes.push(
+      { layout_node_id: "icon", element_id: "icon", element_type: "component", node_type: "element", parent_element_id: "panel", parent_layout_node_id: "panel", semantic_grouping: { kind: "standalone", rationale: "同级图标提供位置参照" }, ui_layout: { grouping_basis: ["POSITION"], layout_owner: "PARENT", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, region_id: "panel-region", component_id: "icon", placement_id: "icon-placement", target_bounds: { x: 3, y: 3, width: 2, height: 2 }, axis_alignment: { horizontal: "left", vertical: "top" } },
+      { layout_node_id: "badge", element_id: "badge", element_type: "component", node_type: "element", parent_element_id: "panel", parent_layout_node_id: "panel", semantic_grouping: { kind: "standalone", rationale: "角标作为独立装饰节点" }, ui_layout: { grouping_basis: ["POSITION"], layout_owner: "PARENT", size_policy: "FIXED", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE", visual_overflow: { reason: "角标绘制在卡片右沿之外" } }, region_id: "panel-region", component_id: "badge", placement_id: "badge-placement", target_bounds: { x: 17, y: 5, width: 2, height: 2 }, axis_alignment: { horizontal: "left", vertical: "top" } },
+    );
+  }
+  if (viewportParentsOnly) {
+    // 此变体验证安全区只来自冻结 target；所有业务节点仍明确以 viewport 为父级和位置参照。
+    const panel = nodes.find((node) => node.layout_node_id === "panel");
+    panel.empty_container = true;
+    panel.ui_layout.grouping_basis = ["LAYOUT"];
+    for (const node of nodes) {
+      node.parent_element_id = "viewport";
+      node.parent_layout_node_id = "viewport";
+      node.ui_layout.position_reference_id = "viewport";
+      delete node.ui_layout.visual_overflow;
+    }
+  }
+  const elements = nodes.map((node) => ({ element_id: node.element_id, element_type: node.element_type, role: node.layout_role ?? node.node_type, bounds: { ...node.target_bounds }, scene_id: "main", state_id: "default", region_id: "panel-region", component_id: node.component_id, placement_id: node.placement_id, parent_element_id: node.parent_element_id, semantic_grouping: node.semantic_grouping, ui_layout: node.ui_layout, empty_container: node.element_type === "container" ? node.empty_container === true : false }));
+  const upstreamSha = `sha256:${"b".repeat(64)}`; const proposalFile = "evidence/v2/proposal.json"; const proposal = { proposal_id: "proposal-1", target_sha256: targetSha, scene_id: "main", state_id: "default", annotation_file: "evidence/v2/decomposition.png", annotation_sha256: upstreamSha, created_at: "2025-12-31T23:00:00Z", decomposition_elements: elements, technical_analysis: { decomposition_elements: elements, regions: [{ region_id: "panel-region", scene_id: "main", state_id: "default", bounds: { x: 0, y: 0, width: 64, height: 48 }, decomposition_elements: elements }] }, regions: [{ region_id: "panel-region", scene_id: "main", state_id: "default" }] };
+  if (safeAreaBounds && !viewportParentsOnly) { proposal.safe_area_bounds = safeAreaBounds; proposal.technical_analysis.safe_area_bounds = safeAreaBounds; }
+  const proposalBytes = Buffer.from(JSON.stringify(proposal), "utf8"); const proposalSha = sha256(proposalBytes); await mkdir(dirname(join(projectRoot, proposalFile)), { recursive: true }); await writeFile(join(projectRoot, proposalFile), proposalBytes);
+  const rootBounds = safeAreaBounds ? { "safe-area": safeAreaBounds } : undefined;
+  const layoutDecisionFile = "evidence/v2/automatic-layout-decision.json"; const layoutDecision = { decision_schema: "automatic-layout-decision/1.0", decision_id: "layout-decision-1", decision_method: "visual-judgement", target_sha256: targetSha, scene_id: "main", state_id: "default", decomposition_confirmation_id: "decomp-1", decomposition_confirmation_sha256: upstreamSha, proposal_sha256: proposalSha, elements: nodes.map((node) => {
+    const axis = firstBatch && node.element_id === "panel" ? { horizontal: "left", vertical: "top" } : node.axis_alignment;
+    const center_alignment = firstBatch && node.element_id === "button" ? { horizontal: { mode: "reference", offset: 8, reason: "按钮视觉中心略偏向右侧" } } : undefined;
+    return { element_id: node.element_id, horizontal_alignment: axis.horizontal, vertical_alignment: axis.vertical, ...(center_alignment ? { center_alignment } : {}) };
+  }) }; const layoutDecisionBytes = serializeJson(layoutDecision); await writeFile(join(projectRoot, layoutDecisionFile), layoutDecisionBytes); const layoutDecisionSha = sha256(layoutDecisionBytes);
+  const decisionErrors = []; const alignmentDecisions = validateAutomaticLayoutDecision(layoutDecision, { elements, sceneId: "main", stateId: "default", decompositionConfirmationId: "decomp-1" }, decisionErrors); assert.deepEqual(decisionErrors, []);
+  const layoutNodes = deriveFinalLayoutNodesFromDecompositionElements(elements, { width: 64, height: 48 }, { sceneId: "main", stateId: "default", alignmentDecisions, ...(rootBounds ? { rootBounds } : {}) });
+  const facts = deriveAutomaticLayoutFacts(layoutNodes, { width: 64, height: 48 }, { sceneId: "main", stateId: "default", ...(rootBounds ? { rootBounds } : {}) });
   const rendered = renderLayoutAnnotation(original, { width: 64, height: 48 }, facts, { targetSha256: targetSha, sceneId: "main", stateId: "default", decompositionConfirmationId: "decomp-1", decompositionConfirmationSha256: upstreamSha, decompositionProposalSha256: proposalSha, layoutDecisionId: layoutDecision.decision_id, layoutDecisionSha256: layoutDecisionSha });
   const imageFile = "evidence/v2/layout.png"; await writeFile(join(projectRoot, imageFile), rendered.bytes); const imageSha = sha256(rendered.bytes); const identitySha = computeLayoutAnnotationIdentitySha256(imageSha, rendered.width, rendered.height, rendered.metadataSha256);
-  const paths = deriveLayoutReviewArtifactPaths(projectRoot, join(projectRoot, imageFile)); const context = { projectRoot, viewport: { width: 64, height: 48 }, targetSha256: targetSha, sceneId: "main", stateId: "default", decompositionConfirmationId: "decomp-1", decompositionConfirmationSha256: upstreamSha, proposalSha256: proposalSha, proposalFile, referenceFile, referenceSha256: targetSha, layoutDecisionId: layoutDecision.decision_id, layoutDecisionSha256: layoutDecisionSha, annotationSha256: imageSha };
+  const paths = deriveLayoutReviewArtifactPaths(projectRoot, join(projectRoot, imageFile)); const context = { projectRoot, viewport: { width: 64, height: 48 }, targetSha256: targetSha, sceneId: "main", stateId: "default", ...(rootBounds ? { root_bounds: rootBounds } : {}), decompositionConfirmationId: "decomp-1", decompositionConfirmationSha256: upstreamSha, proposalSha256: proposalSha, proposalFile, referenceFile, referenceSha256: targetSha, layoutDecisionId: layoutDecision.decision_id, layoutDecisionSha256: layoutDecisionSha, annotationSha256: imageSha };
   const nodesDocument = buildLayoutNodesDocument(facts, context); const nodesBytes = serializeJson(nodesDocument); const nodesSha = sha256(nodesBytes); const bindings = buildLayoutReviewBindings(paths, { ...context, nodesSha256: nodesSha }); const reviewBytes = renderLayoutReviewBundle({ nodesDocument, bindings, originalBytes: original, annotationBytes: rendered.bytes, nodesBytes, decisionBytes: layoutDecisionBytes });
   const reviewFile = paths.reviewFile; await writeFile(join(projectRoot, paths.nodesFile), nodesBytes); await writeFile(join(projectRoot, paths.decisionFile), layoutDecisionBytes); await writeFile(join(projectRoot, reviewFile), reviewBytes); const reviewSha = sha256(reviewBytes); const reviewIdentitySha = computeLayoutReviewIdentitySha256(bindings);
   const decisionFile = "evidence/v2/layout-decision-record.json"; const userText = "确认布局图"; const binding = { layout_annotation_file: imageFile, layout_annotation_sha256: imageSha, layout_annotation_identity_sha256: identitySha, layout_review_file: reviewFile, layout_review_sha256: reviewSha, layout_review_identity_sha256: reviewIdentitySha, layout_nodes_file: paths.nodesFile, layout_nodes_sha256: nodesSha, decomposition_confirmation_id: "decomp-1", decomposition_confirmation_sha256: upstreamSha, proposal_sha256: proposalSha, layout_decision_file: paths.decisionFile, layout_decision_sha256: layoutDecisionSha, layout_decision_id: layoutDecision.decision_id, target_sha256: targetSha, scene_id: "main", state_id: "default", user_statement: userText, user_message_sha256: computeLayoutUserMessageSha256(userText), accepted_at: "2026-01-01T00:00:00Z" };
   const decision = { author_role: "user", resolution_status: "resolved", resolved_from: "USER_INPUT_REQUIRED", status: "accepted", confirmation_mode: "manual", confirmation_id: "layout-confirmation-1", ...binding }; const decisionRecordBytes = serializeJson(decision); await writeFile(join(projectRoot, decisionFile), decisionRecordBytes); const decisionSha = sha256(decisionRecordBytes);
   const receiptFile = "evidence/v2/layout-receipt.json"; const receipt = { message_id: "message-layout-1", thread_id: "thread-layout-1", author_role: "user", resolution_status: "resolved", resolved_from: "USER_INPUT_REQUIRED", resolution_id: "resolution-layout-1", ...binding, decision_record_sha256: decisionSha }; const receiptBytes = serializeJson(receipt); await writeFile(join(projectRoot, receiptFile), receiptBytes); const receiptSha = sha256(receiptBytes);
   const record = confirmation({ layout_annotation_file: imageFile, layout_annotation_sha256: imageSha, layout_annotation_width: rendered.width, layout_annotation_height: rendered.height, layout_annotation_metadata_sha256: rendered.metadataSha256, layout_annotation_identity_sha256: identitySha, layout_review_file: reviewFile, layout_review_sha256: reviewSha, layout_review_identity_sha256: reviewIdentitySha, layout_nodes_file: paths.nodesFile, layout_nodes_sha256: nodesSha, decomposition_confirmation_sha256: upstreamSha, proposal_sha256: proposalSha, layout_decision_file: paths.decisionFile, layout_decision_sha256: layoutDecisionSha, layout_decision_id: layoutDecision.decision_id, target_sha256: targetSha, decision_record_file: decisionFile, decision_record_sha256: decisionSha, user_decision_receipt_file: receiptFile, user_decision_receipt_sha256: receiptSha });
-  return { projectRoot, record, decisionFile, receiptFile, layoutDecisionFile, context: { ...context, layoutNodes: nodes, checkFiles: true } };
+  return { projectRoot, record, decisionFile, receiptFile, layoutDecisionFile, context: { ...context, layoutNodes, checkFiles: true } };
 }
 
 const context = { targetSha256: SHA, sceneId: "main", stateId: "default", decompositionConfirmationId: "decomp-1", decompositionConfirmationSha256: SHA, proposalSha256: SHA, checkFiles: false };
@@ -89,6 +122,55 @@ test("布局确认文件门通过真实 PNG、审阅页、节点 JSON、decision
   const value = await fileBackedConfirmation(); const errors = []; validateLayoutAnnotationConfirmation(value.record, value.context, errors); assert.deepEqual(errors, []);
 });
 
+test("真实确认链绑定兄弟参照、有理由溢出和显式小安全区，拒绝伪造全屏根", async () => {
+  const value = await fileBackedConfirmation({ firstBatch: true });
+  const errors = []; validateLayoutAnnotationConfirmation(value.record, value.context, errors); assert.deepEqual(errors, []);
+  const nodesPath = join(value.projectRoot, value.record.layout_nodes_file);
+  const nodesDocument = JSON.parse(await readFile(nodesPath, "utf8"));
+  const button = nodesDocument.layout_nodes.find((node) => node.layout_node_id === "button");
+  const badge = nodesDocument.layout_nodes.find((node) => node.layout_node_id === "badge");
+  assert.equal(button.parent_layout_node_id, "panel"); assert.equal(button.position_reference_id, "icon"); assert.equal(button.offset.x, 8);
+  assert.deepEqual(badge.visual_overflow, { reason: "角标绘制在卡片右沿之外" });
+  assert.deepEqual(nodesDocument.root_nodes.find((root) => root.layout_node_id === "safe-area").target_bounds, { x: 2, y: 2, width: 56, height: 44 });
+
+  nodesDocument.root_nodes.find((root) => root.layout_node_id === "safe-area").target_bounds = { x: 0, y: 0, width: 64, height: 48 };
+  await writeFile(nodesPath, serializeJson(nodesDocument));
+  const driftErrors = []; validateLayoutAnnotationConfirmation(value.record, value.context, driftErrors);
+  assert(driftErrors.some((message) => message.includes("safe-area bounds 不一致") || message.includes("root_bounds 无效")), driftErrors.join("；"));
+});
+
+test("manifest 确认组把 target 小安全区与伪造全屏 artifact 根冲突拒绝", async () => {
+  const value = await fileBackedConfirmation({ firstBatch: true, viewportParentsOnly: true });
+  const nodesDocument = JSON.parse(await readFile(join(value.projectRoot, value.record.layout_nodes_file), "utf8"));
+  assert(nodesDocument.layout_nodes.every((node) => node.parent_layout_node_id === "viewport" && node.position_reference_id === "viewport"));
+  const regionConfirmation = {
+    confirmation_schema: "visual-decomposition-confirmation/1.0",
+    confirmation_id: "decomp-1",
+    confirmation_mode: "manual",
+    status: "accepted",
+    proposal_id: "proposal-1",
+    proposal_sha256: value.context.proposalSha256,
+    proposal_file: value.context.proposalFile,
+    scene_id: "main",
+    state_id: "default",
+  };
+  const data = {
+    reference_target: { original_file: "reference.png", target_sha256: value.context.targetSha256 },
+    coverage_audit: { regions: [{ annotation_number: 1, id: "panel-region", scene_id: "main", state_id: "default", confirmation: regionConfirmation }] },
+    scene_reconstruction_contract: {
+      target_conditions: { scene_id: "main", state_id: "default", viewport: { width: 64, height: 48 }, safe_area_bounds: { x: 2, y: 2, width: 56, height: 44 } },
+      visual_decomposition_confirmation: regionConfirmation,
+      layout_decomposition: { layout_annotation_confirmation: value.record, layout_nodes: nodesDocument.layout_nodes, root_nodes: nodesDocument.root_nodes },
+    },
+  };
+
+  const safeAreaRoot = nodesDocument.root_nodes.find((root) => root.layout_node_id === "safe-area");
+  safeAreaRoot.target_bounds = { x: 0, y: 0, width: 64, height: 48 };
+  data.scene_reconstruction_contract.layout_decomposition.root_nodes = nodesDocument.root_nodes;
+  const errors = validateConfirmationGroups(data, { projectRoot: value.projectRoot, checkFiles: false });
+  assert(errors.some((message) => message.includes("冻结根无效") && message.includes("safe-area")), errors.join("；"));
+});
+
 test("真实布局工件同批更新后仍拒绝不继承 proposal 的语义理由", async () => {
   const value = await fileBackedConfirmation();
   const proposalPath = join(value.projectRoot, value.context.proposalFile);
@@ -115,5 +197,5 @@ test("真实布局工件同批更新后仍拒绝不继承 proposal 的语义理�
   const decisionPath = join(value.projectRoot, value.decisionFile); const decision = JSON.parse(await readFile(decisionPath, "utf8")); Object.assign(decision, { proposal_sha256: proposalSha, layout_nodes_sha256: nodesSha, layout_decision_sha256: layoutDecisionSha, layout_annotation_sha256: annotationSha, layout_annotation_width: rendered.width, layout_annotation_height: rendered.height, layout_annotation_metadata_sha256: rendered.metadataSha256, layout_annotation_identity_sha256: annotationIdentity, layout_review_sha256: reviewSha, layout_review_identity_sha256: reviewIdentitySha }); const decisionRecordBytes = serializeJson(decision); await writeFile(decisionPath, decisionRecordBytes); const decisionRecordSha = sha256(decisionRecordBytes);
   const receiptPath = join(value.projectRoot, value.receiptFile); const receipt = JSON.parse(await readFile(receiptPath, "utf8")); Object.assign(receipt, { proposal_sha256: proposalSha, layout_nodes_sha256: nodesSha, layout_decision_sha256: layoutDecisionSha, layout_annotation_sha256: annotationSha, layout_annotation_width: rendered.width, layout_annotation_height: rendered.height, layout_annotation_metadata_sha256: rendered.metadataSha256, layout_annotation_identity_sha256: annotationIdentity, layout_review_sha256: reviewSha, layout_review_identity_sha256: reviewIdentitySha, decision_record_sha256: decisionRecordSha }); const receiptBytes = serializeJson(receipt); await writeFile(receiptPath, receiptBytes); const receiptSha = sha256(receiptBytes);
   Object.assign(value.record, { decision_record_sha256: decisionRecordSha, user_decision_receipt_sha256: receiptSha }); value.record.confirmation_sha256 = computeLayoutAnnotationConfirmationSha256(value.record);
-  const errors = []; validateLayoutAnnotationConfirmation(value.record, value.context, errors); assert(errors.some((message) => message.includes("未逐项继承 proposal") && message.includes("semantic_grouping")), errors.join("；"));
+  const errors = []; validateLayoutAnnotationConfirmation(value.record, value.context, errors); assert(errors.some((message) => message.includes("未逐项继承 proposal") && message.includes("语义")), errors.join("；"));
 });

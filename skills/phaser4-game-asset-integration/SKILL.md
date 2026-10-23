@@ -19,7 +19,7 @@ description: 为 Phaser 4 游戏规划、生产、登记、验证并集成 UI、
 
 ### 场景还原合同（effect-image 强制）
 
-V2 拆解先遵守[功能语义分组约束](../phaser4-game-ui-layout/references/functional-semantic-grouping.md)：确认区域、功能组件、部件和独立元素的位置依赖、信息分组与理由；位置依赖方划为被依赖元素所对应布局容器的子元素，共同表达同一信息且彼此无位置依赖的元素列为同组同级项。布局不得按文字类型或几何包含重新分组，归属不明留在拆解确认，不自动生成可放行布局。
+V2 拆解先遵守[功能语义分组约束](../phaser4-game-ui-layout/references/functional-semantic-grouping.md)：确认真实功能父级、信息分组、独立定位参照与必要溢出。图标与文字可保持同级，使用 `position_reference_id` 表达相对定位；突出非根父框时显式说明 `visual_overflow`。布局不得按类型、几何包含或位置依赖自动改树，归属不明留在拆解确认。Phaser 保留 Container 与底板显示对象各自身份，不套用 Cocos Sprite 容器或 RAW 尺寸规则。
 
 `effect-image` 表示正式 Scene 的视觉事实与结构关系还原，不是独立 PNG 生产。场景 Work Item 只记录自身常驻 HUD；modal/popup 等弹窗按[独立工作项规则](../phaser4-game-workflow-control/references/control-model.md#弹窗工作项与场景解耦)建立 DISPLAY_LAYER Work Item，并在 required state 冻结宿主同屏图。弹窗未完成不阻断场景 V4；弹窗自身仍须完成 V2/V3 和打开→交互→关闭/恢复的 V4 轨迹。运行态默认使用 `visual_validation.mode=usability`，只有明确精确需求时才启用严格像素/全矩阵验证。
 

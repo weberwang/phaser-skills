@@ -88,7 +88,18 @@ export function validateTechnicalLayoutNodeIds(technical, regions, label, errors
   const expected = regions.flatMap((region) => decompositionElementIdList(region));
   const actual = Array.isArray(technical.layout_node_ids) ? technical.layout_node_ids : technical.layout_node_ids;
   if (!Array.isArray(technical.layout_node_ids) || canonicalLayoutJson(actual) !== canonicalLayoutJson(expected)) errors.push(`${label}.proposal 技术文件 layout_node_ids 必须等于已确认 decomposition_elements ID`);
-  const elementErrors = []; const elementMap = validateDecompositionElements(technical.decomposition_elements, regions, technical.canvas, `${label}.proposal.decomposition_elements`, elementErrors);
+  const elementErrors = []; const elementMap = validateDecompositionElements(technical.decomposition_elements, regions, technical.canvas, `${label}.proposal.decomposition_elements`, elementErrors, {
+    root_bounds: technical.root_bounds,
+    rootBounds: technical.rootBounds,
+    root_bounds_sources: [technical.canvas?.root_bounds, technical.canvas?.rootBounds],
+    safe_area_bounds: technical.safe_area_bounds,
+    safeAreaBounds: technical.safeAreaBounds,
+    safe_area_bounds_sources: [technical.canvas?.safe_area_bounds, technical.canvas?.safeAreaBounds],
+    root_nodes: technical.root_nodes,
+    rootNodes: technical.rootNodes,
+    root_nodes_sources: [technical.canvas?.root_nodes, technical.canvas?.rootNodes],
+    layout_nodes_sources: [technical.layout_nodes, technical.layoutNodes, technical.canvas?.layout_nodes, technical.canvas?.layoutNodes],
+  });
   if (elementErrors.length > 0 || !(elementMap instanceof Map) || canonicalLayoutJson(decompositionElementIds(technical.decomposition_elements ?? [])) !== canonicalLayoutJson(expected)) errors.push(...(elementErrors.length > 0 ? elementErrors : [`${label}.proposal 技术文件 decomposition_elements 与当前清单不一致`]));
 }
 
@@ -192,7 +203,11 @@ export function validateEffectImageLayoutBindings(data, errors, options = {}) {
   for (const region of coverageRegions) if (region.id && !declaredByRegion.has(region.id)) errors.push(`coverage region ${region.id} 缺少 scene_reconstruction_contract.layout_nodes`);
 
   // 独立资源映射入口同样必须拦截 parent_layout_node_id 等父子几何字段缺失或伪造。
-  for (const issue of validateEffectImageParentChildLayoutNodes(nodes, target?.viewport, { label })) errors.push(issue.message);
+  const rootBoundsSources = [decomposition.root_bounds, decomposition.rootBounds, target?.root_bounds, target?.rootBounds];
+  const safeAreaBoundsSources = [decomposition.safe_area_bounds, decomposition.safeAreaBounds, target?.safe_area_bounds, target?.safeAreaBounds];
+  const rootNodesSources = [decomposition.root_nodes, decomposition.rootNodes, target?.root_nodes, target?.rootNodes, decomposition.layout_annotation?.root_nodes, decomposition.layoutAnnotation?.rootNodes];
+  const layoutNodesSources = [target?.layout_nodes, target?.layoutNodes, decomposition.layout_annotation?.layout_nodes, decomposition.layoutAnnotation?.layoutNodes];
+  for (const issue of validateEffectImageParentChildLayoutNodes(nodes, target?.viewport, { label, rootBoundsSources, safeAreaBoundsSources, rootNodesSources, layoutNodesSources })) errors.push(issue.message);
 
   const placementIds = new Set();
   const consumersByNode = new Map();

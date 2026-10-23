@@ -5,6 +5,8 @@
  * 两者分别校验，避免把视觉接近误认为真实的布局或行为依赖。
  */
 
+import { LAYOUT_POSITION_DRIVERS, LAYOUT_SIZE_DRIVERS } from "../../phaser4-game-ui-layout/scripts/layout-execution.mjs";
+
 export const UI_GROUPING_BASES = Object.freeze(["POSITION", "LAYOUT", "INTERACTION", "STATE", "CLIP", "REUSE"]);
 const BASES = new Set(UI_GROUPING_BASES);
 const ENUMS = Object.freeze({
@@ -14,7 +16,7 @@ const ENUMS = Object.freeze({
   safe_area_policy: new Set(["FULL_BLEED", "INSIDE_SAFE_AREA"]),
   interaction_policy: new Set(["HIT_TARGET", "DELEGATE_TO_PARENT", "NONE"]),
 });
-const FIELDS = new Set(["grouping_basis", ...Object.keys(ENUMS), "minimum_size"]);
+const FIELDS = new Set(["grouping_basis", ...Object.keys(ENUMS), "minimum_size", "position_reference_id", "visual_overflow", "position_driver", "size_driver"]);
 
 /** 判断普通对象。 */
 function isObject(value) { return value !== null && typeof value === "object" && !Array.isArray(value); }
@@ -31,6 +33,8 @@ export function normalizeUiLayout(value) {
     overflow_policy: value.overflow_policy,
     safe_area_policy: value.safe_area_policy,
     interaction_policy: value.interaction_policy,
+    ...(value.position_reference_id !== undefined ? { position_reference_id: value.position_reference_id } : {}),
+    ...(value.visual_overflow !== undefined ? { visual_overflow: isObject(value.visual_overflow) ? { ...value.visual_overflow } : value.visual_overflow } : {}),
     ...(value.minimum_size !== undefined ? { minimum_size: isObject(value.minimum_size) ? { ...value.minimum_size } : value.minimum_size } : {}),
   };
 }
@@ -51,12 +55,19 @@ export function validateUiLayout(value, options = {}, errors = [], label = "ui_l
     if (options.emptyContainer && !bases.some((basis) => ["LAYOUT", "STATE", "REUSE"].includes(basis))) errors.push(`${label}.grouping_basis 空容器必须有可解释的布局、状态或复用职责`);
   }
   for (const [key, allowed] of Object.entries(ENUMS)) if (!allowed.has(value[key])) errors.push(`${label}.${key} 不属于允许的策略`);
+  if (value.position_driver !== undefined && !LAYOUT_POSITION_DRIVERS.includes(value.position_driver)) errors.push(`${label}.position_driver 不属于允许的项目驱动器`);
+  if (value.size_driver !== undefined && !LAYOUT_SIZE_DRIVERS.includes(value.size_driver)) errors.push(`${label}.size_driver 不属于允许的项目驱动器`);
   if (value.minimum_size !== undefined) {
     const size = value.minimum_size;
     if (!isObject(size) || Object.keys(size).some((key) => !["width", "height"].includes(key)) || !Number.isFinite(size.width) || size.width <= 0 || !Number.isFinite(size.height) || size.height <= 0) errors.push(`${label}.minimum_size 必须包含正数 width/height`);
   }
   if (value.interaction_policy === "DELEGATE_TO_PARENT" && options.rootParent) errors.push(`${label}.interaction_policy 根节点直接子项不能把输入委托给不存在的交互父节点`);
   if (value.overflow_policy === "SCROLL" && (!options.container || !Array.isArray(bases) || !bases.includes("LAYOUT"))) errors.push(`${label}.overflow_policy=SCROLL 必须由负责布局的容器承接`);
+  if (value.position_reference_id !== undefined && (typeof value.position_reference_id !== "string" || value.position_reference_id.trim().length === 0)) errors.push(`${label}.position_reference_id 必须是非空布局元素 ID`);
+  if (value.visual_overflow !== undefined) {
+    if (!isObject(value.visual_overflow) || Object.keys(value.visual_overflow).some((key) => key !== "reason") || typeof value.visual_overflow.reason !== "string" || value.visual_overflow.reason.trim().length === 0) errors.push(`${label}.visual_overflow 必须只包含非空 reason`);
+    if (options.rootParent) errors.push(`${label}.visual_overflow 不能豁免 viewport/safe-area 根边界`);
+  }
 }
 
 /** 校验命中目标沿父链唯一归属，避免子图形形成重叠可点击区域。 */

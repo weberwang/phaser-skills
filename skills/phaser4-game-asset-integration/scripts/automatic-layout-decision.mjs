@@ -7,6 +7,7 @@
  * 验证决策文件与已确认拆解元素逐项按序对应，并把它转换为只读查找表。
  */
 import { isValidAxisAlignment } from "../../phaser4-game-workflow-control/scripts/layout-node-parent-geometry.mjs";
+import { normalizeCenterAlignment } from "../../phaser4-game-ui-layout/scripts/center-alignment.mjs";
 
 export const AUTOMATIC_LAYOUT_DECISION_SCHEMA = "automatic-layout-decision/1.0";
 export const AUTOMATIC_LAYOUT_DECISION_METHOD = "visual-judgement";
@@ -39,8 +40,17 @@ export function validateAutomaticLayoutDecision(document, context = {}, errors =
     if (!isObject(item) || !nonEmptyString(item.element_id)) { errors.push(`${label}.elements[${index}] 必须绑定非空 element_id`); continue; }
     if (seen.has(item.element_id)) errors.push(`${label}.elements[${index}] 重复绑定 element_id：${item.element_id}`);
     seen.add(item.element_id);
-    if (!isValidAxisAlignment({ horizontal: item.horizontal_alignment, vertical: item.vertical_alignment })) errors.push(`${label}.elements[${index}] 必须声明合法 horizontal_alignment/vertical_alignment`);
-    else map.set(item.element_id, { horizontal: item.horizontal_alignment, vertical: item.vertical_alignment });
+    const alignment = { horizontal: item.horizontal_alignment, vertical: item.vertical_alignment };
+    if (!isValidAxisAlignment(alignment)) errors.push(`${label}.elements[${index}] 必须声明合法 horizontal_alignment/vertical_alignment`);
+    else {
+      try {
+        const centerAlignment = normalizeCenterAlignment(alignment, item.center_alignment, `${label}.elements[${index}].center_alignment`);
+        // 仅保留输入明确给出的策略；未声明策略由中心模块按严格居中处理，避免虚拟组成员被误判为显式覆盖。
+        map.set(item.element_id, item.center_alignment === undefined ? alignment : { ...alignment, center_alignment: centerAlignment });
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : String(error));
+      }
+    }
   }
   const actualIds = decisions.map((item) => item?.element_id);
   if (expectedIds.length === 0 || new Set(expectedIds).size !== expectedIds.length || decisions.length !== expectedIds.length || JSON.stringify(actualIds) !== JSON.stringify(expectedIds)) errors.push(`${label}.elements 必须按原顺序与已确认 decomposition_elements 逐项对应`);

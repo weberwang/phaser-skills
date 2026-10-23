@@ -12,7 +12,7 @@ import {
   summarizeReport,
   validateRepresentativeMatrix
 } from "./responsive-visual-validation.mjs";
-import { computeLayoutContractIdentityHash } from "../../phaser4-game-ui-layout/scripts/validate_ui_layout_contract.mjs";
+import { computeLayoutContractIdentityHash, validateContract } from "../../phaser4-game-ui-layout/scripts/validate_ui_layout_contract.mjs";
 
 const identity = { candidate_sha256: `sha256:${"a".repeat(64)}`, scene_id: "main", state_id: "default", layout_contract_version: "1.1.0", visual_baseline_version: "1.0.0" };
 const screenshot = { path: "evidence/viewport.png" };
@@ -78,7 +78,7 @@ function effectImageContract() {
     fidelity: { applicability: "frozen-target", status: "specified" },
     frozen_visual_target: { candidate_id: "target-1", target_sha256: targetSha, original_file: "evidence/target.png", visual_baseline_version: identity.visual_baseline_version, status: "frozen" },
     scene_reconstruction_binding: { target_sha256: targetSha, scene_id: identity.scene_id, state_id: identity.state_id, visual_baseline_version: identity.visual_baseline_version, reconstruction_contract_version: "1.0.0", layout_contract_sha256: "pending", layout_decomposition_version: "layout-v1", target_viewport: { width: 360, height: 800 } },
-    layout_nodes: [{ layout_node_id: "hud.title", region_id: "title", coordinate_space: "ui-space", reference_id: "safe-area", parent_layout_node_id: "safe-area", parent_target_bounds: { x: 0, y: 0, width: 360, height: 800 }, relative_position: { left: 10, right: 250, top: 20, bottom: 740 }, axis_alignment: { horizontal: "left", vertical: "top" }, self_anchor: "top-left", reference_anchor: "top-left", offset: { x: 10, y: 20 }, target_bounds: { x: 10, y: 20, width: 100, height: 40 }, size_policy: "fixed-at-target", ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "CONTENT", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, z_order: 10, clip_policy: "none", responsive_rule: "preserve-center-and-top-gap", planned_test_id: "align-title" }],
+    layout_nodes: [{ layout_execution: { position_driver: "REFLOW", size_driver: "CONTENT" }, layout_node_id: "hud.title", region_id: "title", coordinate_space: "ui-space", reference_id: "safe-area", parent_layout_node_id: "safe-area", parent_target_bounds: { x: 0, y: 0, width: 360, height: 800 }, relative_position: { left: 10, right: 250, top: 20, bottom: 740 }, axis_alignment: { horizontal: "left", vertical: "top" }, self_anchor: "top-left", reference_anchor: "top-left", offset: { x: 10, y: 20 }, target_bounds: { x: 10, y: 20, width: 100, height: 40 }, size_policy: "fixed-at-target", ui_layout: { grouping_basis: ["POSITION"], layout_owner: "SELF", size_policy: "CONTENT", overflow_policy: "KEEP_VISIBLE", safe_area_policy: "INSIDE_SAFE_AREA", interaction_policy: "NONE" }, z_order: 10, clip_policy: "none", responsive_rule: "preserve-center-and-top-gap", planned_test_id: "align-title" }],
     layout_annotation: { layout_annotation_file: "evidence/layout-annotation.png", layout_annotation_sha256: targetSha, layout_annotation_width: 360, layout_annotation_height: 800, layout_annotation_schema: "layout-annotation/png/1", layout_annotation_layout: "image-plus-right-panel", layout_annotation_metadata_sha256: targetSha, layout_annotation_identity_sha256: targetSha, layout_review_file: "evidence/layout-review.html", layout_review_sha256: targetSha, layout_review_identity_sha256: targetSha, layout_nodes_file: "evidence/layout-nodes.json", layout_nodes_sha256: targetSha, decomposition_confirmation_id: "v2-confirmation", decomposition_confirmation_sha256: targetSha, proposal_sha256: targetSha, layout_decision_file: "evidence/automatic-layout-decision.json", layout_decision_sha256: targetSha, layout_decision_id: "layout-decision-1", target_sha256: targetSha, scene_id: identity.scene_id, state_id: identity.state_id, layout_node_ids: ["hud.title"] },
     critical_alignments: [{ id: "align-title", layout_node_id: "hud.title", element_id: "title", reference_id: "ui-root", planned_test_id: "align-title", target_sha256: targetSha, candidate_sha256: identity.candidate_sha256, horizontal: { type: "aligned", element_anchor: "center", reference_anchor: "center" }, vertical: { type: "offset", element_anchor: "top", reference_anchor: "top" }, target_measurement: { x: 10, y: 20, width: 100, height: 40 }, target_evidence: ["evidence/target-title.png"], tolerance: { unit: "logical-px", value: 2 } }]
   };
@@ -394,6 +394,7 @@ test("V4 响应式证据直接绑定正式候选身份", () => {
 
 test("效果图还原报告不比较目标摘要，仍复核实际布局合同", () => {
   const { document, targetSha } = effectImageContract();
+  assert.deepEqual(validateContract(document).errors, []);
   const missing = summarizeReport([], document, identity); assert.deepEqual(missing.identityErrors, []);
   const wrong = summarizeReport([], document, { ...identity, target_sha256: `sha256:${"c".repeat(64)}` }); assert.deepEqual(wrong.identityErrors, []);
   const complete = summarizeReport([], document, { ...identity, target_sha256: targetSha }); assert.deepEqual(complete.identityErrors, []);

@@ -28,7 +28,7 @@ Camera 合同必须说明逻辑 viewport 如何映射到物理 backing，zoom �
 
 ## V2 串行拆解与布局标注
 
-拆解先按[功能语义分组约束](functional-semantic-grouping.md)确认区域、功能组件、部件和独立元素。最终元素必须包含显式 `parent_element_id` 与 `semantic_grouping.kind/rationale`；位置依赖方必须成为被依赖元素所对应布局容器的子元素，共同表达同一信息且互不依赖位置的元素必须列入同一个功能组件并保持同级。布局父级严格继承该归属，不按几何包含自动挑父容器。文字保持独立节点并归属对应信息组，不按类型集中归组。新增容器或归属变化必须回到拆解确认。
+拆解先按[功能语义分组约束](functional-semantic-grouping.md)确认区域、功能组件、部件和独立元素。最终元素包含显式 `parent_element_id` 与 `semantic_grouping.kind/rationale`，父级表达实际功能或布局归属；独立位置依赖写入 `ui_layout.position_reference_id`。图标与文字可以同属按钮 Container 并相互参照定位。布局不按几何包含、类型或位置依赖自动改父级；父级、独立参照或显式溢出发生变化时重新确认受影响拆解。
 
 冻结目标进入 V2 后，机器门固定执行两个串行阶段：阶段 A 先从冻结原图、区域与组件事实生成拆解标注图及技术 JSON，并产出有序 `decomposition_elements`；代理内部维护完整技术事实，用户只看拆解 PNG，可按图号提出修改，修改后重新生成 PNG，再以 `visual-decomposition-confirmation/1.0` 确认。阶段 B 只有在阶段 A 的最终图像确认通过后才能启动，布局入口必须按原顺序消费该确认绑定的 `proposal.decomposition_elements`，再推导后置布局节点，不得从预存 `layout_nodes`、未确认清单草案或原图自行识别元素。
 
@@ -51,13 +51,13 @@ Camera 合同必须说明逻辑 viewport 如何映射到物理 backing，zoom �
 
 `layout_node_id` 在节点集合内唯一；同一 `region_id` 可以绑定多个元素/layout nodes，但该区域 ID 必须同时存在于 `regions` 和 `scope.ui_ids`，`coordinate_space` 必须存在于 `coordinate_spaces`。`target_bounds` 使用目标 viewport 的逻辑坐标，四边均须为有限数值，宽高为正数，并完全落在 `scene_reconstruction_binding.target_viewport` 内。`offset` 是双轴偏移对象，可以是数值或项目定义的非空表达式；`size_policy`、`clip_policy`、`responsive_rule` 和 `planned_test_id` 不得为空。
 
-效果图还原节点必须先建立父子几何图：`parent_layout_node_id` 只能引用另一个已声明的 `layout_node_id`，或稳定根 `viewport`/`safe-area`；`reference_id` 必须逐字等于该父 ID，父子图不得自引用或成环。`parent_target_bounds` 必须逐字段等于父节点 `target_bounds`；`viewport` 根固定为 `{x:0,y:0,width:target_viewport.width,height:target_viewport.height}`，`safe-area` 根以首次有效测量冻结唯一 bounds，所有引用必须一致且位于 viewport 内。子 `target_bounds` 必须完整落在父内容框内。`relative_position` 必须按 `left=child.x-parent.x`、`right=parent.x+parent.width-child.x-child.width`、`top=child.y-parent.y`、`bottom=parent.y+parent.height-child.y-child.height` 逐项测量，不接受手填近似或负距离；允许的浮点误差不超过 `1e-6`。
+效果图还原节点分别建立实际父级与定位参照：父级只能是已声明容器或稳定根 `viewport`/`safe-area`；有效 `reference_id` 来自独立 `position_reference_id` 或默认父级。独立参照允许同 scene/state、同坐标空间的兄弟、祖先或稳定根，不能指向任意跨分支叶子、全屏装饰背景或自身；父边与参照边合并后无环。`parent_target_bounds` 与真实父框逐字段一致，`reference_target_bounds` 与定位框逐字段一致。所有入口消费同一份 viewport/safe-area 根矩形，安全区必须位于 viewport 内，不得将已有安全区扩大为画布。无显式溢出时子框须完整落在父框内；`ui_layout.visual_overflow` 只允许越出非根父框。`relative_position` 按真实父框计算四边有符号距离，允许溢出产生负值但不得伪填；`offset` 按有效定位参照计算。浮点误差不超过 `1e-6`。
 
-`axis_alignment.horizontal` 由智能视觉判断显式选择 `left/center/right`，`vertical` 显式选择 `top/center/bottom`。判断主要依据原图构图、视觉重心和元素语义，不按最近边或测量阈值自动推断。四边距离只记录几何事实；运行时 `offset` 按选定对齐轴计算，其中 `center` 使用子中心相对父中心的有符号偏移。`self_anchor` 与 `reference_anchor` 必须是 `${vertical}-${horizontal}`（例如 `top-center` 或 `center-center`）。视觉决策文件、父子关系、相对距离、对齐、偏移和锚点都属于布局身份，任一变化都必须让旧确认失效。
+`axis_alignment.horizontal` 显式选择 `left/center/right`，`vertical` 显式选择 `top/center/bottom`，不按最近边或测量阈值推断。中心轴按[居中策略](center-alignment.md)默认 strict，有意偏移使用带数值和理由的 reference；组合按联合矩形整体计算。生成器仅平移布局目标并复算几何，不回写 proposal 原始 bounds。`offset` 按有效参照计算，`self_anchor`、`reference_anchor` 为 `${vertical}-${horizontal}`。确认器从 proposal 与决策复算，结构、中心策略或成员变化后重新确认受影响布局。
 
 模板的 `layout_node_example` 是可直接复制到 `layout_nodes` 的完整 effect-image 节点示例；它不是普通 `not-applicable` 合同的活动节点。切换到冻结目标时，应复制该示例、改成项目稳定 ID 和目标几何，并补齐场景绑定与关键对齐证据。
 
-布局节点的 `reference_id` 在普通布局中可以指向已声明的 `regions` 或其他 `layout_node_id`；在 `effect-image` 中必须与 `parent_layout_node_id` 相等，父级只能是具体节点或 `viewport`/`safe-area`。当一个 region 只有一个布局节点时，普通布局可直接用该 region ID 作为参照；当一个 region 绑定多个布局节点时，region ID 参照会产生歧义，必须改用具体 `layout_node_id`。所有节点参照组成有向图，禁止自引用和环；因此不能通过一个孤立或循环的节点绕过布局合同。
+普通布局的 `reference_id` 可以指向已声明区域或具体布局节点；effect-image 使用已确认的具体节点或稳定根，并分别检查功能归属与定位参照。当一个区域绑定多个布局节点时，普通布局也必须指定具体节点以消除歧义。所有依赖都必须有可读取的同批次几何，禁止自引用或循环引用。
 
 `regions` 自身仍是声明式布局区域，每个区域至少包含：
 
@@ -73,7 +73,7 @@ Camera 合同必须说明逻辑 viewport 如何映射到物理 backing，zoom �
 
 ## 目标与尺寸
 
-全屏 UI、带底板弹窗和无底板弹窗分别使用场景、底板功能容器和宿主场景的逻辑尺寸作为布局参照，详见[场景与弹窗尺寸参照](layout-hierarchy.md#场景与弹窗尺寸参照)。场景参照对应 `viewport` 或与其同尺寸的职责根；底板参照对应显式功能容器，其 `target_bounds` 与底板布局矩形一致，底板位图与内容共用该父级。子节点的 `parent_target_bounds`、双轴锚点、偏移与比例/拉伸尺寸均来自已确认直接父级；不能让有底板弹窗的内容使用全屏尺寸，也不能让无底板弹窗使用内容包围盒尺寸。安全区作为可见性约束保留，独立全屏背景仍不参与前景布局参照。
+全屏 UI、带底板弹窗和无底板弹窗分别使用场景、底板功能容器和宿主场景的逻辑尺寸作为布局边界，详见[场景与弹窗尺寸参照](layout-hierarchy.md#场景与弹窗尺寸参照)。底板 Container 的 `target_bounds` 与面板逻辑矩形一致，底板图片与内容共用该父级；内部独立定位参照不改变功能归属和面板尺寸。不能将有底板弹窗整体改为全屏尺寸，也不能以无底板弹窗的内容包围盒代替宿主尺寸。安全区约束继续生效，独立全屏背景不参与前景定位。
 
 `targets` 只定义代表性设备视口的最小、首选和最大逻辑宽高、方向和宽高比，不能覆盖固定设计基准；`targets.orientations` 必须与 `orientationPolicy.allowed` 一致，三个示例目标也只能使用支持方向。`scale` 旧嵌套字段不再承担 DPR 或 backing 合同，相关事实统一写在根级响应式字段。`aspect_ratio.min/max` 必须是正数且顺序合理。`content` 定义 `max_width`、`columns`、`gaps` 和 `margins`；断点和布局关系仍必须使用逻辑像素，不能使用参考截图的物理像素直接硬编码。
 

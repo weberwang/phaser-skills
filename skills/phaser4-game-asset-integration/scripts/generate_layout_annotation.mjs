@@ -13,10 +13,11 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { decodePngRgba } from "./effect_image_raster.mjs";
 import { loadManifest, readPngDimensions } from "./validate_visual_manifest.mjs";
-import { computeLayoutAnnotationIdentitySha256, deriveAutomaticLayoutFacts, deriveLayoutNodesFromDecompositionElements, renderLayoutAnnotation } from "./layout_annotation_contract.mjs";
+import { computeLayoutAnnotationIdentitySha256, deriveAutomaticLayoutFacts, deriveFinalLayoutNodesFromDecompositionElements, renderLayoutAnnotation } from "./layout_annotation_contract.mjs";
 import { decompositionElementIds, validateDecompositionElements } from "./decomposition-elements.mjs";
 import { validateAutomaticLayoutDecision, automaticLayoutDecisionId } from "./automatic-layout-decision.mjs";
 import { buildLayoutNodesDocument, buildLayoutReviewBindings, computeLayoutReviewIdentitySha256, deriveLayoutReviewArtifactPaths, pathsReferToSameFile, renderLayoutReviewBundle, serializeJson, sha256 as bundleSha256, validateLayoutReviewArtifactPaths } from "./layout_review_bundle.mjs";
+import { collectLayoutRootBounds } from "../../phaser4-game-ui-layout/scripts/layout-root-bounds.mjs";
 const DECOMPOSITION_REQUIRED_FIELDS = ["confirmation_schema", "confirmation_id", "status", "confirmation_mode", "proposal_id", "proposal_file", "annotation_file", "annotation_mime", "annotation_width", "annotation_height", "annotation_schema", "annotation_layout", "decision_record_file", "user_decision_receipt_file", "scene_id", "state_id", "user_original_text", "accepted_at"];
 
 /** 判断普通对象。 */
@@ -70,7 +71,16 @@ function validateDecompositionAnnotation(bytes, record, expectedRegions) {
 function validateDecompositionProposal(proposal, record, scene, expectedRegions) {
   if (!isObject(proposal) || proposal.proposal_id !== record.proposal_id || proposal.scene_id !== scene.sceneId || proposal.state_id !== scene.stateId || proposal.annotation_file !== record.annotation_file) throw new Error("已确认 proposal 未绑定当前 confirmation/annotation/scene/state");
   const elements = proposal.decomposition_elements;
-  const elementErrors = []; const elementById = validateDecompositionElements(elements, expectedRegions, scene.target.viewport, "proposal.decomposition_elements", elementErrors); if (elementErrors.length > 0 || !(elementById instanceof Map) || elementById.size !== elements?.length) throw new Error(elementErrors[0] ?? "已确认 proposal.decomposition_elements 无效");
+  const proposalTechnical = proposal.technical_analysis ?? {};
+  const proposalRoots = collectLayoutRootBounds(scene.target.viewport, {
+    root_bounds: scene.rootBounds,
+    root_bounds_sources: [proposal.root_bounds, proposal.rootBounds, proposal.target_conditions?.root_bounds, proposal.targetConditions?.rootBounds, proposalTechnical.root_bounds, proposalTechnical.rootBounds, proposalTechnical.canvas?.root_bounds, proposalTechnical.canvas?.rootBounds],
+    safe_area_bounds_sources: [proposal.safe_area_bounds, proposal.safeAreaBounds, proposal.target_conditions?.safe_area_bounds, proposal.targetConditions?.safeAreaBounds, proposalTechnical.safe_area_bounds, proposalTechnical.safeAreaBounds, proposalTechnical.canvas?.safe_area_bounds, proposalTechnical.canvas?.safeAreaBounds],
+    safe_area_sources: [proposal.safe_area, proposal.safeArea, proposal.target_conditions?.safe_area, proposal.targetConditions?.safeArea, proposalTechnical.safe_area, proposalTechnical.safeArea],
+    root_nodes_sources: [proposal.root_nodes, proposal.rootNodes, proposalTechnical.root_nodes, proposalTechnical.rootNodes, proposalTechnical.canvas?.root_nodes, proposalTechnical.canvas?.rootNodes],
+    layout_nodes_sources: [proposal.layout_nodes, proposal.layoutNodes, proposalTechnical.layout_nodes, proposalTechnical.layoutNodes],
+  });
+  const elementErrors = []; const elementById = validateDecompositionElements(elements, expectedRegions, scene.target.viewport, "proposal.decomposition_elements", elementErrors, { rootBounds: proposalRoots }); if (elementErrors.length > 0 || !(elementById instanceof Map) || elementById.size !== elements?.length) throw new Error(elementErrors[0] ?? "已确认 proposal.decomposition_elements 无效");
   const technicalElements = proposal.technical_analysis?.decomposition_elements;
   sameElementSequence(technicalElements, elements, "proposal.technical_analysis.decomposition_elements");
   const proposalRegions = proposal.regions; if (!Array.isArray(proposalRegions) || proposalRegions.length !== expectedRegions.length) throw new Error("已确认 proposal.regions 未完整覆盖当前区域");
@@ -107,7 +117,23 @@ async function validateDecompositionConfirmationFiles(confirmation, scene, args,
 function sceneContract(manifest, sceneId, stateId) {
   const contract = manifest.scene_reconstruction_contract; if (!isObject(contract)) throw new Error("缺少 scene_reconstruction_contract，布局阶段不能从清单草案自行识别元素");
   const target = contract.target_conditions ?? contract.targetConditions; if (!isObject(target) || target.scene_id !== sceneId || target.state_id !== stateId) throw new Error("scene/state 与冻结场景合同不一致");
-  const regions = (manifest.coverage_audit?.regions ?? []).filter((region) => region?.scene_id === sceneId && region?.state_id === stateId); if (regions.length === 0) throw new Error("选定 scene/state 没有 coverage 区域"); return { contract, target, regions, sceneId, stateId };
+  const decomposition = contract.layout_decomposition ?? contract.layoutDecomposition ?? {};
+  const rootBounds = collectLayoutRootBounds(target.viewport, {
+    root_bounds: target.root_bounds,
+    rootBounds: target.rootBounds,
+    root_bounds_sources: [contract.root_bounds, contract.rootBounds, decomposition.root_bounds, decomposition.rootBounds],
+    root_nodes: target.root_nodes,
+    rootNodes: target.rootNodes,
+    root_nodes_sources: [contract.root_nodes, contract.rootNodes, decomposition.root_nodes, decomposition.rootNodes, decomposition.layout_annotation?.root_nodes, decomposition.layoutAnnotation?.rootNodes],
+    safe_area_bounds: target.safe_area_bounds,
+    safeAreaBounds: target.safeAreaBounds,
+    safe_area_bounds_sources: [contract.safe_area_bounds, contract.safeAreaBounds, decomposition.safe_area_bounds, decomposition.safeAreaBounds],
+    safe_area: target.safe_area,
+    safeArea: target.safeArea,
+    safe_area_sources: [contract.safe_area, contract.safeArea, decomposition.safe_area, decomposition.safeArea],
+    layout_nodes_sources: [target.layout_nodes, target.layoutNodes, contract.layout_nodes, contract.layoutNodes, decomposition.layout_nodes, decomposition.layoutNodes, decomposition.layout_annotation?.layout_nodes, decomposition.layoutAnnotation?.layoutNodes],
+  });
+  const regions = (manifest.coverage_audit?.regions ?? []).filter((region) => region?.scene_id === sceneId && region?.state_id === stateId); if (regions.length === 0) throw new Error("选定 scene/state 没有 coverage 区域"); return { contract, target, rootBounds, regions, sceneId, stateId };
 }
 /** 从当前 scene/state 的人工确认记录中取唯一上游身份，并复算 proposal/拆解图文件。 */
 async function resolveDecompositionConfirmation(manifest, sceneId, stateId, projectRoot, args, scene) {
@@ -142,8 +168,8 @@ export async function main(argv = process.argv.slice(2)) {
     const outputPath = projectPath(projectRoot, args.output);
     const artifactPaths = deriveLayoutReviewArtifactPaths(projectRoot, outputPath);
     validateLayoutReviewArtifactPaths(projectRoot, artifactPaths, [args.manifest, referenceFile, upstream.confirmation.proposal_file, upstream.confirmation.annotation_file, upstream.confirmation.decision_record_file, upstream.confirmation.user_decision_receipt_file, args.layoutDecisionFile], args.layoutDecisionFile);
-    const layoutNodes = deriveLayoutNodesFromDecompositionElements(upstream.elements, scene.target.viewport, { sceneId: args.sceneId, stateId: args.stateId, alignmentDecisions });
-    const facts = deriveAutomaticLayoutFacts(layoutNodes, scene.target.viewport, { sceneId: args.sceneId, stateId: args.stateId });
+    const layoutNodes = deriveFinalLayoutNodesFromDecompositionElements(upstream.elements, scene.target.viewport, { sceneId: args.sceneId, stateId: args.stateId, alignmentDecisions, rootBounds: scene.rootBounds });
+    const facts = deriveAutomaticLayoutFacts(layoutNodes, scene.target.viewport, { sceneId: args.sceneId, stateId: args.stateId, rootBounds: scene.rootBounds });
     const layoutDecisionId = automaticLayoutDecisionId(decisionInput.json);
     const rendered = renderLayoutAnnotation(originalBytes, scene.target.viewport, facts, { targetSha256: scene.target.target_sha256, sceneId: args.sceneId, stateId: args.stateId, decompositionConfirmationId: args.decompositionConfirmationId, decompositionConfirmationSha256: args.decompositionConfirmationSha256, decompositionProposalSha256: args.proposalSha256, layoutDecisionId, layoutDecisionSha256: decisionInput.sha256 });
     const annotationBytes = rendered.bytes;
@@ -151,7 +177,7 @@ export async function main(argv = process.argv.slice(2)) {
     const identitySha256 = computeLayoutAnnotationIdentitySha256(annotationSha256, rendered.width, rendered.height, rendered.metadataSha256);
     const finalNodes = facts.filter((fact) => !fact.is_root_container);
     const rootNodes = facts.filter((fact) => fact.is_root_container === true);
-    const commonContext = { projectRoot, viewport: scene.target.viewport, sceneId: args.sceneId, stateId: args.stateId, targetSha256: scene.target.target_sha256, decompositionConfirmationId: args.decompositionConfirmationId, decompositionConfirmationSha256: args.decompositionConfirmationSha256, proposalSha256: args.proposalSha256, referenceFile, referenceSha256: scene.target.target_sha256, proposalFile: upstream.confirmation.proposal_file, layoutDecisionId, layoutDecisionSha256: decisionInput.sha256, annotationSha256 };
+    const commonContext = { projectRoot, viewport: scene.target.viewport, rootBounds: scene.rootBounds, sceneId: args.sceneId, stateId: args.stateId, targetSha256: scene.target.target_sha256, decompositionConfirmationId: args.decompositionConfirmationId, decompositionConfirmationSha256: args.decompositionConfirmationSha256, proposalSha256: args.proposalSha256, referenceFile, referenceSha256: scene.target.target_sha256, proposalFile: upstream.confirmation.proposal_file, layoutDecisionId, layoutDecisionSha256: decisionInput.sha256, annotationSha256 };
     const nodesDocument = buildLayoutNodesDocument(facts, commonContext);
     const nodesBytes = serializeJson(nodesDocument);
     const nodesSha256 = bundleSha256(nodesBytes);

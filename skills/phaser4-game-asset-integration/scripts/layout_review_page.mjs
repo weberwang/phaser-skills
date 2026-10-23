@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { deriveAutomaticLayoutFacts } from "./layout_annotation_contract.mjs";
 import { readPngDimensions } from "./validate_visual_manifest.mjs";
 import { validateUiLayout } from "./ui-layout-organization.mjs";
+import { collectLayoutRootBounds, isSyntheticLayoutRoot } from "../../phaser4-game-ui-layout/scripts/layout-root-bounds.mjs";
 
 export const LAYOUT_REVIEW_SCHEMA = "phaser-layout-review/1.0";
 export const LAYOUT_REVIEW_STATUS = "candidate-awaiting-layout-confirmation";
@@ -122,9 +123,8 @@ export function validateReviewNodesDocument(nodesDocument) {
     rootIds.add(root.layout_node_id);
     const rootBounds = targetBoundsOf(root);
     validateBounds(rootBounds, viewport, `nodesDocument.root_nodes[${index}].target_bounds`);
-    if (!sameBounds(rootBounds, { x: 0, y: 0, width: viewport.width, height: viewport.height })) throw new Error(`根节点 ${root.layout_node_id} bounds 必须覆盖完整冻结 viewport`);
-    if (root.is_root_container !== true) throw new Error(`根节点 ${root.layout_node_id} 必须标记为 is_root_container`);
-    if (root.parent_layout_node_id !== null) throw new Error(`根节点 ${root.layout_node_id} 必须显式声明空 parent_layout_node_id`);
+    if (root.layout_node_id === "viewport" && !sameBounds(rootBounds, { x: 0, y: 0, width: viewport.width, height: viewport.height })) throw new Error("根节点 viewport bounds 必须覆盖完整冻结 viewport");
+    if (!isSyntheticLayoutRoot(root)) throw new Error(`根节点 ${root.layout_node_id} 必须使用稳定根 ID、is_root_container=true 和显式 null parent_layout_node_id`);
     roots.push(root);
   }
 
@@ -156,7 +156,8 @@ export function validateReviewNodesDocument(nodesDocument) {
   // 先复用既有推导器发现父链环和缺失父级，再核对 root_nodes 的快照几何。
   let derivedFacts;
   try {
-    derivedFacts = deriveAutomaticLayoutFacts(nodes, viewport, { sceneId: nodesDocument.scene_id, stateId: nodesDocument.state_id });
+    const rootBounds = collectLayoutRootBounds(viewport, { root_nodes: roots, layout_nodes: nodes });
+    derivedFacts = deriveAutomaticLayoutFacts(nodes, viewport, { sceneId: nodesDocument.scene_id, stateId: nodesDocument.state_id, rootBounds, rootNodes: roots });
   } catch (error) {
     throw new Error(`布局节点事实校验失败：${error.message}`);
   }
@@ -168,9 +169,9 @@ export function validateReviewNodesDocument(nodesDocument) {
   // 这里只比对现有 facts 与推导结果；页面展示仍使用传入节点原顺序和原字段。
   const derivedById = new Map(derivedFacts.map((fact) => [fact.layout_node_id, fact]));
   const comparableFields = [
-    "layout_node_id", "element_id", "display_name", "layout_role", "parent_layout_node_id", "parent_target_bounds",
+    "layout_node_id", "element_id", "display_name", "layout_role", "coordinate_space", "parent_layout_node_id", "parent_target_bounds", "position_reference_id", "reference_id", "reference_target_bounds", "visual_overflow", "reference_marker_id",
     "target_bounds", "bounds", "depth", "color", "is_container", "empty_container", "child_layout_node_ids",
-    "relative_position", "axis_alignment", "offset", "self_anchor", "reference_anchor", "docking",
+    "relative_position", "axis_alignment", "center_alignment", "layout_execution", "offset", "self_anchor", "reference_anchor", "docking",
     "is_root_container", "scene_id", "state_id", "marker_id", "parent_marker_id", "ui_layout"
   ];
   const compareFact = (fact, derived, label) => {

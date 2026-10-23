@@ -5,12 +5,21 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { checkContractFiles, computeLayoutContractIdentityHash, main, validateContract } from "./validate_ui_layout_contract.mjs";
 import { validateUiInteractionTree, validateUiLayout } from "../../phaser4-game-asset-integration/scripts/ui-layout-organization.mjs";
+import { makeContractRuntimeTestCapture } from "./layout-runtime-contract-fixtures.mjs";
+import { deriveLayoutExecutionPlans } from "./layout-execution.mjs";
 
 const templatePath = resolve(dirname(new URL(import.meta.url).pathname.replace(/^\/(.:)/, "$1")), "../assets/ui-layout-contract-template.yaml");
 const base = JSON.parse(await readFile(templatePath, "utf8"));
 
 /** 深拷贝基准合同，避免测试之间共享修改。 */
 function copy() { return structuredClone(base); }
+/** 根据测试明确提供的运行矩形重新模拟采集，不生成正式运行证据。 */
+function refreshTestRuntimeCapture(document) {
+  const measurements = new Map(document.critical_alignments.map((item) => [item.layout_node_id, item.runtime_measurement]));
+  const actualNodes = structuredClone(document.layout_nodes);
+  for (const node of actualNodes) if (measurements.get(node.layout_node_id)) node.target_bounds = measurements.get(node.layout_node_id);
+  Object.assign(document, makeContractRuntimeTestCapture(actualNodes, { scene_id: "MainScene", state_id: "default", viewport: document.scene_reconstruction_binding.target_viewport }));
+}
 /** 构造冻结目标的 specified 或 verified 布局合同。 */
 function fidelityContract(status = "verified") {
   const document = copy(); const targetSha = `sha256:${"1".repeat(64)}`; const candidateSha = document.scope.bindings.code_candidate;
@@ -23,6 +32,10 @@ function fidelityContract(status = "verified") {
   document.scene_reconstruction_binding.layout_contract_sha256 = computeLayoutContractIdentityHash(document);
   document.critical_alignments = [{ id: "title-center", layout_node_id: "hud.title", element_id: "title", reference_id: "safe-area", horizontal: { type: "center-aligned", element_anchor: "center", reference_anchor: "center" }, vertical: { type: "top-offset", element_anchor: "top", reference_anchor: "top" }, target_measurement: { x: 115, y: 32, width: 160, height: 48 }, planned_test_id: "tests/layout/title-center", target_evidence: ["evidence/target-title.png"], target_sha256: targetSha, candidate_sha256: candidateSha, tolerance: { unit: "logical-px", value: 2 } }];
   if (status === "verified") { Object.assign(document.critical_alignments[0], { actual_test_id: "tests/layout/title-center", runtime_measurement: { x: 115, y: 32, width: 160, height: 48 }, delta: { x: 0, y: 0, width: 0, height: 0 }, test_status: "passed", runtime_evidence: ["evidence/runtime-title.png"] }); document.parity_cases = [{ id: "main-default", target_sha256: targetSha, candidate_sha256: candidateSha, scene_id: "MainScene", state_id: "default", viewport: { width: 390, height: 844 }, dpr: 2, language: "zh-CN", random_seed: 42, input_trace: "traces/main.json", sample_rule: "stable-frame", layout_contract_version: "1.0.0", visual_baseline_version: "ui-v1", reference_evidence: ["evidence/target.png"], candidate_evidence: ["evidence/candidate.png"], tolerance: { unit: "logical-px", value: 2 }, exception_ids: [], conclusion: "passed" }]; }
+  const plans = new Map(deriveLayoutExecutionPlans(document.layout_nodes).map((item) => [item.layout_node_id, item.layout_execution]));
+  for (const node of document.layout_nodes) node.layout_execution = plans.get(node.layout_node_id);
+  document.scene_reconstruction_binding.layout_contract_sha256 = computeLayoutContractIdentityHash(document);
+  if (status === "verified") refreshTestRuntimeCapture(document);
   return document;
 }
 /** 将模板合同缩窄到单一支持方向，同时保留该方向的尺寸、DPR 封顶和常规重排证据。 */
@@ -76,15 +89,65 @@ test("声明的关键容差校验实测差值，不能用 delta=0 隐藏偏移",
 test("usability 未声明精确几何容差时保留宽松策略，声明边界值时允许通过", () => {
   const relaxed = fidelityContract(); relaxed.visual_validation = { mode: "usability" };
   delete relaxed.critical_alignments[0].tolerance;
-  relaxed.critical_alignments[0].runtime_measurement.x += 12;
+  // 宽松几何容差覆盖非中心轴，已确认的严格中心关系仍须成立。
+  relaxed.critical_alignments[0].runtime_measurement.y += 12;
+  refreshTestRuntimeCapture(relaxed);
   assert.equal(validateContract(relaxed).status, "passed");
   const bounded = fidelityContract(); bounded.visual_validation = { mode: "usability" };
-  bounded.critical_alignments[0].runtime_measurement.x += 2; bounded.critical_alignments[0].delta.x = 2;
+  bounded.critical_alignments[0].runtime_measurement.y += 2; bounded.critical_alignments[0].delta.y = 2;
+  refreshTestRuntimeCapture(bounded);
   assert.equal(validateContract(bounded).status, "passed");
   bounded.critical_alignments[0].tolerance.unit = "percent";
   assertFailed(bounded, "tolerance.unit 必须是");
 });
 test("specified 冻结目标合同允许尚无运行测量和 parity", () => { const result = validateContract(fidelityContract("specified")); assert.equal(result.status, "passed", JSON.stringify(result)); });
+
+test("specified 必须保留确定性执行计划，篡改驱动器不得放行", () => {
+  const missing = fidelityContract("specified");
+  delete missing.layout_nodes[0].layout_execution;
+  assertFailed(missing, "layout_execution");
+  const changed = fidelityContract("specified");
+  changed.layout_nodes[0].layout_execution.position_driver = "PARENT_LAYOUT";
+  assertFailed(changed, "layout_execution");
+});
+
+test("verified 的 usability 同样要求完整同批快照与当前运行身份", () => {
+  const missing = fidelityContract(); missing.visual_validation = { mode: "usability" };
+  delete missing.runtime_capture;
+  assertFailed(missing, "runtime_capture");
+  const incomplete = fidelityContract(); incomplete.component_snapshots = [];
+  assertFailed(incomplete, "缺少业务布局节点快照");
+  const stale = fidelityContract(); stale.candidate_id = "current-code-candidate"; stale.batch_id = "current-batch";
+  assertFailed(stale, "candidate_id 与 context 目标身份不一致");
+  assertFailed(stale, "batch_id 与 context 目标身份不一致");
+});
+
+test("usability 几何容差不能掩盖实际严格中心偏移", () => {
+  const document = fidelityContract(); document.visual_validation = { mode: "usability" };
+  delete document.critical_alignments[0].tolerance;
+  document.critical_alignments[0].runtime_measurement.x += 5;
+  refreshTestRuntimeCapture(document);
+  assertFailed(document, "必须严格居中");
+});
+
+test("actual_bounds 运行测量别名与重复声明也必须绑定实际快照", () => {
+  const alias = fidelityContract(); alias.visual_validation = { mode: "usability" };
+  const alignment = alias.critical_alignments[0];
+  alignment.actual_bounds = { ...alignment.runtime_measurement, x: alignment.runtime_measurement.x + 5 };
+  delete alignment.runtime_measurement;
+  delete alignment.tolerance;
+  assertFailed(alias, "actual_bounds 与同批 component_snapshot 不一致");
+  const duplicate = fidelityContract();
+  duplicate.critical_alignments[0].actual_bounds = { ...duplicate.critical_alignments[0].runtime_measurement, y: 40 };
+  assertFailed(duplicate, "actual_bounds 与同批 component_snapshot 不一致");
+});
+
+test("verified UI 拒绝实际隐藏，active=false 仍允许静态显示", () => {
+  const hidden = fidelityContract(); hidden.component_snapshots[0].visible = false; hidden.component_snapshots[0].effective_visible = false;
+  assertFailed(hidden, "冻结布局节点必须实际可见");
+  const paused = fidelityContract(); paused.component_snapshots[0].active = false;
+  assert.equal(validateContract(paused).status, "passed");
+});
 test("frozen-target 缺少 scene_reconstruction_binding 必须失败，普通布局无需绑定", () => { const frozen = fidelityContract("specified"); delete frozen.scene_reconstruction_binding; assertFailed(frozen, "scene_reconstruction_binding 缺失"); const ordinary = copy(); delete ordinary.scene_reconstruction_binding; assert.equal(validateContract(ordinary).status, "passed"); });
 test("actual_test_id 仅在 verified 必需", () => { const document = fidelityContract(); delete document.critical_alignments[0].actual_test_id; assertFailed(document, "actual_test_id 必须"); });
 test("verified 身份必须与 scope、合同和基线一致", () => { const scene = fidelityContract(); scene.parity_cases[0].scene_id = "Unknown"; assertFailed(scene, "scene_id 不在 scope"); const layout = fidelityContract(); layout.parity_cases[0].layout_contract_version = "9"; assertFailed(layout, "根 contract_version 不一致"); const baseline = fidelityContract(); baseline.parity_cases[0].visual_baseline_version = "other"; assertFailed(baseline, "与冻结目标不一致"); const testId = fidelityContract(); testId.critical_alignments[0].actual_test_id = "other-test"; assertFailed(testId, "必须等于 planned_test_id"); });
