@@ -40,6 +40,8 @@ node .\scripts\install-project-skills.mjs E:\Projects\my-phaser-game
 
 通用帧动画按普通、角色动作、特效或 UI 选择制作规则，默认视频抽帧，图片递归补帧仅在用户明确选用时启用。内部完成动作分析、时间轴、尺寸与批次方案后，先向用户阐述设计理念，说明希望带来什么感觉及动作与节奏的依据，等待用户明确确认当前动作方案后，再在已有授权内制作真实视频或关键帧；只有玩法事件、时长或行为边界有决定性歧义时才询问。真实视频人工验收后才能抽帧；图片首尾、关键帧和递归父图逐张确认后继续制作，最终真实序列仍由用户验收。分辨率、条数、预算、来源证据和 Phaser 接入见[通用帧动画技能](skills/phaser4-frame-animation/SKILL.md)与[区域规划](skills/phaser4-frame-animation/references/region-planning.md)。
 
+连击、跳跃攻击等按[操作驱动的多段动作设计](skills/phaser4-frame-animation/references/input-driven-actions.md)分段：各段明确输入窗口、状态条件、有效输入后的续段与未输入时的结束路径；缓冲仅按玩法明确规则启用。游戏操作影响动作节奏、关键姿态和资源分支，整套预览不代表一次输入自动连播；接入验证同时覆盖成功衔接、错过窗口与落地/中断路径。
+
 先在目标 Phaser 项目根目录初始化一个 Work Item。下面的 PowerShell 示例会以当前 Git HEAD 作为不可变基线，可直接复制执行：
 
 ```powershell

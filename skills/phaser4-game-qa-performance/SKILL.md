@@ -31,4 +31,6 @@ description: Phaser 4 移动端 2D 游戏的测试与性能角色。用于功能
 
 没有可复现证据时标记“未验证”。V1/V2 条件门必须绑定当前候选；沉默、继续工作或旧决定不能替代真正需要的 `USER_DECISION`，用户决定也不能跳过 V2 拆解与布局确认所需的确定性机器 F2。FIT 只证明等比不溢出，不证明满屏或响应式重排；禁止用构建成功、元素存在或无控制台错误假通过。
 
+连击、跳跃攻击等按[操作分段与验证](../phaser4-frame-animation/references/input-driven-actions.md#制作接入与验证)核对各段的进入、窗口、事件和退出。确定性用例覆盖无输入、窗口前/内/后与端点、长按/连按、单次消费、后段未输入、缓冲过期及中断清理；跳跃攻击另测未攻击正常落地、有效空中状态、提前落地和落地/输入冲突，按既定规则断言目标状态、事件次数与动画选择。整套连播或单条成功路径不能代替分支验证，素材衔接、节奏与实际手感由用户人工验收。
+
 可复用自动化脚本位于 `scripts/responsive-visual-validation.mjs`，纯计算测试位于 `scripts/responsive-visual-validation.test.mjs`。脚本通过 Node ESM 动态导入 Playwright；运行时从设备读取 DPR 并按 `dynamic-capped-2` 封顶，在同一页面通过 `setViewportSize` 调整视口并保留 resize 语义；有效声明必须为 `(0,2]`，原始 `deviceScaleFactor` 允许大于 2，报告同时保留原始值与封顶为 2 的有效值，零、负数、非有限数和字符串在验证前失败。默认报告输出代表性视口与关键状态；`exact` 模式或明确的全覆盖需求再输出完整页面截图、实测矩阵和结构化 JSON。

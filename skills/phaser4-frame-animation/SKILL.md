@@ -9,6 +9,8 @@ description: 为 Phaser 的普通动画、角色动作、特效与 UI 帧动画�
 
 动画设计优先增强观看体验与动作表现力：先确定目标感受、表演亮点和节奏，再解决一致性、采样与接入。设计师可主动构思转身、侧身、旋转、翻腾、透视变化、遮挡、位移与夸张形变，按任务选择，不强制炫技。身份一致性和运动连续性服务于表演，固定画布、区域与资源锚点不锁死主体朝向、姿态或画内位置。
 
+游戏表现与操作约束共同塑造动作。连击、跳跃攻击等由输入和状态决定后续行为的任务，须读取[操作驱动的多段动作设计](references/input-driven-actions.md)，按可操作边界分段，明确各段输入窗口、有效条件、推进与未推进的结束路径，再据此安排表演和资源。窗口期内的有效输入才可触发后续段，输入缓冲仅按已定义规则启用；完整表演预览与共享来源不代表运行时自动连播。
+
 在当前 Work Item 范围内内部提出、推导并维护动作时间轴设计记录，方案完成后主动向用户阐述设计理念，说明希望带来什么感觉及相应动作依据，等待用户明确确认当前动作方案后，再按已有授权推进提示词、真实素材和具体实现；用户审阅真实视频、逐张关键帧及完整序列，按反馈修复并重验，随后回到控制面提交证据与状态迁移。只有玩法事件、时长或行为权限确实缺失且无法推导时，才询问受影响动作。
 
 ## 分类入口
@@ -101,6 +103,7 @@ node <skill-dir>/scripts/images-to-atlas.mjs --help
 | 从玩法与表现意图推导时长、节奏及检查点 | [intent-driven-design.md](references/intent-driven-design.md)，在动作分析时读取并写入既有设计工件，制作与验收复用 |
 | 需要反馈语义、类型适用或事件覆盖规则 | [Phaser 2D 汁水感设计指南](../phaser4-game-juice/references/design-guide.md)；本 Skill 仍按既有时间轴设计、真实素材审阅和完整序列人工验收生产帧动画 |
 | 游戏时间、分组、阶段及修正 | [action-timing.md](references/action-timing.md) |
+| 连击、跳跃攻击等操作分段与分支 | [input-driven-actions.md](references/input-driven-actions.md)，在设计阶段明确输入窗口、状态条件及成功/失败路径，制作与运行验证复用 |
 | 效果图尺寸推理、合批与空间裁剪 | [region-planning.md](references/region-planning.md) |
 | 图片首尾、关键帧、双图参考递归与图片来源合同 | [image-inbetween.md](references/image-inbetween.md) |
 | 动作设计与素材确认、提示词组合与来源/修图证据 | [workflow-integration.md](references/workflow-integration.md) |
